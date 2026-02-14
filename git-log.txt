@@ -1,0 +1,4 @@
+221b429 Clean repo and apply gitignore
+5a28cb4 Add gitignore and clean repo
+0656d29 Initial Django backend setup on VPS
+0248dd5 Initial Django backend setup on VPS

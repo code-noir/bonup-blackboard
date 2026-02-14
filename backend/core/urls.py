@@ -1,3 +1,5 @@
+# backend/core/urls.py
+
 """
 URL configuration for core project.
 
@@ -15,8 +17,14 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path
+from django.urls import path, include
+from django.http import HttpResponseRedirect
+
+def home(request):
+    return HttpResponseRedirect('/contracts/')
 
 urlpatterns = [
+    path('', home),  # root
     path('admin/', admin.site.urls),
+    path('contracts/', include('contracts.urls')),
 ]

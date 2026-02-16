@@ -3,7 +3,7 @@
 # BONUP DJANGO CHEAT SHEET
 
 ## ACTIVATE VENV
-source venv/bin/activate
+cd ../
 
 ## INSTALL PACKAGE
 pip install package-name
@@ -25,3 +25,10 @@ python3 manage.py createsuperuser
 
 ## COLLECT STATIC (PROD)
 python3 manage.py collectstatic
+
+source venv/bin/activate
+
+python3 manage.py makemigrations contracts
+
+
+python manage.py shell

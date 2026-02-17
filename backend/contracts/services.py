@@ -1,34 +1,63 @@
-# backend/contracts/services.py
-#
-# SPEC: dev/specs/contract-creation-flow.md
+from django.db import transaction
+from backend.engine.contracts.lifecycle import prepare_version_creation
+from backend.engine.contracts.state_machine import validate_transition
+from backend.engine.contracts.exceptions import (
+    NegotiationLimitReached,
+    ImmutableVersionError,
+    InvalidStateTransition,
+)
+from .models import ContractVersion
 
-from .models import Contract, ContractVersion
-from django.contrib.auth import get_user_model
 
-User = get_user_model()
-
-
-class ContractService:
+@transaction.atomic
+def create_new_version(contract, content, user=None):
     """
-    Service layer for contract creation and lifecycle logic.
-    Keeps business logic out of views.
+    Orchestrates creation of a new contract version.
+    Enforces negotiation limits and immutability.
     """
 
-    @staticmethod
-    def create_contract(initiator, counterparty_email, content):
-        """
-        Creates a contract container and its initial version.
-        """
+    existing_versions = contract.versions.count()
 
-        contract = Contract.objects.create(
-            initiator=initiator,
-            counterparty_email=counterparty_email,
-        )
+    next_version_number = prepare_version_creation(
+        max_versions=contract.max_versions,
+        existing_versions=existing_versions,
+    )
 
-        ContractVersion.create_initial_version(
-            contract=contract,
-            content=content,
-            user=initiator
-        )
+    previous_version = (
+        contract.versions.order_by("-version_number").first()
+    )
 
-        return contract
+    if previous_version:
+        previous_version.status = "superseded"
+        previous_version.superseded = True
+        previous_version.save(update_fields=["status", "superseded"])
+
+    version = ContractVersion.objects.create(
+        contract=contract,
+        version_number=next_version_number,
+        previous_version=previous_version,
+        created_by=user,
+        content_snapshot=content,
+        status="draft",
+    )
+
+    return version
+
+
+@transaction.atomic
+def transition_version(version, new_status):
+    """
+    Handles state transitions via engine validation.
+    """
+
+    validate_transition(version.status, new_status)
+
+    version.status = new_status
+    version.save(update_fields=["status"])
+
+    return version
+
+
+
+
+

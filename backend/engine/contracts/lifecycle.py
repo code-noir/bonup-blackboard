@@ -8,8 +8,6 @@ from .state_machine import validate_transition
 from .exceptions import InvalidStateTransition
 
 
-from backend.engine.contracts.lifecycle import perform_transition
-
 def perform_transition(current_status, new_status):
     validate_transition(current_status, new_status)
     return new_status

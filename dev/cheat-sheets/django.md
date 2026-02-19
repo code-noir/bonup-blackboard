@@ -31,4 +31,4 @@ source venv/bin/activate
 python3 manage.py makemigrations contracts
 
 
-python manage.py shell
+python3 manage.py shell

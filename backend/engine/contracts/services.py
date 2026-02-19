@@ -20,35 +20,23 @@ def create_initial_version(contract, content, user=None):
         status="draft",
     )
 
+def create_new_version(*, contract, content, user):
+    last_version = contract.versions.first()
 
-def create_new_version(contract, content, user=None):
-    last_version = (
-        ContractVersion.objects
-        .filter(contract=contract)
-        .order_by("-version_number")
-        .first()
+    # mark old version as superseded
+    ContractVersion.objects.filter(id=last_version.id).update(
+        status="superseded",
+        superseded=True,
     )
-
-    if not last_version:
-        raise Exception("No previous version exists.")
-
-    if contract.versions.count() >= contract.max_versions:
-        raise NegotiationLimitReached()
 
     new_version_number = last_version.version_number + 1
 
-    # mark previous version superseded
-    last_version.status = "superseded"
-    last_version.superseded = True
-    last_version.save(update_fields=["status", "superseded"])
-
     return ContractVersion.objects.create(
         contract=contract,
-        content_snapshot=content,
-        created_by=user,
         version_number=new_version_number,
-        previous_version=last_version,
+        content_snapshot=content,
         status="draft",
+        created_by=user,
     )
 
 

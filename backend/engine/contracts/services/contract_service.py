@@ -48,3 +48,32 @@ class ContractService:
             created_by=user,
             status="draft"
         )
+
+
+
+    def sync_contract_obligation(self, contract_obligation):
+        """
+        Sync a persisted ContractObligation with engine lifecycle logic.
+        """
+
+        from backend.engine.contracts.obligations.primitives import ObligationInstance
+        from backend.engine.contracts.obligations.lifecycle import process_obligation_lifecycle
+
+        instance = ObligationInstance(
+            obligor_id=contract_obligation.obligor_id,
+            obligee_id=contract_obligation.obligee_id,
+            amount_due=contract_obligation.amount_due,
+            due_date=contract_obligation.due_date,
+        )
+
+        instance.amount_paid = contract_obligation.amount_paid
+        instance.state = contract_obligation.state
+
+        new_state = process_obligation_lifecycle(instance)
+
+        contract_obligation.state = new_state
+        contract_obligation.is_defaulted = (new_state == "defaulted")
+
+        contract_obligation.save(update_fields=["state", "is_defaulted"])
+
+        return contract_obligation

@@ -1,79 +1,80 @@
-from backend.engine.contracts.exceptions import (
-    NegotiationLimitReached,
-)
+# backend/engine/contracts/services/activation_service.py
 
-class ContractService:
+from datetime import datetime
 
-    def __init__(self, contract_repo, version_repo):
-        self.contract_repo = contract_repo
-        self.version_repo = version_repo
+from backend.infrastructure.repositories.contract_repository import ContractRepository
+from backend.infrastructure.repositories.contract_version_repository import VersionRepository
+from backend.infrastructure.repositories.contract_obligation_repository import ContractObligationRepository
 
-    def create_initial_version(self, contract_id, content, user=None):
-
-        contract = self.contract_repo.get(contract_id)
-
-        existing = self.version_repo.count(contract)
-        if existing > 0:
-            raise Exception("Initial version already exists.")
-
-        return self.version_repo.create(
-            contract=contract,
-            version_number=1,
-            content_snapshot=content,
-            created_by=user,
-            status="draft"
-        )
-
-    def create_new_version(self, contract_id, content, user=None):
-
-        contract = self.contract_repo.get(contract_id)
-
-        current_count = self.version_repo.count(contract)
-
-        if current_count >= contract.max_versions:
-            raise NegotiationLimitReached("Negotiation limit reached.")
-
-        latest = self.version_repo.get_latest(contract)
-
-        next_number = 1 if not latest else latest.version_number + 1
-
-        if latest:
-            latest.status = "superseded"
-            self.version_repo.save(latest)
-
-        return self.version_repo.create(
-            contract=contract,
-            version_number=next_number,
-            content_snapshot=content,
-            created_by=user,
-            status="draft"
-        )
+from backend.engine.contracts.obligations.scheduler import generate_obligation_schedule
+from backend.engine.contracts.obligations.primitives import ObligationBlueprint
 
 
+class ActivationService:
+    """
+    Responsible for activating a signed contract.
+    Generates obligation instances and persists them.
+    """
 
-    def sync_contract_obligation(self, contract_obligation):
+    def __init__(
+        self,
+        contract_repository: ContractRepository,
+        version_repository: VersionRepository,
+        obligation_repository: ContractObligationRepository,
+    ):
+        self.contract_repository = contract_repository
+        self.version_repository = version_repository
+        self.obligation_repository = obligation_repository
+
+    def activate_contract(self, contract_id: str):
         """
-        Sync a persisted ContractObligation with engine lifecycle logic.
+        Activates a contract AFTER lender confirms funds sent.
         """
 
-        from backend.engine.contracts.obligations.primitives import ObligationInstance
-        from backend.engine.contracts.obligations.lifecycle import process_obligation_lifecycle
+        # 1️⃣ Fetch contract
+        contract = self.contract_repository.get(contract_id)
 
-        instance = ObligationInstance(
-            obligor_id=contract_obligation.obligor_id,
-            obligee_id=contract_obligation.obligee_id,
-            amount_due=contract_obligation.amount_due,
-            due_date=contract_obligation.due_date,
+        if not contract:
+            raise Exception("Contract not found.")
+
+        # 2️⃣ Fetch signed version
+        version = self.version_repository.get_signed_version(contract)
+
+        if not version:
+            raise Exception("No signed version found.")
+
+        # 3️⃣ Extract structured obligation data from snapshot
+        snapshot = version.content_snapshot
+
+        blueprint = ObligationBlueprint(
+            obligor_id=snapshot["obligor_id"],
+            obligee_id=snapshot["obligee_id"],
+            amount=snapshot["amount"],
+            start_date=snapshot["start_date"],
+            installments=snapshot["installments"],
+            interval_days=snapshot["interval_days"],
         )
 
-        instance.amount_paid = contract_obligation.amount_paid
-        instance.state = contract_obligation.state
+        # 4️⃣ Generate obligation instances
+        obligation_instances = generate_obligation_schedule(blueprint)
 
-        new_state = process_obligation_lifecycle(instance)
+        # 5️⃣ Persist obligations
+        for index, instance in enumerate(obligation_instances, start=1):
+            self.obligation_repository.create(
+                contract=contract,
+                version=version,
+                obligor_id=instance.obligor_id,
+                obligee_id=instance.obligee_id,
+                installment_number=index,
+                amount_due=instance.amount_due,
+                due_date=instance.due_date,
+                state="active",
+            )
 
-        contract_obligation.state = new_state
-        contract_obligation.is_defaulted = (new_state == "defaulted")
+        # 6️⃣ Mark contract active
+        contract.is_active = True
+        self.contract_repository.save(contract)
 
-        contract_obligation.save(update_fields=["state", "is_defaulted"])
+        return True
 
-        return contract_obligation
+

@@ -26,6 +26,8 @@ class BaseObligation:
         self.state = "active"
         self.created_at = datetime.utcnow()
 
+        
+       
 
 
 # ------------------------------------------------------------
@@ -49,6 +51,8 @@ class PaymentObligation(BaseObligation):
     ):
         super().__init__(obligor_id, obligee_id, due_date, grace_days)
 
+        self.amount_due = Decimal(str(amount_due))
+        self.amount_paid = Decimal("0.00")
 
     # ------------------------------------------------------------
     # PAYMENT LOGIC

@@ -4,13 +4,13 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from django.test import TestCase
 
-from backend.engine.contracts.obligations.primitives import ObligationInstance
+from backend.engine.contracts.obligations.primitives import PaymentObligation
 from backend.engine.payments.payment_service import PaymentService
 from backend.engine.payments.mock_gateway import MockPaymentGateway
 
 
 def create_obligation(amount="200.00", days_offset=5):
-    return ObligationInstance(
+    return  PaymentObligation(
         obligor_id=1,
         obligee_id=2,
         amount_due=amount,

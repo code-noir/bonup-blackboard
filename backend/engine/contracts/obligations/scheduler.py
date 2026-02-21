@@ -1,7 +1,7 @@
 from datetime import timedelta
 from decimal import Decimal
 from typing import List
-from .primitives import ObligationInstance
+from backend.engine.contracts.obligations.primitives import PaymentObligation
 
 
 def generate_obligation_schedule(
@@ -11,7 +11,7 @@ def generate_obligation_schedule(
     installments,
     start_date,
     interval_days,
-) -> List[ObligationInstance]:
+) -> List[PaymentObligation]:
 
     total_amount = Decimal(str(total_amount))
     installments = int(installments)
@@ -31,7 +31,7 @@ def generate_obligation_schedule(
 
         due_date = start_date + timedelta(days=i * interval_days)
 
-        instance = ObligationInstance(
+        instance = PaymentObligation(
             obligor_id=obligor_id,
             obligee_id=obligee_id,
             amount_due=amount_due,

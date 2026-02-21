@@ -1,33 +1,60 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 
-class ObligationInstance:
+# ------------------------------------------------------------
+# BASE OBLIGATION
+# ------------------------------------------------------------
 
+class BaseObligation:
+    """
+    Core bilateral obligation structure.
+    Contains identity and lifecycle state only.
+    """
+
+    def __init__(
+        self,
+        obligor_id,
+        obligee_id,
+        due_date,
+        grace_days=0,  # NEW
+    ):
+        self.obligor_id = obligor_id
+        self.obligee_id = obligee_id
+        self.due_date = due_date
+        self.grace_days = grace_days  # NEW
+        self.state = "active"
+        self.created_at = datetime.utcnow()
+
+
+
+# ------------------------------------------------------------
+# PAYMENT OBLIGATION
+# ------------------------------------------------------------
+
+class PaymentObligation(BaseObligation):
+    """
+    Monetary obligation.
+    Handles amount tracking and resolution logic.
+    """
+
+    
     def __init__(
         self,
         obligor_id,
         obligee_id,
         amount_due,
         due_date,
+        grace_days=0,  # NEW
     ):
-        self.obligor_id = obligor_id
-        self.obligee_id = obligee_id
-        self.amount_due = Decimal(str(amount_due))
-        self.amount_paid = Decimal("0.00")
-        self.due_date = due_date
-        self.state = "active"
-        self.created_at = datetime.utcnow()
+        super().__init__(obligor_id, obligee_id, due_date, grace_days)
+
 
     # ------------------------------------------------------------
     # PAYMENT LOGIC
     # ------------------------------------------------------------
 
     def apply_payment(self, amount):
-        """
-        Applies a payment toward this obligation.
-        Supports partial and full payments.
-        """
 
         amount = Decimal(str(amount))
 
@@ -39,11 +66,10 @@ class ObligationInstance:
 
         self.amount_paid += amount
 
-        # Prevent overpayment beyond amount_due
+        # Prevent overpayment
         if self.amount_paid > self.amount_due:
             self.amount_paid = self.amount_due
 
-        # Auto-resolve if fully paid
         if self.amount_paid == self.amount_due:
             self.state = "resolved"
 
@@ -56,3 +82,29 @@ class ObligationInstance:
 
     def is_fully_paid(self):
         return self.amount_paid >= self.amount_due
+
+
+# ------------------------------------------------------------
+# SERVICE OBLIGATION
+# ------------------------------------------------------------
+
+class ServiceObligation(BaseObligation):
+    """
+    Non-monetary obligation.
+    Tracks performance completion only.
+    """
+
+    def __init__(
+    self,
+    obligor_id,
+    obligee_id,
+    description,
+    due_date,
+    grace_days=0,  # NEW
+):
+      super().__init__(obligor_id, obligee_id, due_date, grace_days)
+
+    def mark_completed(self):
+        self.state = "resolved"
+        self.completed_at = datetime.utcnow()
+

@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from backend.engine.contracts.obligations.state import evaluate_obligation_state
+
 
 
 class ContractCoordinator:
@@ -24,10 +24,8 @@ class ContractCoordinator:
 
         for obligation in obligations:
 
-            new_state = evaluate_obligation_state(
-                obligation,
-                current_time=now
-            )
+            
+            new_state = obligation.evaluate_status(current_time=now)
 
             if new_state != obligation.state:
                 obligation.state = new_state

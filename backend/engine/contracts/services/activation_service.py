@@ -1,74 +1,91 @@
+
+# backend/engine/contracts/services/activation_service.py
+
 from datetime import datetime
-from decimal import Decimal
 
-from backend.engine.contracts.obligations.scheduler import generate_obligation_schedule
-from backend.engine.contracts.obligations.primitives import ObligationBlueprint
-from backend.contracts.models import ContractObligation
+from backend.infrastructure.repositories.contract_repository import (
+    ContractRepository,
+)
+from backend.infrastructure.repositories.contract_version_repository import (
+    ContractVersionRepository,
+)
+from backend.infrastructure.repositories.contract_obligation_repository import (
+    ContractObligationRepository,
+)
+
+from backend.engine.contracts.obligations.scheduler import (
+    generate_obligation_schedule,
+)
 
 
-class ActivationService:
+
+
+class ContractActivationService:
+    """
+    Handles full contract activation.
+    Bridge between engine logic and persistence layer.
+    """
 
     def __init__(
         self,
-        contract_repo,
-        version_repo,
-        obligation_repo,
+        contract_repo: ContractRepository,
+        version_repo: ContractVersionRepository,
+        obligation_repo: ContractObligationRepository,
     ):
         self.contract_repo = contract_repo
         self.version_repo = version_repo
         self.obligation_repo = obligation_repo
 
-    def activate_contract(self, contract_id):
+    def activate_contract(
+        self,
+        contract_id,
+        obligor_id,
+        obligee_id,
+        amount,
+        installments,
+        interval_days,
+        start_date=None,
+    ):
+        """
+        Activates a signed contract.
+        Generates obligation schedule.
+        Persists obligations.
+        """
 
         contract = self.contract_repo.get(contract_id)
+        version = self.version_repo.get_latest(contract)
 
-        latest_version = self.version_repo.get_latest(contract)
+        if version.status != "signed":
+            raise Exception("Only signed contracts can be activated.")
 
-        if not latest_version or latest_version.status != "signed":
-            raise Exception("Contract must be signed before activation.")
+        if not start_date:
+            start_date = datetime.utcnow()
 
-        # ------------------------------------------------------------------
-        # TEMPORARY: extract obligation data from snapshot
-        # (Later this becomes structured JSON parsing)
-        # ------------------------------------------------------------------
+      
 
-        snapshot_data = latest_version.content_snapshot
-
-        amount = Decimal(snapshot_data.get("amount"))
-        installments = snapshot_data.get("installments")
-        interval_days = snapshot_data.get("interval_days")
-        start_date = snapshot_data.get("start_date")
-
-        blueprint = ObligationBlueprint(
-            obligor_id=snapshot_data.get("obligor_id"),
-            obligee_id=snapshot_data.get("obligee_id"),
-            amount=amount,
+        instances = generate_obligation_schedule(
+            obligor_id=obligor_id,
+            obligee_id=obligee_id,
+            total_amount=amount,
             installments=installments,
-            interval_days=interval_days,
             start_date=start_date,
+            interval_days=interval_days,
         )
 
-        instances = generate_obligation_schedule(blueprint)
 
-        db_objects = []
 
+        # 3️⃣ Persist
         for index, instance in enumerate(instances, start=1):
-
-            db_objects.append(
-                ContractObligation(
-                    contract=contract,
-                    version=latest_version,
-                    obligor_id=instance.obligor_id,
-                    obligee_id=instance.obligee_id,
-                    installment_number=index,
-                    amount_due=instance.amount_due,
-                    amount_paid=Decimal("0.00"),
-                    due_date=instance.due_date,
-                    state="active",
-                )
+            self.obligation_repo.create(
+                contract=contract,
+                version=version,
+                obligor_id=instance.obligor_id,
+                obligee_id=instance.obligee_id,
+                installment_number=index,
+                amount_due=instance.amount_due,
+                due_date=instance.due_date,
+                state=instance.state,
             )
 
-        self.obligation_repo.bulk_create(db_objects)
-
-        return True
+        return instances
 

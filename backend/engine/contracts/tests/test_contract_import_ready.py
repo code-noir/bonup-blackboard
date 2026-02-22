@@ -1,0 +1,35 @@
+
+from django.test import TestCase
+from datetime import datetime, timedelta
+
+from backend.engine.contracts.domain.contract import Contract
+from backend.engine.contracts.obligations.primitives import PaymentObligation
+
+
+class ContractImportReadyTest(TestCase):
+
+    def test_import_mixed_state_contract(self):
+
+        past_due = datetime.utcnow() - timedelta(days=10)
+        future_due = datetime.utcnow() + timedelta(days=10)
+
+        # Resolved obligation
+        o1 = PaymentObligation(1, 2, 100, past_due)
+        o1.amount_paid = 100
+        o1.state = "resolved"
+
+        # Overdue obligation
+        o2 = PaymentObligation(1, 2, 200, past_due)
+
+        # Active obligation
+        o3 = PaymentObligation(1, 2, 300, future_due)
+
+        contract = Contract(
+            contract_id=1,
+            obligations=[o1, o2, o3]
+        )
+
+        contract.refresh()
+
+        self.assertEqual(contract.state, "active")
+

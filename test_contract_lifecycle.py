@@ -1,13 +1,16 @@
-from django.test import TestCase
 from datetime import datetime, timedelta
-
+from django.test import TestCase
 from backend.engine.contracts.services.contract_coordinator import ContractCoordinator
+
 from backend.engine.contracts.obligations.primitives import PaymentObligation
 
 
-
+# ------------------------------------------------------------
+# 1️⃣ Fake Obligation Repo
+# ------------------------------------------------------------
 
 class FakeObligationRepo:
+
     def __init__(self, obligations):
         self._obligations = obligations
 
@@ -18,21 +21,43 @@ class FakeObligationRepo:
         pass
 
 
+# ------------------------------------------------------------
+# 2️⃣ Fake Contract
+# ------------------------------------------------------------
+
 class FakeContract:
-    def __init__(self):
+
+    def __init__(self, contract_id=None):
+        self.contract_id = contract_id
+        self.obligations = []
         self.state = "active"
 
+    def refresh(self, now=None):
+        if all(o.state == "resolved" for o in self.obligations):
+            self.state = "fulfilled"
+        else:
+            self.state = "active"
+
+
+# ------------------------------------------------------------
+# 3️⃣ Fake Contract Repo
+# ------------------------------------------------------------
 
 class FakeContractRepo:
+
     def __init__(self, contract):
-        self.contract = contract
+        self._contract = contract
 
     def get(self, contract_id):
-        return self.contract
+        return self._contract
 
     def save(self, contract):
-        pass
+        self._contract = contract
 
+
+# ------------------------------------------------------------
+# 4️⃣ Coordinator Wiring Test
+# ------------------------------------------------------------
 
 class ContractLifecycleTest(TestCase):
 
@@ -58,15 +83,20 @@ class ContractLifecycleTest(TestCase):
 
         obligations = [o1, o2]
 
-        fake_contract = FakeContract()
+        fake_contract = FakeContract(contract_id=1)
+
+        obligation_repo = FakeObligationRepo(obligations)
+        contract_repo = FakeContractRepo(fake_contract)
 
         coordinator = ContractCoordinator(
-            obligation_repo=FakeObligationRepo(obligations),
-            contract_repo=FakeContractRepo(fake_contract)
+            obligation_repo=obligation_repo,
+            contract_repo=contract_repo
         )
 
         coordinator.refresh_contract_obligations(contract_id=1)
 
         self.assertEqual(fake_contract.state, "fulfilled")
+
+
 
 

@@ -1,29 +1,40 @@
 from datetime import datetime
-
 from backend.engine.contracts.obligations.state import evaluate_obligation_state
 
 
 class Contract:
     """
-    Aggregate root for contract lifecycle.
-    Owns obligations and contract-level state.
+    Domain aggregate root for contract lifecycle.
+    Owns obligations and enforces invariants.
     """
 
-    def __init__(self, contract_id, obligations):
+    def __init__(self, contract_id, obligations=None):
         self.contract_id = contract_id
-        self.obligations = obligations
-        self.state = self._evaluate_state()
+        self.obligations = obligations or []
+        self.state = "active"
 
     # ------------------------------------------------------------
     # PAYMENT ENTRY POINT
     # ------------------------------------------------------------
 
     def apply_payment(self, obligation, amount):
-        """
-        Apply payment through contract boundary.
-        """
+
+        if obligation not in self.obligations:
+            raise ValueError("Obligation does not belong to contract.")
+
+        # Apply monetary change
         obligation.apply_payment(amount)
-        self.refresh()
+
+        # Recalculate obligation lifecycle
+        new_state = evaluate_obligation_state(
+            obligation,
+            current_time=datetime.utcnow()
+        )
+
+        obligation.state = new_state
+
+        # Recalculate overall contract state
+        self._refresh_contract_state()
 
     # ------------------------------------------------------------
     # LIFECYCLE REFRESH
@@ -31,35 +42,42 @@ class Contract:
 
     def refresh(self, now=None):
 
-        if not now:
+        if now is None:
             now = datetime.utcnow()
 
         for obligation in self.obligations:
-            obligation.state = evaluate_obligation_state(
+            new_state = evaluate_obligation_state(
                 obligation,
                 current_time=now
             )
+            obligation.state = new_state
 
-        self.state = self._evaluate_state()
+        self._refresh_contract_state()
 
     # ------------------------------------------------------------
-    # CONTRACT STATE LOGIC
+    # CONTRACT STATE AGGREGATION
     # ------------------------------------------------------------
 
-    def _evaluate_state(self):
+    def _refresh_contract_state(self):
 
         if not self.obligations:
-            return "active"
+            self.state = "active"
+            return
 
         states = [o.state for o in self.obligations]
 
         if "defaulted" in states:
-            return "breached"
+            self.state = "breached"
+            return
 
         if all(state == "resolved" for state in states):
-            return "fulfilled"
+            self.state = "fulfilled"
+            return
 
-        return "active"
+        self.state = "active"
+
+
+
 
 
 

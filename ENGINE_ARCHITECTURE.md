@@ -347,9 +347,4 @@ END DOCUMENT
 
 ⸻
 
-If you want next, I can generate:
-	•	A “Critical Attack Review” version of this document
-	•	A Risk Analysis document
-	•	Or A Formal Technical RFC version
-
-But the above is one clean, copy-paste-ready document.
+I

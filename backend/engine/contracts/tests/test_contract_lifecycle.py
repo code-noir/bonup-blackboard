@@ -16,10 +16,16 @@ class FakeObligationRepo:
     def save(self, obligation):
         pass
 
-
 class FakeContract:
-    def __init__(self):
+    def __init__(self, contract_id=None):
+        self.contract_id = contract_id
+        self.obligations = []
         self.state = "active"
+
+    def refresh(self, now=None):
+        if all(o.state == "resolved" for o in self.obligations):
+            self.state = "fulfilled"
+
 
 
 class FakeContractRepo:

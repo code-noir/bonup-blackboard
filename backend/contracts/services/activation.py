@@ -2,8 +2,8 @@
 from decimal import Decimal
 from django.utils import timezone
 
-from backend.engine.contracts.obligations.scheduler import generate_obligation_schedule
-from backend.engine.contracts.obligations.primitives import ObligationInstance
+from backend.engine.lifecycle_core.scheduler.scheduler import generate_obligation_schedule
+from backend.engine.lifecycle_core.obligations.primitives import ObligationInstance
 
 from backend.contracts.models import ContractObligation
 

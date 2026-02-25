@@ -3,7 +3,7 @@ from django.test import TestCase
 from datetime import datetime, timedelta
 
 from backend.engine.contracts.domain.contract import Contract
-from backend.engine.contracts.obligations.primitives import PaymentObligation
+from backend.engine.lifecycle_core.obligations.primitives import PaymentObligation
 
 
 class ContractImportReadyTest(TestCase):

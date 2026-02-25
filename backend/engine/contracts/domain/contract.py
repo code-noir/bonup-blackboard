@@ -1,5 +1,7 @@
 from datetime import datetime
-from backend.engine.contracts.obligations.state import evaluate_obligation_state
+
+from backend.engine.lifecycle_core.state.evaluator import evaluate_obligation_state
+from backend.engine.lifecycle_core.state.escalation import evaluate_default_escalation
 
 
 class Contract:
@@ -66,14 +68,22 @@ class Contract:
 
         states = [o.state for o in self.obligations]
 
+        # Default escalation has priority
         if "defaulted" in states:
             self.state = "breached"
             return
 
+        # Fully completed
         if all(state == "resolved" for state in states):
-            self.state = "fulfilled"
+            self.state = "resolved"
             return
 
+        # Any overdue but not defaulted
+        if "overdue" in states:
+            self.state = "overdue"
+            return
+
+        # Otherwise still active
         self.state = "active"
 
 

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from django.test import TestCase
 from backend.engine.contracts.services.contract_coordinator import ContractCoordinator
 
-from backend.engine.contracts.obligations.primitives import PaymentObligation
+from backend.engine.lifecycle_core.obligations.primitives import PaymentObligation
 
 
 # ------------------------------------------------------------

@@ -1,22 +1,10 @@
-import uuid
-from .gateway import PaymentGateway, PaymentResult
 
+# backend/engine/payments/mock_gateway.py
 
-class MockPaymentGateway(PaymentGateway):
-    """
-    Fake processor for testing.
-    """
+class MockPaymentGateway:
 
-    def charge(self, amount, currency="USD", metadata=None) -> PaymentResult:
-
-        if amount <= 0:
-            return PaymentResult(
-                success=False,
-                error="Invalid charge amount."
-            )
-
-        # simulate successful transaction
-        return PaymentResult(
-            success=True,
-            transaction_id=str(uuid.uuid4())
-        )
+    def charge(self, amount):
+        return {
+            "success": True,
+            "transaction_id": "mock_tx_123"
+        }

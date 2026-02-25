@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from django.test import TestCase
 
-from backend.engine.contracts.obligations.primitives import PaymentObligation
+from backend.engine.lifecycle_core.obligations.primitives import PaymentObligation
 from backend.engine.contracts.domain.contract import Contract
 from backend.engine.payments.payment_service import PaymentService
 from backend.engine.payments.mock_gateway import MockPaymentGateway

@@ -1,90 +1,83 @@
-from datetime import datetime
+# backend/engine/contracts/domain/contract.py
 
-from backend.engine.lifecycle_core.state.evaluator import evaluate_obligation_state
-from backend.engine.lifecycle_core.state.escalation import evaluate_default_escalation
+from typing import List
 
 
 class Contract:
     """
-    Domain aggregate root for contract lifecycle.
-    Owns obligations and enforces invariants.
+    Contract domain entity.
+
+    Responsible for:
+    - Holding obligations
+    - Aggregating contract state from obligations
     """
 
-    def __init__(self, contract_id, obligations=None):
+    def __init__(self, contract_id: int, obligations: List):
         self.contract_id = contract_id
         self.obligations = obligations or []
         self.state = "active"
 
-    # ------------------------------------------------------------
-    # PAYMENT ENTRY POINT
-    # ------------------------------------------------------------
-
-    def apply_payment(self, obligation, amount):
-
-        if obligation not in self.obligations:
-            raise ValueError("Obligation does not belong to contract.")
-
-        # Apply monetary change
-        obligation.apply_payment(amount)
-
-        # Recalculate obligation lifecycle
-        new_state = evaluate_obligation_state(
-            obligation,
-            current_time=datetime.utcnow()
-        )
-
-        obligation.state = new_state
-
-        # Recalculate overall contract state
+        # Initial aggregation
         self._refresh_contract_state()
 
-    # ------------------------------------------------------------
-    # LIFECYCLE REFRESH
-    # ------------------------------------------------------------
+    # ---------------------------------------------------------------------
+    # PUBLIC API
+    # ---------------------------------------------------------------------
 
-    def refresh(self, now=None):
-
-        if now is None:
-            now = datetime.utcnow()
-
-        for obligation in self.obligations:
-            new_state = evaluate_obligation_state(
-                obligation,
-                current_time=now
-            )
-            obligation.state = new_state
-
+    def add_obligation(self, obligation):
+        self.obligations.append(obligation)
         self._refresh_contract_state()
 
-    # ------------------------------------------------------------
-    # CONTRACT STATE AGGREGATION
-    # ------------------------------------------------------------
+    def refresh_state(self):
+        """
+        Public trigger if external services mutate obligations.
+        """
+        self._refresh_contract_state()
+
+    # ---------------------------------------------------------------------
+    # INTERNAL STATE AGGREGATION
+    # ---------------------------------------------------------------------
 
     def _refresh_contract_state(self):
+        """
+        Aggregates contract state from obligation states.
+
+        Rules:
+        - If no obligations → active
+        - If ANY obligation is defaulted → breached
+        - If ALL obligations are resolved → fulfilled
+        - Otherwise → active
+        """
 
         if not self.obligations:
             self.state = "active"
             return
 
-        states = [o.state for o in self.obligations]
+        states = {o.state for o in self.obligations}
 
-        # Default escalation has priority
+        # Optional safety guard — remove if you don't want strict mode
+        allowed_states = {"pending", "active", "resolved", "defaulted"}
+        unknown = states - allowed_states
+        if unknown:
+            raise ValueError(f"Unknown obligation states detected: {unknown}")
+
+        # Rule 1 — Breach dominates everything
         if "defaulted" in states:
             self.state = "breached"
             return
 
-        # Fully completed
-        if all(state == "resolved" for state in states):
-            self.state = "resolved"
+        # Rule 2 — Fulfilled only if ALL resolved
+        if states == {"resolved"}:
+            self.state = "fulfilled"
             return
 
-        # Any overdue but not defaulted
-        if "overdue" in states:
-            self.state = "overdue"
-            return
-
-        # Otherwise still active
+        # Rule 3 — Otherwise still active
         self.state = "active"
+
+
+
+
+
 
 
 

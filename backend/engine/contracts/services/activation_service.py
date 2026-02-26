@@ -13,7 +13,7 @@ from backend.infrastructure.repositories.contract_obligation_repository import (
     ContractObligationRepository,
 )
 
-from backend.engine.contracts.obligations.scheduler import (
+from backend.engine.lifecycle_core.scheduler.scheduler import (
     generate_obligation_schedule,
 )
 

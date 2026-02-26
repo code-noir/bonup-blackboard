@@ -24,7 +24,10 @@ def home(request):
     return HttpResponseRedirect('/contracts/')
 
 urlpatterns = [
-    path('', home),  # root
+    path('', home),
     path('admin/', admin.site.urls),
     path('contracts/', include('backend.contracts.urls')),
+    path('api/contracts/', include('backend.api.contracts.urls')),
 ]
+
+

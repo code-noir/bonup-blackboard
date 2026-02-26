@@ -9,36 +9,34 @@ class PaymentService:
         self.gateway = gateway
 
     def process_payment(self, contract, obligation, amount):
+        amount = Decimal(str(amount))
 
-        try:
-            amount = Decimal(str(amount))
-
-            if amount <= 0:
-                return {
-                    "success": False,
-                    "error": "Invalid payment amount."
-                }
-
-            # simulate gateway success
-            payment_result = self.gateway.charge(amount)
-
-            if not payment_result["success"]:
-                return payment_result
-
-            # Apply payment through domain
-            contract.apply_payment(obligation, amount)
-
-            return {
-                "success": True,
-                "new_state": obligation.state,
-                "remaining_balance": obligation.remaining_balance()
-            }
-
-        except Exception as e:
+        if amount <= 0:
             return {
                 "success": False,
-                "error": str(e)
+                "error": "Invalid payment amount."
             }
+
+        # Charge gateway
+        payment_result = self.gateway.charge(amount)
+        print("DEBUG gateway result:", payment_result)
+
+        if not payment_result.get("success"):
+            return payment_result
+
+        # Apply payment
+        contract.apply_payment(obligation, amount)
+
+        print("DEBUG amount_paid after apply:", obligation.amount_paid)
+
+        return {
+            "success": True,
+            "new_state": obligation.state,
+            "remaining_balance": obligation.remaining_balance()
+        }
+
+
+
 
 
 

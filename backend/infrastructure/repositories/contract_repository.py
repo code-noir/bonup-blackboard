@@ -11,7 +11,10 @@ class ContractRepository:
         contract.save()
         return contract
 
-    def create(self, **kwargs):
-        return Contract.objects.create(**kwargs)
-
+    def create(self, initiator, counterparty_email, structure_type):
+        return Contract.objects.create(
+        initiator=initiator,
+        counterparty_email=counterparty_email,
+        structure_type=structure_type,
+    )
 

@@ -38,7 +38,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     
-    'backend.engine.contracts',
+    'backend.contracts',
 ]
 
 MIDDLEWARE = [
@@ -125,3 +125,12 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 
 
+# ----------------------------------------
+# Django REST Framework
+# ----------------------------------------
+
+REST_FRAMEWORK = {
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+    ],
+}

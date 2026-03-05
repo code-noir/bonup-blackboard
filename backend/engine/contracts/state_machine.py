@@ -1,3 +1,5 @@
+
+
 ALLOWED_TRANSITIONS = {
     "draft": ["sent", "archived"],
     "sent": ["negotiating", "signed", "rejected", "archived"],
@@ -14,5 +16,7 @@ def validate_transition(current_status, new_status):
         raise ValueError(
             f"Illegal transition from '{current_status}' to '{new_status}'"
         )
+
+
 
 

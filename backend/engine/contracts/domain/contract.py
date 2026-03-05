@@ -1,6 +1,9 @@
 # backend/engine/contracts/domain/contract.py
 
 from typing import List
+from backend.engine.contracts.obligations.lifecycle import (
+    process_obligation_lifecycle,
+)
 
 
 class Contract:
@@ -9,6 +12,7 @@ class Contract:
 
     Responsible for:
     - Holding obligations
+    - Executing obligation lifecycle
     - Aggregating contract state from obligations
     """
 
@@ -28,10 +32,20 @@ class Contract:
         self.obligations.append(obligation)
         self._refresh_contract_state()
 
-    def refresh_state(self):
+    def refresh(self, now):
         """
-        Public trigger if external services mutate obligations.
+        Full lifecycle refresh:
+        - Ticks each obligation
+        - Re-aggregates contract state
         """
+        for obligation in self.obligations:
+            process_obligation_lifecycle(
+            obligation,
+            obligation_repo=self.obligation_repo,
+            current_time=now,
+)
+
+
         self._refresh_contract_state()
 
     # ---------------------------------------------------------------------
@@ -44,7 +58,7 @@ class Contract:
 
         Rules:
         - If no obligations → active
-        - If ANY obligation is defaulted → breached
+        - If ANY obligation is defaulted or breached → breached
         - If ALL obligations are resolved → fulfilled
         - Otherwise → active
         """
@@ -55,25 +69,45 @@ class Contract:
 
         states = {o.state for o in self.obligations}
 
-        # Optional safety guard — remove if you don't want strict mode
-        allowed_states = {"pending", "active", "resolved", "defaulted"}
+        # Expanded allowed states to match lifecycle_core
+        allowed_states = {
+            "pending",
+            "active",
+            "overdue",
+            "defaulted",
+            "resolved",
+            "breached",
+        }
+
         unknown = states - allowed_states
         if unknown:
             raise ValueError(f"Unknown obligation states detected: {unknown}")
 
-        # Rule 1 — Breach dominates everything
-        if "defaulted" in states:
+        # Breach dominates everything
+        if "breached" in states or "defaulted" in states:
             self.state = "breached"
             return
 
-        # Rule 2 — Fulfilled only if ALL resolved
+        # Fulfilled only if ALL resolved
         if states == {"resolved"}:
             self.state = "fulfilled"
             return
 
-        # Rule 3 — Otherwise still active
+        # Otherwise active
         self.state = "active"
 
+
+
+    def apply_payment(self, obligation, amount):
+        """
+        Applies payment to a specific obligation.
+        """
+
+        obligation.apply_payment(amount)
+
+        # If all obligations are resolved, update contract state
+        if all(ob.state == "resolved" for ob in self.obligations):
+            self.state = "fulfilled"
 
 
 

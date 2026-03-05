@@ -1,4 +1,4 @@
-# backend/engine/contracts/obligations/lifecycle.py
+from django.db import transaction
 
 from backend.engine.lifecycle_core.state.evaluator import (
     evaluate_obligation_state,
@@ -9,48 +9,50 @@ from backend.engine.lifecycle_core.state.escalation import (
 )
 
 
-# ==============================================================
-# MASTER LIFECYCLE ENGINE
-# ==============================================================
-
-
-def process_obligation_lifecycle(instance, current_time):
+@transaction.atomic
+def process_obligation_lifecycle(
+    instance,
+    obligation_repo,
+    current_time=None,
+):
     """
-    Full lifecycle state mutation.
-
-    Rules:
-    - current_time MUST be provided.
-    - No state regression allowed.
-    - Escalation only applies to defaulted obligations.
+    Processes lifecycle state transitions and persists changes.
     """
 
-    if current_time is None:
-        raise ValueError("current_time must be provided to lifecycle engine")
+    original_state = instance.state
 
-    # --- PROTECT TERMINAL STATES ---
-    if instance.state in ("resolved", "breached"):
-        return instance.state
+    # 1️⃣ Evaluate base lifecycle state
+    new_state = evaluate_obligation_state(
+        instance,
+        current_time=current_time,
+    )
 
-    # --- STEP 1: BASE STATE ---
-    base_state = evaluate_obligation_state(instance)
+    # 2️⃣ Persist base state change
+    if new_state != original_state:
+        instance.state = new_state
+        obligation_repo.save(instance)
 
-    # Prevent regression from defaulted/breached back to overdue
-    if instance.state == "defaulted" and base_state == "overdue":
-        base_state = "defaulted"
-
-    instance.state = base_state
-
-    # --- STEP 2: ESCALATION ---
+    # 3️⃣ Optional escalation (only for defaulted)
     if instance.state == "defaulted":
         escalated_state = evaluate_default_escalation(
             instance,
             current_time=current_time,
         )
 
-        # Escalation may upgrade to breached
-        instance.state = escalated_state
+        if escalated_state != instance.state:
+            instance.state = escalated_state
+            obligation_repo.save(instance)
 
     return instance.state
+
+
+
+
+
+
+
+
+
 
 
 

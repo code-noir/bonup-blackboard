@@ -1,4 +1,5 @@
 
+
 # backend/engine/contracts/services/activation_service.py
 
 from datetime import datetime
@@ -17,13 +18,17 @@ from backend.engine.lifecycle_core.scheduler.scheduler import (
     generate_obligation_schedule,
 )
 
-
+from backend.engine.contracts.obligations.lifecycle import (
+    process_obligation_lifecycle,
+)
 
 
 class ContractActivationService:
     """
     Handles full contract activation.
     Bridge between engine logic and persistence layer.
+
+    Lifecycle engine determines initial obligation state.
     """
 
     def __init__(
@@ -45,12 +50,17 @@ class ContractActivationService:
         installments,
         interval_days,
         start_date=None,
+        current_time=None,
     ):
         """
         Activates a signed contract.
         Generates obligation schedule.
+        Runs lifecycle engine.
         Persists obligations.
         """
+
+        if current_time is None:
+            current_time = datetime.utcnow()
 
         contract = self.contract_repo.get(contract_id)
         version = self.version_repo.get_latest(contract)
@@ -59,10 +69,9 @@ class ContractActivationService:
             raise Exception("Only signed contracts can be activated.")
 
         if not start_date:
-            start_date = datetime.utcnow()
+            start_date = current_time
 
-      
-
+        # 1️⃣ Generate engine-level obligations
         instances = generate_obligation_schedule(
             obligor_id=obligor_id,
             obligee_id=obligee_id,
@@ -72,20 +81,30 @@ class ContractActivationService:
             interval_days=interval_days,
         )
 
+        persisted = []
 
-
-        # 3️⃣ Persist
+        # 2️⃣ Run lifecycle engine BEFORE persisting
         for index, instance in enumerate(instances, start=1):
-            self.obligation_repo.create(
+
+            new_state = process_obligation_lifecycle(
+                instance,
+                current_time=current_time,
+            )
+
+            # 3️⃣ Persist enforced state
+            obligation = self.obligation_repo.create(
                 contract=contract,
                 version=version,
                 obligor_id=instance.obligor_id,
                 obligee_id=instance.obligee_id,
                 installment_number=index,
-                amount_due=instance.amount_due,
+                amount_due=getattr(instance, "amount_due", None),
                 due_date=instance.due_date,
-                state=instance.state,
+                state=new_state,
             )
 
-        return instances
+            persisted.append(obligation)
+
+        return persisted
+
 

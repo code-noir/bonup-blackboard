@@ -8,11 +8,11 @@ from backend.engine.payments.payment_service import PaymentService
 from backend.engine.payments.mock_gateway import MockPaymentGateway
 
 
-def create_obligation(amount="200.00", days_offset=5):
+def create_obligation(days_offset=0):
     return PaymentObligation(
         obligor_id=1,
         obligee_id=2,
-        amount_due=amount,
+        amount_due=200,
         due_date=datetime.utcnow() + timedelta(days=days_offset),
     )
 

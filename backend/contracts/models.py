@@ -1,6 +1,7 @@
 # backend/contracts/models.py
 
 from django.db import models
+from django.utils import timezone
 from django.conf import settings
 import uuid
 
@@ -31,11 +32,17 @@ class Contract(models.Model):
         editable=False
     )
 
+    
+    from django.conf import settings
+
     initiator = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="initiated_contracts"
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="initiated_contracts",
     )
+
 
     counterparty_email = models.EmailField()
 
@@ -53,6 +60,22 @@ class Contract(models.Model):
 
     def __str__(self):
         return f"Contract {self.id}"
+
+    def refresh_state(self):
+        obligations = list(self.obligations.all())
+
+        if not obligations:
+            return self.state
+
+        if all(ob.state == "resolved" for ob in obligations):
+            self.state = "fulfilled"
+        elif any(ob.state == "overdue" for ob in obligations):
+            self.state = "at_risk"
+        else:
+            self.state = "active"
+
+        return self.state
+
 
 
 
@@ -365,6 +388,20 @@ class ContractObligation(models.Model):
         return f"Obligation {self.installment_number} - {self.state}"
 
 
+
+
+    def is_past_due(self, current_time=None):
+        if current_time is None:
+            current_time = timezone.now()
+
+        if self.due_date is None:
+            return False
+
+        return (
+            self.state == "active"
+            and self.amount_paid < self.amount_due
+            and self.due_date < current_time
+        )
 
 
 

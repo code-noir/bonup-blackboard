@@ -1,8 +1,7 @@
 from rest_framework.routers import DefaultRouter
-from .views import ContractViewSet
+from .views import ToolsViewSet
 
 router = DefaultRouter()
-router.register(r'', ContractViewSet, basename='contracts')
+router.register(r'', ToolsViewSet, basename='tools')
 
 urlpatterns = router.urls
-

@@ -26,7 +26,9 @@ python3 manage.py createsuperuser
 ## COLLECT STATIC (PROD)
 python3 manage.py collectstatic
 
-source venv/bin/activate
+
+
+
 
 python3 manage.py makemigrations contracts
 

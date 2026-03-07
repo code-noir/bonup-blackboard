@@ -1,44 +1,22 @@
-from rest_framework import generics
-from rest_framework.permissions import AllowAny
-
-from backend.contracts.models import Contract
-from .serializers import ContractSerializer
+from rest_framework.viewsets import ViewSet
+from rest_framework.response import Response
 
 
-class ContractListCreateAPIView(generics.ListCreateAPIView):
-    """
-    GET  -> List contracts
-    POST -> Create contract
-    """
+class ContractsViewSet(ViewSet):
 
-    queryset = Contract.objects.all().order_by("-created_at")
-    serializer_class = ContractSerializer
-    permission_classes = [AllowAny]
+    def list(self, request):
+        return Response({"message": "list contracts"})
 
-    def perform_create(self, serializer):
-        print("===== DEBUG START =====")
-        print("request.user:", self.request.user)
-        print("is_authenticated:", self.request.user.is_authenticated)
-        print("user type:", type(self.request.user))
-        print("===== DEBUG END =====")
+    def create(self, request):
+        return Response({"message": "create contracts"})
 
-        serializer.save(
-            initiator=self.request.user if self.request.user.is_authenticated else None
-        )
+    def retrieve(self, request, pk=None):
+        return Response({"message": f"retrieve contracts {pk}"})
 
+    def update(self, request, pk=None):
+        return Response({"message": f"update contracts {pk}"})
 
-class ContractDetailAPIView(generics.RetrieveAPIView):
-    """
-    GET -> Retrieve single contract
-    """
-
-    queryset = Contract.objects.all()
-    serializer_class = ContractSerializer
-    permission_classes = [AllowAny]
-
-
-
-
-
+    def destroy(self, request, pk=None):
+        return Response({"message": f"delete contracts {pk}"})
 
 

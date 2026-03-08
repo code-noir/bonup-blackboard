@@ -1,22 +1,41 @@
+
+
 from rest_framework.viewsets import ViewSet
 from rest_framework.response import Response
+from backend.contracts.models import Contract
+from .serializers import ContractSerializer
 
 
 class ContractsViewSet(ViewSet):
 
     def list(self, request):
-        return Response({"message": "list contracts"})
+        contracts = Contract.objects.all()
+        serializer = ContractSerializer(contracts, many=True)
+        return Response(serializer.data)
 
     def create(self, request):
-        return Response({"message": "create contracts"})
+        serializer = ContractSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors)
 
     def retrieve(self, request, pk=None):
-        return Response({"message": f"retrieve contracts {pk}"})
+        contract = Contract.objects.get(pk=pk)
+        serializer = ContractSerializer(contract)
+        return Response(serializer.data)
 
     def update(self, request, pk=None):
-        return Response({"message": f"update contracts {pk}"})
+        contract = Contract.objects.get(pk=pk)
+        serializer = ContractSerializer(contract, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors)
 
     def destroy(self, request, pk=None):
-        return Response({"message": f"delete contracts {pk}"})
+        contract = Contract.objects.get(pk=pk)
+        contract.delete()
+        return Response({"message": "contract deleted"})
 
 

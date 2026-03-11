@@ -9,15 +9,12 @@ import uuid
 # ============================================================
 # CONTRACT CONTAINER
 # ============================================================
+
 class Contract(models.Model):
     """
     Contract container.
     Holds identity, relationship, and negotiation limits.
     """
-
-    # ============================================================
-    # STRUCTURE TYPE (Execution Classification)
-    # ============================================================
 
     STRUCTURE_CHOICES = [
         ("ONE_TIME", "One-Time Service"),
@@ -32,9 +29,6 @@ class Contract(models.Model):
         editable=False
     )
 
-    
-    from django.conf import settings
-
     initiator = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -42,7 +36,6 @@ class Contract(models.Model):
         blank=True,
         related_name="initiated_contracts",
     )
-
 
     counterparty_email = models.EmailField()
 
@@ -58,7 +51,12 @@ class Contract(models.Model):
 
     is_active = models.BooleanField(default=True)
 
-    def __str__(self):
+    state = models.CharField(
+        max_length=20,
+        default="active"
+    )
+
+    def str(self):
         return f"Contract {self.id}"
 
     def refresh_state(self):
@@ -75,8 +73,6 @@ class Contract(models.Model):
             self.state = "active"
 
         return self.state
-
-
 
 
 # ============================================================
@@ -143,40 +139,39 @@ class ContractVersion(models.Model):
         unique_together = ("contract", "version_number")
         ordering = ["-version_number"]
 
-    def __str__(self):
+    def str(self):
         return f"{self.contract.id} - v{self.version_number} - {self.status}"
-    def save(self, *args, **kwargs):
-        """
-        Enforce immutability:
-        - Allow creation (first save)
-        - Allow limited field updates (status, superseded)
-        - Block everything else
-        """
 
-        # 1️⃣ Allow initial creation
+    def save(self, *args, **kwargs):
+
         if self._state.adding:
             return super().save(*args, **kwargs)
 
-        # 2️⃣ Allow limited updates via update_fields
         allowed_fields = {"status", "superseded"}
         update_fields = set(kwargs.get("update_fields", []))
 
         if update_fields and update_fields.issubset(allowed_fields):
             return super().save(*args, **kwargs)
 
-        # 3️⃣ Block everything else
         raise Exception("ContractVersion is immutable and cannot be modified.")
 
+
 # ============================================================
-# OBLIGATION (CORE BEHAVIORAL PRIMITIVE)
+# OBLIGATION TEMPLATE (DEFINITION)
 # ============================================================
 
 class Obligation(models.Model):
     """
-    Atomic behavioral unit of a contract.
+    Defines a contract obligation template.
 
-    Represents a duty from one party to another.
+    The engine expands this into actual lifecycle instances
+    stored in ContractObligation.
     """
+
+    OBLIGATION_TYPE_CHOICES = [
+        ("payment", "Payment Obligation"),
+        ("service", "Service Obligation"),
+    ]
 
     STATE_CHOICES = [
         ("pending", "Pending"),
@@ -196,6 +191,12 @@ class Obligation(models.Model):
         Contract,
         on_delete=models.CASCADE,
         related_name="obligations"
+    )
+
+    obligation_type = models.CharField(
+        max_length=20,
+        choices=OBLIGATION_TYPE_CHOICES,
+        default="payment"
     )
 
     from_party = models.ForeignKey(
@@ -224,6 +225,11 @@ class Obligation(models.Model):
         default="USD"
     )
 
+    start_date = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
     due_date = models.DateTimeField(
         null=True,
         blank=True
@@ -249,10 +255,8 @@ class Obligation(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
-    def __str__(self):
-        return f"{self.contract.id} - {self.description} - {self.state}"
-
-
+    def str(self):
+        return f"{self.contract.id} - {self.obligation_type} - {self.description}"
 
 
 # ============================================================
@@ -307,31 +311,29 @@ class RequestChange(models.Model):
 
     reviewed_at = models.DateTimeField(null=True, blank=True)
 
-    def __str__(self):
+    def str(self):
         return f"RequestChange {self.id} - {self.status}"
 
+
 # ============================================================
-# CONTRACT OBLIGATION (PERSISTED INSTANCE)
+# CONTRACT OBLIGATION (ENGINE GENERATED INSTANCE)
 # ============================================================
 
 class ContractObligation(models.Model):
     """
     Database representation of a generated obligation instance.
-    Pure persistence layer.
+
     Engine logic lives in backend.engine.obligations.
     """
 
-    
     STATE_CHOICES = [
-        ("active", "active"),
+        ("active", "Active"),
         ("due", "Due"),
         ("grace", "Grace"),
         ("overdue", "Overdue"),
         ("defaulted", "Defaulted"),
         ("resolved", "Resolved"),
     ]
-
-    
 
     id = models.UUIDField(
         primary_key=True,
@@ -344,6 +346,11 @@ class ContractObligation(models.Model):
         on_delete=models.CASCADE,
         related_name="contract_obligations_links"
     )
+
+   
+
+
+
 
     version = models.ForeignKey(
         ContractVersion,
@@ -366,7 +373,12 @@ class ContractObligation(models.Model):
     installment_number = models.PositiveIntegerField()
 
     amount_due = models.DecimalField(max_digits=12, decimal_places=2)
-    amount_paid = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    amount_paid = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0
+    )
 
     due_date = models.DateTimeField()
 
@@ -379,18 +391,17 @@ class ContractObligation(models.Model):
     is_defaulted = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["due_date"]
 
-    def __str__(self):
+    def str(self):
         return f"Obligation {self.installment_number} - {self.state}"
 
-
-
-
     def is_past_due(self, current_time=None):
+
         if current_time is None:
             current_time = timezone.now()
 
@@ -403,7 +414,7 @@ class ContractObligation(models.Model):
             and self.due_date < current_time
         )
 
-
+       
 
 
 

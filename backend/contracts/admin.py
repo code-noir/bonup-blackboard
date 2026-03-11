@@ -1,3 +1,7 @@
-from django.contrib import admin
 
-# Register your models here.
+from django.contrib import admin
+from .models import Contract, Obligation
+
+admin.site.register(Contract)
+admin.site.register(Obligation)
+

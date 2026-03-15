@@ -1,4 +1,4 @@
-
+# backend/infrastructure/repositories/contract_repository.py
 from backend.contracts.models import Contract
 
 

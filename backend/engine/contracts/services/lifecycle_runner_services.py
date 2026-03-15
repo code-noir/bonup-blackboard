@@ -9,9 +9,6 @@ from backend.engine.contracts.obligations.lifecycle import (
     process_obligation_lifecycle,
 )
 
-from backend.engine.contracts.obligations.lifecycle import (
-    process_obligation_lifecycle,
-)
 
 
 @dataclass

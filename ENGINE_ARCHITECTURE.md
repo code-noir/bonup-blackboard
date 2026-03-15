@@ -347,4 +347,751 @@ END DOCUMENT
 
 ⸻
 
-I
+
+
+
+
+
+flowchart TD
+
+%% =========================================================
+%% DJANGO APPLICATION LAYER
+%% =========================================================
+
+subgraph DJANGO_LAYER["Django Application Layer"]
+
+API["API Endpoints"]
+ADMIN["Django Admin"]
+MODELS["Django Models"]
+
+API --> SERVICES
+ADMIN --> SERVICES
+MODELS --> REPOSITORIES
+
+end
+
+
+%% =========================================================
+%% REPOSITORY LAYER
+%% =========================================================
+
+subgraph REPOSITORIES["Infrastructure Repositories"]
+
+CONTRACT_REPO["ContractRepository"]
+VERSION_REPO["ContractVersionRepository"]
+OBLIGATION_REPO["ContractObligationRepository"]
+
+end
+
+
+%% =========================================================
+%% CONTRACT ENGINE
+%% =========================================================
+
+subgraph CONTRACT_ENGINE["Contract Engine"]
+
+COORDINATOR["ContractCoordinator"]
+ACTIVATION["ContractActivationService"]
+VERSION_SERVICE["ContractVersionService"]
+RUNNER["LifecycleRunnerService"]
+PROJECTION["ContractProjectionService"]
+RECONSTRUCTION["ContractReconstructionService"]
+
+end
+
+
+%% =========================================================
+%% DOMAIN LAYER
+%% =========================================================
+
+subgraph DOMAIN["Domain Objects"]
+
+CONTRACT_DOMAIN["Contract Domain Object"]
+
+end
+
+
+%% =========================================================
+%% LIFECYCLE ENGINE
+%% =========================================================
+
+subgraph LIFECYCLE_ENGINE["Lifecycle Core"]
+
+MANAGER["LifecycleManager"]
+
+subgraph STATE_ENGINE["State Engine"]
+
+EVALUATOR["State Evaluator"]
+ESCALATION["Escalation Rules"]
+STATE_CONSTANTS["State Constants"]
+
+end
+
+subgraph EVENTS["Lifecycle Events"]
+
+EVENT_RECORDER["EventRecorder"]
+LIFECYCLE_EVENT["LifecycleEvent"]
+
+end
+
+subgraph INSTANCES["Lifecycle Instances"]
+
+OBLIGATION_INSTANCE["ObligationInstance"]
+
+end
+
+subgraph SCHEDULER["Obligation Scheduler"]
+
+OBLIGATION_SCHEDULER["ObligationScheduler"]
+
+end
+
+subgraph PRIMITIVES["Obligation Primitives"]
+
+PAYMENT_OBLIGATION["PaymentObligation"]
+SERVICE_OBLIGATION["ServiceObligation"]
+
+end
+
+end
+
+
+%% =========================================================
+%% PAYMENT ENGINE
+%% =========================================================
+
+subgraph PAYMENT_ENGINE["Payment Engine"]
+
+PAYMENT_SERVICE["PaymentService"]
+PAYMENT_GATEWAY["MockPaymentGateway"]
+
+end
+
+
+%% =========================================================
+%% CONNECTIONS
+%% =========================================================
+
+SERVICES --> COORDINATOR
+SERVICES --> VERSION_SERVICE
+SERVICES --> ACTIVATION
+SERVICES --> RUNNER
+SERVICES --> PROJECTION
+SERVICES --> RECONSTRUCTION
+
+COORDINATOR --> CONTRACT_DOMAIN
+
+ACTIVATION --> OBLIGATION_SCHEDULER
+OBLIGATION_SCHEDULER --> PAYMENT_OBLIGATION
+OBLIGATION_SCHEDULER --> SERVICE_OBLIGATION
+
+RUNNER --> MANAGER
+
+MANAGER --> EVALUATOR
+MANAGER --> ESCALATION
+
+EVALUATOR --> STATE_CONSTANTS
+
+PAYMENT_SERVICE --> PAYMENT_GATEWAY
+PAYMENT_SERVICE --> PAYMENT_OBLIGATION
+
+EVENT_RECORDER --> LIFECYCLE_EVENT
+EVENT_RECORDER --> OBLIGATION_INSTANCE
+
+REPOSITORIES --> CONTRACT_DOMAIN
+
+OBLIGATION_REPO --> PAYMENT_OBLIGATION
+OBLIGATION_REPO --> SERVICE_OBLIGATION
+
+CONTRACT_REPO --> CONTRACT_DOMAIN
+VERSION_REPO --> CONTRACT_DOMAIN
+
+
+
+
+
+
+BONUP LIFECYCLE ENGINE + CONTRACT ENGINE
+ARCHITECTURE DOCUMENT
+--------------------------------------------------
+
+SYSTEM OVERVIEW
+--------------------------------------------------
+
+This system is composed of two tightly connected engines:
+
+1) Lifecycle Engine
+2) Contract Vertical Engine
+
+The Lifecycle Engine is a generic obligation lifecycle processor.
+
+The Contract Engine is a vertical implementation that uses the lifecycle engine to manage real-world contracts composed of obligations such as services and payments.
+
+The architecture separates domain logic from persistence so the lifecycle engine can operate independently of Django models.
+
+
+HIGH LEVEL SYSTEM PURPOSE
+--------------------------------------------------
+
+The system models real-world agreements as executable lifecycle objects.
+
+A contract produces obligations.
+Obligations move through lifecycle states.
+Lifecycle automation evaluates obligations over time.
+
+The system supports:
+
+- Payment obligations
+- Service obligations
+- Recurring schedules
+- Lifecycle automation
+- Default escalation
+- Contract state projection
+- Payment processing
+- Contract reconstruction (importing existing real-world contracts)
+
+The engine is designed so the lifecycle logic can operate independently of the database.
+
+
+ARCHITECTURAL LAYERS
+--------------------------------------------------
+
+The system is structured into several layers.
+
+backend
+│
+├ engine
+│   ├ lifecycle_core
+│   ├ contracts
+│   └ payments
+│
+├ infrastructure
+│   └ repositories
+│
+└ contracts (Django models)
+
+
+The separation is intentional:
+
+Lifecycle Engine → pure domain logic
+Contract Engine → business logic
+Infrastructure → database persistence
+
+
+LIFECYCLE ENGINE (CORE ENGINE)
+--------------------------------------------------
+
+Location:
+
+backend/engine/lifecycle_core/
+
+This engine is responsible for evaluating obligations over time.
+
+It contains no business logic about contracts.
+It only processes obligations.
+
+The lifecycle engine consists of:
+
+primitives
+state evaluation
+escalation rules
+event recording
+scheduling
+
+
+LIFECYCLE ENGINE STRUCTURE
+--------------------------------------------------
+
+backend/engine/lifecycle_core
+
+obligations/
+    primitives.py
+
+scheduler/
+    obligation_scheduler.py
+
+state/
+    evaluator.py
+    escalation.py
+    constants.py
+
+events/
+    event_recorder.py
+
+lifecycle_manager.py
+
+
+PRIMITIVES (CORE DOMAIN OBJECTS)
+--------------------------------------------------
+
+File:
+lifecycle_core/obligations/primitives.py
+
+Defines the two fundamental obligation types.
+
+PaymentObligation
+
+Attributes:
+- obligor_id
+- obligee_id
+- amount_due
+- amount_paid
+- due_date
+- state
+
+Key methods:
+apply_payment()
+remaining_balance()
+is_past_due()
+
+Payment obligations transition to RESOLVED when fully paid.
+
+
+ServiceObligation
+
+Attributes:
+- obligor_id
+- obligee_id
+- description
+- due_date
+- state
+- completed_at
+
+Key methods:
+mark_completed()
+is_past_due()
+
+Service obligations transition to RESOLVED when the service is completed.
+
+
+OBLIGATION SCHEDULER
+--------------------------------------------------
+
+File:
+lifecycle_core/scheduler/obligation_scheduler.py
+
+This module generates obligations from contract parameters.
+
+Example:
+
+generate_parallel_schedule()
+
+Creates paired obligations:
+
+Service obligation
+Payment obligation
+
+Example output:
+
+Cycle 1
+    ServiceObligation
+    PaymentObligation
+
+Cycle 2
+    ServiceObligation
+    PaymentObligation
+
+Cycle 3
+    ServiceObligation
+    PaymentObligation
+
+This models real service agreements where work is performed and payment follows.
+
+
+STATE EVALUATION
+--------------------------------------------------
+
+File:
+lifecycle_core/state/evaluator.py
+
+This module determines the lifecycle state of obligations.
+
+Possible states:
+
+ACTIVE
+OVERDUE
+RESOLVED
+
+Rules:
+
+If fully paid → RESOLVED
+If past due → OVERDUE
+Otherwise → ACTIVE
+
+
+DEFAULT ESCALATION
+--------------------------------------------------
+
+File:
+lifecycle_core/state/escalation.py
+
+Escalates long-running default conditions.
+
+Example rule:
+
+If an obligation remains defaulted longer than a threshold
+→ escalate to BREACHED.
+
+
+EVENT RECORDING
+--------------------------------------------------
+
+File:
+lifecycle_core/events/event_recorder.py
+
+Records lifecycle events.
+
+Examples:
+
+service_completed
+service_issue
+payment_received
+note_added
+
+Events create an audit trail of obligation activity.
+
+
+LIFECYCLE PROCESSOR
+--------------------------------------------------
+
+File:
+engine/contracts/obligations/lifecycle.py
+
+This function processes lifecycle state transitions.
+
+process_obligation_lifecycle()
+
+Flow:
+
+1) Evaluate lifecycle state
+2) Persist state changes
+3) Apply escalation rules
+
+Pseudo flow:
+
+evaluate_obligation_state()
+    ↓
+update state
+    ↓
+evaluate_default_escalation()
+
+
+LIFECYCLE RUNNER
+--------------------------------------------------
+
+File:
+engine/contracts/services/lifecycle_runner_services.py
+
+This service runs lifecycle automation across obligations.
+
+Example:
+
+LifecycleRunnerService.run()
+
+Process:
+
+Fetch obligations
+Loop through each
+Call process_obligation_lifecycle()
+
+This is typically triggered by:
+
+scheduled jobs
+background workers
+Celery tasks
+
+
+CONTRACT ENGINE
+--------------------------------------------------
+
+Location:
+
+backend/engine/contracts/
+
+The contract engine builds on the lifecycle engine.
+
+Contracts contain obligations.
+Contracts derive their state from obligation states.
+
+
+CONTRACT DOMAIN MODEL
+--------------------------------------------------
+
+Domain contract object:
+
+engine/contracts/domain/contract.py
+
+Contracts contain:
+
+contract_id
+obligations
+state
+
+Contracts refresh their state based on obligations.
+
+Rules:
+
+If all obligations resolved → contract fulfilled
+If some overdue → contract at risk
+Otherwise → contract active
+
+
+CONTRACT SERVICES
+--------------------------------------------------
+
+The contract engine contains several services.
+
+contract_coordinator
+
+Coordinates contract lifecycle updates.
+
+contract_version_service
+
+Manages contract revisions.
+
+activation_service
+
+Creates obligations when a contract becomes active.
+
+lifecycle_runner_service
+
+Runs lifecycle automation.
+
+contract_projection_service
+
+Builds a projection of contract state for UI or APIs.
+
+
+PAYMENT ENGINE
+--------------------------------------------------
+
+Location:
+
+backend/engine/payments/
+
+This engine processes payments against obligations.
+
+PaymentService
+
+Handles payment processing.
+
+MockPaymentGateway
+
+Used for testing.
+
+
+PAYMENT ALLOCATION
+--------------------------------------------------
+
+File:
+
+engine/contracts/obligations/payments.py
+
+apply_payment_to_obligations()
+
+Algorithm:
+
+Sort obligations by due date.
+Apply payment to oldest obligation first.
+
+Example:
+
+Obligation A: $200
+Obligation B: $150
+Obligation C: $300
+
+Payment: $500
+
+Allocation:
+
+A → $200
+B → $150
+C → $150
+
+
+INFRASTRUCTURE LAYER
+--------------------------------------------------
+
+Location:
+
+backend/infrastructure/repositories/
+
+These classes persist engine objects to Django models.
+
+Repositories:
+
+ContractRepository
+ContractVersionRepository
+ContractObligationRepository
+
+Responsibilities:
+
+Create records
+Fetch records
+Update lifecycle state
+
+
+DJANGO MODEL LAYER
+--------------------------------------------------
+
+Location:
+
+backend/contracts/models.py
+
+Defines database models.
+
+Models include:
+
+Contract
+ContractVersion
+Obligation
+RequestChange
+ContractObligation
+
+ContractObligation represents the persisted obligation instance.
+
+
+TEST SYSTEM
+--------------------------------------------------
+
+Multiple tests validate the engine.
+
+Tests cover:
+
+Contract lifecycle
+Payment processing
+Contract reconstruction
+Full integration cycle
+
+
+EXAMPLE TESTS
+--------------------------------------------------
+
+test_contract_lifecycle.py
+
+Ensures a contract becomes fulfilled when all obligations resolve.
+
+test_full_contract_cycle.py
+
+Tests:
+
+Contract creation
+Version signing
+Contract activation
+Lifecycle automation
+Projection
+
+test_payment_service.py
+
+Tests:
+
+Partial payments
+Full payments
+Overpayments
+Invalid payments
+
+
+CURRENT SYSTEM CAPABILITIES
+--------------------------------------------------
+
+The system currently supports:
+
+Recurring service/payment schedules
+Lifecycle automation
+Payment processing
+Contract activation
+Contract projection
+Contract reconstruction
+Lifecycle escalation
+Integration tests
+
+
+WHAT IS COMPLETE
+--------------------------------------------------
+
+Lifecycle primitives
+Lifecycle state engine
+Payment engine
+Contract activation
+Contract projection
+Repository layer
+Django models
+Lifecycle runner
+Integration tests
+
+
+WHAT IS PARTIALLY COMPLETE
+--------------------------------------------------
+
+Service obligation lifecycle coverage
+Event driven processing
+State standardization
+Lifecycle visualization
+
+
+WHAT IS NOT COMPLETE YET
+--------------------------------------------------
+
+Service obligation event handling
+Unified lifecycle state machine
+Advanced breach logic
+Event-driven architecture
+Contract negotiation workflows
+Dispute resolution flows
+
+
+DESIGN PHILOSOPHY
+--------------------------------------------------
+
+The architecture follows several principles:
+
+Separation of domain logic and persistence
+Composable lifecycle primitives
+Explicit lifecycle state transitions
+Service-oriented contract processing
+
+The lifecycle engine is intentionally generic so it can support:
+
+contracts
+subscriptions
+service agreements
+payment plans
+
+
+CURRENT SYSTEM STATUS
+--------------------------------------------------
+
+The engine is operational.
+
+Contracts can be created, activated, and processed.
+
+Lifecycle automation works.
+
+Payment processing works.
+
+Integration tests validate the core system.
+
+
+FUTURE DIRECTION
+--------------------------------------------------
+
+Next development stages include:
+
+Service obligation lifecycle parity
+Event-driven lifecycle engine
+Contract negotiation workflows
+Dispute resolution flows
+Analytics and reporting
+
+Long term this architecture supports building a full contract execution platform.
+
+
+END OF DOCUMENT
+--------------------------------------------------
+
+
+
+
+
+
+

@@ -1,3 +1,4 @@
+## backend/engine/contracts/lifecycle.py
 from .versioning import calculate_next_version
 from .exceptions import (
     NegotiationLimitReached,
@@ -11,12 +12,6 @@ from .exceptions import InvalidStateTransition
 def perform_transition(current_status, new_status):
     validate_transition(current_status, new_status)
     return new_status
-
-
-
-
-
-
 
 
 

@@ -1,4 +1,4 @@
-
+# backend/engine/contracts/state_machine.py
 
 ALLOWED_TRANSITIONS = {
     "draft": ["sent", "archived"],

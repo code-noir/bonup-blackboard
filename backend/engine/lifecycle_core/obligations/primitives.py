@@ -1,3 +1,4 @@
+# backend/engine/lifecycle_core/obligations/primitives.py
 from datetime import datetime
 from decimal import Decimal
 

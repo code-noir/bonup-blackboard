@@ -1,3 +1,5 @@
+# backend/infrastructure/repositories/contract_version_repository.py
+
 from backend.contracts.models import ContractVersion
 
 

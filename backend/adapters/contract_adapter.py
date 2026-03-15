@@ -1,4 +1,4 @@
-# backend/adapters/contract_adapter.py
+# ]\backend/adapters/contract_adapter.py
 
 from backend.contracts.models import Contract, ContractObligation
 from backend.adapters.obligation_adapter import ObligationAdapter

@@ -1,3 +1,4 @@
+# backend/engine/contracts/services.py
 from backend.contracts.models import ContractVersion
 from backend.engine.contracts.lifecycle import prepare_version_creation
 from backend.engine.contracts.state_machine import validate_transition

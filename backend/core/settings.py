@@ -1,3 +1,6 @@
+
+#backend/core/settings.py
+
 """
 Django settings for core project.
 
@@ -30,6 +33,7 @@ ALLOWED_HOSTS = ['104.236.204.51', 'localhost', '127.0.0.1']
 
 # Application definition
 
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -37,10 +41,12 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
+
+    'backend.users',
     'backend.contracts',
     'django_extensions',
 ]
+
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

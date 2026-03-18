@@ -414,7 +414,74 @@ class ContractObligation(models.Model):
             and self.due_date < current_time
         )
 
-       
+class ContractServiceObligation(models.Model):
+
+        STATE_CHOICES = [
+            ("active", "Active"),
+            ("due", "Due"),
+            ("overdue", "Overdue"),
+            ("resolved", "Resolved"),
+        ]
+
+        id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+        contract = models.ForeignKey(
+            Contract,
+            on_delete=models.CASCADE,
+            related_name="service_obligations"
+        )
+
+        version = models.ForeignKey(
+            ContractVersion,
+            on_delete=models.CASCADE,
+            related_name="service_obligations"
+        )
+
+        obligor = models.ForeignKey(
+            settings.AUTH_USER_MODEL,
+            on_delete=models.CASCADE,
+            related_name="service_owed"
+        )
+
+        obligee = models.ForeignKey(
+            settings.AUTH_USER_MODEL,
+            on_delete=models.CASCADE,
+            related_name="service_receivable"
+        )
+
+        description = models.TextField()
+
+        due_date = models.DateTimeField()
+
+        state = models.CharField(
+            max_length=20,
+            choices=STATE_CHOICES,
+            default="active"
+        )
+
+        completed_at = models.DateTimeField(null=True, blank=True)
+
+        created_at = models.DateTimeField(auto_now_add=True)
+
+        updated_at = models.DateTimeField(auto_now=True)
+
+        def mark_completed(self):
+            self.state = "resolved"
+            self.completed_at = timezone.now()
+            self.save(update_fields=["state", "completed_at", "updated_at"])
+   
+
+
+
+
+
+
+
+
+
+
+
+   
 
 
 

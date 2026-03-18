@@ -1,3 +1,5 @@
+#backend/api/contracts/viewsets/contract_viewset.py
+
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -11,13 +13,7 @@ class ContractViewSet(viewsets.ModelViewSet):
     queryset = Contract.objects.all().order_by("-created_at")
     serializer_class = ContractSerializer
 
-    @action(detail=True, methods=["get"])
-    def obligations(self, request, pk=None):
-        return Response({"message": "list obligations"})
-
-    @action(detail=True, methods=["post"])
-    def add_obligation(self, request, pk=None):
-        return Response({"message": "create obligation"})
+   
 
     @action(detail=True, methods=["post"])
     def payment(self, request, pk=None):

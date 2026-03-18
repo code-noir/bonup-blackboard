@@ -1,14 +1,16 @@
 # backend/infrastructure/repositories/contract_obligation_repository.py
-
 from datetime import datetime
 from typing import Optional
 
-from backend.contracts.models import ContractObligation
+from backend.contracts.models import ContractObligation, ContractServiceObligation
 
 
 class ContractObligationRepository:
     """
-    Persistence layer for ContractObligation.
+    Persistence layer for contract obligation records.
+    Handles both:
+    - ContractObligation (payment)
+    - ContractServiceObligation (service)
     """
 
     # ------------------------------------------------------------
@@ -25,16 +27,26 @@ class ContractObligationRepository:
     # READ
     # ------------------------------------------------------------
 
-    def filter_by_contract(self, contract):
-        return ContractObligation.objects.filter(contract=contract)
+    def filter_by_contract(self, contract_id):
+        payment_obligations = list(
+            ContractObligation.objects.filter(contract_id=contract_id)
+        )
+
+        service_obligations = list(
+            ContractServiceObligation.objects.filter(contract_id=contract_id)
+        )
+
+        combined = payment_obligations + service_obligations
+        combined.sort(key=lambda o: o.due_date)
+
+        return combined
 
     def list_candidates(self, contract_id: Optional[str] = None, limit: Optional[int] = None):
         """
-        Returns obligations eligible for lifecycle evaluation.
+        Returns payment obligations eligible for lifecycle evaluation.
 
-        By default:
-        - Only active contracts
-        - Excludes terminal states (resolved, breached)
+        For now, this remains focused on ContractObligation.
+        Service obligation lifecycle evaluation can be added later.
         """
 
         queryset = ContractObligation.objects.filter(
@@ -57,12 +69,11 @@ class ContractObligationRepository:
 
     def update_state(self, obligation, new_state: str, current_time: datetime):
         """
-        Persist lifecycle state change.
+        Persist lifecycle state change for payment obligations.
         """
 
         obligation.state = new_state
 
-        # Optional: mark defaulted flag
         if new_state in ["defaulted", "breached"]:
             obligation.is_defaulted = True
         else:
@@ -72,5 +83,46 @@ class ContractObligationRepository:
         obligation.save(update_fields=["state", "is_defaulted", "updated_at"])
 
         return obligation
+
+    def create_from_engine_obligation(self, contract_id, version, obligation, obligation_type):
+        """
+        Persist engine obligation into contract obligation tables.
+        """
+
+        from backend.contracts.models import Contract
+
+        contract = Contract.objects.get(id=contract_id)
+
+        if obligation_type == "payment":
+            return ContractObligation.objects.create(
+                contract=contract,
+                version=version,
+                obligor_id=obligation.obligor_id,
+                obligee_id=obligation.obligee_id,
+                installment_number=1,
+                amount_due=getattr(obligation, "amount_due", 0),
+                due_date=obligation.due_date,
+                state="active",
+            )
+
+        if obligation_type == "service":
+            return ContractServiceObligation.objects.create(
+                contract=contract,
+                version=version,
+                obligor_id=obligation.obligor_id,
+                obligee_id=obligation.obligee_id,
+                description=getattr(obligation, "description", ""),
+                due_date=obligation.due_date,
+                state="active",
+            )
+
+        raise Exception("Invalid obligation type")
+
+
+
+
+
+
+
 
 

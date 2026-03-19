@@ -473,6 +473,99 @@ class ContractServiceObligation(models.Model):
 
 
 
+class ObligationExecutionSession(models.Model):
+    """
+    Real execution session under a contract obligation.
+
+    One obligation may have multiple execution sessions.
+    """
+
+    STATUS_CHOICES = [
+        ("active", "Active"),
+        ("closed", "Closed"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    payment_obligation = models.ForeignKey(
+        ContractObligation,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="execution_sessions",
+    )
+
+    service_obligation = models.ForeignKey(
+        ContractServiceObligation,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="execution_sessions",
+    )
+
+    started_at = models.DateTimeField()
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="active",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"ExecutionSession {self.id} ({self.status})"
+
+
+class ObligationExecutionEvent(models.Model):
+    """
+    Structured execution event captured during an execution session.
+
+    These events become the foundation for proof of work / PBVD.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    session = models.ForeignKey(
+        ObligationExecutionSession,
+        on_delete=models.CASCADE,
+        related_name="events",
+    )
+
+    event_type = models.CharField(max_length=100)
+
+    task = models.CharField(max_length=255, null=True, blank=True)
+    observation = models.CharField(max_length=255, null=True, blank=True)
+
+    summary = models.TextField()
+
+    estimated_duration_minutes = models.PositiveIntegerField(null=True, blank=True)
+
+    estimated_cost_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
+
+    estimated_cost_currency = models.CharField(
+        max_length=10,
+        null=True,
+        blank=True,
+    )
+
+    planned_execution_time = models.DateTimeField(null=True, blank=True)
+
+    metadata = models.JSONField(default=dict, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.event_type} - {self.created_at}"
 
 
 

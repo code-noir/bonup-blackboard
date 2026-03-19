@@ -1,10 +1,12 @@
 #backend/api/contracts/services/proof_of_work_service.py
-
-
 from backend.contracts.models import (
     ContractObligation,
     ContractServiceObligation,
 )
+from backend.engine.lifecycle_core.execution.adjustments import (
+    ExecutionAdjustmentBuilder,
+)
+from backend.engine.lifecycle_core.obligations.primitives import ServiceObligation
 
 
 class ProofOfWorkService:
@@ -18,7 +20,20 @@ class ProofOfWorkService:
     - export later
     """
 
-    def build_for_obligation(self, *, obligation_type, obligation_id):
+    def __init__(self):
+        self.adjustment_builder = ExecutionAdjustmentBuilder()
+
+    def build_for_obligation(
+        self,
+        *,
+        obligation_type,
+        obligation_id,
+        lateness_base_amount=None,
+        lateness_currency="USD",
+        lateness_adjustment_enabled=False,
+        lateness_adjustment_mode=None,
+        lateness_adjustment_value=None,
+    ):
         if obligation_type == "payment":
             obligation = ContractObligation.objects.get(id=obligation_id)
             sessions = obligation.execution_sessions.all().order_by("started_at")
@@ -56,6 +71,20 @@ class ProofOfWorkService:
             session_payloads = [self._serialize_session(session) for session in sessions]
             all_events = self._flatten_events(session_payloads)
 
+            value_adjustments = self._extract_value_adjustments(all_events)
+
+            lateness_adjustment = self._build_service_lateness_adjustment(
+                obligation=obligation,
+                lateness_base_amount=lateness_base_amount,
+                lateness_currency=lateness_currency,
+                lateness_adjustment_enabled=lateness_adjustment_enabled,
+                lateness_adjustment_mode=lateness_adjustment_mode,
+                lateness_adjustment_value=lateness_adjustment_value,
+            )
+
+            if lateness_adjustment is not None:
+                value_adjustments.append(lateness_adjustment)
+
             return {
                 "proof_type": "proof_of_work",
                 "obligation_summary": {
@@ -73,7 +102,7 @@ class ProofOfWorkService:
                 },
                 "observations": self._extract_observations(all_events),
                 "decisions": self._extract_decisions(all_events),
-                "value_adjustments": self._extract_value_adjustments(all_events),
+                "value_adjustments": value_adjustments,
                 "timeline": all_events,
                 "sessions": session_payloads,
             }
@@ -185,5 +214,58 @@ class ProofOfWorkService:
                 })
 
         return adjustments
+
+    def _build_service_lateness_adjustment(
+        self,
+        *,
+        obligation,
+        lateness_base_amount,
+        lateness_currency,
+        lateness_adjustment_enabled,
+        lateness_adjustment_mode,
+        lateness_adjustment_value,
+    ):
+        if not lateness_adjustment_enabled:
+            return None
+
+        if lateness_base_amount is None:
+            return None
+
+        engine_obligation = ServiceObligation(
+            obligor_id=obligation.obligor_id,
+            obligee_id=obligation.obligee_id,
+            description=obligation.description,
+            due_date=obligation.due_date,
+            state=obligation.state,
+        )
+        engine_obligation.completed_at = obligation.completed_at
+
+        adjustment = self.adjustment_builder.build_lateness_adjustment(
+            obligation=engine_obligation,
+            base_amount=lateness_base_amount,
+            currency=lateness_currency,
+            adjustment_enabled=lateness_adjustment_enabled,
+            adjustment_mode=lateness_adjustment_mode,
+            adjustment_value=lateness_adjustment_value,
+        )
+
+        if adjustment is None:
+            return None
+
+        return {
+            "event_id": None,
+            "session_id": None,
+            "adjustment_type": adjustment.adjustment_type,
+            "amount": str(adjustment.amount),
+            "currency": adjustment.currency,
+            "summary": adjustment.summary,
+            "created_at": None,
+        }
+
+
+
+
+
+
 
 

@@ -1,5 +1,4 @@
 #backend/api/contracts/execution_views.py
-
 from backend.api.contracts.serializers import (
     OpenExecutionSessionSerializer,
     ObligationExecutionSessionSerializer,
@@ -7,6 +6,7 @@ from backend.api.contracts.serializers import (
     ExecutionDecisionSerializer,
     ObligationExecutionEventSerializer,
     CloseExecutionSessionSerializer,
+    AutoApprovalRequestSerializer,
 )
 from backend.api.contracts.services.obligation_execution_service import (
     ObligationExecutionService,
@@ -111,6 +111,7 @@ class ExecutionItemCreateAPIView(APIView):
 
         event = result["event"]
         decision = result["decision"]
+        approval_request = result["approval_request"]
 
         event_payload = {
             "id": event.id,
@@ -136,13 +137,32 @@ class ExecutionItemCreateAPIView(APIView):
             "proof_tags": decision.proof_tags,
         }
 
-        return Response(
-            {
-                "event": ObligationExecutionEventSerializer(event_payload).data,
-                "decision": ExecutionDecisionSerializer(decision_payload).data,
-            },
-            status=status.HTTP_201_CREATED,
-        )
+        approval_payload = None
+        if approval_request is not None:
+            approval_payload = {
+                "id": approval_request.id,
+                "approval_type": approval_request.approval_type,
+                "status": approval_request.status,
+                "summary": approval_request.summary,
+                "metadata": approval_request.metadata,
+                "requested_at": approval_request.requested_at,
+                "decided_at": approval_request.decided_at,
+                "execution_event_id": approval_request.execution_event_id,
+                "payment_obligation_id": approval_request.payment_obligation_id,
+                "service_obligation_id": approval_request.service_obligation_id,
+            }
+
+        response_data = {
+            "event": ObligationExecutionEventSerializer(event_payload).data,
+            "decision": ExecutionDecisionSerializer(decision_payload).data,
+            "approval_request": (
+                AutoApprovalRequestSerializer(approval_payload).data
+                if approval_payload is not None
+                else None
+            ),
+        }
+
+        return Response(response_data, status=status.HTTP_201_CREATED)
 
 
 class ExecutionSessionEventListAPIView(APIView):
@@ -203,5 +223,8 @@ class ExecutionSessionCloseAPIView(APIView):
             }
         )
         return Response(response_serializer.data, status=status.HTTP_200_OK)
+
+
+
 
 

@@ -1,5 +1,4 @@
 #backend/api/contracts/services/obligation_execution_service.py
-
 from django.utils import timezone
 
 from backend.contracts.models import (
@@ -11,6 +10,7 @@ from backend.infrastructure.repositories.obligation_execution_repository import 
 )
 from backend.engine.lifecycle_core.execution.primitives import ExecutionItem
 from backend.engine.lifecycle_core.execution.evaluator import ExecutionEvaluator
+from backend.api.contracts.services.approval_service import ApprovalService
 
 
 class ObligationExecutionService:
@@ -21,11 +21,13 @@ class ObligationExecutionService:
     - open execution sessions
     - record execution events
     - evaluate execution items through the engine
+    - auto-create approval requests when required
     """
 
     def __init__(self):
         self.repo = ObligationExecutionRepository()
         self.evaluator = ExecutionEvaluator()
+        self.approval_service = ApprovalService()
 
     def open_session(
         self,
@@ -65,6 +67,8 @@ class ObligationExecutionService:
         estimated_cost_currency,
         planned_execution_time=None,
         metadata=None,
+        requested_by=None,
+        requested_from=None,
     ):
         item = ExecutionItem(
             task=task,
@@ -100,9 +104,33 @@ class ObligationExecutionService:
             },
         )
 
+        approval_request = None
+
+        if decision.decision_status == "approval_required":
+            obligation_type, obligation_id = self._get_session_obligation_reference(session)
+
+            approval_request = self.approval_service.request_execution_item_approval(
+                obligation_type=obligation_type,
+                obligation_id=obligation_id,
+                execution_event=event,
+                requested_by=requested_by,
+                requested_from=requested_from,
+                summary=f"Approval required for execution item: {event.summary}",
+                metadata={
+                    "decision_status": decision.decision_status,
+                    "authorization_mode": decision.authorization_mode,
+                    "billing_mode": decision.billing_mode,
+                    "promotion_suggestion": decision.promotion_suggestion,
+                    "required_next_step": decision.required_next_step,
+                    "rationale": decision.rationale,
+                    "proof_tags": decision.proof_tags,
+                },
+            )
+
         return {
             "event": event,
             "decision": decision,
+            "approval_request": approval_request,
         }
 
     def close_session(self, *, session, ended_at=None):
@@ -110,4 +138,15 @@ class ObligationExecutionService:
             ended_at = timezone.now()
 
         return self.repo.close_session(session, ended_at=ended_at)
+
+    def _get_session_obligation_reference(self, session):
+        if session.service_obligation_id:
+            return "service", session.service_obligation_id
+
+        if session.payment_obligation_id:
+            return "payment", session.payment_obligation_id
+
+        raise Exception("Execution session is not linked to an obligation")
+
+
 

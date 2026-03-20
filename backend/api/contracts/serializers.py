@@ -86,3 +86,15 @@ class ApprovalRequestSerializer(serializers.Serializer):
 
 class ApprovalDecisionSerializer(serializers.Serializer):
     pass
+
+class AutoApprovalRequestSerializer(serializers.Serializer):
+    id = serializers.UUIDField(read_only=True)
+    approval_type = serializers.CharField(read_only=True)
+    status = serializers.CharField(read_only=True)
+    summary = serializers.CharField(read_only=True)
+    metadata = serializers.JSONField(read_only=True)
+    requested_at = serializers.DateTimeField(read_only=True)
+    decided_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    execution_event_id = serializers.UUIDField(read_only=True, allow_null=True)
+    payment_obligation_id = serializers.UUIDField(read_only=True, allow_null=True)
+    service_obligation_id = serializers.UUIDField(read_only=True, allow_null=True)

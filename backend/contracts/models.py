@@ -568,7 +568,89 @@ class ObligationExecutionEvent(models.Model):
         return f"{self.event_type} - {self.created_at}"
 
 
+class ContractValueAdjustment(models.Model):
+    """
+    Stored financial adjustment connected to contract execution.
 
+    This makes value adjustments first-class contract data instead of
+    proof-only generated output.
+
+    Examples:
+    - additional_charge
+    - lateness_adjustment
+    """
+
+    ADJUSTMENT_TYPE_CHOICES = [
+        ("additional_charge", "Additional Charge"),
+        ("lateness_adjustment", "Lateness Adjustment"),
+    ]
+
+    MODE_CHOICES = [
+        ("fixed_amount", "Fixed Amount"),
+        ("percentage", "Percentage"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    contract = models.ForeignKey(
+        Contract,
+        on_delete=models.CASCADE,
+        related_name="value_adjustments",
+    )
+
+    payment_obligation = models.ForeignKey(
+        ContractObligation,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="value_adjustments",
+    )
+
+    service_obligation = models.ForeignKey(
+        ContractServiceObligation,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="value_adjustments",
+    )
+
+    execution_event = models.ForeignKey(
+        ObligationExecutionEvent,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="value_adjustments",
+    )
+
+    adjustment_type = models.CharField(
+        max_length=50,
+        choices=ADJUSTMENT_TYPE_CHOICES,
+    )
+
+    mode = models.CharField(
+        max_length=50,
+        choices=MODE_CHOICES,
+    )
+
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+    )
+
+    currency = models.CharField(
+        max_length=10,
+        default="USD",
+    )
+
+    summary = models.TextField()
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.adjustment_type} - {self.amount} {self.currency}"
 
 
 

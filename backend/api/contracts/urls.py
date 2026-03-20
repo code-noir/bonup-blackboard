@@ -6,11 +6,15 @@ from rest_framework.routers import DefaultRouter
 from .views import ContractViewSet
 from .obligations_views import ContractObligationsAPIView
 from .proof_views import ObligationProofOfWorkAPIView
-
+from .execution_views import (
+    ObligationExecutionSessionListCreateAPIView,
+    ExecutionItemCreateAPIView,
+    ExecutionSessionEventListAPIView,
+    ExecutionSessionCloseAPIView,
+)
 
 router = DefaultRouter()
 router.register(r"", ContractViewSet, basename="contract")
-
 
 urlpatterns = [
     path(
@@ -23,8 +27,30 @@ urlpatterns = [
         ObligationProofOfWorkAPIView.as_view(),
         name="contract-obligation-proof-of-work",
     ),
+    path(
+        "obligations/<str:obligation_type>/<uuid:obligation_id>/execution-sessions/",
+        ObligationExecutionSessionListCreateAPIView.as_view(),
+        name="contract-obligation-execution-sessions",
+    ),
+    path(
+        "execution-sessions/<uuid:session_id>/execution-items/",
+        ExecutionItemCreateAPIView.as_view(),
+        name="contract-execution-item-create",
+    ),
+    path(
+        "execution-sessions/<uuid:session_id>/events/",
+        ExecutionSessionEventListAPIView.as_view(),
+        name="contract-execution-session-events",
+    ),
+    path(
+        "execution-sessions/<uuid:session_id>/close/",
+        ExecutionSessionCloseAPIView.as_view(),
+        name="contract-execution-session-close",
+    ),
     path("", include(router.urls)),
 ]
+
+
 
 
 

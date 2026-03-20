@@ -7,6 +7,10 @@ from backend.engine.lifecycle_core.execution.adjustments import (
     ExecutionAdjustmentBuilder,
 )
 from backend.engine.lifecycle_core.obligations.primitives import ServiceObligation
+from backend.api.contracts.services.contract_mode_service import ContractModeService
+from backend.infrastructure.repositories.contract_value_adjustment_repository import (
+    ContractValueAdjustmentRepository,
+)
 
 
 class ProofOfWorkService:
@@ -22,6 +26,8 @@ class ProofOfWorkService:
 
     def __init__(self):
         self.adjustment_builder = ExecutionAdjustmentBuilder()
+        self.contract_mode_service = ContractModeService()
+        self.adjustment_repo = ContractValueAdjustmentRepository()
 
     def build_for_obligation(
         self,
@@ -40,12 +46,17 @@ class ProofOfWorkService:
 
             session_payloads = [self._serialize_session(session) for session in sessions]
             all_events = self._flatten_events(session_payloads)
+            contract_mode = self.contract_mode_service.derive_mode(contract_id=obligation.contract_id)
+
+            value_adjustments = self._get_stored_payment_adjustments(obligation)
 
             return {
                 "proof_type": "proof_of_work",
+                "contract_mode": contract_mode,
                 "obligation_summary": {
                     "obligation_id": str(obligation.id),
                     "obligation_type": "payment",
+                    "contract_id": str(obligation.contract_id),
                     "obligor_id": obligation.obligor_id,
                     "obligee_id": obligation.obligee_id,
                     "state": obligation.state,
@@ -59,7 +70,7 @@ class ProofOfWorkService:
                 },
                 "observations": self._extract_observations(all_events),
                 "decisions": self._extract_decisions(all_events),
-                "value_adjustments": self._extract_value_adjustments(all_events),
+                "value_adjustments": value_adjustments,
                 "timeline": all_events,
                 "sessions": session_payloads,
             }
@@ -70,10 +81,9 @@ class ProofOfWorkService:
 
             session_payloads = [self._serialize_session(session) for session in sessions]
             all_events = self._flatten_events(session_payloads)
+            contract_mode = self.contract_mode_service.derive_mode(contract_id=obligation.contract_id)
 
-            value_adjustments = self._extract_value_adjustments(all_events)
-
-            lateness_adjustment = self._build_service_lateness_adjustment(
+            self._ensure_service_lateness_adjustment_if_requested(
                 obligation=obligation,
                 lateness_base_amount=lateness_base_amount,
                 lateness_currency=lateness_currency,
@@ -82,14 +92,15 @@ class ProofOfWorkService:
                 lateness_adjustment_value=lateness_adjustment_value,
             )
 
-            if lateness_adjustment is not None:
-                value_adjustments.append(lateness_adjustment)
+            value_adjustments = self._get_stored_service_adjustments(obligation)
 
             return {
                 "proof_type": "proof_of_work",
+                "contract_mode": contract_mode,
                 "obligation_summary": {
                     "obligation_id": str(obligation.id),
                     "obligation_type": "service",
+                    "contract_id": str(obligation.contract_id),
                     "obligor_id": obligation.obligor_id,
                     "obligee_id": obligation.obligee_id,
                     "state": obligation.state,
@@ -192,30 +203,32 @@ class ProofOfWorkService:
 
         return decisions
 
-    def _extract_value_adjustments(self, events):
-        adjustments = []
+    def _get_stored_service_adjustments(self, obligation):
+        queryset = self.adjustment_repo.list_for_service_obligation(obligation.id)
+        return [self._serialize_adjustment(adj) for adj in queryset]
 
-        for event in events:
-            metadata = event.get("metadata") or {}
+    def _get_stored_payment_adjustments(self, obligation):
+        queryset = self.adjustment_repo.list_for_payment_obligation(obligation.id)
+        return [self._serialize_adjustment(adj) for adj in queryset]
 
-            billing_mode = metadata.get("billing_mode")
-            estimated_cost_amount = event.get("estimated_cost_amount")
-            estimated_cost_currency = event.get("estimated_cost_currency")
+    def _serialize_adjustment(self, adjustment):
+        return {
+            "adjustment_id": str(adjustment.id),
+            "event_id": str(adjustment.execution_event_id) if adjustment.execution_event_id else None,
+            "session_id": (
+                str(adjustment.execution_event.session_id)
+                if adjustment.execution_event_id and adjustment.execution_event.session_id
+                else None
+            ),
+            "adjustment_type": adjustment.adjustment_type,
+            "mode": adjustment.mode,
+            "amount": str(adjustment.amount),
+            "currency": adjustment.currency,
+            "summary": adjustment.summary,
+            "created_at": adjustment.created_at,
+        }
 
-            if billing_mode == "separate_charge" and estimated_cost_amount:
-                adjustments.append({
-                    "event_id": event["event_id"],
-                    "session_id": event["session_id"],
-                    "adjustment_type": "additional_charge",
-                    "amount": estimated_cost_amount,
-                    "currency": estimated_cost_currency,
-                    "summary": event.get("summary"),
-                    "created_at": event.get("created_at"),
-                })
-
-        return adjustments
-
-    def _build_service_lateness_adjustment(
+    def _ensure_service_lateness_adjustment_if_requested(
         self,
         *,
         obligation,
@@ -230,6 +243,13 @@ class ProofOfWorkService:
 
         if lateness_base_amount is None:
             return None
+
+        existing = self.adjustment_repo.list_for_service_obligation(obligation.id).filter(
+            adjustment_type="lateness_adjustment"
+        ).first()
+
+        if existing:
+            return existing
 
         engine_obligation = ServiceObligation(
             obligor_id=obligation.obligor_id,
@@ -252,15 +272,18 @@ class ProofOfWorkService:
         if adjustment is None:
             return None
 
-        return {
-            "event_id": None,
-            "session_id": None,
-            "adjustment_type": adjustment.adjustment_type,
-            "amount": str(adjustment.amount),
-            "currency": adjustment.currency,
-            "summary": adjustment.summary,
-            "created_at": None,
-        }
+        return self.adjustment_repo.create(
+            contract=obligation.contract,
+            service_obligation=obligation,
+            adjustment_type=adjustment.adjustment_type,
+            mode=adjustment.mode,
+            amount=adjustment.amount,
+            currency=adjustment.currency,
+            summary=adjustment.summary,
+        )
+
+
+
 
 
 

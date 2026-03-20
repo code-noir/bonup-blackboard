@@ -63,3 +63,26 @@ class ObligationExecutionEventSerializer(serializers.Serializer):
 class CloseExecutionSessionSerializer(serializers.Serializer):
     ended_at = serializers.DateTimeField(required=False)
 
+class ApprovalRequestCreateSerializer(serializers.Serializer):
+    execution_event_id = serializers.UUIDField()
+    summary = serializers.CharField()
+    requested_by_id = serializers.IntegerField(required=False, allow_null=True)
+    requested_from_id = serializers.IntegerField(required=False, allow_null=True)
+    metadata = serializers.JSONField(required=False)
+
+
+class ApprovalRequestSerializer(serializers.Serializer):
+    id = serializers.UUIDField(read_only=True)
+    approval_type = serializers.CharField(read_only=True)
+    status = serializers.CharField(read_only=True)
+    summary = serializers.CharField(read_only=True)
+    metadata = serializers.JSONField(read_only=True)
+    requested_at = serializers.DateTimeField(read_only=True)
+    decided_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    execution_event_id = serializers.UUIDField(read_only=True, allow_null=True)
+    payment_obligation_id = serializers.UUIDField(read_only=True, allow_null=True)
+    service_obligation_id = serializers.UUIDField(read_only=True, allow_null=True)
+
+
+class ApprovalDecisionSerializer(serializers.Serializer):
+    pass

@@ -652,6 +652,90 @@ class ContractValueAdjustment(models.Model):
     def __str__(self):
         return f"{self.adjustment_type} - {self.amount} {self.currency}"
 
+class ContractApprovalRequest(models.Model):
+    """
+    Stored approval request generated from contract execution or adjustment flow.
+    """
+
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("approved", "Approved"),
+        ("rejected", "Rejected"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    contract = models.ForeignKey(
+        Contract,
+        on_delete=models.CASCADE,
+        related_name="approval_requests",
+    )
+
+    payment_obligation = models.ForeignKey(
+        ContractObligation,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="approval_requests",
+    )
+
+    service_obligation = models.ForeignKey(
+        ContractServiceObligation,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="approval_requests",
+    )
+
+    execution_event = models.ForeignKey(
+        ObligationExecutionEvent,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="approval_requests",
+    )
+
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="sent_contract_approvals",
+    )
+
+    requested_from = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="received_contract_approvals",
+    )
+
+    approval_type = models.CharField(
+        max_length=50,
+        default="execution_item",
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="pending",
+    )
+
+    summary = models.TextField()
+
+    metadata = models.JSONField(default=dict, blank=True)
+
+    requested_at = models.DateTimeField(auto_now_add=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["requested_at"]
+
+    def __str__(self):
+        return f"{self.approval_type} - {self.status}"
+
+
 
 
 

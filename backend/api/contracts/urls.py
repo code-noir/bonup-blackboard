@@ -12,6 +12,11 @@ from .execution_views import (
     ExecutionSessionEventListAPIView,
     ExecutionSessionCloseAPIView,
 )
+from .approval_views import (
+    ObligationApprovalRequestListCreateAPIView,
+    ApprovalRequestApproveAPIView,
+    ApprovalRequestRejectAPIView,
+)
 
 router = DefaultRouter()
 router.register(r"", ContractViewSet, basename="contract")
@@ -33,6 +38,11 @@ urlpatterns = [
         name="contract-obligation-execution-sessions",
     ),
     path(
+        "obligations/<str:obligation_type>/<uuid:obligation_id>/approval-requests/",
+        ObligationApprovalRequestListCreateAPIView.as_view(),
+        name="contract-obligation-approval-requests",
+    ),
+    path(
         "execution-sessions/<uuid:session_id>/execution-items/",
         ExecutionItemCreateAPIView.as_view(),
         name="contract-execution-item-create",
@@ -47,10 +57,18 @@ urlpatterns = [
         ExecutionSessionCloseAPIView.as_view(),
         name="contract-execution-session-close",
     ),
+    path(
+        "approval-requests/<uuid:approval_id>/approve/",
+        ApprovalRequestApproveAPIView.as_view(),
+        name="contract-approval-request-approve",
+    ),
+    path(
+        "approval-requests/<uuid:approval_id>/reject/",
+        ApprovalRequestRejectAPIView.as_view(),
+        name="contract-approval-request-reject",
+    ),
     path("", include(router.urls)),
 ]
-
-
 
 
 

@@ -1,7 +1,14 @@
-from rest_framework.routers import DefaultRouter
-from .views import ObligationsViewSet
+# backend/api/obligations/urls.py
 
-router = DefaultRouter()
-router.register(r'', ObligationsViewSet, basename='obligations')
+from django.urls import path
+from .views import ObligationDetailAPIView
 
-urlpatterns = router.urls
+urlpatterns = [
+    path(
+        "<str:obligation_type>/<uuid:obligation_id>/",
+        ObligationDetailAPIView.as_view(),
+        name="obligation-detail",
+    ),
+]
+
+

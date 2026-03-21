@@ -1,7 +1,5 @@
 # backend/core/urls.py
 
-
-
 from django.contrib import admin
 from django.urls import path, include
 from django.http import JsonResponse
@@ -9,19 +7,19 @@ from django.http import JsonResponse
 from backend.api.router import urlpatterns as api_urls
 
 
-# -----------------------------
-# ROOT ( / )
-# -----------------------------
+# --------------------------------------------------
+# ROOT (/)
+# --------------------------------------------------
 def home(request):
     return JsonResponse({
         "message": "Backend running",
-        "go_to": "/api/"
+        "go_to": "/api/",
     })
 
 
-# -----------------------------
-# API ROOT ( /api/ )
-# -----------------------------
+# --------------------------------------------------
+# API ROOT (/api/)
+# --------------------------------------------------
 def api_root(request):
     return JsonResponse({
         "message": "API Root",
@@ -29,22 +27,29 @@ def api_root(request):
             "/api/contracts/",
             "/api/contracts/<id>/obligations/",
             "/api/obligations/",
-            "/api/payments/"
-        ]
+            "/api/payments/",
+        ],
     })
 
 
-# -----------------------------
+# --------------------------------------------------
 # URL PATTERNS
-# -----------------------------
+# --------------------------------------------------
 urlpatterns = [
-    path("", home),                      # http://127.0.0.1:8000/
+    path("", home),
     path("admin/", admin.site.urls),
 
-    # THIS is what fixes your issue
-    path("api/", api_root),             # http://127.0.0.1:8000/api/
-    path("api/", include(api_urls)),    # all API routes
+    # exact /api/
+    path("api/", api_root),
+
+    # existing API router
+    path("api/", include(api_urls)),
+
+    # obligation domain
+    path("api/obligations/", include("backend.api.obligations.urls")),
 ]
+
+
 
 
 

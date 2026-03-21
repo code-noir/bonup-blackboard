@@ -1,7 +1,7 @@
 # backend/api/obligations/urls.py
 
 from django.urls import path
-from .views import ObligationDetailAPIView
+from .views import ObligationDetailAPIView, ObligationTimelineAPIView
 
 urlpatterns = [
     path(
@@ -9,6 +9,10 @@ urlpatterns = [
         ObligationDetailAPIView.as_view(),
         name="obligation-detail",
     ),
+    path(
+        "<str:obligation_type>/<uuid:obligation_id>/timeline/",
+        ObligationTimelineAPIView.as_view(),
+        name="obligation-timeline",
+    ),
 ]
-
 

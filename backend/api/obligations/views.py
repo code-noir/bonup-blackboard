@@ -1,3 +1,4 @@
+
 # backend/api/obligations/views.py
 
 from rest_framework import status
@@ -116,6 +117,164 @@ class ObligationDetailAPIView(APIView):
             "approved": approvals.filter(status="approved").count(),
             "rejected": approvals.filter(status="rejected").count(),
         }
+
+
+class ObligationTimelineAPIView(APIView):
+    """
+    GET /api/obligations/<obligation_type>/<obligation_id>/timeline/
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.approval_repo = ContractApprovalRepository()
+        self.adjustment_repo = ContractValueAdjustmentRepository()
+        self.promotion_repo = ContractObligationPromotionRepository()
+
+    def get(self, request, obligation_type, obligation_id):
+        timeline = []
+
+        if obligation_type == "payment":
+            obligation = ContractObligation.objects.get(id=obligation_id)
+            sessions = obligation.execution_sessions.all().order_by("started_at")
+            approvals = self.approval_repo.list_for_payment_obligation(obligation.id)
+            adjustments = self.adjustment_repo.list_for_payment_obligation(obligation.id)
+
+            for session in sessions:
+                timeline.append({
+                    "entry_type": "execution_session",
+                    "entry_id": str(session.id),
+                    "status": session.status,
+                    "summary": f"Execution session {session.status}",
+                    "created_at": session.created_at,
+                })
+
+                for event in session.events.all().order_by("created_at"):
+                    timeline.append({
+                        "entry_type": "execution_event",
+                        "entry_id": str(event.id),
+                        "session_id": str(session.id),
+                        "event_type": event.event_type,
+                        "task": event.task,
+                        "observation": event.observation,
+                        "summary": event.summary,
+                        "created_at": event.created_at,
+                    })
+
+            for approval in approvals:
+                timeline.append({
+                    "entry_type": "approval_request",
+                    "entry_id": str(approval.id),
+                    "status": approval.status,
+                    "summary": approval.summary,
+                    "execution_event_id": (
+                        str(approval.execution_event_id)
+                        if approval.execution_event_id else None
+                    ),
+                    "created_at": approval.requested_at,
+                })
+
+            for adjustment in adjustments:
+                timeline.append({
+                    "entry_type": "value_adjustment",
+                    "entry_id": str(adjustment.id),
+                    "adjustment_type": adjustment.adjustment_type,
+                    "summary": adjustment.summary,
+                    "amount": str(adjustment.amount),
+                    "currency": adjustment.currency,
+                    "execution_event_id": (
+                        str(adjustment.execution_event_id)
+                        if adjustment.execution_event_id else None
+                    ),
+                    "created_at": adjustment.created_at,
+                })
+
+            timeline.sort(key=lambda x: x["created_at"])
+            return Response({"timeline": timeline}, status=status.HTTP_200_OK)
+
+        if obligation_type == "service":
+            obligation = ContractServiceObligation.objects.get(id=obligation_id)
+            sessions = obligation.execution_sessions.all().order_by("started_at")
+            approvals = self.approval_repo.list_for_service_obligation(obligation.id)
+            adjustments = self.adjustment_repo.list_for_service_obligation(obligation.id)
+            promotions = self.promotion_repo.list_for_parent_service_obligation(
+                obligation.id
+            )
+
+            for session in sessions:
+                timeline.append({
+                    "entry_type": "execution_session",
+                    "entry_id": str(session.id),
+                    "status": session.status,
+                    "summary": f"Execution session {session.status}",
+                    "created_at": session.created_at,
+                })
+
+                for event in session.events.all().order_by("created_at"):
+                    timeline.append({
+                        "entry_type": "execution_event",
+                        "entry_id": str(event.id),
+                        "session_id": str(session.id),
+                        "event_type": event.event_type,
+                        "task": event.task,
+                        "observation": event.observation,
+                        "summary": event.summary,
+                        "created_at": event.created_at,
+                    })
+
+            for approval in approvals:
+                timeline.append({
+                    "entry_type": "approval_request",
+                    "entry_id": str(approval.id),
+                    "status": approval.status,
+                    "summary": approval.summary,
+                    "execution_event_id": (
+                        str(approval.execution_event_id)
+                        if approval.execution_event_id else None
+                    ),
+                    "created_at": approval.requested_at,
+                })
+
+            for adjustment in adjustments:
+                timeline.append({
+                    "entry_type": "value_adjustment",
+                    "entry_id": str(adjustment.id),
+                    "adjustment_type": adjustment.adjustment_type,
+                    "summary": adjustment.summary,
+                    "amount": str(adjustment.amount),
+                    "currency": adjustment.currency,
+                    "execution_event_id": (
+                        str(adjustment.execution_event_id)
+                        if adjustment.execution_event_id else None
+                    ),
+                    "created_at": adjustment.created_at,
+                })
+
+            for promotion in promotions:
+                timeline.append({
+                    "entry_type": "promotion",
+                    "entry_id": str(promotion.id),
+                    "promotion_type": promotion.promotion_type,
+                    "summary": promotion.summary,
+                    "source_execution_event_id": str(promotion.source_execution_event_id),
+                    "promoted_service_obligation_id": (
+                        str(promotion.promoted_service_obligation_id)
+                        if promotion.promoted_service_obligation_id else None
+                    ),
+                    "created_at": promotion.created_at,
+                })
+
+            timeline.sort(key=lambda x: x["created_at"])
+            return Response({"timeline": timeline}, status=status.HTTP_200_OK)
+
+        return Response(
+            {"detail": "Invalid obligation type."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+
+
+
 
 
 

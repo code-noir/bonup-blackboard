@@ -355,6 +355,109 @@ class ObligationTimelineAPIView(APIView):
         )
 
 
+class ObligationNextActionsAPIView(APIView):
+    """
+    GET /api/obligations/<obligation_type>/<obligation_id>/next-actions/
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.approval_repo = ContractApprovalRepository()
+        self.adjustment_repo = ContractValueAdjustmentRepository()
+        self.promotion_repo = ContractObligationPromotionRepository()
+
+    def get(self, request, obligation_type, obligation_id):
+        actions = []
+
+        if obligation_type == "payment":
+            obligation = ContractObligation.objects.get(id=obligation_id)
+
+            if obligation.state in ("due", "overdue", "grace", "defaulted") and (
+                obligation.amount_paid < obligation.amount_due
+            ):
+                actions.append({
+                    "action_type": "payment_required",
+                    "priority": "high",
+                    "summary": "Payment is still required for this obligation.",
+                })
+
+            if obligation.state == "resolved":
+                actions.append({
+                    "action_type": "no_action",
+                    "priority": "low",
+                    "summary": "No action needed. Payment obligation is resolved.",
+                })
+
+            return Response({"next_actions": actions}, status=status.HTTP_200_OK)
+
+        if obligation_type == "service":
+            obligation = ContractServiceObligation.objects.get(id=obligation_id)
+            sessions = obligation.execution_sessions.all()
+            pending_approvals = self.approval_repo.list_for_service_obligation(
+                obligation.id
+            ).filter(status="pending")
+            adjustments = self.adjustment_repo.list_for_service_obligation(obligation.id)
+            promotions = self.promotion_repo.list_for_parent_service_obligation(
+                obligation.id
+            )
+
+            if obligation.state == "active" and not sessions.exists():
+                actions.append({
+                    "action_type": "open_execution_session",
+                    "priority": "medium",
+                    "summary": "Open an execution session for this service obligation.",
+                })
+
+            if pending_approvals.exists():
+                actions.append({
+                    "action_type": "review_pending_approvals",
+                    "priority": "high",
+                    "summary": "Review pending approval requests for this obligation.",
+                    "count": pending_approvals.count(),
+                })
+
+            if adjustments.exists():
+                actions.append({
+                    "action_type": "review_value_adjustments",
+                    "priority": "medium",
+                    "summary": "Review stored value adjustments for this obligation.",
+                    "count": adjustments.count(),
+                })
+
+            if promotions.exists():
+                actions.append({
+                    "action_type": "review_promoted_side_obligations",
+                    "priority": "medium",
+                    "summary": "Review promoted side obligations linked to this obligation.",
+                    "count": promotions.count(),
+                })
+
+            if obligation.state == "resolved":
+                actions.append({
+                    "action_type": "no_action",
+                    "priority": "low",
+                    "summary": "No action needed. Service obligation is resolved.",
+                })
+
+            return Response({"next_actions": actions}, status=status.HTTP_200_OK)
+
+        return Response(
+            {"detail": "Invalid obligation type."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

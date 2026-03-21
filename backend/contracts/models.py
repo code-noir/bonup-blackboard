@@ -735,6 +735,63 @@ class ContractApprovalRequest(models.Model):
     def __str__(self):
         return f"{self.approval_type} - {self.status}"
 
+class ContractObligationPromotion(models.Model):
+    """
+    Tracks promotion of an execution event into a side obligation.
+    """
+
+    PROMOTION_TYPE_CHOICES = [
+        ("event_to_service_obligation", "Event to Service Obligation"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    contract = models.ForeignKey(
+        Contract,
+        on_delete=models.CASCADE,
+        related_name="obligation_promotions",
+    )
+
+    source_execution_event = models.ForeignKey(
+        ObligationExecutionEvent,
+        on_delete=models.CASCADE,
+        related_name="promotions",
+    )
+
+    parent_service_obligation = models.ForeignKey(
+        ContractServiceObligation,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="child_promotions",
+    )
+
+    promoted_service_obligation = models.ForeignKey(
+        ContractServiceObligation,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="origin_promotions",
+    )
+
+    promotion_type = models.CharField(
+        max_length=50,
+        choices=PROMOTION_TYPE_CHOICES,
+        default="event_to_service_obligation",
+    )
+
+    summary = models.TextField()
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.promotion_type} - {self.id}"
+
+
+
 
 
 

@@ -28,3 +28,9 @@ class ContractValueAdjustmentRepository:
         return ContractValueAdjustment.objects.filter(
             execution_event_id=execution_event_id
         )
+
+    def find_additional_charge_for_execution_event(self, execution_event_id):
+        return ContractValueAdjustment.objects.filter(
+            execution_event_id=execution_event_id,
+            adjustment_type="additional_charge",
+        ).first()

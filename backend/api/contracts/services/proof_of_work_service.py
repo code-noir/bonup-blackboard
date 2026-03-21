@@ -1,4 +1,13 @@
-#backend/api/contracts/services/proof_of_work_service.py
+
+
+
+
+
+
+
+
+# backend/api/contracts/services/proof_of_work_service.py
+
 from backend.contracts.models import (
     ContractObligation,
     ContractServiceObligation,
@@ -11,23 +20,25 @@ from backend.api.contracts.services.contract_mode_service import ContractModeSer
 from backend.infrastructure.repositories.contract_value_adjustment_repository import (
     ContractValueAdjustmentRepository,
 )
+from backend.infrastructure.repositories.contract_approval_repository import (
+    ContractApprovalRepository,
+)
+from backend.infrastructure.repositories.contract_obligation_promotion_repository import (
+    ContractObligationPromotionRepository,
+)
 
 
 class ProofOfWorkService:
     """
     Builds a structured proof-of-work payload from obligation execution data.
-
-    This returns a cleaner proof document shape that is easier to:
-    - expose through API
-    - transform into PBVD
-    - render in UI
-    - export later
     """
 
     def __init__(self):
         self.adjustment_builder = ExecutionAdjustmentBuilder()
         self.contract_mode_service = ContractModeService()
         self.adjustment_repo = ContractValueAdjustmentRepository()
+        self.approval_repo = ContractApprovalRepository()
+        self.promotion_repo = ContractObligationPromotionRepository()
 
     def build_for_obligation(
         self,
@@ -46,9 +57,12 @@ class ProofOfWorkService:
 
             session_payloads = [self._serialize_session(session) for session in sessions]
             all_events = self._flatten_events(session_payloads)
-            contract_mode = self.contract_mode_service.derive_mode(contract_id=obligation.contract_id)
+            contract_mode = self.contract_mode_service.derive_mode(
+                contract_id=obligation.contract_id
+            )
 
             value_adjustments = self._get_stored_payment_adjustments(obligation)
+            approval_requests = self._get_payment_approvals(obligation)
 
             return {
                 "proof_type": "proof_of_work",
@@ -70,7 +84,10 @@ class ProofOfWorkService:
                 },
                 "observations": self._extract_observations(all_events),
                 "decisions": self._extract_decisions(all_events),
+                "approval_requests": approval_requests,
                 "value_adjustments": value_adjustments,
+                "promotions": [],
+                "promoted_side_obligations": [],
                 "timeline": all_events,
                 "sessions": session_payloads,
             }
@@ -81,7 +98,9 @@ class ProofOfWorkService:
 
             session_payloads = [self._serialize_session(session) for session in sessions]
             all_events = self._flatten_events(session_payloads)
-            contract_mode = self.contract_mode_service.derive_mode(contract_id=obligation.contract_id)
+            contract_mode = self.contract_mode_service.derive_mode(
+                contract_id=obligation.contract_id
+            )
 
             self._ensure_service_lateness_adjustment_if_requested(
                 obligation=obligation,
@@ -93,6 +112,9 @@ class ProofOfWorkService:
             )
 
             value_adjustments = self._get_stored_service_adjustments(obligation)
+            approval_requests = self._get_service_approvals(obligation)
+            promotions = self._get_service_promotions(obligation)
+            promoted_side_obligations = self._get_promoted_side_obligations(promotions)
 
             return {
                 "proof_type": "proof_of_work",
@@ -113,7 +135,10 @@ class ProofOfWorkService:
                 },
                 "observations": self._extract_observations(all_events),
                 "decisions": self._extract_decisions(all_events),
+                "approval_requests": approval_requests,
                 "value_adjustments": value_adjustments,
+                "promotions": promotions,
+                "promoted_side_obligations": promoted_side_obligations,
                 "timeline": all_events,
                 "sessions": session_payloads,
             }
@@ -227,6 +252,78 @@ class ProofOfWorkService:
             "summary": adjustment.summary,
             "created_at": adjustment.created_at,
         }
+
+    def _get_service_approvals(self, obligation):
+        approvals = self.approval_repo.list_for_service_obligation(obligation.id)
+        return [self._serialize_approval(a) for a in approvals]
+
+    def _get_payment_approvals(self, obligation):
+        approvals = self.approval_repo.list_for_payment_obligation(obligation.id)
+        return [self._serialize_approval(a) for a in approvals]
+
+    def _serialize_approval(self, approval):
+        return {
+            "approval_id": str(approval.id),
+            "approval_type": approval.approval_type,
+            "status": approval.status,
+            "summary": approval.summary,
+            "metadata": approval.metadata,
+            "requested_at": approval.requested_at,
+            "decided_at": approval.decided_at,
+            "execution_event_id": (
+                str(approval.execution_event_id) if approval.execution_event_id else None
+            ),
+            "payment_obligation_id": (
+                str(approval.payment_obligation_id) if approval.payment_obligation_id else None
+            ),
+            "service_obligation_id": (
+                str(approval.service_obligation_id) if approval.service_obligation_id else None
+            ),
+        }
+
+    def _get_service_promotions(self, obligation):
+        promotions = self.promotion_repo.list_for_parent_service_obligation(obligation.id)
+        return [self._serialize_promotion(p) for p in promotions]
+
+    def _serialize_promotion(self, promotion):
+        return {
+            "promotion_id": str(promotion.id),
+            "promotion_type": promotion.promotion_type,
+            "summary": promotion.summary,
+            "source_execution_event_id": str(promotion.source_execution_event_id),
+            "parent_service_obligation_id": (
+                str(promotion.parent_service_obligation_id)
+                if promotion.parent_service_obligation_id
+                else None
+            ),
+            "promoted_service_obligation_id": (
+                str(promotion.promoted_service_obligation_id)
+                if promotion.promoted_service_obligation_id
+                else None
+            ),
+            "created_at": promotion.created_at,
+        }
+
+    def _get_promoted_side_obligations(self, promotions):
+        results = []
+
+        for promotion in promotions:
+            promoted_id = promotion.get("promoted_service_obligation_id")
+            if not promoted_id:
+                continue
+
+            obligation = ContractServiceObligation.objects.get(id=promoted_id)
+            results.append({
+                "obligation_id": str(obligation.id),
+                "contract_id": str(obligation.contract_id),
+                "description": obligation.description,
+                "due_date": obligation.due_date,
+                "state": obligation.state,
+                "obligor_id": obligation.obligor_id,
+                "obligee_id": obligation.obligee_id,
+            })
+
+        return results
 
     def _ensure_service_lateness_adjustment_if_requested(
         self,

@@ -98,3 +98,34 @@ class AutoApprovalRequestSerializer(serializers.Serializer):
     execution_event_id = serializers.UUIDField(read_only=True, allow_null=True)
     payment_obligation_id = serializers.UUIDField(read_only=True, allow_null=True)
     service_obligation_id = serializers.UUIDField(read_only=True, allow_null=True)
+
+
+class PromoteExecutionEventSerializer(serializers.Serializer):
+    summary = serializers.CharField(required=False, allow_blank=True)
+    due_date = serializers.DateTimeField(required=False)
+
+
+class ObligationPromotionSerializer(serializers.Serializer):
+    promotion_id = serializers.UUIDField(read_only=True)
+    promotion_type = serializers.CharField(read_only=True)
+    summary = serializers.CharField(read_only=True)
+    source_execution_event_id = serializers.UUIDField(read_only=True)
+    parent_service_obligation_id = serializers.UUIDField(
+        read_only=True, allow_null=True
+    )
+    promoted_service_obligation_id = serializers.UUIDField(
+        read_only=True, allow_null=True
+    )
+    created_at = serializers.DateTimeField(read_only=True)
+
+
+class PromotedServiceObligationSerializer(serializers.Serializer):
+    obligation_id = serializers.UUIDField(read_only=True)
+    contract_id = serializers.UUIDField(read_only=True)
+    description = serializers.CharField(read_only=True)
+    due_date = serializers.DateTimeField(read_only=True)
+    state = serializers.CharField(read_only=True)
+    obligor_id = serializers.IntegerField(read_only=True)
+    obligee_id = serializers.IntegerField(read_only=True)
+
+

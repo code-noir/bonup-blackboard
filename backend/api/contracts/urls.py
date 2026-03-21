@@ -2,6 +2,10 @@
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from .management_views import ContractManagementSummaryAPIView
+
+from .promotion_views import ExecutionEventPromotionAPIView
+
 
 from .views import ContractViewSet
 from .obligations_views import ContractObligationsAPIView
@@ -67,6 +71,21 @@ urlpatterns = [
         ApprovalRequestRejectAPIView.as_view(),
         name="contract-approval-request-reject",
     ),
+
+
+    path(
+    "<uuid:contract_id>/management-summary/",
+    ContractManagementSummaryAPIView.as_view(),
+    name="contract-management-summary",
+    ),
+
+    path(
+    "execution-events/<uuid:execution_event_id>/promote/",
+    ExecutionEventPromotionAPIView.as_view(),
+    name="contract-execution-event-promote",
+    ),
+
+
     path("", include(router.urls)),
 ]
 

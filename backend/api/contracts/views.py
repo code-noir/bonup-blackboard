@@ -1,13 +1,13 @@
-#backend/api/contracts/views.py
+# backend/api/contracts/views.py
 
 from rest_framework.viewsets import ViewSet
 from rest_framework.response import Response
+
 from backend.contracts.models import Contract
 from .serializers import ContractSerializer
 
 
-class ContractsViewSet(ViewSet):
-
+class ContractViewSet(ViewSet):
     def list(self, request):
         contracts = Contract.objects.all()
         serializer = ContractSerializer(contracts, many=True)

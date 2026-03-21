@@ -1,4 +1,3 @@
-
 # backend/api/obligations/views.py
 
 from rest_framework import status
@@ -18,6 +17,90 @@ from backend.infrastructure.repositories.contract_value_adjustment_repository im
 from backend.infrastructure.repositories.contract_obligation_promotion_repository import (
     ContractObligationPromotionRepository,
 )
+
+
+class ObligationListAPIView(APIView):
+    """
+    GET /api/obligations/
+
+    Query params:
+    - type=payment|service
+    - state=<state>
+    - role=obligor|obligee
+    - user_id=<int>
+    """
+
+    def get(self, request):
+        obligation_type = request.query_params.get("type")
+        state = request.query_params.get("state")
+        role = request.query_params.get("role")
+        user_id = request.query_params.get("user_id")
+
+        results = []
+
+        include_payment = obligation_type in (None, "", "payment")
+        include_service = obligation_type in (None, "", "service")
+
+        if include_payment:
+            payment_qs = ContractObligation.objects.all().order_by("due_date")
+
+            if state:
+                payment_qs = payment_qs.filter(state=state)
+
+            if role == "obligor" and user_id:
+                payment_qs = payment_qs.filter(obligor_id=user_id)
+
+            if role == "obligee" and user_id:
+                payment_qs = payment_qs.filter(obligee_id=user_id)
+
+            for ob in payment_qs:
+                results.append({
+                    "id": str(ob.id),
+                    "type": "payment",
+                    "contract_id": str(ob.contract_id),
+                    "state": ob.state,
+                    "due_date": ob.due_date,
+                    "obligor_id": ob.obligor_id,
+                    "obligee_id": ob.obligee_id,
+                    "amount_due": str(ob.amount_due),
+                    "amount_paid": str(ob.amount_paid),
+                    "installment_number": ob.installment_number,
+                })
+
+        if include_service:
+            service_qs = ContractServiceObligation.objects.all().order_by("due_date")
+
+            if state:
+                service_qs = service_qs.filter(state=state)
+
+            if role == "obligor" and user_id:
+                service_qs = service_qs.filter(obligor_id=user_id)
+
+            if role == "obligee" and user_id:
+                service_qs = service_qs.filter(obligee_id=user_id)
+
+            for ob in service_qs:
+                results.append({
+                    "id": str(ob.id),
+                    "type": "service",
+                    "contract_id": str(ob.contract_id),
+                    "state": ob.state,
+                    "due_date": ob.due_date,
+                    "obligor_id": ob.obligor_id,
+                    "obligee_id": ob.obligee_id,
+                    "description": ob.description,
+                    "completed_at": ob.completed_at,
+                })
+
+        results.sort(key=lambda x: (x["due_date"] is None, x["due_date"]))
+
+        return Response(
+            {
+                "count": len(results),
+                "results": results,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class ObligationDetailAPIView(APIView):
@@ -270,6 +353,26 @@ class ObligationTimelineAPIView(APIView):
             {"detail": "Invalid obligation type."},
             status=status.HTTP_400_BAD_REQUEST,
         )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

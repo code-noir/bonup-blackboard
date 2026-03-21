@@ -3,7 +3,7 @@
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
+from backend.api.contracts.serializers import ObligationExecutionSessionSerializer
 from backend.contracts.models import (
     ContractObligation,
     ContractServiceObligation,
@@ -589,6 +589,40 @@ class ObligationDashboardSummaryAPIView(APIView):
         return Response(payload, status=status.HTTP_200_OK)
 
 
+class ObligationExecutionSessionListAPIView(APIView):
+    """
+    GET /api/obligations/<obligation_type>/<obligation_id>/execution-sessions/
+    """
+
+    def get(self, request, obligation_type, obligation_id):
+        obligation = self._get_obligation(
+            obligation_type=obligation_type,
+            obligation_id=obligation_id,
+        )
+
+        sessions = obligation.execution_sessions.all().order_by("started_at")
+
+        payload = [
+            {
+                "id": session.id,
+                "status": session.status,
+                "started_at": session.started_at,
+                "ended_at": session.ended_at,
+            }
+            for session in sessions
+        ]
+
+        serializer = ObligationExecutionSessionSerializer(payload, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def _get_obligation(self, *, obligation_type, obligation_id):
+        if obligation_type == "payment":
+            return ContractObligation.objects.get(id=obligation_id)
+
+        if obligation_type == "service":
+            return ContractServiceObligation.objects.get(id=obligation_id)
+
+        raise Exception("Invalid obligation type")
 
 
 

@@ -1,5 +1,4 @@
 
-
 # backend/api/obligations/urls.py
 
 from django.urls import path
@@ -10,6 +9,7 @@ from .views import (
     ObligationTimelineAPIView,
     ObligationNextActionsAPIView,
     ObligationDashboardSummaryAPIView,
+    ObligationExecutionSessionListAPIView,
 )
 
 urlpatterns = [
@@ -29,6 +29,11 @@ urlpatterns = [
         name="obligation-proof-of-work",
     ),
     path(
+        "<str:obligation_type>/<uuid:obligation_id>/execution-sessions/",
+        ObligationExecutionSessionListAPIView.as_view(),
+        name="obligation-execution-session-list",
+    ),
+    path(
         "<str:obligation_type>/<uuid:obligation_id>/",
         ObligationDetailAPIView.as_view(),
         name="obligation-detail",
@@ -44,6 +49,3 @@ urlpatterns = [
         name="obligation-next-actions",
     ),
 ]
-
-
-

@@ -447,6 +447,148 @@ class ObligationNextActionsAPIView(APIView):
         )
 
 
+class ObligationDashboardSummaryAPIView(APIView):
+    """
+    GET /api/obligations/dashboard-summary/
+
+    Lightweight obligation-domain overview for the obligations area.
+    Reuses the same filter semantics as ObligationListAPIView.
+
+    Query params:
+    - type=payment|service
+    - state=<state>
+    - role=obligor|obligee
+    - user_id=<int>
+    """
+
+    def get(self, request):
+        obligation_type = request.query_params.get("type")
+        state = request.query_params.get("state")
+        role = request.query_params.get("role")
+        user_id = request.query_params.get("user_id")
+
+        include_payment = obligation_type in (None, "", "payment")
+        include_service = obligation_type in (None, "", "service")
+
+        payment_qs = ContractObligation.objects.none()
+        service_qs = ContractServiceObligation.objects.none()
+
+        if include_payment:
+            payment_qs = ContractObligation.objects.all()
+
+            if state:
+                payment_qs = payment_qs.filter(state=state)
+
+            if role == "obligor" and user_id:
+                payment_qs = payment_qs.filter(obligor_id=user_id)
+
+            if role == "obligee" and user_id:
+                payment_qs = payment_qs.filter(obligee_id=user_id)
+
+        if include_service:
+            service_qs = ContractServiceObligation.objects.all()
+
+            if state:
+                service_qs = service_qs.filter(state=state)
+
+            if role == "obligor" and user_id:
+                service_qs = service_qs.filter(obligor_id=user_id)
+
+            if role == "obligee" and user_id:
+                service_qs = service_qs.filter(obligee_id=user_id)
+
+        payment_count = payment_qs.count()
+        service_count = service_qs.count()
+
+        payment_state_counts = {
+            "active": 0,
+            "due": 0,
+            "grace": 0,
+            "overdue": 0,
+            "defaulted": 0,
+            "resolved": 0,
+        }
+
+        for ob in payment_qs:
+            payment_state_counts[ob.state] = payment_state_counts.get(ob.state, 0) + 1
+
+        service_state_counts = {
+            "active": 0,
+            "due": 0,
+            "overdue": 0,
+            "resolved": 0,
+        }
+
+        for ob in service_qs:
+            service_state_counts[ob.state] = service_state_counts.get(ob.state, 0) + 1
+
+        payment_due_or_unpaid_ids = set()
+        payment_overdue_ids = set()
+        payment_defaulted_ids = set()
+
+        for ob in payment_qs:
+            if ob.state in ("due", "grace", "overdue", "defaulted") and (
+                ob.amount_paid < ob.amount_due
+            ):
+                payment_due_or_unpaid_ids.add(str(ob.id))
+
+            if ob.state == "overdue":
+                payment_overdue_ids.add(str(ob.id))
+
+            if ob.state == "defaulted":
+                payment_defaulted_ids.add(str(ob.id))
+
+        service_active_without_execution_ids = set()
+        service_overdue_ids = set()
+
+        for ob in service_qs:
+            if ob.state == "active" and not ob.execution_sessions.exists():
+                service_active_without_execution_ids.add(str(ob.id))
+
+            if ob.state == "overdue":
+                service_overdue_ids.add(str(ob.id))
+
+        total_attention_ids = (
+            payment_due_or_unpaid_ids
+            .union(payment_overdue_ids)
+            .union(payment_defaulted_ids)
+            .union(service_active_without_execution_ids)
+            .union(service_overdue_ids)
+        )
+
+        payload = {
+            "filters": {
+                "type": obligation_type,
+                "state": state,
+                "role": role,
+                "user_id": user_id,
+            },
+            "counts": {
+                "total": payment_count + service_count,
+                "payment": payment_count,
+                "service": service_count,
+            },
+            "by_state": {
+                "payment": payment_state_counts,
+                "service": service_state_counts,
+            },
+            "attention": {
+                "total_requiring_attention": len(total_attention_ids),
+                "payment": {
+                    "due_or_unpaid": len(payment_due_or_unpaid_ids),
+                    "overdue": len(payment_overdue_ids),
+                    "defaulted": len(payment_defaulted_ids),
+                },
+                "service": {
+                    "active_without_execution": len(service_active_without_execution_ids),
+                    "overdue": len(service_overdue_ids),
+                },
+            },
+        }
+
+        return Response(payload, status=status.HTTP_200_OK)
+
+
 
 
 

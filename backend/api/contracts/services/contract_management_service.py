@@ -1,6 +1,6 @@
 #backend/api/contracts/services/contract_management_service.py
 
-# backend/api/contracts/services/contract_management_service.py
+
 
 from backend.contracts.models import (
     Contract,

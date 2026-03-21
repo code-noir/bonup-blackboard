@@ -1,12 +1,15 @@
 
+
 # backend/api/obligations/urls.py
 
 from django.urls import path
+from backend.api.contracts.proof_views import ObligationProofOfWorkAPIView
 from .views import (
     ObligationListAPIView,
     ObligationDetailAPIView,
     ObligationTimelineAPIView,
     ObligationNextActionsAPIView,
+    ObligationDashboardSummaryAPIView,
 )
 
 urlpatterns = [
@@ -14,6 +17,16 @@ urlpatterns = [
         "",
         ObligationListAPIView.as_view(),
         name="obligation-list",
+    ),
+    path(
+        "dashboard-summary/",
+        ObligationDashboardSummaryAPIView.as_view(),
+        name="obligation-dashboard-summary",
+    ),
+    path(
+        "<str:obligation_type>/<uuid:obligation_id>/proof/",
+        ObligationProofOfWorkAPIView.as_view(),
+        name="obligation-proof-of-work",
     ),
     path(
         "<str:obligation_type>/<uuid:obligation_id>/",
@@ -31,5 +44,6 @@ urlpatterns = [
         name="obligation-next-actions",
     ),
 ]
+
 
 

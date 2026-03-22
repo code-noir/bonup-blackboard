@@ -3,11 +3,14 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView 
+
 from backend.api.contracts.serializers import (
     ObligationExecutionSessionSerializer,
     ObligationExecutionEventSerializer,
     OpenExecutionSessionSerializer,
+  
 )
+
 from backend.contracts.models import (
     ContractObligation,
     ContractServiceObligation,
@@ -15,10 +18,7 @@ from backend.contracts.models import (
 )
 
 
-from backend.contracts.models import (
-    ContractObligation,
-    ContractServiceObligation,
-)
+
 from backend.infrastructure.repositories.contract_approval_repository import (
     ContractApprovalRepository,
 )
@@ -903,67 +903,86 @@ class ObligationExecutionSessionCloseAPIView(APIView):
         serializer = ObligationExecutionSessionSerializer(payload)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+class ObligationExecutionEventCreateAPIView(APIView):
+    """
+    POST /api/obligations/execution-sessions/<session_id>/execution-events/
+    """
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.execution_service = ObligationExecutionService()
 
+    def post(self, request, session_id):
+        event_type = request.data.get("event_type")
+        task = request.data.get("task")
+        observation = request.data.get("observation")
+        summary = request.data.get("summary")
+        estimated_duration_minutes = request.data.get("estimated_duration_minutes")
+        estimated_cost_amount = request.data.get("estimated_cost_amount")
+        estimated_cost_currency = request.data.get("estimated_cost_currency")
 
+        if event_type != "execution_item_recorded":
+            return Response(
+                {
+                    "event_type": [
+                        "Only 'execution_item_recorded' is supported by this endpoint."
+                    ]
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
+        required_errors = {}
 
+        if not task:
+            required_errors["task"] = ["This field is required."]
+        if not observation:
+            required_errors["observation"] = ["This field is required."]
+        if not summary:
+            required_errors["summary"] = ["This field is required."]
+        if estimated_duration_minutes is None:
+            required_errors["estimated_duration_minutes"] = ["This field is required."]
+        if estimated_cost_amount is None:
+            required_errors["estimated_cost_amount"] = ["This field is required."]
+        if not estimated_cost_currency:
+            required_errors["estimated_cost_currency"] = ["This field is required."]
 
+        if required_errors:
+            return Response(required_errors, status=status.HTTP_400_BAD_REQUEST)
 
+        session = ObligationExecutionSession.objects.get(id=session_id)
 
+        result = self.execution_service.record_execution_item(
+            session=session,
+            task=task,
+            observation=observation,
+            summary=summary,
+            estimated_duration_minutes=estimated_duration_minutes,
+            estimated_cost_amount=estimated_cost_amount,
+            estimated_cost_currency=estimated_cost_currency,
+            planned_execution_time=request.data.get("planned_execution_time"),
+            metadata=request.data.get("metadata", {}),
+            requested_by=request.data.get("requested_by"),
+            requested_from=request.data.get("requested_from"),
+        )
 
+        event = result["event"]
 
+        payload = {
+            "id": event.id,
+            "event_type": event.event_type,
+            "task": event.task,
+            "observation": event.observation,
+            "summary": event.summary,
+            "estimated_duration_minutes": event.estimated_duration_minutes,
+            "estimated_cost_amount": event.estimated_cost_amount,
+            "estimated_cost_currency": event.estimated_cost_currency,
+            "planned_execution_time": event.planned_execution_time,
+            "metadata": event.metadata,
+            "created_at": event.created_at,
+        }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        output = ObligationExecutionEventSerializer(payload)
+        return Response(output.data, status=status.HTTP_201_CREATED)
 
 
 

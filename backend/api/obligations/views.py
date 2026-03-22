@@ -670,6 +670,61 @@ class ObligationExecutionEventListAPIView(APIView):
 
         raise Exception("Invalid obligation type")
 
+class ObligationApprovalRequestListAPIView(APIView):
+    """
+    GET /api/obligations/<obligation_type>/<obligation_id>/approval-requests/
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.approval_repo = ContractApprovalRepository()
+
+    def get(self, request, obligation_type, obligation_id):
+        if obligation_type == "payment":
+            approvals = self.approval_repo.list_for_payment_obligation(obligation_id)
+        elif obligation_type == "service":
+            approvals = self.approval_repo.list_for_service_obligation(obligation_id)
+        else:
+            return Response(
+                {"detail": "Invalid obligation type."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        payload = [
+            {
+                "approval_id": str(approval.id),
+                "approval_type": approval.approval_type,
+                "status": approval.status,
+                "summary": approval.summary,
+                "metadata": approval.metadata,
+                "requested_at": approval.requested_at,
+                "decided_at": approval.decided_at,
+                "execution_event_id": (
+                    str(approval.execution_event_id)
+                    if approval.execution_event_id else None
+                ),
+                "payment_obligation_id": (
+                    str(approval.payment_obligation_id)
+                    if approval.payment_obligation_id else None
+                ),
+                "service_obligation_id": (
+                    str(approval.service_obligation_id)
+                    if approval.service_obligation_id else None
+                ),
+            }
+            for approval in approvals.order_by("requested_at")
+        ]
+
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+
+
+
+
+
+
+
 
 
 

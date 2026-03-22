@@ -11,6 +11,7 @@ from .views import (
     ObligationDashboardSummaryAPIView,
     ObligationExecutionSessionListAPIView,
     ObligationExecutionEventListAPIView,
+    ObligationApprovalRequestListAPIView,
 )
 
 urlpatterns = [
@@ -55,4 +56,10 @@ urlpatterns = [
     ObligationExecutionEventListAPIView.as_view(),
     name="obligation-execution-event-list",
     ),
+    
+    path(
+    "<str:obligation_type>/<uuid:obligation_id>/approval-requests/",
+    ObligationApprovalRequestListAPIView.as_view(),
+    name="obligation-approval-request-list",
+),
 ]

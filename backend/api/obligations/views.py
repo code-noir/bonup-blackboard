@@ -3,7 +3,7 @@
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from backend.api.contracts.serializers import ObligationExecutionSessionSerializer
+from backend.api.contracts.serializers import (ObligationExecutionSessionSerializer, ObligationExecutionEventSerializer)
 from backend.contracts.models import (
     ContractObligation,
     ContractServiceObligation,
@@ -625,7 +625,50 @@ class ObligationExecutionSessionListAPIView(APIView):
         raise Exception("Invalid obligation type")
 
 
+class ObligationExecutionEventListAPIView(APIView):
+    """
+    GET /api/obligations/<obligation_type>/<obligation_id>/execution-events/
+    """
 
+    def get(self, request, obligation_type, obligation_id):
+        obligation = self._get_obligation(
+            obligation_type=obligation_type,
+            obligation_id=obligation_id,
+        )
+
+        payload = []
+
+        sessions = obligation.execution_sessions.all().order_by("started_at")
+
+        for session in sessions:
+            events = session.events.all().order_by("created_at")
+
+            for event in events:
+                payload.append({
+                    "id": event.id,
+                    "event_type": event.event_type,
+                    "task": event.task,
+                    "observation": event.observation,
+                    "summary": event.summary,
+                    "estimated_duration_minutes": event.estimated_duration_minutes,
+                    "estimated_cost_amount": event.estimated_cost_amount,
+                    "estimated_cost_currency": event.estimated_cost_currency,
+                    "planned_execution_time": event.planned_execution_time,
+                    "metadata": event.metadata,
+                    "created_at": event.created_at,
+                })
+
+        serializer = ObligationExecutionEventSerializer(payload, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def _get_obligation(self, *, obligation_type, obligation_id):
+        if obligation_type == "payment":
+            return ContractObligation.objects.get(id=obligation_id)
+
+        if obligation_type == "service":
+            return ContractServiceObligation.objects.get(id=obligation_id)
+
+        raise Exception("Invalid obligation type")
 
 
 

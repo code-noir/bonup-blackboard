@@ -12,6 +12,9 @@ from .views import (
     ObligationExecutionSessionListAPIView,
     ObligationExecutionEventListAPIView,
     ObligationApprovalRequestListAPIView,
+    ObligationValueAdjustmentListAPIView,
+    ObligationPromotionListAPIView,
+    ObligationPromotedSideObligationListAPIView,
 )
 
 urlpatterns = [
@@ -56,10 +59,29 @@ urlpatterns = [
     ObligationExecutionEventListAPIView.as_view(),
     name="obligation-execution-event-list",
     ),
-    
+
     path(
     "<str:obligation_type>/<uuid:obligation_id>/approval-requests/",
     ObligationApprovalRequestListAPIView.as_view(),
     name="obligation-approval-request-list",
-),
+    ),
+
+    path(
+    "<str:obligation_type>/<uuid:obligation_id>/value-adjustments/",
+    ObligationValueAdjustmentListAPIView.as_view(),
+    name="obligation-value-adjustment-list",
+    ),
+    
+    path(
+        "<str:obligation_type>/<uuid:obligation_id>/promotions/",
+        ObligationPromotionListAPIView.as_view(),
+        name="obligation-promotion-list",
+    ),
+    
+    path(
+        "<str:obligation_type>/<uuid:obligation_id>/promoted-side-obligations/",
+        ObligationPromotedSideObligationListAPIView.as_view(),
+        name="obligation-promoted-side-obligation-list",
+    ),
+
 ]

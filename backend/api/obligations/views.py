@@ -718,6 +718,123 @@ class ObligationApprovalRequestListAPIView(APIView):
         return Response(payload, status=status.HTTP_200_OK)
 
 
+class ObligationValueAdjustmentListAPIView(APIView):
+    """
+    GET /api/obligations/<obligation_type>/<obligation_id>/value-adjustments/
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.adjustment_repo = ContractValueAdjustmentRepository()
+
+    def get(self, request, obligation_type, obligation_id):
+        if obligation_type == "payment":
+            adjustments = self.adjustment_repo.list_for_payment_obligation(obligation_id)
+        elif obligation_type == "service":
+            adjustments = self.adjustment_repo.list_for_service_obligation(obligation_id)
+        else:
+            return Response(
+                {"detail": "Invalid obligation type."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        payload = [
+            {
+                "adjustment_id": str(adjustment.id),
+                "event_id": (
+                    str(adjustment.execution_event_id)
+                    if adjustment.execution_event_id else None
+                ),
+                "session_id": (
+                    str(adjustment.execution_event.session_id)
+                    if adjustment.execution_event_id and adjustment.execution_event.session_id
+                    else None
+                ),
+                "adjustment_type": adjustment.adjustment_type,
+                "mode": adjustment.mode,
+                "amount": str(adjustment.amount),
+                "currency": adjustment.currency,
+                "summary": adjustment.summary,
+                "created_at": adjustment.created_at,
+            }
+            for adjustment in adjustments.order_by("created_at")
+        ]
+
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class ObligationPromotionListAPIView(APIView):
+    """
+    GET /api/obligations/<obligation_type>/<obligation_id>/promotions/
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.promotion_repo = ContractObligationPromotionRepository()
+
+    def get(self, request, obligation_type, obligation_id):
+        if obligation_type != "service":
+            return Response([], status=status.HTTP_200_OK)
+
+        promotions = self.promotion_repo.list_for_parent_service_obligation(obligation_id)
+
+        payload = [
+            {
+                "promotion_id": str(promotion.id),
+                "promotion_type": promotion.promotion_type,
+                "summary": promotion.summary,
+                "source_execution_event_id": str(promotion.source_execution_event_id),
+                "parent_service_obligation_id": (
+                    str(promotion.parent_service_obligation_id)
+                    if promotion.parent_service_obligation_id else None
+                ),
+                "promoted_service_obligation_id": (
+                    str(promotion.promoted_service_obligation_id)
+                    if promotion.promoted_service_obligation_id else None
+                ),
+                "created_at": promotion.created_at,
+            }
+            for promotion in promotions.order_by("created_at")
+        ]
+
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class ObligationPromotedSideObligationListAPIView(APIView):
+    """
+    GET /api/obligations/<obligation_type>/<obligation_id>/promoted-side-obligations/
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.promotion_repo = ContractObligationPromotionRepository()
+
+    def get(self, request, obligation_type, obligation_id):
+        if obligation_type != "service":
+            return Response([], status=status.HTTP_200_OK)
+
+        promotions = self.promotion_repo.list_for_parent_service_obligation(obligation_id)
+
+        payload = []
+
+        for promotion in promotions.order_by("created_at"):
+            promoted = promotion.promoted_service_obligation
+            if not promoted:
+                continue
+
+            payload.append({
+                "obligation_id": str(promoted.id),
+                "contract_id": str(promoted.contract_id),
+                "description": promoted.description,
+                "due_date": promoted.due_date,
+                "state": promoted.state,
+                "obligor_id": promoted.obligor_id,
+                "obligee_id": promoted.obligee_id,
+            })
+
+        return Response(payload, status=status.HTTP_200_OK)
+
+
 
 
 

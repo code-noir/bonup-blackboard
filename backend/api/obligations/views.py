@@ -1,9 +1,20 @@
 # backend/api/obligations/views.py
-
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
-from rest_framework.views import APIView
-from backend.api.contracts.serializers import (ObligationExecutionSessionSerializer, ObligationExecutionEventSerializer)
+from rest_framework.views import APIView 
+from backend.api.contracts.serializers import (
+    ObligationExecutionSessionSerializer,
+    ObligationExecutionEventSerializer,
+    OpenExecutionSessionSerializer,
+)
+from backend.contracts.models import (
+    ContractObligation,
+    ContractServiceObligation,
+    ObligationExecutionSession,
+)
+
+
 from backend.contracts.models import (
     ContractObligation,
     ContractServiceObligation,
@@ -17,6 +28,11 @@ from backend.infrastructure.repositories.contract_value_adjustment_repository im
 from backend.infrastructure.repositories.contract_obligation_promotion_repository import (
     ContractObligationPromotionRepository,
 )
+from backend.api.contracts.services.obligation_execution_service import (
+    ObligationExecutionService,
+)
+
+
 
 
 class ObligationListAPIView(APIView):
@@ -589,10 +605,16 @@ class ObligationDashboardSummaryAPIView(APIView):
         return Response(payload, status=status.HTTP_200_OK)
 
 
+
 class ObligationExecutionSessionListAPIView(APIView):
     """
     GET /api/obligations/<obligation_type>/<obligation_id>/execution-sessions/
+    POST /api/obligations/<obligation_type>/<obligation_id>/execution-sessions/
     """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.execution_service = ObligationExecutionService()
 
     def get(self, request, obligation_type, obligation_id):
         obligation = self._get_obligation(
@@ -615,6 +637,19 @@ class ObligationExecutionSessionListAPIView(APIView):
         serializer = ObligationExecutionSessionSerializer(payload, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    def post(self, request, obligation_type, obligation_id):
+        serializer = OpenExecutionSessionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        session = self.execution_service.open_session(
+            obligation_type=obligation_type,
+            obligation_id=obligation_id,
+            started_at=serializer.validated_data.get("started_at"),
+        )
+
+        output = ObligationExecutionSessionSerializer(session)
+        return Response(output.data, status=status.HTTP_201_CREATED)
+
     def _get_obligation(self, *, obligation_type, obligation_id):
         if obligation_type == "payment":
             return ContractObligation.objects.get(id=obligation_id)
@@ -623,7 +658,6 @@ class ObligationExecutionSessionListAPIView(APIView):
             return ContractServiceObligation.objects.get(id=obligation_id)
 
         raise Exception("Invalid obligation type")
-
 
 class ObligationExecutionEventListAPIView(APIView):
     """
@@ -834,7 +868,40 @@ class ObligationPromotedSideObligationListAPIView(APIView):
 
         return Response(payload, status=status.HTTP_200_OK)
 
+class ObligationExecutionSessionCloseAPIView(APIView):
+    """
+    POST /api/obligations/execution-sessions/<session_id>/close/
+    """
 
+    def post(self, request, session_id):
+        session = ObligationExecutionSession.objects.get(id=session_id)
+
+        if session.status == "closed":
+            payload = {
+                "id": session.id,
+                "status": session.status,
+                "started_at": session.started_at,
+                "ended_at": session.ended_at,
+            }
+            serializer = ObligationExecutionSessionSerializer(payload)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        session.status = "closed"
+
+        if session.ended_at is None:
+            session.ended_at = timezone.now()
+
+        session.save(update_fields=["status", "ended_at"])
+
+        payload = {
+            "id": session.id,
+            "status": session.status,
+            "started_at": session.started_at,
+            "ended_at": session.ended_at,
+        }
+
+        serializer = ObligationExecutionSessionSerializer(payload)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 

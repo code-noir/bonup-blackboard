@@ -15,6 +15,7 @@ from .views import (
     ObligationValueAdjustmentListAPIView,
     ObligationPromotionListAPIView,
     ObligationPromotedSideObligationListAPIView,
+    ObligationExecutionSessionCloseAPIView,
 )
 
 urlpatterns = [
@@ -83,5 +84,11 @@ urlpatterns = [
         ObligationPromotedSideObligationListAPIView.as_view(),
         name="obligation-promoted-side-obligation-list",
     ),
+
+    path(
+    "execution-sessions/<uuid:session_id>/close/",
+    ObligationExecutionSessionCloseAPIView.as_view(),
+    name="obligation-execution-session-close",
+),
 
 ]

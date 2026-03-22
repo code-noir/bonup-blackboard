@@ -8,8 +8,11 @@ from backend.api.contracts.serializers import (
     ObligationExecutionSessionSerializer,
     ObligationExecutionEventSerializer,
     OpenExecutionSessionSerializer,
-  
-)
+    ApprovalRequestSerializer, ApprovalDecisionSerializer,
+  )
+
+from backend.api.contracts.services.approval_service import ApprovalService
+
 
 from backend.contracts.models import (
     ContractObligation,
@@ -984,6 +987,65 @@ class ObligationExecutionEventCreateAPIView(APIView):
         output = ObligationExecutionEventSerializer(payload)
         return Response(output.data, status=status.HTTP_201_CREATED)
 
+
+class ObligationApprovalRequestApproveAPIView(APIView):
+    """
+    POST /api/obligations/approval-requests/<approval_id>/approve/
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.service = ApprovalService()
+
+    def post(self, request, approval_id):
+        serializer = ApprovalDecisionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        approval = self.service.approve(approval_id=approval_id)
+
+        response_serializer = ApprovalRequestSerializer({
+            "id": approval.id,
+            "approval_type": approval.approval_type,
+            "status": approval.status,
+            "summary": approval.summary,
+            "metadata": approval.metadata,
+            "requested_at": approval.requested_at,
+            "decided_at": approval.decided_at,
+            "execution_event_id": approval.execution_event_id,
+            "payment_obligation_id": approval.payment_obligation_id,
+            "service_obligation_id": approval.service_obligation_id,
+        })
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
+
+
+class ObligationApprovalRequestRejectAPIView(APIView):
+    """
+    POST /api/obligations/approval-requests/<approval_id>/reject/
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.service = ApprovalService()
+
+    def post(self, request, approval_id):
+        serializer = ApprovalDecisionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        approval = self.service.reject(approval_id=approval_id)
+
+        response_serializer = ApprovalRequestSerializer({
+            "id": approval.id,
+            "approval_type": approval.approval_type,
+            "status": approval.status,
+            "summary": approval.summary,
+            "metadata": approval.metadata,
+            "requested_at": approval.requested_at,
+            "decided_at": approval.decided_at,
+            "execution_event_id": approval.execution_event_id,
+            "payment_obligation_id": approval.payment_obligation_id,
+            "service_obligation_id": approval.service_obligation_id,
+        })
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
 
 
 

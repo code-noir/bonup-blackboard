@@ -17,6 +17,9 @@ from .views import (
     ObligationPromotedSideObligationListAPIView,
     ObligationExecutionSessionCloseAPIView,
     ObligationExecutionEventCreateAPIView,
+    ObligationApprovalRequestApproveAPIView,
+    ObligationApprovalRequestRejectAPIView,
+
 
 )
 urlpatterns = [
@@ -90,6 +93,19 @@ urlpatterns = [
         ObligationDetailAPIView.as_view(),
         name="obligation-detail",
     ),
+
+    path(
+    "approval-requests/<uuid:approval_id>/approve/",
+    ObligationApprovalRequestApproveAPIView.as_view(),
+    name="obligation-approval-request-approve",
+    ),
+    
+    path(
+        "approval-requests/<uuid:approval_id>/reject/",
+        ObligationApprovalRequestRejectAPIView.as_view(),
+        name="obligation-approval-request-reject",
+    ),
+
 ]
 
 

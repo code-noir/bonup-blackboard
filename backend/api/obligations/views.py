@@ -3,17 +3,21 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView 
+from django.contrib.auth import get_user_model
+User = get_user_model()
 
 from backend.api.contracts.serializers import (
     ObligationExecutionSessionSerializer,
     ObligationExecutionEventSerializer,
     OpenExecutionSessionSerializer,
-    ApprovalRequestSerializer, 
+    ApprovalRequestSerializer,
     ApprovalDecisionSerializer,
+    ApprovalRequestCreateSerializer,
     PromoteExecutionEventSerializer,
     ObligationPromotionSerializer,
     PromotedServiceObligationSerializer,
 )
+
 
 from backend.api.contracts.services.obligation_promotion_service import (
     ObligationPromotionService,
@@ -26,6 +30,7 @@ from backend.contracts.models import (
     ContractObligation,
     ContractServiceObligation,
     ObligationExecutionSession,
+    ObligationExecutionEvent,
 )
 
 
@@ -715,14 +720,17 @@ class ObligationExecutionEventListAPIView(APIView):
 
         raise Exception("Invalid obligation type")
 
+
 class ObligationApprovalRequestListAPIView(APIView):
     """
-    GET /api/obligations/<obligation_type>/<obligation_id>/approval-requests/
+    GET  /api/obligations/<obligation_type>/<obligation_id>/approval-requests/
+    POST /api/obligations/<obligation_type>/<obligation_id>/approval-requests/
     """
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.approval_repo = ContractApprovalRepository()
+        self.service = ApprovalService()
 
     def get(self, request, obligation_type, obligation_id):
         if obligation_type == "payment":
@@ -762,6 +770,50 @@ class ObligationApprovalRequestListAPIView(APIView):
 
         return Response(payload, status=status.HTTP_200_OK)
 
+    def post(self, request, obligation_type, obligation_id):
+        serializer = ApprovalRequestCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        execution_event = ObligationExecutionEvent.objects.get(
+            id=serializer.validated_data["execution_event_id"]
+        )
+
+        requested_by = None
+        requested_from = None
+
+        requested_by_id = serializer.validated_data.get("requested_by_id")
+        requested_from_id = serializer.validated_data.get("requested_from_id")
+
+        if requested_by_id:
+            requested_by = User.objects.get(id=requested_by_id)
+
+        if requested_from_id:
+            requested_from = User.objects.get(id=requested_from_id)
+
+        approval = self.service.request_execution_item_approval(
+            obligation_type=obligation_type,
+            obligation_id=obligation_id,
+            execution_event=execution_event,
+            requested_by=requested_by,
+            requested_from=requested_from,
+            summary=serializer.validated_data["summary"],
+            metadata=serializer.validated_data.get("metadata"),
+        )
+
+        response_serializer = ApprovalRequestSerializer({
+            "id": approval.id,
+            "approval_type": approval.approval_type,
+            "status": approval.status,
+            "summary": approval.summary,
+            "metadata": approval.metadata,
+            "requested_at": approval.requested_at,
+            "decided_at": approval.decided_at,
+            "execution_event_id": approval.execution_event_id,
+            "payment_obligation_id": approval.payment_obligation_id,
+            "service_obligation_id": approval.service_obligation_id,
+        })
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+        
 
 class ObligationValueAdjustmentListAPIView(APIView):
     """
@@ -1105,7 +1157,58 @@ class ObligationExecutionEventPromotionAPIView(APIView):
             status=status.HTTP_201_CREATED,
         )
 
+class ObligationApprovalRequestCreateAPIView(APIView):
+    """
+    POST /api/obligations/<obligation_type>/<obligation_id>/approval-requests/
+    """
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.service = ApprovalService()
+
+    def post(self, request, obligation_type, obligation_id):
+        serializer = ApprovalRequestCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        execution_event = ObligationExecutionEvent.objects.get(
+            id=serializer.validated_data["execution_event_id"]
+        )
+
+        requested_by = None
+        requested_from = None
+
+        requested_by_id = serializer.validated_data.get("requested_by_id")
+        requested_from_id = serializer.validated_data.get("requested_from_id")
+
+        if requested_by_id:
+            requested_by = User.objects.get(id=requested_by_id)
+
+        if requested_from_id:
+            requested_from = User.objects.get(id=requested_from_id)
+
+        approval = self.service.request_execution_item_approval(
+            obligation_type=obligation_type,
+            obligation_id=obligation_id,
+            execution_event=execution_event,
+            requested_by=requested_by,
+            requested_from=requested_from,
+            summary=serializer.validated_data["summary"],
+            metadata=serializer.validated_data.get("metadata"),
+        )
+
+        response_serializer = ApprovalRequestSerializer({
+            "id": approval.id,
+            "approval_type": approval.approval_type,
+            "status": approval.status,
+            "summary": approval.summary,
+            "metadata": approval.metadata,
+            "requested_at": approval.requested_at,
+            "decided_at": approval.decided_at,
+            "execution_event_id": approval.execution_event_id,
+            "payment_obligation_id": approval.payment_obligation_id,
+            "service_obligation_id": approval.service_obligation_id,
+        })
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
 

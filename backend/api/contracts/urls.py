@@ -6,6 +6,7 @@ from .management_views import ContractManagementSummaryAPIView
 
 from .promotion_views import ExecutionEventPromotionAPIView
 
+from .value_adjustment_views import ObligationValueAdjustmentListCreateAPIView
 
 from .views import ContractViewSet
 from .obligations_views import ContractObligationsAPIView
@@ -84,6 +85,13 @@ urlpatterns = [
     ExecutionEventPromotionAPIView.as_view(),
     name="contract-execution-event-promote",
     ),
+
+    path(
+    "obligations/<str:obligation_type>/<uuid:obligation_id>/value-adjustments/",
+    ObligationValueAdjustmentListCreateAPIView.as_view(),
+    name="contract-obligation-value-adjustments",
+    ),
+
 
 
     path("", include(router.urls)),

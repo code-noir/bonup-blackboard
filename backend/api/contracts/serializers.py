@@ -129,3 +129,23 @@ class PromotedServiceObligationSerializer(serializers.Serializer):
     obligee_id = serializers.IntegerField(read_only=True)
 
 
+
+class ValueAdjustmentCreateSerializer(serializers.Serializer):
+    execution_event_id = serializers.UUIDField(required=False, allow_null=True)
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+    currency = serializers.CharField()
+    summary = serializers.CharField()
+
+
+class ValueAdjustmentSerializer(serializers.Serializer):
+    adjustment_id = serializers.UUIDField(read_only=True)
+    event_id = serializers.UUIDField(read_only=True, allow_null=True)
+    payment_obligation_id = serializers.UUIDField(read_only=True, allow_null=True)
+    service_obligation_id = serializers.UUIDField(read_only=True, allow_null=True)
+    adjustment_type = serializers.CharField(read_only=True)
+    mode = serializers.CharField(read_only=True)
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    currency = serializers.CharField(read_only=True)
+    summary = serializers.CharField(read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
+

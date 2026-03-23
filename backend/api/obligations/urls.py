@@ -19,7 +19,9 @@ from .views import (
     ObligationApprovalRequestApproveAPIView,
     ObligationApprovalRequestRejectAPIView,
     ObligationExecutionEventPromotionAPIView,
-     ObligationValueAdjustmentListCreateAPIView
+    ObligationValueAdjustmentListCreateAPIView,
+    ObligationResolveAPIView,
+
 )
 urlpatterns = [
     path(
@@ -83,6 +85,13 @@ urlpatterns = [
         ObligationNextActionsAPIView.as_view(),
         name="obligation-next-actions",
     ),
+
+    path(
+    "<str:obligation_type>/<uuid:obligation_id>/resolve/",
+    ObligationResolveAPIView.as_view(),
+    name="obligation-resolve",
+    ),
+
     path(
         "<str:obligation_type>/<uuid:obligation_id>/",
         ObligationDetailAPIView.as_view(),
@@ -118,7 +127,6 @@ urlpatterns = [
     ObligationValueAdjustmentListCreateAPIView.as_view(),
     name="obligation-value-adjustment-list",
     ),
-
 
 ]
 

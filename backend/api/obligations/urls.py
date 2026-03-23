@@ -12,7 +12,6 @@ from .views import (
     ObligationExecutionSessionListAPIView,
     ObligationExecutionEventListAPIView,
     ObligationApprovalRequestListAPIView,
-    ObligationValueAdjustmentListAPIView,
     ObligationPromotionListAPIView,
     ObligationPromotedSideObligationListAPIView,
     ObligationExecutionSessionCloseAPIView,
@@ -20,6 +19,7 @@ from .views import (
     ObligationApprovalRequestApproveAPIView,
     ObligationApprovalRequestRejectAPIView,
     ObligationExecutionEventPromotionAPIView,
+     ObligationValueAdjustmentListCreateAPIView
 )
 urlpatterns = [
     path(
@@ -62,11 +62,7 @@ urlpatterns = [
         ObligationApprovalRequestListAPIView.as_view(),
         name="obligation-approval-request-list",
     ),
-    path(
-        "<str:obligation_type>/<uuid:obligation_id>/value-adjustments/",
-        ObligationValueAdjustmentListAPIView.as_view(),
-        name="obligation-value-adjustment-list",
-    ),
+   
     path(
         "<str:obligation_type>/<uuid:obligation_id>/promotions/",
         ObligationPromotionListAPIView.as_view(),
@@ -115,7 +111,14 @@ urlpatterns = [
     "<str:obligation_type>/<uuid:obligation_id>/approval-requests/",
     ObligationApprovalRequestListAPIView.as_view(),
     name="obligation-approval-request-list",
-),
+    ),
+
+    path(
+    "<str:obligation_type>/<uuid:obligation_id>/value-adjustments/",
+    ObligationValueAdjustmentListCreateAPIView.as_view(),
+    name="obligation-value-adjustment-list",
+    ),
+
 
 ]
 

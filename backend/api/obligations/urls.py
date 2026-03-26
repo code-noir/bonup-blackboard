@@ -4,6 +4,7 @@
 from django.urls import path
 from backend.api.contracts.proof_views import ObligationProofOfWorkAPIView
 from .views import (
+    ObligationExecutionSessionDetailAPIView,
     ObligationListAPIView,
     ObligationDetailAPIView,
     ObligationTimelineAPIView,
@@ -21,10 +22,14 @@ from .views import (
     ObligationExecutionEventPromotionAPIView,
     ObligationValueAdjustmentListCreateAPIView,
     ObligationResolveAPIView,
-
+    ObligationPaymentResolveAPIView,
+    ObligationExecutionSessionDetailAPIView,
+    ObligationExecutionEventDetailAPIView,
+    ObligationExecutionEventDeleteAPIView,
 )
+
 urlpatterns = [
-    path(
+    path(  
         "",
         ObligationListAPIView.as_view(),
         name="obligation-list",
@@ -34,6 +39,13 @@ urlpatterns = [
         ObligationDashboardSummaryAPIView.as_view(),
         name="obligation-dashboard-summary",
     ),
+
+    path(
+    "execution-sessions/<uuid:session_id>/",
+    ObligationExecutionSessionDetailAPIView.as_view(),
+    name="obligation-execution-session-detail",
+    ),
+
     path(
         "execution-sessions/<uuid:session_id>/close/",
         ObligationExecutionSessionCloseAPIView.as_view(),
@@ -70,6 +82,13 @@ urlpatterns = [
         ObligationPromotionListAPIView.as_view(),
         name="obligation-promotion-list",
     ),
+      path(
+    "execution-events/<uuid:event_id>/",
+    ObligationExecutionEventDetailAPIView.as_view(),
+    name="obligation-execution-event-detail",
+    ),   
+
+
     path(
         "<str:obligation_type>/<uuid:obligation_id>/promoted-side-obligations/",
         ObligationPromotedSideObligationListAPIView.as_view(),
@@ -127,6 +146,19 @@ urlpatterns = [
     ObligationValueAdjustmentListCreateAPIView.as_view(),
     name="obligation-value-adjustment-list",
     ),
+
+    path(
+    "payment/<uuid:obligation_id>/resolve/",
+    ObligationPaymentResolveAPIView.as_view(),
+    name="obligation-payment-resolve",
+    ),
+
+    path(
+        "execution-events/<uuid:event_id>/delete/",
+        ObligationExecutionEventDeleteAPIView.as_view(),
+        name="obligation-execution-event-delete",
+    ),
+
 
 ]
 

@@ -14,6 +14,7 @@ from backend.api.contracts.services.obligation_execution_service import (
 from backend.contracts.models import (
     ContractObligation,
     ContractServiceObligation,
+    ObligationExecutionEvent,
     ObligationExecutionSession,
 )
 from rest_framework import status
@@ -225,6 +226,95 @@ class ExecutionSessionCloseAPIView(APIView):
         return Response(response_serializer.data, status=status.HTTP_200_OK)
 
 
+class ExecutionSessionDetailAPIView(APIView):
+    """
+    GET /api/contracts/execution-sessions/<session_id>/
+    """
+
+    def get(self, request, session_id):
+        try:
+            session = ObligationExecutionSession.objects.get(id=session_id)
+        except ObligationExecutionSession.DoesNotExist:
+            return Response(
+                {"error": "Execution session not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        payload = {
+            "id": session.id,
+            "status": session.status,
+            "started_at": session.started_at,
+            "ended_at": session.ended_at,
+        }
+
+        serializer = ObligationExecutionSessionSerializer(payload)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 
+
+class ExecutionEventDetailAPIView(APIView):
+    """
+    GET /api/contracts/execution-events/<event_id>/
+    """
+
+    def get(self, request, event_id):
+        try:
+            event = ObligationExecutionEvent.objects.get(id=event_id)
+        except ObligationExecutionEvent.DoesNotExist:
+            return Response(
+                {"error": "Execution event not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        payload = {
+            "id": event.id,
+            "event_type": event.event_type,
+            "task": event.task,
+            "observation": event.observation,
+            "summary": event.summary,
+            "estimated_duration_minutes": event.estimated_duration_minutes,
+            "estimated_cost_amount": event.estimated_cost_amount,
+            "estimated_cost_currency": event.estimated_cost_currency,
+            "planned_execution_time": event.planned_execution_time,
+            "metadata": event.metadata,
+            "created_at": event.created_at,
+        }
+
+        serializer = ObligationExecutionEventSerializer(payload)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class ExecutionEventDeleteAPIView(APIView):
+    """
+    DELETE /api/contracts/execution-events/<event_id>/delete/
+    """
+
+    def delete(self, request, event_id):
+        try:
+            event = ObligationExecutionEvent.objects.get(id=event_id)
+        except ObligationExecutionEvent.DoesNotExist:
+            return Response(
+                {"error": "Execution event not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        event.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ExecutionEventDeleteAPIView(APIView):
+    """
+    DELETE /api/contracts/execution-events/<event_id>/delete/
+    """
+
+    def delete(self, request, event_id):
+        try:
+            event = ObligationExecutionEvent.objects.get(id=event_id)
+        except ObligationExecutionEvent.DoesNotExist:
+            return Response(
+                {"error": "Execution event not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        event.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

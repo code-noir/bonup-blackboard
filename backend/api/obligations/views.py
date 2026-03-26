@@ -1033,6 +1033,25 @@ class ObligationExecutionSessionCloseAPIView(APIView):
 
         serializer = ObligationExecutionSessionSerializer(payload)
         return Response(serializer.data, status=status.HTTP_200_OK)
+        
+
+class ObligationExecutionSessionDetailAPIView(APIView):
+    """
+    GET /api/obligations/execution-sessions/<session_id>/
+    """
+
+    def get(self, request, session_id):
+        session = ObligationExecutionSession.objects.get(id=session_id)
+
+        payload = {
+            "id": session.id,
+            "status": session.status,
+            "started_at": session.started_at,
+            "ended_at": session.ended_at,
+        }
+
+        serializer = ObligationExecutionSessionSerializer(payload)
+        return Response(serializer.data, status=status.HTTP_200_OK)      
 
 class ObligationExecutionEventCreateAPIView(APIView):
     """
@@ -1328,10 +1347,83 @@ class ObligationResolveAPIView(APIView):
         )
 
 
+class ObligationPaymentResolveAPIView(APIView):
+    """
+    POST /api/obligations/payment/<obligation_id>/resolve/
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        from backend.api.contracts.services.payment_resolution_service import (
+            PaymentResolutionService,
+        )
+        self.service = PaymentResolutionService()
+
+    def post(self, request, obligation_id):
+        try:
+            obligation = self.service.resolve(obligation_id=obligation_id)
+        except Exception as e:
+            return Response(
+                {"detail": str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        payload = {
+            "id": str(obligation.id),
+            "state": obligation.state,
+            "amount_due": str(obligation.amount_due),
+            "amount_paid": str(obligation.amount_paid),
+        }
+
+        return Response(payload, status=status.HTTP_200_OK)
 
 
+class ObligationExecutionEventDetailAPIView(APIView):
+    """
+    GET /api/obligations/execution-events/<event_id>/
+    """
 
+    def get(self, request, event_id):
+        try:
+            event = ObligationExecutionEvent.objects.get(id=event_id)
+        except ObligationExecutionEvent.DoesNotExist:
+            return Response(
+                {"error": "Execution event not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
+        payload = {
+            "id": event.id,
+            "event_type": event.event_type,
+            "task": event.task,
+            "observation": event.observation,
+            "summary": event.summary,
+            "estimated_duration_minutes": event.estimated_duration_minutes,
+            "estimated_cost_amount": event.estimated_cost_amount,
+            "estimated_cost_currency": event.estimated_cost_currency,
+            "planned_execution_time": event.planned_execution_time,
+            "metadata": event.metadata,
+            "created_at": event.created_at,
+        }
 
+        serializer = ObligationExecutionEventSerializer(payload)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class ObligationExecutionEventDeleteAPIView(APIView):
+    """
+    DELETE /api/obligations/execution-events/<event_id>/delete/
+    """
+
+    def delete(self, request, event_id):
+        try:
+            event = ObligationExecutionEvent.objects.get(id=event_id)
+        except ObligationExecutionEvent.DoesNotExist:
+            return Response(
+                {"error": "Execution event not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        event.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 

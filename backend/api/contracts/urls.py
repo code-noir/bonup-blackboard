@@ -7,15 +7,20 @@ from .management_views import ContractManagementSummaryAPIView
 from .promotion_views import ExecutionEventPromotionAPIView
 
 from .value_adjustment_views import ObligationValueAdjustmentListCreateAPIView
-from .resolve_views import ObligationResolveAPIView
+
+from .resolve_views import ( ObligationResolveAPIView, ContractPaymentResolveAPIView, )
 from .views import ContractViewSet
 from .obligations_views import ContractObligationsAPIView
 from .proof_views import ObligationProofOfWorkAPIView
+
 from .execution_views import (
     ObligationExecutionSessionListCreateAPIView,
     ExecutionItemCreateAPIView,
     ExecutionSessionEventListAPIView,
     ExecutionSessionCloseAPIView,
+    ExecutionSessionDetailAPIView,
+    ExecutionEventDetailAPIView,
+    ExecutionEventDeleteAPIView,
 )
 from .approval_views import (
     ObligationApprovalRequestListCreateAPIView,
@@ -48,6 +53,26 @@ urlpatterns = [
         name="contract-obligation-approval-requests",
     ),
     path(
+        "obligations/<str:obligation_type>/<uuid:obligation_id>/value-adjustments/",
+        ObligationValueAdjustmentListCreateAPIView.as_view(),
+        name="contract-obligation-value-adjustments",
+    ),
+    path(
+        "obligations/payment/<uuid:obligation_id>/resolve/",
+        ContractPaymentResolveAPIView.as_view(),
+        name="contract-payment-resolve",
+    ),
+    path(
+        "obligations/<str:obligation_type>/<uuid:obligation_id>/resolve/",
+        ObligationResolveAPIView.as_view(),
+        name="contract-obligation-resolve",
+    ),
+    path(
+        "execution-sessions/<uuid:session_id>/",
+        ExecutionSessionDetailAPIView.as_view(),
+        name="contract-execution-session-detail",
+    ),
+    path(
         "execution-sessions/<uuid:session_id>/execution-items/",
         ExecutionItemCreateAPIView.as_view(),
         name="contract-execution-item-create",
@@ -63,6 +88,21 @@ urlpatterns = [
         name="contract-execution-session-close",
     ),
     path(
+        "execution-events/<uuid:event_id>/",
+        ExecutionEventDetailAPIView.as_view(),
+        name="contract-execution-event-detail",
+    ),
+    path(
+        "execution-events/<uuid:event_id>/delete/",
+        ExecutionEventDeleteAPIView.as_view(),
+        name="contract-execution-event-delete",
+    ),
+    path(
+        "execution-events/<uuid:execution_event_id>/promote/",
+        ExecutionEventPromotionAPIView.as_view(),
+        name="contract-execution-event-promote",
+    ),
+    path(
         "approval-requests/<uuid:approval_id>/approve/",
         ApprovalRequestApproveAPIView.as_view(),
         name="contract-approval-request-approve",
@@ -72,38 +112,10 @@ urlpatterns = [
         ApprovalRequestRejectAPIView.as_view(),
         name="contract-approval-request-reject",
     ),
-
-
     path(
-    "<uuid:contract_id>/management-summary/",
-    ContractManagementSummaryAPIView.as_view(),
-    name="contract-management-summary",
+        "<uuid:contract_id>/management-summary/",
+        ContractManagementSummaryAPIView.as_view(),
+        name="contract-management-summary",
     ),
-
-    path(
-    "execution-events/<uuid:execution_event_id>/promote/",
-    ExecutionEventPromotionAPIView.as_view(),
-    name="contract-execution-event-promote",
-    ),
-
-    path(
-    "obligations/<str:obligation_type>/<uuid:obligation_id>/value-adjustments/",
-    ObligationValueAdjustmentListCreateAPIView.as_view(),
-    name="contract-obligation-value-adjustments",
-    ),
-
-    path(
-    "obligations/<str:obligation_type>/<uuid:obligation_id>/resolve/",
-    ObligationResolveAPIView.as_view(),
-    name="contract-obligation-resolve",
-),
-
-
     path("", include(router.urls)),
 ]
-
-
-
-
-
-

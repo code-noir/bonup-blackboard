@@ -318,3 +318,22 @@ class ExecutionEventDeleteAPIView(APIView):
 
         event.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+class ExecutionEventDeleteAPIView(APIView):
+    """
+    DELETE /api/contracts/execution-events/<event_id>/delete/
+    """
+
+    def delete(self, request, event_id):
+        try:
+            event = ObligationExecutionEvent.objects.get(id=event_id)
+        except ObligationExecutionEvent.DoesNotExist:
+            return Response(
+                {"error": "Execution event not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        event.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+

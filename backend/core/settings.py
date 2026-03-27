@@ -44,6 +44,7 @@ INSTALLED_APPS = [
 
     'backend.users',
     'backend.contracts',
+    'backend.payments',
     'django_extensions',
 ]
 

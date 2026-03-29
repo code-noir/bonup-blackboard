@@ -6,7 +6,16 @@ from backend.contracts.models import ContractObligation
 
 class PaymentResolutionService:
     def resolve(self, obligation_id):
-        obligation = ContractObligation.objects.get(id=obligation_id)
+        try:
+            obligation = ContractObligation.objects.get(id=obligation_id)
+        except ContractObligation.DoesNotExist:
+            raise Exception("Payment obligation not found.")
+
+        if obligation.state == "resolved":
+            raise Exception("Cannot resolve: obligation is already resolved.")
+
+        if obligation.state == "breached":
+            raise Exception("Cannot resolve: obligation has been breached.")
 
         # Basic guard
         if obligation.amount_paid < obligation.amount_due:

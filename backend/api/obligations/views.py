@@ -1304,21 +1304,25 @@ class ObligationResolveAPIView(APIView):
 
     def post(self, request, obligation_type, obligation_id):
         if obligation_type == "service":
-            obligation = ContractServiceObligation.objects.get(id=obligation_id)
+            try:
+                obligation = ContractServiceObligation.objects.get(id=obligation_id)
+            except ContractServiceObligation.DoesNotExist:
+                return Response(
+                    {"detail": "Service obligation not found."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
 
             if obligation.state == "resolved":
-                payload = {
-                    "id": str(obligation.id),
-                    "type": "service",
-                    "contract_id": str(obligation.contract_id),
-                    "state": obligation.state,
-                    "due_date": obligation.due_date,
-                    "description": obligation.description,
-                    "obligor_id": obligation.obligor_id,
-                    "obligee_id": obligation.obligee_id,
-                    "completed_at": obligation.completed_at,
-                }
-                return Response(payload, status=status.HTTP_200_OK)
+                return Response(
+                    {"detail": "Cannot resolve: obligation is already resolved."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            if obligation.state == "breached":
+                return Response(
+                    {"detail": "Cannot resolve: obligation has been breached."},
+                    status=status.HTTP_409_CONFLICT,
+                )
 
             obligation.mark_completed()
 

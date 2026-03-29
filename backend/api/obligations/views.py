@@ -1,8 +1,9 @@
 # backend/api/obligations/views.py
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
-from rest_framework.views import APIView 
+from rest_framework.views import APIView
 from django.contrib.auth import get_user_model
 User = get_user_model()
 
@@ -156,7 +157,7 @@ class ObligationDetailAPIView(APIView):
 
     def get(self, request, obligation_type, obligation_id):
         if obligation_type == "payment":
-            obligation = ContractObligation.objects.get(id=obligation_id)
+            obligation = get_object_or_404(ContractObligation, id=obligation_id)
             sessions = obligation.execution_sessions.all()
             approvals = self.approval_repo.list_for_payment_obligation(obligation.id)
             adjustments = self.adjustment_repo.list_for_payment_obligation(obligation.id)
@@ -186,7 +187,7 @@ class ObligationDetailAPIView(APIView):
             return Response(payload, status=status.HTTP_200_OK)
 
         if obligation_type == "service":
-            obligation = ContractServiceObligation.objects.get(id=obligation_id)
+            obligation = get_object_or_404(ContractServiceObligation, id=obligation_id)
             sessions = obligation.execution_sessions.all()
             approvals = self.approval_repo.list_for_service_obligation(obligation.id)
             adjustments = self.adjustment_repo.list_for_service_obligation(obligation.id)
@@ -257,7 +258,7 @@ class ObligationTimelineAPIView(APIView):
         timeline = []
 
         if obligation_type == "payment":
-            obligation = ContractObligation.objects.get(id=obligation_id)
+            obligation = get_object_or_404(ContractObligation, id=obligation_id)
             sessions = obligation.execution_sessions.all().order_by("started_at")
             approvals = self.approval_repo.list_for_payment_obligation(obligation.id)
             adjustments = self.adjustment_repo.list_for_payment_obligation(obligation.id)
@@ -315,7 +316,7 @@ class ObligationTimelineAPIView(APIView):
             return Response({"timeline": timeline}, status=status.HTTP_200_OK)
 
         if obligation_type == "service":
-            obligation = ContractServiceObligation.objects.get(id=obligation_id)
+            obligation = get_object_or_404(ContractServiceObligation, id=obligation_id)
             sessions = obligation.execution_sessions.all().order_by("started_at")
             approvals = self.approval_repo.list_for_service_obligation(obligation.id)
             adjustments = self.adjustment_repo.list_for_service_obligation(obligation.id)
@@ -410,7 +411,7 @@ class ObligationNextActionsAPIView(APIView):
         actions = []
 
         if obligation_type == "payment":
-            obligation = ContractObligation.objects.get(id=obligation_id)
+            obligation = get_object_or_404(ContractObligation, id=obligation_id)
 
             if obligation.state in ("due", "overdue", "grace", "defaulted") and (
                 obligation.amount_paid < obligation.amount_due
@@ -431,7 +432,7 @@ class ObligationNextActionsAPIView(APIView):
             return Response({"next_actions": actions}, status=status.HTTP_200_OK)
 
         if obligation_type == "service":
-            obligation = ContractServiceObligation.objects.get(id=obligation_id)
+            obligation = get_object_or_404(ContractServiceObligation, id=obligation_id)
             sessions = obligation.execution_sessions.all()
             pending_approvals = self.approval_repo.list_for_service_obligation(
                 obligation.id
@@ -676,10 +677,10 @@ class ObligationExecutionSessionListAPIView(APIView):
 
     def _get_obligation(self, *, obligation_type, obligation_id):
         if obligation_type == "payment":
-            return ContractObligation.objects.get(id=obligation_id)
+            return get_object_or_404(ContractObligation, id=obligation_id)
 
         if obligation_type == "service":
-            return ContractServiceObligation.objects.get(id=obligation_id)
+            return get_object_or_404(ContractServiceObligation, id=obligation_id)
 
         raise Exception("Invalid obligation type")
 
@@ -721,10 +722,10 @@ class ObligationExecutionEventListAPIView(APIView):
 
     def _get_obligation(self, *, obligation_type, obligation_id):
         if obligation_type == "payment":
-            return ContractObligation.objects.get(id=obligation_id)
+            return get_object_or_404(ContractObligation, id=obligation_id)
 
         if obligation_type == "service":
-            return ContractServiceObligation.objects.get(id=obligation_id)
+            return get_object_or_404(ContractServiceObligation, id=obligation_id)
 
         raise Exception("Invalid obligation type")
 
@@ -782,8 +783,9 @@ class ObligationApprovalRequestListAPIView(APIView):
         serializer = ApprovalRequestCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        execution_event = ObligationExecutionEvent.objects.get(
-            id=serializer.validated_data["execution_event_id"]
+        execution_event = get_object_or_404(
+            ObligationExecutionEvent,
+            id=serializer.validated_data["execution_event_id"],
         )
 
         requested_by = None
@@ -793,10 +795,10 @@ class ObligationApprovalRequestListAPIView(APIView):
         requested_from_id = serializer.validated_data.get("requested_from_id")
 
         if requested_by_id:
-            requested_by = User.objects.get(id=requested_by_id)
+            requested_by = get_object_or_404(User, id=requested_by_id)
 
         if requested_from_id:
-            requested_from = User.objects.get(id=requested_from_id)
+            requested_from = get_object_or_404(User, id=requested_from_id)
 
         approval = self.service.request_execution_item_approval(
             obligation_type=obligation_type,
@@ -879,10 +881,10 @@ class ObligationValueAdjustmentListCreateAPIView(APIView):
         execution_event = None
         execution_event_id = serializer.validated_data.get("execution_event_id")
         if execution_event_id:
-            execution_event = ObligationExecutionEvent.objects.get(id=execution_event_id)
+            execution_event = get_object_or_404(ObligationExecutionEvent, id=execution_event_id)
 
         if obligation_type == "payment":
-            obligation = ContractObligation.objects.get(id=obligation_id)
+            obligation = get_object_or_404(ContractObligation, id=obligation_id)
             adjustment = self.service.store_additional_charge(
                 contract=obligation.contract,
                 payment_obligation=obligation,
@@ -892,7 +894,7 @@ class ObligationValueAdjustmentListCreateAPIView(APIView):
                 summary=serializer.validated_data["summary"],
             )
         elif obligation_type == "service":
-            obligation = ContractServiceObligation.objects.get(id=obligation_id)
+            obligation = get_object_or_404(ContractServiceObligation, id=obligation_id)
             adjustment = self.service.store_additional_charge(
                 contract=obligation.contract,
                 service_obligation=obligation,
@@ -1005,7 +1007,7 @@ class ObligationExecutionSessionCloseAPIView(APIView):
     """
 
     def post(self, request, session_id):
-        session = ObligationExecutionSession.objects.get(id=session_id)
+        session = get_object_or_404(ObligationExecutionSession, id=session_id)
 
         if session.status == "closed":
             payload = {
@@ -1041,7 +1043,7 @@ class ObligationExecutionSessionDetailAPIView(APIView):
     """
 
     def get(self, request, session_id):
-        session = ObligationExecutionSession.objects.get(id=session_id)
+        session = get_object_or_404(ObligationExecutionSession, id=session_id)
 
         payload = {
             "id": session.id,
@@ -1099,7 +1101,7 @@ class ObligationExecutionEventCreateAPIView(APIView):
         if required_errors:
             return Response(required_errors, status=status.HTTP_400_BAD_REQUEST)
 
-        session = ObligationExecutionSession.objects.get(id=session_id)
+        session = get_object_or_404(ObligationExecutionSession, id=session_id)
 
         result = self.execution_service.record_execution_item(
             session=session,
@@ -1257,8 +1259,9 @@ class ObligationApprovalRequestCreateAPIView(APIView):
         serializer = ApprovalRequestCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        execution_event = ObligationExecutionEvent.objects.get(
-            id=serializer.validated_data["execution_event_id"]
+        execution_event = get_object_or_404(
+            ObligationExecutionEvent,
+            id=serializer.validated_data["execution_event_id"],
         )
 
         requested_by = None
@@ -1268,10 +1271,10 @@ class ObligationApprovalRequestCreateAPIView(APIView):
         requested_from_id = serializer.validated_data.get("requested_from_id")
 
         if requested_by_id:
-            requested_by = User.objects.get(id=requested_by_id)
+            requested_by = get_object_or_404(User, id=requested_by_id)
 
         if requested_from_id:
-            requested_from = User.objects.get(id=requested_from_id)
+            requested_from = get_object_or_404(User, id=requested_from_id)
 
         approval = self.service.request_execution_item_approval(
             obligation_type=obligation_type,

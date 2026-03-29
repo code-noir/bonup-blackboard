@@ -1,14 +1,16 @@
+from decimal import Decimal
+
+from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from backend.contracts.models import Contract, ContractObligation
+from backend.engine.contracts.obligations.lifecycle import process_obligation_lifecycle
 from backend.payments.models import Payment
 from .serializers import PaymentSerializer
-
-
-from django.db.models import Sum
-from backend.contracts.models import Contract, ContractObligation
 
 class PaymentListCreateAPIView(APIView):
     """
@@ -97,23 +99,55 @@ class PaymentConfirmAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        payment.status = "confirmed"
-        payment.confirmed_at = timezone.now()
-        payment.failed_at = None
-        payment.cancelled_at = None
-        payment.refunded_at = None
-        payment.reversed_at = None
-        payment.save(
-            update_fields=[
-                "status",
-                "confirmed_at",
-                "failed_at",
-                "cancelled_at",
-                "refunded_at",
-                "reversed_at",
-                "updated_at",
-            ]
-        )
+        now = timezone.now()
+
+        with transaction.atomic():
+            # 1. Mark payment confirmed
+            payment.status = "confirmed"
+            payment.confirmed_at = now
+            payment.failed_at = None
+            payment.cancelled_at = None
+            payment.refunded_at = None
+            payment.reversed_at = None
+            payment.save(
+                update_fields=[
+                    "status",
+                    "confirmed_at",
+                    "failed_at",
+                    "cancelled_at",
+                    "refunded_at",
+                    "reversed_at",
+                    "updated_at",
+                ]
+            )
+
+            # 2. Sync obligation balance and state if linked
+            if payment.payment_obligation_id:
+                obligation = ContractObligation.objects.select_for_update().get(
+                    id=payment.payment_obligation_id
+                )
+
+                # Recompute from all confirmed payments (authoritative total)
+                confirmed_total = (
+                    Payment.objects
+                    .filter(payment_obligation_id=obligation.id, status="confirmed")
+                    .aggregate(total=Sum("amount"))["total"]
+                ) or Decimal("0")
+
+                obligation.amount_paid = confirmed_total
+
+                # Re-evaluate lifecycle state via engine
+                process_obligation_lifecycle(
+                    obligation,
+                    obligation_repo=None,
+                    current_time=now,
+                )
+
+                obligation.is_defaulted = obligation.state in ("defaulted", "breached")
+                obligation.updated_at = now
+                obligation.save(
+                    update_fields=["amount_paid", "state", "is_defaulted", "updated_at"]
+                )
 
         return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
 

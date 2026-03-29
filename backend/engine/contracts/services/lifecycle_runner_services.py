@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, List, Any
+from django.utils import timezone
 from backend.engine.contracts.obligations.lifecycle import (
     process_obligation_lifecycle,
 )
@@ -60,7 +61,7 @@ class LifecycleRunnerService:
             LifecycleTickResult summary.
         """
         if current_time is None:
-            current_time = datetime.utcnow()
+            current_time = timezone.now()
 
         candidates = list(
             self.obligation_repo.list_candidates(

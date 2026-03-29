@@ -26,8 +26,8 @@ class PaymentService:
 
         # Charge gateway
         result = self.gateway.charge(amount)
-        if not result.get("success"):
-            return result
+        if not result.success:
+            return {"success": False, "error": result.error}
 
         # Apply payment to obligation via contract
 

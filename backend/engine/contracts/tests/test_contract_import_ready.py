@@ -1,6 +1,7 @@
 # backend/engine/contracts/tests/test_contract_import_ready.py
 from django.test import TestCase
-from datetime import datetime, timedelta
+from datetime import timedelta
+from django.utils import timezone
 
 from backend.engine.contracts.domain.contract import Contract
 from backend.engine.lifecycle_core.obligations.primitives import PaymentObligation
@@ -10,8 +11,8 @@ class ContractImportReadyTest(TestCase):
 
     def test_import_mixed_state_contract(self):
 
-        past_due = datetime.utcnow() - timedelta(days=10)
-        future_due = datetime.utcnow() + timedelta(days=10)
+        past_due = timezone.now() - timedelta(days=10)
+        future_due = timezone.now() + timedelta(days=10)
 
         # Resolved obligation
         o1 = PaymentObligation(1, 2, 100, past_due)

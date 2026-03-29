@@ -1,6 +1,7 @@
 # backend/engine/lifecycle_core/obligations/primitives.py
 from datetime import datetime
 from decimal import Decimal
+from django.utils import timezone
 
 
 # ============================================================
@@ -98,7 +99,7 @@ class ServiceObligation:
     def mark_completed(self, completion_time=None):
 
         if completion_time is None:
-            completion_time = datetime.utcnow()
+            completion_time = timezone.now()
 
         self.completed_at = completion_time
         self.state = "resolved"

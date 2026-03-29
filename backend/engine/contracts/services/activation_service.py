@@ -2,7 +2,7 @@
 
 # backend/engine/contracts/services/activation_service.py
 
-from datetime import datetime
+from django.utils import timezone
 
 from backend.infrastructure.repositories.contract_repository import (
     ContractRepository,
@@ -60,7 +60,7 @@ class ContractActivationService:
         """
 
         if current_time is None:
-            current_time = datetime.utcnow()
+            current_time = timezone.now()
 
         contract = self.contract_repo.get(contract_id)
         version = self.version_repo.get_latest(contract)

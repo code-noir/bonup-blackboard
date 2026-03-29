@@ -1,7 +1,8 @@
 # backend/engine/contracts/tests/test_full_contract_cycle.py
 from django.test import TestCase
-from datetime import datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal
+from django.utils import timezone
 
 from backend.infrastructure.repositories.contract_repository import ContractRepository
 from backend.infrastructure.repositories.contract_version_repository import ContractVersionRepository
@@ -73,7 +74,7 @@ class TestFullContractLifecycleIntegration(TestCase):
             amount=Decimal("1000.00"),
             installments=1,
             interval_days=30,
-            start_date=datetime.utcnow() - timedelta(days=10)
+            start_date=timezone.now() - timedelta(days=10)
         )
 
         self.assertTrue(len(obligations) > 0)

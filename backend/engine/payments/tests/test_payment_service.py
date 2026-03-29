@@ -1,5 +1,6 @@
 # backend/engine/payments/tests/test_payment_service.py
-from datetime import datetime, timedelta
+from datetime import timedelta
+from django.utils import timezone
 from decimal import Decimal
 from django.test import TestCase
 
@@ -14,7 +15,7 @@ def create_obligation(days_offset=0):
         obligor_id=1,
         obligee_id=2,
         amount_due=200,
-        due_date=datetime.utcnow() + timedelta(days=days_offset),
+        due_date=timezone.now() + timedelta(days=days_offset),
     )
 
 

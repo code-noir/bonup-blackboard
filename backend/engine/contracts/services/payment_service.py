@@ -1,6 +1,6 @@
 # backend/engine/contracts/services/payment_service.py
 
-from datetime import datetime
+from django.utils import timezone
 
 from backend.infrastructure.repositories.contract_obligation_repository import (
     ContractObligationRepository,
@@ -37,7 +37,7 @@ class ContractPaymentService:
         """
 
         if current_time is None:
-            current_time = datetime.utcnow()
+            current_time = timezone.now()
 
         # 1️⃣ Load persisted obligation
         obligation = self.obligation_repo.get(obligation_id)

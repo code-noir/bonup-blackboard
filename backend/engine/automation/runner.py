@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from dataclasses import dataclass
+from django.utils import timezone
 from typing import Optional
 
 from backend.engine.contracts.services.lifecycle_runner_services import (
@@ -43,7 +44,7 @@ class LifecycleAutomationRunner:
         """
 
         if current_time is None:
-            current_time = datetime.utcnow()
+            current_time = timezone.now()
 
         result = self.lifecycle_runner.run(
             contract_id=contract_id,

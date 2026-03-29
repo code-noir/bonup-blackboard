@@ -1,7 +1,7 @@
 # backend/engine/contracts/services/reconstruction_service.py
 
-from datetime import datetime
 from decimal import Decimal
+from django.utils import timezone
 
 
 class ContractReconstructionService:
@@ -37,7 +37,7 @@ class ContractReconstructionService:
 
         self._seed_obligation_history(contract, payload)
 
-        as_of = payload.get("as_of_date", datetime.utcnow())
+        as_of = payload.get("as_of_date", timezone.now())
         contract.refresh(now=as_of)
 
         # Prevent importing already-breached contract

@@ -1,4 +1,4 @@
-from datetime import datetime
+from django.utils import timezone
 
 from .lifecycle import process_obligation_lifecycle
 
@@ -24,7 +24,7 @@ def aggregate_account_state(instances):
     default_found = False
 
     # Account owns the concept of "now"
-    current_time = datetime.utcnow()
+    current_time = timezone.now()
 
     for instance in instances:
         state = process_obligation_lifecycle(

@@ -1,6 +1,6 @@
 # backend/engine/lifecycle_core/lifecycle_manager.py
 
-from datetime import datetime
+from django.utils import timezone
 
 
 class LifecycleManager:
@@ -22,7 +22,7 @@ class LifecycleManager:
     def evaluate_instance(instance, current_time=None):
 
         if current_time is None:
-            current_time = datetime.utcnow()
+            current_time = timezone.now()
 
         # -------------------------
         # Already resolved
@@ -68,7 +68,7 @@ class LifecycleManager:
         Evaluate all obligations belonging to a contract.
         """
 
-        now = datetime.utcnow()
+        now = timezone.now()
 
         for instance in instances:
             LifecycleManager.evaluate_instance(instance, now)

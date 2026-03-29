@@ -1,7 +1,7 @@
 # backend/engine/lifecycle_core/instances/obligation_instance.py
 
-from datetime import datetime
 from decimal import Decimal
+from django.utils import timezone
 
 
 class ObligationInstance:
@@ -43,8 +43,8 @@ class ObligationInstance:
         self.due_date = due_date
         self.state = self.STATE_PENDING
 
-        self.created_at = datetime.utcnow()
-        self.updated_at = datetime.utcnow()
+        self.created_at = timezone.now()
+        self.updated_at = timezone.now()
 
     # -------------------------
     # PAYMENT SUPPORT
@@ -65,7 +65,7 @@ class ObligationInstance:
         if self.amount_paid >= self.amount_due:
             self.state = self.STATE_COMPLETED
 
-        self.updated_at = datetime.utcnow()
+        self.updated_at = timezone.now()
 
     # -------------------------
     # SERVICE SUPPORT
@@ -74,7 +74,7 @@ class ObligationInstance:
     def mark_completed(self):
 
         self.state = self.STATE_COMPLETED
-        self.updated_at = datetime.utcnow()
+        self.updated_at = timezone.now()
 
     # -------------------------
     # LIFECYCLE

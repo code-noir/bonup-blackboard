@@ -1,7 +1,7 @@
 # backend/engine/lifecycle_core/events/lifecycle_event.py
 
 
-from datetime import datetime
+from django.utils import timezone
 
 
 class LifecycleEvent:
@@ -35,7 +35,7 @@ class LifecycleEvent:
         self.description = description
         self.metadata = metadata or {}
 
-        self.created_at = datetime.utcnow()
+        self.created_at = timezone.now()
 
 
 

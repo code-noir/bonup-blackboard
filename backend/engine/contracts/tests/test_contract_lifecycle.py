@@ -1,6 +1,7 @@
 # backend/engine/contracts/tests/test_contract_lifecycle.py
 from django.test import TestCase
-from datetime import datetime, timedelta
+from datetime import timedelta
+from django.utils import timezone
 
 from backend.engine.contracts.services.contract_coordinator import ContractCoordinator
 from backend.engine.lifecycle_core.obligations.primitives import PaymentObligation
@@ -43,7 +44,7 @@ class ContractLifecycleTest(TestCase):
 
     def test_contract_becomes_fulfilled_when_all_obligations_resolved(self):
 
-        due = datetime.utcnow() - timedelta(days=1)
+        due = timezone.now() - timedelta(days=1)
 
         o1 = PaymentObligation(
             obligor_id=1,

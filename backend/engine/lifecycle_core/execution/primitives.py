@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
+from django.utils import timezone
 from typing import List, Optional
 
 
@@ -107,7 +108,7 @@ class ExecutionSession:
         self.events.append(event)
 
     def close(self, ended_at: Optional[datetime] = None):
-        self.ended_at = ended_at or datetime.utcnow()
+        self.ended_at = ended_at or timezone.now()
         self.status = "closed"
 
 

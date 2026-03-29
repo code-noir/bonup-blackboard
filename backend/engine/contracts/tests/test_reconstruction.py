@@ -1,7 +1,8 @@
 # backend/engine/contracts/tests/test_reconstruction.py
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from django.test import TestCase
+from django.utils import timezone
 
 from backend.engine.contracts.services.reconstruction_service import (
     ContractReconstructionService,
@@ -29,7 +30,7 @@ class ReconstructionTests(TestCase):
 
     def test_valid_reconstruction(self):
 
-        now = datetime.utcnow()
+        now = timezone.now()
 
         payload = {
             "contract_name": "Lawn Care",
@@ -68,7 +69,7 @@ class ReconstructionTests(TestCase):
 
     def test_over_seed_payment_fails(self):
 
-        now = datetime.utcnow()
+        now = timezone.now()
 
         payload = {
             "contract_name": "Invalid Contract",
@@ -94,7 +95,7 @@ class ReconstructionTests(TestCase):
 
     def test_breached_contract_rejected(self):
 
-        now = datetime.utcnow()
+        now = timezone.now()
 
         payload = {
             "contract_name": "Breached Case",

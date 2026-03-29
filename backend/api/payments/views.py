@@ -26,7 +26,8 @@ class PaymentListCreateAPIView(APIView):
     def post(self, request):
         serializer = PaymentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        payment = serializer.save()
+        with transaction.atomic():
+            payment = serializer.save()
         return Response(
             PaymentSerializer(payment).data,
             status=status.HTTP_201_CREATED,
@@ -67,7 +68,8 @@ class PaymentDetailAPIView(APIView):
 
         serializer = PaymentSerializer(payment, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        payment = serializer.save()
+        with transaction.atomic():
+            payment = serializer.save()
         return Response(
             PaymentSerializer(payment).data,
             status=status.HTTP_200_OK,
@@ -166,9 +168,10 @@ class PaymentFailAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        payment.status = "failed"
-        payment.failed_at = timezone.now()
-        payment.save(update_fields=["status", "failed_at", "updated_at"])
+        with transaction.atomic():
+            payment.status = "failed"
+            payment.failed_at = timezone.now()
+            payment.save(update_fields=["status", "failed_at", "updated_at"])
 
         return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
 
@@ -187,9 +190,10 @@ class PaymentCancelAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        payment.status = "cancelled"
-        payment.cancelled_at = timezone.now()
-        payment.save(update_fields=["status", "cancelled_at", "updated_at"])
+        with transaction.atomic():
+            payment.status = "cancelled"
+            payment.cancelled_at = timezone.now()
+            payment.save(update_fields=["status", "cancelled_at", "updated_at"])
 
         return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
 
@@ -208,9 +212,27 @@ class PaymentRefundAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        payment.status = "refunded"
-        payment.refunded_at = timezone.now()
-        payment.save(update_fields=["status", "refunded_at", "updated_at"])
+        now = timezone.now()
+
+        with transaction.atomic():
+            payment.status = "refunded"
+            payment.refunded_at = now
+            payment.save(update_fields=["status", "refunded_at", "updated_at"])
+
+            if payment.payment_obligation_id:
+                obligation = ContractObligation.objects.select_for_update().get(
+                    id=payment.payment_obligation_id
+                )
+                confirmed_total = (
+                    Payment.objects
+                    .filter(payment_obligation_id=obligation.id, status="confirmed")
+                    .aggregate(total=Sum("amount"))["total"]
+                ) or Decimal("0")
+                obligation.amount_paid = confirmed_total
+                process_obligation_lifecycle(obligation, obligation_repo=None, current_time=now)
+                obligation.is_defaulted = obligation.state in ("defaulted", "breached")
+                obligation.updated_at = now
+                obligation.save(update_fields=["amount_paid", "state", "is_defaulted", "updated_at"])
 
         return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
 
@@ -229,9 +251,27 @@ class PaymentReverseAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        payment.status = "reversed"
-        payment.reversed_at = timezone.now()
-        payment.save(update_fields=["status", "reversed_at", "updated_at"])
+        now = timezone.now()
+
+        with transaction.atomic():
+            payment.status = "reversed"
+            payment.reversed_at = now
+            payment.save(update_fields=["status", "reversed_at", "updated_at"])
+
+            if payment.payment_obligation_id:
+                obligation = ContractObligation.objects.select_for_update().get(
+                    id=payment.payment_obligation_id
+                )
+                confirmed_total = (
+                    Payment.objects
+                    .filter(payment_obligation_id=obligation.id, status="confirmed")
+                    .aggregate(total=Sum("amount"))["total"]
+                ) or Decimal("0")
+                obligation.amount_paid = confirmed_total
+                process_obligation_lifecycle(obligation, obligation_repo=None, current_time=now)
+                obligation.is_defaulted = obligation.state in ("defaulted", "breached")
+                obligation.updated_at = now
+                obligation.save(update_fields=["amount_paid", "state", "is_defaulted", "updated_at"])
 
         return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
 
@@ -260,7 +300,8 @@ class ContractPaymentListCreateAPIView(APIView):
 
         serializer = PaymentSerializer(data=data)
         serializer.is_valid(raise_exception=True)
-        payment = serializer.save()
+        with transaction.atomic():
+            payment = serializer.save()
 
         return Response(
             PaymentSerializer(payment).data,
@@ -294,7 +335,8 @@ class ObligationPaymentListCreateAPIView(APIView):
 
         serializer = PaymentSerializer(data=data)
         serializer.is_valid(raise_exception=True)
-        payment = serializer.save()
+        with transaction.atomic():
+            payment = serializer.save()
 
         return Response(
             PaymentSerializer(payment).data,

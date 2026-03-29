@@ -1,5 +1,7 @@
 # backend/engine/contracts/services/contract_service.py
 
+from decimal import Decimal
+
 from backend.engine.contracts.exceptions import (
     NegotiationLimitReached,
 )
@@ -89,7 +91,7 @@ class ContractService:
         )
 
         # Compute total amount for scheduler
-        total_amount = payment_amount * cycles
+        total_amount = Decimal(str(payment_amount)) * cycles
 
         # Generate obligations from lifecycle scheduler
         obligations = ObligationScheduler.generate_parallel_schedule(

@@ -30,7 +30,7 @@ class Contract:
         self.obligations.append(obligation)
         self._refresh_contract_state()
 
-    def refresh(self, now, obligation_repo):
+    def refresh(self, now=None, obligation_repo=None):
         """
         Full lifecycle refresh:
         - Ticks each obligation

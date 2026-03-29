@@ -22,3 +22,17 @@ class ContractVersionRepository:
             .order_by("-version_number")
             .first()
         )
+
+    def get_all(self, contract):
+        return list(
+            ContractVersion.objects
+            .filter(contract=contract)
+            .order_by("version_number")
+        )
+
+    def get_signed_version(self, contract):
+        return (
+            ContractVersion.objects
+            .filter(contract=contract, status="signed")
+            .first()
+        )

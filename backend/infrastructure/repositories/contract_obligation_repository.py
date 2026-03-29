@@ -41,6 +41,15 @@ class ContractObligationRepository:
 
         return combined
 
+    def get_all(self):
+        """
+        Returns all payment obligations not in a terminal state.
+        Used by LifecycleRunnerService.run() for full-sweep evaluation.
+        """
+        return list(
+            ContractObligation.objects.exclude(state__in=["resolved", "breached"])
+        )
+
     def list_candidates(self, contract_id: Optional[str] = None, limit: Optional[int] = None):
         """
         Returns payment obligations eligible for lifecycle evaluation.

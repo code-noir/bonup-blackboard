@@ -4,7 +4,10 @@ from django.utils import timezone
 # State constants (adjust import if yours live elsewhere)
 ACTIVE = "active"
 OVERDUE = "overdue"
+DEFAULTED = "defaulted"
 RESOLVED = "resolved"
+
+DEFAULT_THRESHOLD_DAYS = 30
 
 
 def evaluate_obligation_state(obligation, current_time=None):
@@ -12,9 +15,10 @@ def evaluate_obligation_state(obligation, current_time=None):
     Determines lifecycle state of a single obligation.
 
     Rules:
-    - If fully paid  -> resolved
-    - If past deadline -> overdue
-    - Otherwise -> active
+    - If fully paid              -> resolved
+    - If overdue >= 30 days      -> defaulted
+    - If past due                -> overdue
+    - Otherwise                  -> active
     """
 
     # Always use Django timezone-aware datetime
@@ -31,8 +35,21 @@ def evaluate_obligation_state(obligation, current_time=None):
         if obligation.amount_paid >= obligation.amount_due:
             return RESOLVED
 
-    # 2️⃣ Past due
+    # 2️⃣ Past due — check how long
     if obligation.is_past_due(current_time):
+        due_date = obligation.due_date
+
+        # Normalise tzinfo so subtraction doesn't blow up on naive/aware mismatch
+        if current_time.tzinfo and not due_date.tzinfo:
+            due_date = due_date.replace(tzinfo=current_time.tzinfo)
+        elif due_date.tzinfo and not current_time.tzinfo:
+            current_time = current_time.replace(tzinfo=due_date.tzinfo)
+
+        overdue_days = (current_time - due_date).days
+
+        if overdue_days >= DEFAULT_THRESHOLD_DAYS:
+            return DEFAULTED
+
         return OVERDUE
 
     # 3️⃣ Default state

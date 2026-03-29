@@ -23,10 +23,10 @@ def evaluate_default_escalation(
     if obligation.state != "defaulted":
         return obligation.state
 
-    if obligation.deadline() is None:
+    if obligation.due_date is None:
         return obligation.state
 
-    overdue_days = (current_time - obligation.deadline()).days
+    overdue_days = (current_time - obligation.due_date).days
 
     if overdue_days >= max_default_days:
         return "breached"

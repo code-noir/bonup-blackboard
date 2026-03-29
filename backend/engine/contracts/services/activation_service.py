@@ -14,8 +14,8 @@ from backend.infrastructure.repositories.contract_obligation_repository import (
     ContractObligationRepository,
 )
 
-from backend.engine.lifecycle_core.scheduler.scheduler import (
-    generate_obligation_schedule,
+from backend.engine.lifecycle_core.scheduler.obligation_scheduler import (
+    ObligationScheduler,
 )
 
 from backend.engine.contracts.obligations.lifecycle import (
@@ -72,7 +72,7 @@ class ContractActivationService:
             start_date = current_time
 
         # 1️⃣ Generate engine-level obligations
-        instances = generate_obligation_schedule(
+        instances = ObligationScheduler.generate_parallel_schedule(
             obligor_id=obligor_id,
             obligee_id=obligee_id,
             total_amount=amount,

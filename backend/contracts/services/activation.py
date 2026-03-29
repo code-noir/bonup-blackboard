@@ -2,9 +2,7 @@
 from decimal import Decimal
 from django.utils import timezone
 
-from backend.engine.lifecycle_core.scheduler.scheduler import generate_obligation_schedule
-from backend.engine.lifecycle_core.obligations.primitives import ObligationInstance
-
+from backend.engine.lifecycle_core.scheduler.obligation_scheduler import ObligationScheduler
 from backend.contracts.models import ContractObligation
 
 
@@ -25,8 +23,8 @@ def activate_contract_with_schedule(
     and persists each obligation.
     """
 
-    schedule = generate_obligation_schedule(
-        amount=Decimal(str(amount)),
+    schedule = ObligationScheduler.generate_parallel_schedule(
+        total_amount=Decimal(str(amount)),
         installments=installments,
         interval_days=interval_days,
         start_date=timezone.now(),

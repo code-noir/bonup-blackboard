@@ -5,8 +5,8 @@ from backend.engine.contracts.exceptions import (
 )
 
 from backend.engine.contracts.domain.contract import Contract
-from backend.engine.lifecycle_core.scheduler.scheduler import (
-    generate_obligation_schedule,
+from backend.engine.lifecycle_core.scheduler.obligation_scheduler import (
+    ObligationScheduler,
 )
 
 
@@ -92,15 +92,13 @@ class ContractService:
         total_amount = payment_amount * cycles
 
         # Generate obligations from lifecycle scheduler
-        obligations = generate_obligation_schedule(
+        obligations = ObligationScheduler.generate_parallel_schedule(
             obligor_id=1,
             obligee_id=2,
             total_amount=total_amount,
             installments=cycles,
             start_date=start_date,
             interval_days=self._resolve_interval(recurrence),
-            payment_grace=payment_grace,
-            service_grace=service_grace,
         )
 
         # Attach obligations to aggregate

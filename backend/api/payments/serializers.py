@@ -18,6 +18,7 @@ class PaymentSerializer(serializers.ModelSerializer):
             "currency",
             "status",
             "payment_method",
+            "idempotency_key",
             "reference",
             "metadata",
             "created_at",

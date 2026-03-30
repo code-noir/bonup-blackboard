@@ -31,6 +31,15 @@ DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
 
 
+def _idempotency_response(key):
+    """Return the existing payment if a duplicate idempotency_key is submitted."""
+    try:
+        payment = Payment.objects.get(idempotency_key=key)
+        return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
+    except Payment.DoesNotExist:
+        return None
+
+
 def _party_q(user):
     """Q filter that scopes payments to contracts the user is a party to."""
     return Q(contract__initiator=user) | Q(contract__counterparty_email=user.email)
@@ -97,6 +106,12 @@ class PaymentListCreateAPIView(APIView):
         return _paginated_response(qs, request)
 
     def post(self, request):
+        idem_key = request.data.get("idempotency_key")
+        if idem_key:
+            existing = _idempotency_response(idem_key)
+            if existing is not None:
+                return existing
+
         serializer = PaymentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -395,6 +410,12 @@ class ContractPaymentListCreateAPIView(APIView):
         return _paginated_response(qs, request)
 
     def post(self, request, contract_id):
+        idem_key = request.data.get("idempotency_key")
+        if idem_key:
+            existing = _idempotency_response(idem_key)
+            if existing is not None:
+                return existing
+
         contract = get_object_or_404(Contract, id=contract_id)
         if not is_party(request.user, contract):
             return contract_party_response()
@@ -431,6 +452,12 @@ class ObligationPaymentListCreateAPIView(APIView):
         return _paginated_response(qs, request)
 
     def post(self, request, obligation_id):
+        idem_key = request.data.get("idempotency_key")
+        if idem_key:
+            existing = _idempotency_response(idem_key)
+            if existing is not None:
+                return existing
+
         obligation = get_object_or_404(ContractObligation, id=obligation_id)
         if not is_party(request.user, obligation.contract):
             return contract_party_response()

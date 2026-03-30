@@ -66,6 +66,7 @@ class Payment(models.Model):
         default="manual",
     )
 
+    idempotency_key = models.CharField(max_length=255, null=True, blank=True, unique=True)
     reference = models.CharField(max_length=255, null=True, blank=True)
     metadata = models.JSONField(default=dict, blank=True)
 

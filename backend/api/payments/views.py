@@ -22,6 +22,57 @@ ALLOWED_FROM = {
     "reversed":  {"confirmed"},
 }
 
+DEFAULT_PAGE_SIZE = 20
+MAX_PAGE_SIZE = 100
+
+
+def _apply_filters(queryset, request):
+    """Apply common query-param filters to a Payment queryset."""
+    qs = queryset
+
+    status_filter = request.query_params.get("status")
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+
+    method_filter = request.query_params.get("payment_method")
+    if method_filter:
+        qs = qs.filter(payment_method=method_filter)
+
+    created_after = request.query_params.get("created_after")
+    if created_after:
+        qs = qs.filter(created_at__gte=created_after)
+
+    created_before = request.query_params.get("created_before")
+    if created_before:
+        qs = qs.filter(created_at__lte=created_before)
+
+    return qs
+
+
+def _paginated_response(queryset, request):
+    """Paginate a queryset and return a Response with envelope."""
+    try:
+        page = max(1, int(request.query_params.get("page", 1)))
+    except (ValueError, TypeError):
+        page = 1
+
+    try:
+        page_size = min(MAX_PAGE_SIZE, max(1, int(request.query_params.get("page_size", DEFAULT_PAGE_SIZE))))
+    except (ValueError, TypeError):
+        page_size = DEFAULT_PAGE_SIZE
+
+    total = queryset.count()
+    offset = (page - 1) * page_size
+    results = PaymentSerializer(queryset[offset:offset + page_size], many=True).data
+
+    return Response({
+        "count": total,
+        "page": page,
+        "page_size": page_size,
+        "results": results,
+    }, status=status.HTTP_200_OK)
+
+
 class PaymentListCreateAPIView(APIView):
     """
     GET  /api/payments/
@@ -29,9 +80,8 @@ class PaymentListCreateAPIView(APIView):
     """
 
     def get(self, request):
-        payments = Payment.objects.all().order_by("-created_at")
-        serializer = PaymentSerializer(payments, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        qs = _apply_filters(Payment.objects.all(), request).order_by("-created_at")
+        return _paginated_response(qs, request)
 
     def post(self, request):
         serializer = PaymentSerializer(data=request.data)
@@ -349,9 +399,8 @@ class ContractPaymentListCreateAPIView(APIView):
     """
 
     def get(self, request, contract_id):
-        payments = Payment.objects.filter(contract_id=contract_id).order_by("-created_at")
-        serializer = PaymentSerializer(payments, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        qs = _apply_filters(Payment.objects.filter(contract_id=contract_id), request).order_by("-created_at")
+        return _paginated_response(qs, request)
 
     def post(self, request, contract_id):
         try:
@@ -383,9 +432,8 @@ class ObligationPaymentListCreateAPIView(APIView):
     """
 
     def get(self, request, obligation_id):
-        payments = Payment.objects.filter(payment_obligation_id=obligation_id).order_by("-created_at")
-        serializer = PaymentSerializer(payments, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        qs = _apply_filters(Payment.objects.filter(payment_obligation_id=obligation_id), request).order_by("-created_at")
+        return _paginated_response(qs, request)
 
     def post(self, request, obligation_id):
         try:
@@ -504,9 +552,15 @@ class ObligationPaymentSummaryAPIView(APIView):
         confirmed_amount = payments.filter(status="confirmed").aggregate(total=Sum("amount"))["total"] or 0
         refunded_amount = payments.filter(status="refunded").aggregate(total=Sum("amount"))["total"] or 0
 
+        remaining_balance = obligation.amount_due - obligation.amount_paid
+
         payload = {
             "obligation_id": str(obligation.id),
             "contract_id": str(obligation.contract_id),
+            "obligation_state": obligation.state,
+            "amount_due": str(obligation.amount_due),
+            "amount_paid": str(obligation.amount_paid),
+            "remaining_balance": str(remaining_balance),
             "count": payments.count(),
             "total_amount": str(total_amount),
             "confirmed_amount": str(confirmed_amount),

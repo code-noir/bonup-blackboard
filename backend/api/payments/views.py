@@ -396,6 +396,13 @@ class ObligationPaymentListCreateAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        TERMINAL_STATES = {"resolved", "breached", "defaulted"}
+        if obligation.state in TERMINAL_STATES:
+            return Response(
+                {"error": f"Cannot add a payment to an obligation with status '{obligation.state}'."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
         data = request.data.copy()
         data["contract"] = str(obligation.contract_id)
         data["payment_obligation"] = str(obligation.id)

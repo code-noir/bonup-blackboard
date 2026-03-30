@@ -1,12 +1,17 @@
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from backend.api.contracts.permissions import (
+    contract_party_response,
+    is_party,
+)
 from backend.contracts.models import Contract, ContractObligation
 from backend.engine.contracts.obligations.lifecycle import process_obligation_lifecycle
 from backend.payments.models import Payment
@@ -24,6 +29,11 @@ ALLOWED_FROM = {
 
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
+
+
+def _party_q(user):
+    """Q filter that scopes payments to contracts the user is a party to."""
+    return Q(contract__initiator=user) | Q(contract__counterparty_email=user.email)
 
 
 def _apply_filters(queryset, request):
@@ -80,12 +90,27 @@ class PaymentListCreateAPIView(APIView):
     """
 
     def get(self, request):
-        qs = _apply_filters(Payment.objects.all(), request).order_by("-created_at")
+        qs = _apply_filters(
+            Payment.objects.filter(_party_q(request.user)),
+            request,
+        ).order_by("-created_at")
         return _paginated_response(qs, request)
 
     def post(self, request):
         serializer = PaymentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+
+        # Verify the user is a party to the contract on this payment
+        contract_id = serializer.validated_data.get("contract_id") or (
+            serializer.validated_data.get("contract").id
+            if serializer.validated_data.get("contract")
+            else None
+        )
+        if contract_id:
+            contract = get_object_or_404(Contract, id=contract_id)
+            if not is_party(request.user, contract):
+                return contract_party_response()
+
         with transaction.atomic():
             payment = serializer.save()
         return Response(
@@ -101,30 +126,16 @@ class PaymentDetailAPIView(APIView):
     DELETE /api/payments/<payment_id>/
     """
 
-    def get_object(self, payment_id):
-        try:
-            return Payment.objects.get(id=payment_id)
-        except Payment.DoesNotExist:
-            return None
-
     def get(self, request, payment_id):
-        payment = self.get_object(payment_id)
-        if payment is None:
-            return Response(
-                {"error": "Payment not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        serializer = PaymentSerializer(payment)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        payment = get_object_or_404(Payment, id=payment_id)
+        if not is_party(request.user, payment.contract):
+            return contract_party_response()
+        return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
 
     def patch(self, request, payment_id):
-        payment = self.get_object(payment_id)
-        if payment is None:
-            return Response(
-                {"error": "Payment not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        payment = get_object_or_404(Payment, id=payment_id)
+        if not is_party(request.user, payment.contract):
+            return contract_party_response()
 
         serializer = PaymentSerializer(payment, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -136,12 +147,9 @@ class PaymentDetailAPIView(APIView):
         )
 
     def delete(self, request, payment_id):
-        payment = self.get_object(payment_id)
-        if payment is None:
-            return Response(
-                {"error": "Payment not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        payment = get_object_or_404(Payment, id=payment_id)
+        if not is_party(request.user, payment.contract):
+            return contract_party_response()
 
         payment.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -153,13 +161,9 @@ class PaymentConfirmAPIView(APIView):
     """
 
     def post(self, request, payment_id):
-        try:
-            payment = Payment.objects.get(id=payment_id)
-        except Payment.DoesNotExist:
-            return Response(
-                {"error": "Payment not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        payment = get_object_or_404(Payment, id=payment_id)
+        if not is_party(request.user, payment.contract):
+            return contract_party_response()
 
         if payment.status not in ALLOWED_FROM["confirmed"]:
             return Response(
@@ -226,13 +230,9 @@ class PaymentPendingAPIView(APIView):
     """
 
     def post(self, request, payment_id):
-        try:
-            payment = Payment.objects.get(id=payment_id)
-        except Payment.DoesNotExist:
-            return Response(
-                {"error": "Payment not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        payment = get_object_or_404(Payment, id=payment_id)
+        if not is_party(request.user, payment.contract):
+            return contract_party_response()
 
         if payment.status not in ALLOWED_FROM["pending"]:
             return Response(
@@ -253,13 +253,9 @@ class PaymentFailAPIView(APIView):
     """
 
     def post(self, request, payment_id):
-        try:
-            payment = Payment.objects.get(id=payment_id)
-        except Payment.DoesNotExist:
-            return Response(
-                {"error": "Payment not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        payment = get_object_or_404(Payment, id=payment_id)
+        if not is_party(request.user, payment.contract):
+            return contract_party_response()
 
         if payment.status not in ALLOWED_FROM["failed"]:
             return Response(
@@ -281,13 +277,9 @@ class PaymentCancelAPIView(APIView):
     """
 
     def post(self, request, payment_id):
-        try:
-            payment = Payment.objects.get(id=payment_id)
-        except Payment.DoesNotExist:
-            return Response(
-                {"error": "Payment not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        payment = get_object_or_404(Payment, id=payment_id)
+        if not is_party(request.user, payment.contract):
+            return contract_party_response()
 
         if payment.status not in ALLOWED_FROM["cancelled"]:
             return Response(
@@ -309,13 +301,9 @@ class PaymentRefundAPIView(APIView):
     """
 
     def post(self, request, payment_id):
-        try:
-            payment = Payment.objects.get(id=payment_id)
-        except Payment.DoesNotExist:
-            return Response(
-                {"error": "Payment not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        payment = get_object_or_404(Payment, id=payment_id)
+        if not is_party(request.user, payment.contract):
+            return contract_party_response()
 
         if payment.status not in ALLOWED_FROM["refunded"]:
             return Response(
@@ -354,13 +342,9 @@ class PaymentReverseAPIView(APIView):
     """
 
     def post(self, request, payment_id):
-        try:
-            payment = Payment.objects.get(id=payment_id)
-        except Payment.DoesNotExist:
-            return Response(
-                {"error": "Payment not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        payment = get_object_or_404(Payment, id=payment_id)
+        if not is_party(request.user, payment.contract):
+            return contract_party_response()
 
         if payment.status not in ALLOWED_FROM["reversed"]:
             return Response(
@@ -392,6 +376,7 @@ class PaymentReverseAPIView(APIView):
 
         return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
 
+
 class ContractPaymentListCreateAPIView(APIView):
     """
     GET  /api/payments/contracts/<contract_id>/
@@ -399,17 +384,20 @@ class ContractPaymentListCreateAPIView(APIView):
     """
 
     def get(self, request, contract_id):
-        qs = _apply_filters(Payment.objects.filter(contract_id=contract_id), request).order_by("-created_at")
+        contract = get_object_or_404(Contract, id=contract_id)
+        if not is_party(request.user, contract):
+            return contract_party_response()
+
+        qs = _apply_filters(
+            Payment.objects.filter(contract_id=contract_id),
+            request,
+        ).order_by("-created_at")
         return _paginated_response(qs, request)
 
     def post(self, request, contract_id):
-        try:
-            contract = Contract.objects.get(id=contract_id)
-        except Contract.DoesNotExist:
-            return Response(
-                {"error": "Contract not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        contract = get_object_or_404(Contract, id=contract_id)
+        if not is_party(request.user, contract):
+            return contract_party_response()
 
         data = request.data.copy()
         data["contract"] = str(contract.id)
@@ -432,17 +420,20 @@ class ObligationPaymentListCreateAPIView(APIView):
     """
 
     def get(self, request, obligation_id):
-        qs = _apply_filters(Payment.objects.filter(payment_obligation_id=obligation_id), request).order_by("-created_at")
+        obligation = get_object_or_404(ContractObligation, id=obligation_id)
+        if not is_party(request.user, obligation.contract):
+            return contract_party_response()
+
+        qs = _apply_filters(
+            Payment.objects.filter(payment_obligation_id=obligation_id),
+            request,
+        ).order_by("-created_at")
         return _paginated_response(qs, request)
 
     def post(self, request, obligation_id):
-        try:
-            obligation = ContractObligation.objects.get(id=obligation_id)
-        except ContractObligation.DoesNotExist:
-            return Response(
-                {"error": "Payment obligation not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        obligation = get_object_or_404(ContractObligation, id=obligation_id)
+        if not is_party(request.user, obligation.contract):
+            return contract_party_response()
 
         TERMINAL_STATES = {"resolved", "breached", "defaulted"}
         if obligation.state in TERMINAL_STATES:
@@ -472,7 +463,7 @@ class PaymentDashboardSummaryAPIView(APIView):
     """
 
     def get(self, request):
-        payments = Payment.objects.all()
+        payments = Payment.objects.filter(_party_q(request.user))
 
         total_amount = payments.aggregate(total=Sum("amount"))["total"] or 0
         confirmed_amount = payments.filter(status="confirmed").aggregate(total=Sum("amount"))["total"] or 0
@@ -505,13 +496,9 @@ class ContractPaymentSummaryAPIView(APIView):
     """
 
     def get(self, request, contract_id):
-        try:
-            contract = Contract.objects.get(id=contract_id)
-        except Contract.DoesNotExist:
-            return Response(
-                {"error": "Contract not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        contract = get_object_or_404(Contract, id=contract_id)
+        if not is_party(request.user, contract):
+            return contract_party_response()
 
         payments = Payment.objects.filter(contract_id=contract.id)
 
@@ -538,13 +525,9 @@ class ObligationPaymentSummaryAPIView(APIView):
     """
 
     def get(self, request, obligation_id):
-        try:
-            obligation = ContractObligation.objects.get(id=obligation_id)
-        except ContractObligation.DoesNotExist:
-            return Response(
-                {"error": "Payment obligation not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        obligation = get_object_or_404(ContractObligation, id=obligation_id)
+        if not is_party(request.user, obligation.contract):
+            return contract_party_response()
 
         payments = Payment.objects.filter(payment_obligation_id=obligation.id)
 
@@ -570,9 +553,3 @@ class ObligationPaymentSummaryAPIView(APIView):
         }
 
         return Response(payload, status=status.HTTP_200_OK)
-
-
-
-
-
-        

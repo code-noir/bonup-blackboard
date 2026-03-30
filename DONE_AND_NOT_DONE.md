@@ -1,0 +1,161 @@
+# DONE_AND_NOT_DONE.md — Feature Completion Status
+
+Last updated: 2026-03-29
+
+---
+
+## Complete
+
+These things are implemented, tested, and have no known critical bugs.
+
+### Engine — Core Primitives
+- [x] `PaymentObligation` primitive — Decimal payment logic, overpayment cap, `is_past_due()`, `remaining_balance()`
+- [x] `ServiceObligation` primitive — `mark_completed()`, lateness adjustment calculation, `was_completed_late()`
+- [x] `evaluate_obligation_state()` — pure function, ACTIVE / OVERDUE / DEFAULTED / RESOLVED states
+- [x] DEFAULTED state — triggers at 30+ days overdue
+- [x] Escalation to BREACHED — `evaluate_default_escalation()` in `escalation.py` (path is now reachable)
+- [x] `ObligationScheduler.generate_parallel_schedule()` — installment schedule generation, no crash bugs
+- [x] `process_obligation_lifecycle()` — `@transaction.atomic`, single lifecycle processor
+
+### Engine — Contract Domain
+- [x] `Contract` aggregate — `refresh()`, `apply_payment()`, `refresh_state()`, state evaluation from obligations
+- [x] `ContractStateMachine` — explicit transition graph
+- [x] `ContractVersioning` — version numbering logic
+- [x] `ContractService.create_contract()` — schedule generation with correct Decimal coercion
+- [x] `ContractActivationService.activate_contract()` — generates and persists obligations
+- [x] `LifecycleRunnerService.tick()` — processes candidates, persists state changes
+
+### Engine — Payments
+- [x] `PaymentGateway` — abstract interface
+- [x] `PaymentResult` — standardised response type
+- [x] `MockPaymentGateway` — inherits from `PaymentGateway`, returns `PaymentResult`
+- [x] `PaymentService.process_payment()` — applies payment, runs lifecycle, persists
+
+### Infrastructure
+- [x] `ContractRepository` — full implementation
+- [x] `ContractVersionRepository` — `get_latest()`, `get_all()`, `get_signed_version()`
+- [x] `ContractObligationRepository` — `get_all()`, `list_candidates()`, `update_state()`
+
+### API — Auth
+- [x] JWT token issue (`/api/auth/token/`)
+- [x] JWT token refresh (`/api/auth/token/refresh/`)
+- [x] JWT token verify (`/api/auth/token/verify/`)
+- [x] `IsAuthenticated` + `JWTAuthentication` as global defaults
+
+### API — Contracts
+- [x] Contract CRUD (list, create, retrieve, update, delete)
+- [x] Contract obligations list
+- [x] Contract management summary
+- [x] Execution session list/create, detail, close, events
+- [x] Execution event detail, delete, promote
+- [x] Obligation resolve (payment + service)
+- [x] Approval request list/create, approve, reject
+- [x] Value adjustment list/create
+- [x] Proof of work submission
+
+### API — Obligations
+- [x] Obligation list, detail, dashboard summary
+- [x] Obligation timeline, next actions
+- [x] Obligation resolve with state validation (rejects already-resolved and breached)
+- [x] Execution session list, detail, close, add event
+- [x] Execution event list, detail, delete, promote
+- [x] Approval request list/create (per obligation), approve, reject
+- [x] Promotion list, promoted-side-obligation list
+- [x] Value adjustment list/create
+- [x] Proof of work submission
+- [x] All naked `.objects.get()` calls replaced with try/except or get_object_or_404
+
+### API — Payments
+- [x] Payment list/create, detail, update, delete
+- [x] Payment confirm (syncs obligation balance, runs lifecycle engine)
+- [x] Payment fail, cancel
+- [x] Payment refund (reverses obligation balance)
+- [x] Payment reverse (reverses obligation balance)
+- [x] Dashboard summary, contract summary, obligation summary
+- [x] Contract-scoped payment list/create
+- [x] Obligation-scoped payment list/create
+- [x] All mutations wrapped in `transaction.atomic()`
+
+### Models
+- [x] `Contract`, `ContractVersion`, `ContractObligation`, `ContractServiceObligation`
+- [x] `ObligationExecutionSession`, `ObligationExecutionEvent`
+- [x] `ContractValueAdjustment`, `ContractApprovalRequest`, `ContractObligationPromotion`
+- [x] `RequestChange`
+- [x] `Payment`
+- [x] `BonUserProfile`, `ReservedBonId` (with bonID generation and reservation logic)
+
+### Tests
+- [x] 11 engine tests passing (payment service, reconstruction, lifecycle, contract import)
+- [x] No deprecation warnings (all `datetime.utcnow()` replaced with `timezone.now()`)
+
+---
+
+## In Progress / Partially Done
+
+These have a foundation but meaningful gaps remain.
+
+### Contract Lifecycle
+- [ ] Grace period — `grace_days` parameter exists in the scheduler but is never stored or evaluated
+- [ ] `Obligation` template model — has `recurrence_interval_days` and `recurrence_count` fields but no service expands them into `ContractObligation` instances
+
+### Payment Status State Machine
+- [ ] No guards on payment status transitions — a `draft` payment can jump directly to `refunded`
+- [ ] `is_defaulted` on `ContractObligation` is synced on payment confirmation but is a redundant mirror of `state == "defaulted"` (BUG-15)
+
+### Obligation State Alignment
+- [ ] `ContractObligation.state` choices include `"due"` and `"grace"` which the engine never produces (BUG-16)
+- [ ] `ContractServiceObligation` missing lateness tracking fields compared to `ServiceObligation` primitive
+
+### Execution Infrastructure
+- [ ] Execution session closure does not enforce single open session per obligation
+- [ ] Approval workflow is data-only — approval/rejection has no downstream effect on obligation state
+- [ ] Value adjustments are stored but not applied anywhere
+
+---
+
+## Not Started
+
+These domains and features do not exist yet beyond empty stubs.
+
+### API Domains (all stubs)
+- [ ] Users — user management, profile, bonID lookup
+- [ ] Workspace — team/org management, member roles
+- [ ] Activity — feed of contract/obligation events
+- [ ] Billing — billing records, invoices
+- [ ] Documents — file attachments on contracts
+- [ ] Notifications — push/email delivery of lifecycle events
+- [ ] Search — full-text contract/obligation search
+- [ ] Sessions — (purpose unclear, likely user session management)
+- [ ] Templates — contract template library
+- [ ] Tools — (purpose unclear)
+- [ ] Uploads — file upload handling
+
+### Core Features Not Yet Built
+- [ ] Ownership checks — any authenticated user can currently access any contract/obligation/payment
+- [ ] Pagination on all list endpoints
+- [ ] Payment → obligation state transition guards (prevent invalid status jumps)
+- [ ] Idempotency key on `Payment` — no duplicate payment protection
+- [ ] Real payment gateway integration (only mock exists)
+- [ ] Recurrence expansion — `Obligation` template → `ContractObligation` instances
+- [ ] Import service — `contracts/services/import_service.py` is empty
+- [ ] Change request workflow — `contracts/change_request.py` is a 4-line stub with no logic
+- [ ] Audit logging — no record of who changed what
+- [ ] API-layer tests — zero test coverage on all HTTP endpoints
+- [ ] DB-level constraint `amount_paid <= amount_due` on `ContractObligation`
+- [ ] Proof of work verification — events are stored but no verification logic exists
+
+### Infrastructure Not Yet Built
+- [ ] `ContractServiceObligationRepository` — no concrete implementation
+- [ ] `PaymentRepository` — no repository pattern for payments
+- [ ] Background task queue — `automation/tasks.py` references Celery-style tasks but nothing is wired
+
+---
+
+## Known Remaining Bugs (medium severity)
+
+| ID | Description | Status |
+|----|-------------|--------|
+| BUG-15 | `is_defaulted` flag duplicates `state == "defaulted"` | Open |
+| BUG-16 | Model state choices include states the engine never produces (`due`, `grace`) | Open |
+
+All blockers (BUG-1 through BUG-7) and high-risk bugs (BUG-8 through BUG-14) are fixed.

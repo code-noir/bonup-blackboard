@@ -1,7 +1,7 @@
 # backend/api/contracts/serializers.py
 
 from rest_framework import serializers
-from backend.contracts.models import Contract
+from backend.contracts.models import Contract, ContractVersion
 
 
 class ContractSerializer(serializers.ModelSerializer):
@@ -9,6 +9,32 @@ class ContractSerializer(serializers.ModelSerializer):
     class Meta:
         model = Contract
         fields = "__all__"
+
+
+class ContractVersionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ContractVersion
+        fields = [
+            "id",
+            "contract",
+            "version_number",
+            "created_by",
+            "previous_version",
+            "superseded",
+            "status",
+            "content_snapshot",
+            "created_at",
+        ]
+        read_only_fields = [
+            "id",
+            "contract",
+            "version_number",
+            "created_by",
+            "previous_version",
+            "superseded",
+            "status",
+            "created_at",
+        ]
 
 class ObligationExecutionSessionSerializer(serializers.Serializer):
     id = serializers.UUIDField(read_only=True)

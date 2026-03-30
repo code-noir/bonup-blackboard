@@ -10,6 +10,11 @@ from .value_adjustment_views import ObligationValueAdjustmentListCreateAPIView
 
 from .resolve_views import ( ObligationResolveAPIView, ContractPaymentResolveAPIView, )
 from .views import ContractViewSet
+from .version_views import (
+    ContractVersionCreateAPIView,
+    ContractVersionSignAPIView,
+    ContractVersionRejectAPIView,
+)
 from .obligations_views import ContractObligationsAPIView
 from .proof_views import ObligationProofOfWorkAPIView
 
@@ -117,5 +122,25 @@ urlpatterns = [
         ContractManagementSummaryAPIView.as_view(),
         name="contract-management-summary",
     ),
+
+    # --------------------------------------------------
+    # Version negotiation
+    # --------------------------------------------------
+    path(
+        "<uuid:contract_id>/versions/",
+        ContractVersionCreateAPIView.as_view(),
+        name="contract-version-create",
+    ),
+    path(
+        "<uuid:contract_id>/versions/<uuid:version_id>/sign/",
+        ContractVersionSignAPIView.as_view(),
+        name="contract-version-sign",
+    ),
+    path(
+        "<uuid:contract_id>/versions/<uuid:version_id>/reject/",
+        ContractVersionRejectAPIView.as_view(),
+        name="contract-version-reject",
+    ),
+
     path("", include(router.urls)),
 ]

@@ -12,6 +12,16 @@ from backend.engine.contracts.obligations.lifecycle import process_obligation_li
 from backend.payments.models import Payment
 from .serializers import PaymentSerializer
 
+# Valid source states for each status transition endpoint.
+ALLOWED_FROM = {
+    "pending":   {"draft"},
+    "confirmed": {"pending"},
+    "failed":    {"pending"},
+    "cancelled": {"draft", "pending"},
+    "refunded":  {"confirmed"},
+    "reversed":  {"confirmed"},
+}
+
 class PaymentListCreateAPIView(APIView):
     """
     GET  /api/payments/
@@ -101,6 +111,12 @@ class PaymentConfirmAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        if payment.status not in ALLOWED_FROM["confirmed"]:
+            return Response(
+                {"error": f"Cannot confirm a payment with status '{payment.status}'."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
         now = timezone.now()
 
         with transaction.atomic():
@@ -168,6 +184,12 @@ class PaymentFailAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        if payment.status not in ALLOWED_FROM["failed"]:
+            return Response(
+                {"error": f"Cannot fail a payment with status '{payment.status}'."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
         with transaction.atomic():
             payment.status = "failed"
             payment.failed_at = timezone.now()
@@ -190,6 +212,12 @@ class PaymentCancelAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        if payment.status not in ALLOWED_FROM["cancelled"]:
+            return Response(
+                {"error": f"Cannot cancel a payment with status '{payment.status}'."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
         with transaction.atomic():
             payment.status = "cancelled"
             payment.cancelled_at = timezone.now()
@@ -210,6 +238,12 @@ class PaymentRefundAPIView(APIView):
             return Response(
                 {"error": "Payment not found"},
                 status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if payment.status not in ALLOWED_FROM["refunded"]:
+            return Response(
+                {"error": f"Cannot refund a payment with status '{payment.status}'."},
+                status=status.HTTP_409_CONFLICT,
             )
 
         now = timezone.now()
@@ -249,6 +283,12 @@ class PaymentReverseAPIView(APIView):
             return Response(
                 {"error": "Payment not found"},
                 status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if payment.status not in ALLOWED_FROM["reversed"]:
+            return Response(
+                {"error": f"Cannot reverse a payment with status '{payment.status}'."},
+                status=status.HTTP_409_CONFLICT,
             )
 
         now = timezone.now()

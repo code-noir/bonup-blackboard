@@ -2,6 +2,7 @@ from django.urls import path
 from .views import (
     PaymentListCreateAPIView,
     PaymentDetailAPIView,
+    PaymentPendingAPIView,
     PaymentConfirmAPIView,
     PaymentFailAPIView,
     PaymentCancelAPIView,
@@ -27,6 +28,11 @@ urlpatterns = [
         name="payment-detail",
     ),
 
+    path(
+        "<uuid:payment_id>/pending/",
+        PaymentPendingAPIView.as_view(),
+        name="payment-pending",
+    ),
     path(
     "<uuid:payment_id>/confirm/",
     PaymentConfirmAPIView.as_view(),

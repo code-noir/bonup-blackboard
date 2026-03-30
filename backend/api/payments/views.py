@@ -170,6 +170,33 @@ class PaymentConfirmAPIView(APIView):
         return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
 
 
+class PaymentPendingAPIView(APIView):
+    """
+    POST /api/payments/<payment_id>/pending/
+    """
+
+    def post(self, request, payment_id):
+        try:
+            payment = Payment.objects.get(id=payment_id)
+        except Payment.DoesNotExist:
+            return Response(
+                {"error": "Payment not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if payment.status not in ALLOWED_FROM["pending"]:
+            return Response(
+                {"error": f"Cannot mark pending a payment with status '{payment.status}'."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        with transaction.atomic():
+            payment.status = "pending"
+            payment.save(update_fields=["status", "updated_at"])
+
+        return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
+
+
 class PaymentFailAPIView(APIView):
     """
     POST /api/payments/<payment_id>/fail/

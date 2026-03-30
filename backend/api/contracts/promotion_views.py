@@ -1,17 +1,20 @@
-#backend/api/contracts/promotion_views.py
+# backend/api/contracts/promotion_views.py
 
+from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from backend.api.contracts.serializers import (
-    PromoteExecutionEventSerializer,
     ObligationPromotionSerializer,
     PromotedServiceObligationSerializer,
+    PromoteExecutionEventSerializer,
 )
 from backend.api.contracts.services.obligation_promotion_service import (
     ObligationPromotionService,
 )
+from backend.contracts.models import ObligationExecutionEvent
+from .permissions import contract_party_response, get_contract_for_object, is_party
 
 
 class ExecutionEventPromotionAPIView(APIView):
@@ -24,6 +27,11 @@ class ExecutionEventPromotionAPIView(APIView):
         self.service = ObligationPromotionService()
 
     def post(self, request, execution_event_id):
+        event = get_object_or_404(ObligationExecutionEvent, id=execution_event_id)
+        contract = get_contract_for_object(event)
+        if not is_party(request.user, contract):
+            return contract_party_response()
+
         serializer = PromoteExecutionEventSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 

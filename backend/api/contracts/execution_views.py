@@ -1,12 +1,18 @@
-#backend/api/contracts/execution_views.py
+# backend/api/contracts/execution_views.py
+
+from django.shortcuts import get_object_or_404
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
 from backend.api.contracts.serializers import (
-    OpenExecutionSessionSerializer,
-    ObligationExecutionSessionSerializer,
-    RecordExecutionItemSerializer,
+    AutoApprovalRequestSerializer,
+    CloseExecutionSessionSerializer,
     ExecutionDecisionSerializer,
     ObligationExecutionEventSerializer,
-    CloseExecutionSessionSerializer,
-    AutoApprovalRequestSerializer,
+    ObligationExecutionSessionSerializer,
+    OpenExecutionSessionSerializer,
+    RecordExecutionItemSerializer,
 )
 from backend.api.contracts.services.obligation_execution_service import (
     ObligationExecutionService,
@@ -17,9 +23,16 @@ from backend.contracts.models import (
     ObligationExecutionEvent,
     ObligationExecutionSession,
 )
-from rest_framework import status
-from rest_framework.response import Response
-from rest_framework.views import APIView
+from .permissions import contract_party_response, get_contract_for_object, is_party
+
+
+def _get_obligation_or_404(obligation_type, obligation_id):
+    """Look up a payment or service obligation by type + id."""
+    if obligation_type == "payment":
+        return get_object_or_404(ContractObligation, id=obligation_id)
+    if obligation_type == "service":
+        return get_object_or_404(ContractServiceObligation, id=obligation_id)
+    return None
 
 
 class ObligationExecutionSessionListCreateAPIView(APIView):
@@ -33,27 +46,40 @@ class ObligationExecutionSessionListCreateAPIView(APIView):
         self.service = ObligationExecutionService()
 
     def get(self, request, obligation_type, obligation_id):
-        obligation = self._get_obligation(
-            obligation_type=obligation_type,
-            obligation_id=obligation_id,
-        )
+        obligation = _get_obligation_or_404(obligation_type, obligation_id)
+        if obligation is None:
+            return Response(
+                {"error": "Invalid obligation type"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not is_party(request.user, obligation.contract):
+            return contract_party_response()
 
         sessions = obligation.execution_sessions.all().order_by("started_at")
-
         payload = [
             {
-                "id": session.id,
-                "status": session.status,
-                "started_at": session.started_at,
-                "ended_at": session.ended_at,
+                "id": s.id,
+                "status": s.status,
+                "started_at": s.started_at,
+                "ended_at": s.ended_at,
             }
-            for session in sessions
+            for s in sessions
         ]
-
-        serializer = ObligationExecutionSessionSerializer(payload, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(
+            ObligationExecutionSessionSerializer(payload, many=True).data,
+            status=status.HTTP_200_OK,
+        )
 
     def post(self, request, obligation_type, obligation_id):
+        obligation = _get_obligation_or_404(obligation_type, obligation_id)
+        if obligation is None:
+            return Response(
+                {"error": "Invalid obligation type"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not is_party(request.user, obligation.contract):
+            return contract_party_response()
+
         serializer = OpenExecutionSessionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -63,24 +89,15 @@ class ObligationExecutionSessionListCreateAPIView(APIView):
             started_at=serializer.validated_data.get("started_at"),
         )
 
-        response_serializer = ObligationExecutionSessionSerializer(
-            {
+        return Response(
+            ObligationExecutionSessionSerializer({
                 "id": session.id,
                 "status": session.status,
                 "started_at": session.started_at,
                 "ended_at": session.ended_at,
-            }
+            }).data,
+            status=status.HTTP_201_CREATED,
         )
-        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
-
-    def _get_obligation(self, *, obligation_type, obligation_id):
-        if obligation_type == "payment":
-            return ContractObligation.objects.get(id=obligation_id)
-
-        if obligation_type == "service":
-            return ContractServiceObligation.objects.get(id=obligation_id)
-
-        raise Exception("Invalid obligation type")
 
 
 class ExecutionItemCreateAPIView(APIView):
@@ -93,10 +110,13 @@ class ExecutionItemCreateAPIView(APIView):
         self.service = ObligationExecutionService()
 
     def post(self, request, session_id):
+        session = get_object_or_404(ObligationExecutionSession, id=session_id)
+        contract = get_contract_for_object(session)
+        if not is_party(request.user, contract):
+            return contract_party_response()
+
         serializer = RecordExecutionItemSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
-        session = ObligationExecutionSession.objects.get(id=session_id)
 
         result = self.service.record_execution_item(
             session=session,
@@ -153,17 +173,18 @@ class ExecutionItemCreateAPIView(APIView):
                 "service_obligation_id": approval_request.service_obligation_id,
             }
 
-        response_data = {
-            "event": ObligationExecutionEventSerializer(event_payload).data,
-            "decision": ExecutionDecisionSerializer(decision_payload).data,
-            "approval_request": (
-                AutoApprovalRequestSerializer(approval_payload).data
-                if approval_payload is not None
-                else None
-            ),
-        }
-
-        return Response(response_data, status=status.HTTP_201_CREATED)
+        return Response(
+            {
+                "event": ObligationExecutionEventSerializer(event_payload).data,
+                "decision": ExecutionDecisionSerializer(decision_payload).data,
+                "approval_request": (
+                    AutoApprovalRequestSerializer(approval_payload).data
+                    if approval_payload is not None
+                    else None
+                ),
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class ExecutionSessionEventListAPIView(APIView):
@@ -172,28 +193,32 @@ class ExecutionSessionEventListAPIView(APIView):
     """
 
     def get(self, request, session_id):
-        session = ObligationExecutionSession.objects.get(id=session_id)
-        events = session.events.all().order_by("created_at")
+        session = get_object_or_404(ObligationExecutionSession, id=session_id)
+        contract = get_contract_for_object(session)
+        if not is_party(request.user, contract):
+            return contract_party_response()
 
+        events = session.events.all().order_by("created_at")
         payload = [
             {
-                "id": event.id,
-                "event_type": event.event_type,
-                "task": event.task,
-                "observation": event.observation,
-                "summary": event.summary,
-                "estimated_duration_minutes": event.estimated_duration_minutes,
-                "estimated_cost_amount": event.estimated_cost_amount,
-                "estimated_cost_currency": event.estimated_cost_currency,
-                "planned_execution_time": event.planned_execution_time,
-                "metadata": event.metadata,
-                "created_at": event.created_at,
+                "id": e.id,
+                "event_type": e.event_type,
+                "task": e.task,
+                "observation": e.observation,
+                "summary": e.summary,
+                "estimated_duration_minutes": e.estimated_duration_minutes,
+                "estimated_cost_amount": e.estimated_cost_amount,
+                "estimated_cost_currency": e.estimated_cost_currency,
+                "planned_execution_time": e.planned_execution_time,
+                "metadata": e.metadata,
+                "created_at": e.created_at,
             }
-            for event in events
+            for e in events
         ]
-
-        serializer = ObligationExecutionEventSerializer(payload, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(
+            ObligationExecutionEventSerializer(payload, many=True).data,
+            status=status.HTTP_200_OK,
+        )
 
 
 class ExecutionSessionCloseAPIView(APIView):
@@ -206,24 +231,28 @@ class ExecutionSessionCloseAPIView(APIView):
         self.service = ObligationExecutionService()
 
     def post(self, request, session_id):
+        session = get_object_or_404(ObligationExecutionSession, id=session_id)
+        contract = get_contract_for_object(session)
+        if not is_party(request.user, contract):
+            return contract_party_response()
+
         serializer = CloseExecutionSessionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        session = ObligationExecutionSession.objects.get(id=session_id)
         closed_session = self.service.close_session(
             session=session,
             ended_at=serializer.validated_data.get("ended_at"),
         )
 
-        response_serializer = ObligationExecutionSessionSerializer(
-            {
+        return Response(
+            ObligationExecutionSessionSerializer({
                 "id": closed_session.id,
                 "status": closed_session.status,
                 "started_at": closed_session.started_at,
                 "ended_at": closed_session.ended_at,
-            }
+            }).data,
+            status=status.HTTP_200_OK,
         )
-        return Response(response_serializer.data, status=status.HTTP_200_OK)
 
 
 class ExecutionSessionDetailAPIView(APIView):
@@ -232,25 +261,20 @@ class ExecutionSessionDetailAPIView(APIView):
     """
 
     def get(self, request, session_id):
-        try:
-            session = ObligationExecutionSession.objects.get(id=session_id)
-        except ObligationExecutionSession.DoesNotExist:
-            return Response(
-                {"error": "Execution session not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        session = get_object_or_404(ObligationExecutionSession, id=session_id)
+        contract = get_contract_for_object(session)
+        if not is_party(request.user, contract):
+            return contract_party_response()
 
-        payload = {
-            "id": session.id,
-            "status": session.status,
-            "started_at": session.started_at,
-            "ended_at": session.ended_at,
-        }
-
-        serializer = ObligationExecutionSessionSerializer(payload)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-
+        return Response(
+            ObligationExecutionSessionSerializer({
+                "id": session.id,
+                "status": session.status,
+                "started_at": session.started_at,
+                "ended_at": session.ended_at,
+            }).data,
+            status=status.HTTP_200_OK,
+        )
 
 
 class ExecutionEventDetailAPIView(APIView):
@@ -259,47 +283,27 @@ class ExecutionEventDetailAPIView(APIView):
     """
 
     def get(self, request, event_id):
-        try:
-            event = ObligationExecutionEvent.objects.get(id=event_id)
-        except ObligationExecutionEvent.DoesNotExist:
-            return Response(
-                {"error": "Execution event not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        event = get_object_or_404(ObligationExecutionEvent, id=event_id)
+        contract = get_contract_for_object(event)
+        if not is_party(request.user, contract):
+            return contract_party_response()
 
-        payload = {
-            "id": event.id,
-            "event_type": event.event_type,
-            "task": event.task,
-            "observation": event.observation,
-            "summary": event.summary,
-            "estimated_duration_minutes": event.estimated_duration_minutes,
-            "estimated_cost_amount": event.estimated_cost_amount,
-            "estimated_cost_currency": event.estimated_cost_currency,
-            "planned_execution_time": event.planned_execution_time,
-            "metadata": event.metadata,
-            "created_at": event.created_at,
-        }
-
-        serializer = ObligationExecutionEventSerializer(payload)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-class ExecutionEventDeleteAPIView(APIView):
-    """
-    DELETE /api/contracts/execution-events/<event_id>/delete/
-    """
-
-    def delete(self, request, event_id):
-        try:
-            event = ObligationExecutionEvent.objects.get(id=event_id)
-        except ObligationExecutionEvent.DoesNotExist:
-            return Response(
-                {"error": "Execution event not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        event.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(
+            ObligationExecutionEventSerializer({
+                "id": event.id,
+                "event_type": event.event_type,
+                "task": event.task,
+                "observation": event.observation,
+                "summary": event.summary,
+                "estimated_duration_minutes": event.estimated_duration_minutes,
+                "estimated_cost_amount": event.estimated_cost_amount,
+                "estimated_cost_currency": event.estimated_cost_currency,
+                "planned_execution_time": event.planned_execution_time,
+                "metadata": event.metadata,
+                "created_at": event.created_at,
+            }).data,
+            status=status.HTTP_200_OK,
+        )
 
 
 class ExecutionEventDeleteAPIView(APIView):
@@ -308,32 +312,10 @@ class ExecutionEventDeleteAPIView(APIView):
     """
 
     def delete(self, request, event_id):
-        try:
-            event = ObligationExecutionEvent.objects.get(id=event_id)
-        except ObligationExecutionEvent.DoesNotExist:
-            return Response(
-                {"error": "Execution event not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        event = get_object_or_404(ObligationExecutionEvent, id=event_id)
+        contract = get_contract_for_object(event)
+        if not is_party(request.user, contract):
+            return contract_party_response()
 
         event.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-class ExecutionEventDeleteAPIView(APIView):
-    """
-    DELETE /api/contracts/execution-events/<event_id>/delete/
-    """
-
-    def delete(self, request, event_id):
-        try:
-            event = ObligationExecutionEvent.objects.get(id=event_id)
-        except ObligationExecutionEvent.DoesNotExist:
-            return Response(
-                {"error": "Execution event not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        event.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-

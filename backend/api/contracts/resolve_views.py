@@ -1,13 +1,15 @@
-#backend/api/contracts/resolve_views.py
+# backend/api/contracts/resolve_views.py
 
+from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from backend.contracts.models import ContractServiceObligation
+from backend.contracts.models import ContractObligation, ContractServiceObligation
 from backend.api.contracts.services.payment_resolution_service import (
     PaymentResolutionService,
 )
+from .permissions import contract_party_response, is_party
 
 
 class ObligationResolveAPIView(APIView):
@@ -17,7 +19,9 @@ class ObligationResolveAPIView(APIView):
 
     def post(self, request, obligation_type, obligation_id):
         if obligation_type == "service":
-            obligation = ContractServiceObligation.objects.get(id=obligation_id)
+            obligation = get_object_or_404(ContractServiceObligation, id=obligation_id)
+            if not is_party(request.user, obligation.contract):
+                return contract_party_response()
 
             if obligation.state == "resolved":
                 payload = {
@@ -59,6 +63,7 @@ class ObligationResolveAPIView(APIView):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+
 class ContractPaymentResolveAPIView(APIView):
     """
     POST /api/contracts/obligations/payment/<obligation_id>/resolve/
@@ -69,13 +74,15 @@ class ContractPaymentResolveAPIView(APIView):
         self.service = PaymentResolutionService()
 
     def post(self, request, obligation_id):
+        # Check party membership before the service mutates anything.
+        obligation = get_object_or_404(ContractObligation, id=obligation_id)
+        if not is_party(request.user, obligation.contract):
+            return contract_party_response()
+
         try:
             obligation = self.service.resolve(obligation_id=obligation_id)
         except Exception as e:
-            return Response(
-                {"detail": str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         payload = {
             "id": str(obligation.id),
@@ -89,5 +96,4 @@ class ContractPaymentResolveAPIView(APIView):
             "installment_number": obligation.installment_number,
             "due_date": obligation.due_date,
         }
-
         return Response(payload, status=status.HTTP_200_OK)

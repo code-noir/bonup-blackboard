@@ -1,22 +1,37 @@
-#backend/api/contracts/proof_view.py
+# backend/api/contracts/proof_views.py
 
-
-from rest_framework.views import APIView
-from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
 from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
+from backend.contracts.models import ContractObligation, ContractServiceObligation
 from backend.api.contracts.services.proof_of_work_service import ProofOfWorkService
-from backend.contracts.models import ContractServiceObligation
 from backend.api.contracts.services.payment_resolution_service import (
     PaymentResolutionService,
 )
+from .permissions import contract_party_response, is_party
+
 
 class ObligationProofOfWorkAPIView(APIView):
     """
-    GET /api/contracts/obligations/<obligation_type>/<obligation_id>/proof/
+    POST /api/contracts/obligations/<obligation_type>/<obligation_id>/proof/
     """
 
     def get(self, request, obligation_type, obligation_id):
+        if obligation_type == "payment":
+            obligation = get_object_or_404(ContractObligation, id=obligation_id)
+        elif obligation_type == "service":
+            obligation = get_object_or_404(ContractServiceObligation, id=obligation_id)
+        else:
+            return Response(
+                {"error": "Invalid obligation type"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not is_party(request.user, obligation.contract):
+            return contract_party_response()
+
         try:
             proof = ProofOfWorkService().build_for_obligation(
                 obligation_type=obligation_type,

@@ -1,4 +1,6 @@
 #backend/users/models.py
+import uuid
+
 from django.conf import settings
 from django.db import models, transaction
 
@@ -52,6 +54,19 @@ class BonUserProfile(models.Model):
         db_index=True,
         editable=False,
     )
+
+    # Contact
+    phone = models.CharField(max_length=30, blank=True, null=True)
+
+    # Location
+    city = models.CharField(max_length=100, blank=True, null=True)
+    state_region = models.CharField(max_length=100, blank=True, null=True)
+    country = models.CharField(max_length=100, blank=True, null=True)
+
+    # Email verification
+    email_verified = models.BooleanField(default=False)
+    email_verification_token = models.UUIDField(default=None, null=True, blank=True)
+    pending_email = models.EmailField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -118,8 +133,76 @@ class BonUserProfile(models.Model):
                 return candidate
 
 
+# ============================================================
+# USER BILLING INFO
+# ============================================================
+
+class UserBillingInfo(models.Model):
+    """
+    Billing address for a bonUP user.
+    Separate from identity and location — updated independently.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="billing_info",
+    )
+
+    billing_name = models.CharField(max_length=200, blank=True, null=True)
+    address_line_1 = models.CharField(max_length=255, blank=True, null=True)
+    address_line_2 = models.CharField(max_length=255, blank=True, null=True)
+    city = models.CharField(max_length=100, blank=True, null=True)
+    state_region = models.CharField(max_length=100, blank=True, null=True)
+    country = models.CharField(max_length=100, blank=True, null=True)
+    postal_code = models.CharField(max_length=20, blank=True, null=True)
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"BillingInfo({self.user_id})"
 
 
+# ============================================================
+# USER INVITATION
+# ============================================================
+
+class UserInvitation(models.Model):
+    """
+    Invitation sent by an existing user to a non-registered email.
+    Powers the invite flow: send → validate token → accept (register).
+    """
+
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("accepted", "Accepted"),
+        ("expired", "Expired"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    inviter = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="sent_invitations",
+    )
+
+    invitee_email = models.EmailField()
+    invitee_name = models.CharField(max_length=200)
+
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="pending",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+
+    def __str__(self):
+        return f"Invitation({self.invitee_email}, {self.status})"
 
 
 

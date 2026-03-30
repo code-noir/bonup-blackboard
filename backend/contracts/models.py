@@ -735,6 +735,58 @@ class ContractApprovalRequest(models.Model):
     def __str__(self):
         return f"{self.approval_type} - {self.status}"
 
+class ContractRoleSwitchRequest(models.Model):
+    """
+    Represents a counterparty's request to swap roles with the initiator.
+
+    On confirmation the original contract is deleted and a new one is created
+    with the roles reversed (fresh start, no content, new ID).
+
+    Only one pending request is allowed per contract at a time.
+    Requests expire after 7 days if not confirmed.
+    Role switches are blocked once any version has been signed.
+    """
+
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("confirmed", "Confirmed"),
+        ("expired", "Expired"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    contract = models.ForeignKey(
+        Contract,
+        on_delete=models.CASCADE,
+        related_name="role_switch_requests",
+    )
+
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="role_switch_requests_sent",
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="pending",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"RoleSwitchRequest({self.contract_id}, {self.status})"
+
+
+# ============================================================
+# CONTRACT OBLIGATION PROMOTION
+# ============================================================
+
 class ContractObligationPromotion(models.Model):
     """
     Tracks promotion of an execution event into a side obligation.

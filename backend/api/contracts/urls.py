@@ -15,6 +15,10 @@ from .version_views import (
     ContractVersionSignAPIView,
     ContractVersionRejectAPIView,
 )
+from .role_switch_views import (
+    ContractRoleSwitchRequestAPIView,
+    ContractRoleSwitchConfirmAPIView,
+)
 from .obligations_views import ContractObligationsAPIView
 from .proof_views import ObligationProofOfWorkAPIView
 
@@ -140,6 +144,20 @@ urlpatterns = [
         "<uuid:contract_id>/versions/<uuid:version_id>/reject/",
         ContractVersionRejectAPIView.as_view(),
         name="contract-version-reject",
+    ),
+
+    # --------------------------------------------------
+    # Role switch
+    # --------------------------------------------------
+    path(
+        "<uuid:contract_id>/request-role-switch/",
+        ContractRoleSwitchRequestAPIView.as_view(),
+        name="contract-request-role-switch",
+    ),
+    path(
+        "<uuid:contract_id>/confirm-role-switch/",
+        ContractRoleSwitchConfirmAPIView.as_view(),
+        name="contract-confirm-role-switch",
     ),
 
     path("", include(router.urls)),

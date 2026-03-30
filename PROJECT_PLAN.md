@@ -2,41 +2,61 @@
 
 ---
 
-## What Is bonUP
+## bonUP — The Ecosystem
 
-bonUP is a platform for managing contractual relationships between service providers and clients.
-Its core premise: every agreement between two parties creates obligations — payment obligations and service obligations — and those obligations have lifecycle states that change over time.
+bonUP is a platform for creating, tracking, and proving value between parties.
 
-bonUP tracks this in real time. It is not a document manager or an e-signature tool. It is an obligation engine.
+Its core concept is the **PBVD** — Proof Based Value Document. A PBVD is any document that proves something exists, occurred, or was agreed to. A contract is one type of PBVD. An invoice is another. A proof of delivery, a signed statement, a completed service record — all PBVDs.
+
+bonUP does not belong to any single domain. It is a general infrastructure for obligation-based relationships. Multiple verticals live inside it, each addressing a different category of value exchange.
 
 ---
 
-## What Is Blackboard
+## The Lifecycle Engine
 
-Blackboard is the backend system that powers bonUP. It is a Django REST API that implements:
+At the core of bonUP is a **generic Lifecycle Engine** — a pure Python domain layer that knows nothing about contracts, payments, or any specific vertical.
+
+The engine owns:
+- Obligation primitives (`PaymentObligation`, `ServiceObligation`)
+- State evaluation (`active → overdue → defaulted → breached → resolved`)
+- Scheduling (installment generation, recurrence)
+- Lifecycle processing (`process_obligation_lifecycle`)
+- Execution session and event primitives (proof capture)
+- Value adjustment logic (lateness penalties, additional charges)
+
+The engine has no Django dependency. It has no database. It holds no state. It receives facts, evaluates them against rules, and returns results. Any bonUP vertical can plug into it.
+
+This repo's engine lives in `backend/engine/`.
+
+---
+
+## Blackboard — The Contract Vertical
+
+**Blackboard** is the contract vertical inside bonUP. It is the only vertical implemented in this repository.
+
+Blackboard uses the Lifecycle Engine to power a full contract management backend:
 
 - Contract creation, versioning, and signing
-- Obligation scheduling (installment-based, recurrence-based)
-- Lifecycle state evaluation (ACTIVE → OVERDUE → DEFAULTED → BREACHED → RESOLVED)
-- Payment tracking and obligation balance sync
-- Execution session and event capture (proof of work)
-- Value adjustments (lateness penalties, additional charges)
-- Approval workflows for execution items
-- Promotion of execution events into side obligations
+- Obligation scheduling against signed contracts (payment + service installments)
+- Lifecycle state tracking per obligation and per contract
+- Payment recording and obligation balance sync
+- Execution sessions and events (capturing proof of service delivery)
+- Value adjustments and approval workflows
+- Promotion of execution events into new side obligations
+
+A contract in Blackboard is a specific type of PBVD: a bilateral agreement between two parties that generates obligations. The obligations are what the engine tracks.
 
 ---
 
-## Architecture Principle
+## Architecture
 
-The codebase is split into two layers that must never mix:
+Three layers. They must not mix.
 
-**Engine layer** (`backend/engine/`) — pure Python, no Django, no ORM.
-This layer owns all domain logic: state evaluation, obligation primitives, scheduling, lifecycle processing.
+**Engine** (`backend/engine/`) — pure Python, no Django, no ORM. All domain logic lives here. Verticals consume this layer, they do not extend it for their own persistence needs.
 
-**Persistence + API layer** (`backend/contracts/`, `backend/payments/`, `backend/api/`) — Django ORM models and REST endpoints.
-This layer stores state and exposes it. It delegates all business logic to the engine.
+**Persistence + API** (`backend/contracts/`, `backend/payments/`, `backend/api/`) — Django ORM models and REST endpoints. Stores state. Exposes it. Delegates all business logic to the engine.
 
-Bridging the two is the **infrastructure layer** (`backend/infrastructure/repositories/`), which implements the repository interfaces the engine uses.
+**Infrastructure** (`backend/infrastructure/repositories/`) — bridges the two. Concrete repository implementations that satisfy the engine's abstract interfaces.
 
 ---
 
@@ -50,17 +70,17 @@ The API router exposes 15 domain namespaces. Their current state:
 | 2 | **contracts** | `/api/contracts/` | Working — CRUD, versioning, obligations, execution, approvals |
 | 3 | **obligations** | `/api/obligations/` | Working — full CRUD + lifecycle operations |
 | 4 | **payments** | `/api/payments/` | Working — CRUD + status transitions + summaries |
-| 5 | **users** | `/api/users/` | Stub ViewSet — no real implementation |
-| 6 | **workspace** | `/api/workspace/` | Stub ViewSet — no real implementation |
-| 7 | **activity** | `/api/activity/` | Stub ViewSet — no real implementation |
-| 8 | **billing** | `/api/billing/` | Stub ViewSet — no real implementation |
-| 9 | **documents** | `/api/documents/` | Stub ViewSet — no real implementation |
-| 10 | **notifications** | `/api/notifications/` | Stub ViewSet — no real implementation |
-| 11 | **search** | `/api/search/` | Stub ViewSet — no real implementation |
-| 12 | **sessions** | `/api/sessions/` | Stub ViewSet — no real implementation |
-| 13 | **templates** | `/api/templates/` | Stub ViewSet — no real implementation |
-| 14 | **tools** | `/api/tools/` | Stub ViewSet — no real implementation |
-| 15 | **uploads** | `/api/uploads/` | Stub ViewSet — no real implementation |
+| 5 | **users** | `/api/users/` | Stub — no real implementation |
+| 6 | **workspace** | `/api/workspace/` | Stub — no real implementation |
+| 7 | **activity** | `/api/activity/` | Stub — no real implementation |
+| 8 | **billing** | `/api/billing/` | Stub — no real implementation |
+| 9 | **documents** | `/api/documents/` | Stub — no real implementation |
+| 10 | **notifications** | `/api/notifications/` | Stub — no real implementation |
+| 11 | **search** | `/api/search/` | Stub — no real implementation |
+| 12 | **sessions** | `/api/sessions/` | Stub — no real implementation |
+| 13 | **templates** | `/api/templates/` | Stub — no real implementation |
+| 14 | **tools** | `/api/tools/` | Stub — no real implementation |
+| 15 | **uploads** | `/api/uploads/` | Stub — no real implementation |
 
 ---
 
@@ -68,7 +88,7 @@ The API router exposes 15 domain namespaces. Their current state:
 
 ### Version 1 — Obligation Engine (current)
 
-The goal of V1 is a working, reliable backend for the core contract lifecycle.
+The goal of V1 is a working, reliable backend for the core Blackboard contract lifecycle.
 
 **In scope:**
 - Contract creation and signing workflow
@@ -89,19 +109,20 @@ The goal of V1 is a working, reliable backend for the core contract lifecycle.
 - Template system
 - External integrations
 
-### Version 2 — Platform (planned)
+### Version 2 — Platform
 
-V2 connects the engine to a real product surface:
+V2 connects the engine to a real product surface and extends Blackboard toward the broader bonUP ecosystem.
 
 - Real payment gateway (Stripe or equivalent)
 - Push/email notification delivery
-- Document attachments and proof uploads
+- Document attachments and PBVD uploads
 - Template-based contract generation
-- User workspace with team management
+- User workspace with team and role management
 - Full-text search across contracts and obligations
 - Activity feed and audit logging
 - Mobile API compatibility
-- bonID-based identity system across all entities
+- bonID-based identity across all entities
+- Groundwork for additional bonUP verticals beyond Blackboard
 
 ---
 
@@ -124,13 +145,23 @@ The single function `evaluate_obligation_state()` is the authoritative source of
 ## bonID System
 
 Each bonUP user has a 13-digit bonID (`BonUserProfile.bon_id`).
-IDs are assigned sequentially. Numbers that are composed entirely of 0s and 1s are reserved (binary-only, e.g. `0000000000001`, `0000000000010`) and stored in `ReservedBonId`.
+IDs are assigned sequentially. Numbers composed entirely of 0s and 1s are reserved (binary-only, e.g. `0000000000001`, `0000000000010`) and stored in `ReservedBonId`.
+
+The bonID is a cross-vertical identity — it belongs to the bonUP ecosystem, not to Blackboard specifically.
 
 ---
 
-## Proof of Work (PBVD)
+## PBVD
 
-Execution events captured during service obligation sessions form a proof of work record.
-This underpins bonUP's "Proof By Value Delivered" (PBVD) concept: the execution record is the evidence that a service obligation was fulfilled, not just a signature.
+A **Proof Based Value Document** is any document that proves something exists, occurred, or was agreed to.
 
-Events can be promoted into side obligations (via `ContractObligationPromotion`) when discovered work falls outside the original scope.
+Examples:
+- A signed contract (Blackboard's domain)
+- A completed service record
+- A proof of delivery
+- An invoice
+- A payment receipt
+
+In Blackboard, execution events captured during service obligation sessions form PBVD records — evidence that a service obligation was fulfilled, traceable back to the specific work performed, not just a signature on an agreement.
+
+Events can be promoted into side obligations (`ContractObligationPromotion`) when work discovered during execution falls outside the original scope of the contract.

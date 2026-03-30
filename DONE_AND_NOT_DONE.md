@@ -1,6 +1,6 @@
 # DONE_AND_NOT_DONE.md — Feature Completion Status
 
-Last updated: 2026-03-29
+Last updated: 2026-03-30
 
 ---
 
@@ -16,6 +16,7 @@ These things are implemented, tested, and have no known critical bugs.
 - [x] Escalation to BREACHED — `evaluate_default_escalation()` in `escalation.py` (path is now reachable)
 - [x] `ObligationScheduler.generate_parallel_schedule()` — installment schedule generation, no crash bugs
 - [x] `process_obligation_lifecycle()` — `@transaction.atomic`, single lifecycle processor
+- [x] All `datetime.utcnow()` replaced with `timezone.now()` throughout engine and tests
 
 ### Engine — Contract Domain
 - [x] `Contract` aggregate — `refresh()`, `apply_payment()`, `refresh_state()`, state evaluation from obligations
@@ -28,7 +29,7 @@ These things are implemented, tested, and have no known critical bugs.
 ### Engine — Payments
 - [x] `PaymentGateway` — abstract interface
 - [x] `PaymentResult` — standardised response type
-- [x] `MockPaymentGateway` — inherits from `PaymentGateway`, returns `PaymentResult`
+- [x] `MockPaymentGateway` — inherits from `PaymentGateway`, returns `PaymentResult`, matches interface signature
 - [x] `PaymentService.process_payment()` — applies payment, runs lifecycle, persists
 
 ### Infrastructure
@@ -67,11 +68,17 @@ These things are implemented, tested, and have no known critical bugs.
 
 ### API — Payments
 - [x] Payment list/create, detail, update, delete
+- [x] Payment status transition guards — each endpoint enforces valid source state, returns 409 on invalid transition
+- [x] `POST /pending/` — draft → pending transition endpoint
 - [x] Payment confirm (syncs obligation balance, runs lifecycle engine)
 - [x] Payment fail, cancel
 - [x] Payment refund (reverses obligation balance)
 - [x] Payment reverse (reverses obligation balance)
-- [x] Dashboard summary, contract summary, obligation summary
+- [x] Obligation state validation on payment creation — rejects if obligation is resolved/breached/defaulted
+- [x] Filtering on all three list endpoints (`?status=`, `?payment_method=`, `?created_after=`, `?created_before=`)
+- [x] Pagination on all three list endpoints (`?page=`, `?page_size=`, default 20, max 100)
+- [x] Dashboard summary, contract summary
+- [x] Obligation summary — includes `amount_due`, `amount_paid`, `remaining_balance`, `obligation_state`
 - [x] Contract-scoped payment list/create
 - [x] Obligation-scoped payment list/create
 - [x] All mutations wrapped in `transaction.atomic()`
@@ -86,7 +93,15 @@ These things are implemented, tested, and have no known critical bugs.
 
 ### Tests
 - [x] 11 engine tests passing (payment service, reconstruction, lifecycle, contract import)
-- [x] No deprecation warnings (all `datetime.utcnow()` replaced with `timezone.now()`)
+- [x] No deprecation warnings
+
+### Documentation
+- [x] `CLAUDE.md` — project structure, test commands, coding conventions, what not to touch
+- [x] `PROJECT_PLAN.md` — bonUP ecosystem, Lifecycle Engine, Blackboard vertical, PBVD definition
+- [x] `API_LEDGER.md` — full endpoint inventory with status
+- [x] `DOMAIN_MAP.md` — all models, fields, relationships, domain ownership
+- [x] `DONE_AND_NOT_DONE.md` — this file
+- [x] `AUDIT.md` — full bug registry (BUG-1 through BUG-16), all blockers and high-risk bugs fixed
 
 ---
 
@@ -98,18 +113,18 @@ These have a foundation but meaningful gaps remain.
 - [ ] Grace period — `grace_days` parameter exists in the scheduler but is never stored or evaluated
 - [ ] `Obligation` template model — has `recurrence_interval_days` and `recurrence_count` fields but no service expands them into `ContractObligation` instances
 
-### Payment Status State Machine
-- [ ] No guards on payment status transitions — a `draft` payment can jump directly to `refunded`
-- [ ] `is_defaulted` on `ContractObligation` is synced on payment confirmation but is a redundant mirror of `state == "defaulted"` (BUG-15)
-
 ### Obligation State Alignment
 - [ ] `ContractObligation.state` choices include `"due"` and `"grace"` which the engine never produces (BUG-16)
 - [ ] `ContractServiceObligation` missing lateness tracking fields compared to `ServiceObligation` primitive
+- [ ] `is_defaulted` on `ContractObligation` is a redundant mirror of `state == "defaulted"` (BUG-15)
 
 ### Execution Infrastructure
 - [ ] Execution session closure does not enforce single open session per obligation
 - [ ] Approval workflow is data-only — approval/rejection has no downstream effect on obligation state
 - [ ] Value adjustments are stored but not applied anywhere
+
+### Filtering and Pagination
+- [ ] Filtering and pagination on obligation list endpoints (`/api/obligations/`) — done for payments, not yet for obligations
 
 ---
 
@@ -131,9 +146,7 @@ These domains and features do not exist yet beyond empty stubs.
 - [ ] Uploads — file upload handling
 
 ### Core Features Not Yet Built
-- [ ] Ownership checks — any authenticated user can currently access any contract/obligation/payment
-- [ ] Pagination on all list endpoints
-- [ ] Payment → obligation state transition guards (prevent invalid status jumps)
+- [ ] Ownership checks — any authenticated user can currently access any contract, obligation, or payment
 - [ ] Idempotency key on `Payment` — no duplicate payment protection
 - [ ] Real payment gateway integration (only mock exists)
 - [ ] Recurrence expansion — `Obligation` template → `ContractObligation` instances

@@ -90,14 +90,14 @@ Provided by `ContractViewSet` (DefaultRouter) plus manual paths.
 | GET | `/api/obligations/<type>/<id>/timeline/` | Obligation timeline | Working |
 | GET | `/api/obligations/<type>/<id>/next-actions/` | Recommended next actions | Working |
 
+*No filtering or pagination on list endpoint yet.
+
 ### Obligation Lifecycle
 
 | Method | Path | Description | Status |
 |--------|------|-------------|--------|
-| POST | `/api/obligations/<type>/<id>/resolve/` | Resolve obligation | Working* |
-| POST | `/api/obligations/payment/<id>/resolve/` | Resolve payment obligation | Working* |
-
-*Resolve has state validation (rejects already-resolved and breached). No pagination on list.
+| POST | `/api/obligations/<type>/<id>/resolve/` | Resolve obligation — validates state, rejects if terminal | Working |
+| POST | `/api/obligations/payment/<id>/resolve/` | Resolve payment obligation | Working |
 
 ### Execution Sessions (obligation-scoped)
 
@@ -138,11 +138,17 @@ Provided by `ContractViewSet` (DefaultRouter) plus manual paths.
 
 ## Payments — `/api/payments/`
 
+All three list endpoints support:
+- Filtering: `?status=`, `?payment_method=`, `?created_after=`, `?created_before=`
+- Pagination: `?page=`, `?page_size=` (default 20, max 100) — response shape: `{ count, page, page_size, results }`
+
+All status transition endpoints enforce valid source state and return `409 Conflict` on invalid transitions.
+
 ### Payment CRUD
 
 | Method | Path | Description | Status |
 |--------|------|-------------|--------|
-| GET | `/api/payments/` | List all payments | Working |
+| GET | `/api/payments/` | List all payments (filtered, paginated) | Working |
 | POST | `/api/payments/` | Create payment | Working |
 | GET | `/api/payments/<payment_id>/` | Payment detail | Working |
 | PATCH | `/api/payments/<payment_id>/` | Update payment | Working |
@@ -150,26 +156,26 @@ Provided by `ContractViewSet` (DefaultRouter) plus manual paths.
 
 ### Payment Status Transitions
 
-| Method | Path | Description | Status |
-|--------|------|-------------|--------|
-| POST | `/api/payments/<payment_id>/confirm/` | Confirm payment, sync obligation balance | Working |
-| POST | `/api/payments/<payment_id>/fail/` | Mark as failed | Working |
-| POST | `/api/payments/<payment_id>/cancel/` | Mark as cancelled | Working |
-| POST | `/api/payments/<payment_id>/refund/` | Refund, reverse obligation balance | Working |
-| POST | `/api/payments/<payment_id>/reverse/` | Reverse, reverse obligation balance | Working |
+Valid state machine: `draft → pending → confirmed → refunded / reversed`; `pending → failed / cancelled`; `draft → cancelled`
 
-All status transitions are wrapped in `transaction.atomic()`. Confirm/refund/reverse sync
-`ContractObligation.amount_paid` and re-run the lifecycle engine.
+| Method | Path | Description | Allowed From | Status |
+|--------|------|-------------|--------------|--------|
+| POST | `/api/payments/<payment_id>/pending/` | Mark pending | `draft` | Working |
+| POST | `/api/payments/<payment_id>/confirm/` | Confirm; syncs obligation balance + lifecycle | `pending` | Working |
+| POST | `/api/payments/<payment_id>/fail/` | Mark failed | `pending` | Working |
+| POST | `/api/payments/<payment_id>/cancel/` | Mark cancelled | `draft`, `pending` | Working |
+| POST | `/api/payments/<payment_id>/refund/` | Refund; reverses obligation balance | `confirmed` | Working |
+| POST | `/api/payments/<payment_id>/reverse/` | Reverse; reverses obligation balance | `confirmed` | Working |
 
 ### Summaries
 
 | Method | Path | Description | Status |
 |--------|------|-------------|--------|
-| GET | `/api/payments/dashboard-summary/` | Global payment totals by status | Working |
-| GET | `/api/payments/contracts/<contract_id>/` | Payments for a contract | Working |
-| GET | `/api/payments/contracts/<contract_id>/summary/` | Contract payment summary | Working |
-| GET | `/api/payments/obligations/<obligation_id>/` | Payments for an obligation | Working |
-| GET | `/api/payments/obligations/<obligation_id>/summary/` | Obligation payment summary | Working |
+| GET | `/api/payments/dashboard-summary/` | Global payment totals and counts by status | Working |
+| GET | `/api/payments/contracts/<contract_id>/` | Payments for a contract (filtered, paginated) | Working |
+| GET | `/api/payments/contracts/<contract_id>/summary/` | Contract payment totals | Working |
+| GET | `/api/payments/obligations/<obligation_id>/` | Payments for an obligation (filtered, paginated) | Working |
+| GET | `/api/payments/obligations/<obligation_id>/summary/` | Obligation summary: `amount_due`, `amount_paid`, `remaining_balance`, `obligation_state`, payment totals | Working |
 
 ---
 
@@ -197,7 +203,6 @@ No business logic exists. All routes return `[]` or DRF defaults.
 ## Known Issues Across Working Endpoints
 
 - **No ownership checks** — any authenticated user can read or modify any contract, obligation, or payment
-- **No pagination** on list endpoints (`/api/obligations/`, `/api/payments/`, etc.)
-- **No state transition guards** on payment status — e.g. a draft payment can be directly refunded
+- **No filtering or pagination** on obligation list endpoints (done for payments, not yet for obligations)
 - **No API tests** — all endpoints are untested at the HTTP level
 - **Duplicate URL patterns** in `api/obligations/urls.py` — `approval-request-list` is registered twice; second registration shadows first

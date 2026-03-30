@@ -43,8 +43,32 @@ These things are implemented, tested, and have no known critical bugs.
 - [x] JWT token verify (`/api/auth/token/verify/`)
 - [x] `IsAuthenticated` + `JWTAuthentication` as global defaults
 
+### API — Users
+- [x] Register (`POST /api/users/register/`) — creates User + BonUserProfile, issues verification token
+- [x] Login (`POST /api/users/login/`) — JWT token pair
+- [x] Login refresh (`POST /api/users/login/refresh/`)
+- [x] Logout (`POST /api/users/logout/`) — blacklists refresh token
+- [x] Password reset request (`POST /api/users/password-reset/`) — stateless HMAC token, no DB model
+- [x] Password reset confirm (`POST /api/users/password-reset/confirm/`)
+- [x] Email verification (`POST /api/users/verify-email/`) — UUID token on BonUserProfile
+- [x] Resend verification (`POST /api/users/resend-verification/`) — expires stale tokens before reissuing
+- [x] Get/update my profile (`GET/PATCH /api/users/me/`) — composite User + BonUserProfile
+- [x] Change password (`POST /api/users/me/change-password/`)
+- [x] Update email (`POST /api/users/me/update-email/`)
+- [x] Update phone (`POST /api/users/me/update-phone/`)
+- [x] Update location (`POST /api/users/me/update-location/`)
+- [x] Billing info (`GET/PUT /api/users/me/billing/`)
+- [x] Invitation list/create (`GET/POST /api/users/me/invitations/`)
+- [x] Invitation detail (`GET /api/users/invitations/<token>/`)
+- [x] Invitation accept (`POST /api/users/invitations/<token>/accept/`) — marks invited email as pre-verified
+- [x] User search (`GET /api/users/search/?q=`) — icontains on name and bonID
+- [x] Public profile (`GET /api/users/<bon_id>/`)
+
 ### API — Contracts
 - [x] Contract CRUD (list, create, retrieve, update, delete)
+- [x] Contract list scoped to user's contracts (initiator or counterparty)
+- [x] Contract create forces `initiator=request.user`
+- [x] Signed-lock check on update — rejects PATCH if any signed version exists
 - [x] Contract obligations list
 - [x] Contract management summary
 - [x] Execution session list/create, detail, close, events
@@ -53,21 +77,32 @@ These things are implemented, tested, and have no known critical bugs.
 - [x] Approval request list/create, approve, reject
 - [x] Value adjustment list/create
 - [x] Proof of work submission
+- [x] Version negotiation — create (`POST /api/contracts/<id>/versions/`, initiator only, max 3, 409 on limit)
+- [x] Version sign (`POST /api/contracts/<id>/versions/<vid>/sign/`, counterparty only)
+- [x] Version reject (`POST /api/contracts/<id>/versions/<vid>/reject/`, counterparty only)
+- [x] Role switch request (`POST /api/contracts/<id>/request-role-switch/`, counterparty only, 7-day TTL)
+- [x] Role switch confirm (`POST /api/contracts/<id>/confirm-role-switch/`, initiator only, atomic contract swap)
+- [x] Ownership guards on all contract sub-views (execution, approval, value adjustment, proof, promotion)
 
 ### API — Obligations
-- [x] Obligation list, detail, dashboard summary
-- [x] Obligation timeline, next actions
+- [x] Obligation list filtered to user's contracts — `?user_id=` security hole removed
+- [x] `?role=` filter scoped to `request.user` (not an external user_id parameter)
+- [x] Dashboard summary filtered to user's contracts
+- [x] Obligation detail, timeline, next actions — `is_party` guard on all
 - [x] Obligation resolve with state validation (rejects already-resolved and breached)
-- [x] Execution session list, detail, close, add event
-- [x] Execution event list, detail, delete, promote
-- [x] Approval request list/create (per obligation), approve, reject
+- [x] Execution session list, detail, close, add event — ownership checked
+- [x] Execution event list, detail, delete, promote — ownership checked
+- [x] Approval request list/create (per obligation), approve, reject — ownership + `requested_from` guard
 - [x] Promotion list, promoted-side-obligation list
-- [x] Value adjustment list/create
-- [x] Proof of work submission
-- [x] All naked `.objects.get()` calls replaced with try/except or get_object_or_404
+- [x] Value adjustment list/create — ownership checked
+- [x] Proof of work submission — ownership checked
+- [x] All naked `.objects.get()` calls replaced with `get_object_or_404`
 
 ### API — Payments
 - [x] Payment list/create, detail, update, delete
+- [x] Payment list filtered to user's contracts — no global exposure
+- [x] Dashboard summary filtered to user's contracts
+- [x] Ownership guard (`is_party`) on all payment detail and transition endpoints
 - [x] Payment status transition guards — each endpoint enforces valid source state, returns 409 on invalid transition
 - [x] `POST /pending/` — draft → pending transition endpoint
 - [x] Payment confirm (syncs obligation balance, runs lifecycle engine)
@@ -77,16 +112,16 @@ These things are implemented, tested, and have no known critical bugs.
 - [x] Obligation state validation on payment creation — rejects if obligation is resolved/breached/defaulted
 - [x] Filtering on all three list endpoints (`?status=`, `?payment_method=`, `?created_after=`, `?created_before=`)
 - [x] Pagination on all three list endpoints (`?page=`, `?page_size=`, default 20, max 100)
-- [x] Dashboard summary, contract summary
-- [x] Obligation summary — includes `amount_due`, `amount_paid`, `remaining_balance`, `obligation_state`
-- [x] Contract-scoped payment list/create
-- [x] Obligation-scoped payment list/create
+- [x] Contract-scoped payment list/create (with ownership guard)
+- [x] Obligation-scoped payment list/create (with ownership guard)
+- [x] Contract summary, obligation summary — ownership guarded
 - [x] All mutations wrapped in `transaction.atomic()`
 
 ### Models
 - [x] `Contract`, `ContractVersion`, `ContractObligation`, `ContractServiceObligation`
 - [x] `ObligationExecutionSession`, `ObligationExecutionEvent`
 - [x] `ContractValueAdjustment`, `ContractApprovalRequest`, `ContractObligationPromotion`
+- [x] `ContractRoleSwitchRequest` — pending/confirmed/expired, 7-day TTL, CASCADE on contract delete
 - [x] `RequestChange`
 - [x] `Payment`
 - [x] `BonUserProfile`, `ReservedBonId` (with bonID generation and reservation logic)
@@ -133,7 +168,6 @@ These have a foundation but meaningful gaps remain.
 These domains and features do not exist yet beyond empty stubs.
 
 ### API Domains (all stubs)
-- [ ] Users — user management, profile, bonID lookup
 - [ ] Workspace — team/org management, member roles
 - [ ] Activity — feed of contract/obligation events
 - [ ] Billing — billing records, invoices
@@ -146,7 +180,6 @@ These domains and features do not exist yet beyond empty stubs.
 - [ ] Uploads — file upload handling
 
 ### Core Features Not Yet Built
-- [ ] Ownership checks — any authenticated user can currently access any contract, obligation, or payment
 - [ ] Idempotency key on `Payment` — no duplicate payment protection
 - [ ] Real payment gateway integration (only mock exists)
 - [ ] Recurrence expansion — `Obligation` template → `ContractObligation` instances

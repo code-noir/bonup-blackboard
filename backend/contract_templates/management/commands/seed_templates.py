@@ -1,0 +1,286 @@
+# backend/contract_templates/management/commands/seed_templates.py
+
+from django.core.management.base import BaseCommand
+from backend.contract_templates.models import (
+    ContractTemplate,
+    TemplateGuidedField,
+    TemplateClause,
+    TemplateObligationPattern,
+)
+
+
+PERSONAL_TRAINING_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Trainer\") agrees to provide personal training services "
+            "to {{counterparty_name}} (\"Client\") under the following terms:\n\n"
+            "Service Format: {{service_delivery}}\n"
+            "Session Duration: {{session_duration_minutes}} minutes per session\n"
+            "Session Frequency: {{frequency_type}}\n"
+            "Total Sessions: {{num_sessions}} sessions\n"
+            "Training Location: {{location}}\n\n"
+            "Trainer shall design and supervise exercise programs appropriate to Client's fitness "
+            "level and stated goals. The scope of services is limited to personal training and does "
+            "not include nutritional counseling, physical therapy, or medical advice."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Assumption of Risk and Medical Disclaimer",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "ASSUMPTION OF RISK AND MEDICAL DISCLAIMER\n\n"
+            "Client acknowledges that participation in personal training involves inherent physical "
+            "risks including but not limited to muscular strain, sprains, joint injuries, "
+            "cardiovascular stress, and in rare cases more serious injury.\n\n"
+            "Client represents and warrants that they are in adequate physical health to participate "
+            "in a personal training program and have consulted with a licensed physician or "
+            "healthcare provider prior to beginning this program, or have knowingly waived such "
+            "consultation.\n\n"
+            "Client assumes full responsibility for any and all risks, injuries, or damages arising "
+            "from participation in personal training sessions and releases Trainer from liability "
+            "to the maximum extent permitted by applicable law.\n\n"
+            "Trainer is not a licensed medical professional. Nothing in this agreement or in any "
+            "session constitutes medical advice or treatment."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Rate: ${{rate_per_session}} per session\n"
+            "Total Package Value: ${{total_package_value}} ({{num_sessions}} sessions × ${{rate_per_session}})\n"
+            "Payment Timing: {{payment_timing}}\n\n"
+            "Payment is due in accordance with the Payment Timing selected above. Trainer reserves "
+            "the right to suspend sessions if payment is more than 7 days past due. All payments "
+            "are in USD unless otherwise agreed in writing.\n\n"
+            "Payments not received within 14 days of the due date may incur a late fee of 5% of "
+            "the outstanding balance per month until paid."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Late Cancellation and No-Show Policy",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "LATE CANCELLATION AND NO-SHOW POLICY\n\n"
+            "Client agrees to provide at least {{cancellation_window_hours}} hours advance notice "
+            "for any session cancellation or rescheduling.\n\n"
+            "Cancellations made with less than {{cancellation_window_hours}} hours notice, or "
+            "failure to appear at a scheduled session without notice (\"no-show\"), will result "
+            "in forfeiture of that session. No refund or credit will be issued for late "
+            "cancellations or no-shows.\n\n"
+            "Trainer agrees to provide the same advance notice to Client for any sessions Trainer "
+            "must cancel. Sessions cancelled by Trainer will be rescheduled at no additional cost "
+            "to Client."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Unused Sessions and Package Expiration",
+        "order": 5,
+        "is_required": False,
+        "is_conditional": True,
+        "condition_description": "Applies when client purchases a multi-session package",
+        "body": (
+            "UNUSED SESSIONS AND PACKAGE EXPIRATION\n\n"
+            "Sessions purchased as part of a package must be used within {{package_expiry_days}} "
+            "days of the agreement start date. Sessions not used within this period will expire "
+            "and no refund will be issued.\n\n"
+            "Exceptions may be granted at Trainer's sole discretion for documented medical "
+            "circumstances preventing attendance."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate this agreement upon {{termination_notice_days}} days "
+            "written notice to the other party.\n\n"
+            "Upon termination by Client: Client will be refunded for any unused prepaid sessions "
+            "at the per-session rate of ${{rate_per_session}}, less any outstanding amounts owed.\n\n"
+            "Upon termination by Trainer: Trainer will refund any prepaid amounts for sessions "
+            "not yet delivered, in full.\n\n"
+            "Termination for cause — including abusive conduct, repeated no-shows, or non-payment "
+            "— may be effected immediately without a notice period."
+        ),
+    },
+]
+
+PERSONAL_TRAINING_GUIDED_FIELDS = [
+    {
+        "field_key": "service_delivery",
+        "label": "Service Delivery Format",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 1,
+    },
+    {
+        "field_key": "session_duration_minutes",
+        "label": "Session Duration (minutes)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+    },
+    {
+        "field_key": "frequency_type",
+        "label": "Session Frequency",
+        "field_type": "choice",
+        "choices": ["Weekly", "Twice Weekly", "Three Times Per Week", "Monthly"],
+        "is_required": True,
+        "order": 3,
+    },
+    {
+        "field_key": "num_sessions",
+        "label": "Number of Sessions",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 4,
+    },
+    {
+        "field_key": "rate_per_session",
+        "label": "Rate Per Session (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+    },
+    {
+        "field_key": "payment_timing",
+        "label": "Payment Timing",
+        "field_type": "choice",
+        "choices": ["Upfront (full package)", "Per session", "Monthly"],
+        "is_required": True,
+        "order": 6,
+    },
+    {
+        "field_key": "location",
+        "label": "Training Location or Address",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 7,
+    },
+    {
+        "field_key": "session_frequency_days",
+        "label": "Days Between Sessions",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 8,
+    },
+    {
+        "field_key": "cancellation_window_hours",
+        "label": "Late Cancellation Window (hours)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 9,
+    },
+    {
+        "field_key": "package_expiry_days",
+        "label": "Package Expiry (days from start)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 10,
+    },
+    {
+        "field_key": "termination_notice_days",
+        "label": "Termination Notice Period (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 11,
+    },
+]
+
+
+class Command(BaseCommand):
+    help = "Seed the database with initial ContractTemplate records."
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--force",
+            action="store_true",
+            help="Recreate templates even if they already exist.",
+        )
+
+    def handle(self, *args, **options):
+        force = options["force"]
+        self._seed_personal_training(force)
+
+    def _seed_personal_training(self, force):
+        name = "Personal Training Agreement"
+
+        if ContractTemplate.objects.filter(name=name).exists():
+            if not force:
+                self.stdout.write(
+                    self.style.WARNING(f'Template "{name}" already exists. Use --force to recreate.')
+                )
+                return
+            ContractTemplate.objects.filter(name=name).delete()
+            self.stdout.write(self.style.WARNING(f'Deleted existing "{name}" for recreation.'))
+
+        template = ContractTemplate.objects.create(
+            category="health_wellness",
+            subcategory="personal_training",
+            name=name,
+            description=(
+                "A complete service agreement for personal trainers and their clients. "
+                "Covers session scope, payment terms, cancellation policy, assumption of risk, "
+                "package expiration, and termination. Suitable for in-person and virtual training."
+            ),
+            structure_type="ONE_TIME",
+            is_active=True,
+            tier_required="free",
+        )
+
+        for field_data in PERSONAL_TRAINING_GUIDED_FIELDS:
+            TemplateGuidedField.objects.create(template=template, **field_data)
+
+        for clause_data in PERSONAL_TRAINING_CLAUSES:
+            TemplateClause.objects.create(template=template, **clause_data)
+
+        TemplateObligationPattern.objects.create(
+            template=template,
+            obligation_type="both",
+            frequency_type="per_session",
+            amount_token="rate_per_session",
+            installments_token="num_sessions",
+            interval_days_token="session_frequency_days",
+        )
+
+        self.stdout.write(
+            self.style.SUCCESS(
+                f'Seeded template "{name}" with '
+                f'{len(PERSONAL_TRAINING_GUIDED_FIELDS)} guided fields and '
+                f'{len(PERSONAL_TRAINING_CLAUSES)} clauses.'
+            )
+        )

@@ -3963,6 +3963,3143 @@ DATA_ANALYTICS_CLAUSES = [
 ]
 
 
+# ===========================================================================
+# MANUAL LABOR — LAWN CARE AND LANDSCAPING
+# ===========================================================================
+
+LAWN_CARE_GUIDED_FIELDS = [
+    {
+        "field_key": "service_type",
+        "label": "Service Type",
+        "field_type": "choice",
+        "choices": ["Lawn Mowing", "Landscaping Design", "Planting and Mulching", "Yard Cleanup", "Full Service"],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "property_address",
+        "label": "Property Address",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "service_frequency",
+        "label": "Service Frequency",
+        "field_type": "choice",
+        "choices": ["One-Time", "Weekly", "Bi-Weekly", "Monthly"],
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "total_fee",
+        "label": "Service Rate (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["per_visit", "monthly_prepay", "flat_fee"],
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "materials_included",
+        "label": "Materials Included in Price",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "equipment_provided_by",
+        "label": "Equipment Provided By",
+        "field_type": "choice",
+        "choices": ["Provider", "Client"],
+        "is_required": True,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "cancellation_notice_days",
+        "label": "Cancellation Notice Period (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+LAWN_CARE_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Provider\") agrees to provide lawn care and landscaping "
+            "services for {{counterparty_name}} (\"Client\") at the following property:\n\n"
+            "Property Address: {{property_address}}\n"
+            "Service Type: {{service_type}}\n"
+            "Service Frequency: {{service_frequency}}\n\n"
+            "Provider shall perform all services in a professional and workmanlike manner "
+            "consistent with industry standards. Services are limited to the type and "
+            "frequency described above and do not include tree removal, irrigation "
+            "installation, major grading, or retaining wall construction unless separately "
+            "agreed in writing."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Equipment and Materials",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "EQUIPMENT AND MATERIALS\n\n"
+            "Equipment Provided By: {{equipment_provided_by}}\n"
+            "Materials Included in Price: {{materials_included}}\n\n"
+            "If equipment is provided by Provider, Provider shall maintain all equipment in "
+            "safe and functional operating condition and is solely responsible for its "
+            "maintenance, repair, and insurance. If equipment is provided by Client, Client "
+            "shall ensure all equipment is in safe and working condition before each visit; "
+            "Provider is not liable for damage caused by defective Client-supplied equipment.\n\n"
+            "If materials are included in price, Provider shall supply all consumables "
+            "required — including fertilizers, mulch, soil amendments, and similar materials. "
+            "If not included, Client shall supply required materials or reimburse Provider "
+            "at cost for materials purchased on Client's behalf."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Change Order",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CHANGE ORDER\n\n"
+            "Any request to expand or modify the scope of services beyond what is described "
+            "in this agreement must be submitted as a written change order and approved by "
+            "both parties before work on the additional scope commences. Change orders "
+            "increasing scope will be priced at Provider's then-current rates. Provider is "
+            "not obligated to perform additional work without a signed change order."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Damage Liability",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "DAMAGE LIABILITY\n\n"
+            "Provider shall exercise reasonable care and shall be liable for damage to "
+            "Client's property directly caused by Provider's negligence or willful misconduct. "
+            "Client must notify Provider in writing of any property damage within 48 hours of "
+            "the service visit in which it occurred. Claims submitted after this window may "
+            "be denied.\n\n"
+            "Provider is not liable for: pre-existing property conditions; damage caused by "
+            "underground irrigation lines, cables, or utilities not marked or disclosed by "
+            "Client prior to service; lawn or plant damage from weather, disease, or pest "
+            "infestation; or damage arising from Client's failure to disclose known hazards."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Service Rate: ${{total_fee}}\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"per_visit\" — Client is invoiced after each completed service visit; payment "
+            "due within 7 days of invoice.\n\n"
+            "\"monthly_prepay\" — Client pays the monthly rate in advance on the first day "
+            "of each service month. Provider may suspend services for non-payment.\n\n"
+            "\"flat_fee\" — Full payment is due prior to commencement of the agreed scope.\n\n"
+            "Late payments may incur a fee of 5% per month on the outstanding balance."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "Either party may cancel this agreement with {{cancellation_notice_days}} days "
+            "written notice. Fees accrued through the last completed service visit are "
+            "payable in full. Prepaid amounts for periods after the cancellation date will "
+            "be refunded on a pro-rata basis.\n\n"
+            "Client cancellations of individual scheduled visits with less than 24 hours "
+            "notice may be charged at 50% of the per-visit rate to compensate Provider for "
+            "reserved labor time."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate this agreement immediately for material breach if "
+            "the breaching party fails to cure within 7 days of written notice. Upon "
+            "termination, Client shall pay all fees accrued through the last completed "
+            "service visit. Provider shall promptly remove all Provider-owned equipment "
+            "and materials from the property."
+        ),
+    },
+]
+
+
+# ===========================================================================
+# MANUAL LABOR — HOME CLEANING SERVICE
+# ===========================================================================
+
+HOME_CLEANING_GUIDED_FIELDS = [
+    {
+        "field_key": "cleaning_type",
+        "label": "Cleaning Type",
+        "field_type": "choice",
+        "choices": ["Standard Clean", "Deep Clean", "Move-In/Move-Out", "Post-Construction"],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "property_address",
+        "label": "Property Address",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "property_size",
+        "label": "Property Size (e.g. 3BR/2BA or sq ft)",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "service_frequency",
+        "label": "Service Frequency",
+        "field_type": "choice",
+        "choices": ["One-Time", "Weekly", "Bi-Weekly", "Monthly"],
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "rate_per_visit",
+        "label": "Rate Per Visit (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["per_visit", "monthly_prepay"],
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "supplies_included",
+        "label": "Cleaning Supplies Included",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": True,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "key_access",
+        "label": "Client Provides Key or Access Code",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": False,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "cancellation_notice_hours",
+        "label": "Cancellation Notice Window (hours)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+HOME_CLEANING_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Provider\") agrees to provide home cleaning services "
+            "for {{counterparty_name}} (\"Client\") at the following property:\n\n"
+            "Property Address: {{property_address}}\n"
+            "Property Size: {{property_size}}\n"
+            "Cleaning Type: {{cleaning_type}}\n"
+            "Service Frequency: {{service_frequency}}\n\n"
+            "Provider shall clean the agreed areas of the property in a thorough and "
+            "professional manner. Standard clean includes dusting, vacuuming, mopping, "
+            "bathroom sanitation, and kitchen surface wipe-down. Deep clean and "
+            "move-in/move-out services include additional tasks such as inside-appliance "
+            "cleaning, cabinet interiors, and window sill detail. Post-construction clean "
+            "includes removal of construction debris and dust. Specific task lists may be "
+            "attached as an addendum."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Supplies and Equipment",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SUPPLIES AND EQUIPMENT\n\n"
+            "Cleaning Supplies Included: {{supplies_included}}\n\n"
+            "If cleaning supplies are included, Provider shall bring all required cleaning "
+            "products, mops, vacuums, and equipment to each visit at no additional charge "
+            "to Client. Provider shall use commercially appropriate cleaning products "
+            "safe for residential use. If Client has specific product preferences or "
+            "allergies, Client must disclose these in writing before the first visit.\n\n"
+            "If cleaning supplies are not included, Client shall ensure all required "
+            "cleaning products and equipment are available and accessible at the property "
+            "before each scheduled visit."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Access and Security",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "ACCESS AND SECURITY\n\n"
+            "Key or Access Code Provided: {{key_access}}\n\n"
+            "If Client provides a key or access code, Provider shall keep all access "
+            "credentials strictly confidential, shall not duplicate keys without written "
+            "consent, and shall return all keys and credentials upon termination of this "
+            "agreement. Access will be used solely for the purpose of performing scheduled "
+            "cleaning services.\n\n"
+            "Provider shall lock and secure the property upon departure after each visit. "
+            "Provider shall not allow any unauthorized persons onto the property and shall "
+            "not disclose Client's address, access codes, or security information to "
+            "any third party."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Damage Liability",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "DAMAGE LIABILITY\n\n"
+            "Provider shall exercise reasonable care and shall be liable for breakage or "
+            "damage to Client's property caused by Provider's negligence during cleaning. "
+            "Client must notify Provider of any damage claim in writing within 24 hours "
+            "of the service visit. Claims submitted after this window may be denied.\n\n"
+            "Provider is not liable for: pre-existing damage or wear; damage to items "
+            "improperly secured, displayed, or left in high-risk locations; damage to items "
+            "not disclosed as fragile or valuable prior to service; or damage to electronic "
+            "equipment, artwork, or antiques unless Provider is expressly directed to clean "
+            "those items and the Client has disclosed their value."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Rate Per Visit: ${{rate_per_visit}}\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"per_visit\" — Client is invoiced after each completed cleaning visit; "
+            "payment due within 7 days of invoice.\n\n"
+            "\"monthly_prepay\" — Client pays the monthly rate in advance on the first "
+            "day of each service month covering all scheduled visits that month. Provider "
+            "may suspend services for non-payment.\n\n"
+            "Late payments may incur a fee of 5% per month on the outstanding balance."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "Client must provide at least {{cancellation_notice_hours}} hours notice to "
+            "cancel or reschedule a scheduled cleaning visit. Cancellations with less than "
+            "{{cancellation_notice_hours}} hours notice may be charged at 50% of the "
+            "per-visit rate to compensate Provider for reserved labor time that cannot "
+            "be reassigned on short notice.\n\n"
+            "Either party may cancel the ongoing service agreement with 14 days written "
+            "notice. Prepaid amounts for visits after the cancellation date will be "
+            "refunded on a pro-rata basis."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate this agreement immediately for material breach "
+            "if the breaching party fails to cure within 7 days of written notice. Upon "
+            "termination, Provider shall return all keys and access codes to Client within "
+            "2 business days. Client shall pay all fees accrued through the last completed "
+            "visit. Confidentiality and access security obligations survive termination."
+        ),
+    },
+]
+
+
+# ===========================================================================
+# MANUAL LABOR — HOME RENOVATION AND REMODELING
+# ===========================================================================
+
+HOME_RENOVATION_GUIDED_FIELDS = [
+    {
+        "field_key": "project_type",
+        "label": "Project Type",
+        "field_type": "choice",
+        "choices": [
+            "Kitchen Remodel",
+            "Bathroom Remodel",
+            "Basement Finish",
+            "Room Addition",
+            "Full Home Renovation",
+        ],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "property_address",
+        "label": "Property Address",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "total_contract_value",
+        "label": "Total Contract Value (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["deposit_balance", "milestone", "installments"],
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "deposit_percentage",
+        "label": "Deposit Percentage (%)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "payment_model",
+        "condition_value": "deposit_balance",
+    },
+    {
+        "field_key": "num_installments",
+        "label": "Number of Installments",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "payment_model",
+        "condition_value": "installments",
+    },
+    {
+        "field_key": "installment_interval_days",
+        "label": "Installment Interval",
+        "field_type": "choice",
+        "choices": ["7", "30"],
+        "is_required": True,
+        "order": 7,
+        "condition_field_key": "payment_model",
+        "condition_value": "installments",
+    },
+    {
+        "field_key": "estimated_duration_days",
+        "label": "Estimated Project Duration (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "materials_included",
+        "label": "Materials",
+        "field_type": "choice",
+        "choices": ["Included in Price", "Client Provides", "Partial — Labor Only"],
+        "is_required": True,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "permit_responsibility",
+        "label": "Permit Responsibility",
+        "field_type": "choice",
+        "choices": ["Contractor", "Client"],
+        "is_required": True,
+        "order": 10,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "warranty_days",
+        "label": "Workmanship Warranty Period (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 11,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+HOME_RENOVATION_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Contractor\") agrees to perform home renovation and "
+            "remodeling services for {{counterparty_name}} (\"Client\") at the following "
+            "property:\n\n"
+            "Property Address: {{property_address}}\n"
+            "Project Type: {{project_type}}\n"
+            "Estimated Duration: {{estimated_duration_days}} days\n\n"
+            "Contractor shall perform all work in a professional and workmanlike manner "
+            "in compliance with all applicable building codes and regulations. The detailed "
+            "scope of work, specifications, and plans are set forth in the project proposal "
+            "or addendum attached hereto. Any work beyond the agreed scope requires a "
+            "written change order executed by both parties before work proceeds."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Materials and Labor Breakdown",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "MATERIALS AND LABOR BREAKDOWN\n\n"
+            "Materials: {{materials_included}}\n\n"
+            "\"Included in Price\" — All materials, fixtures, hardware, and supplies "
+            "required to complete the agreed scope are included in the contract value. "
+            "Contractor shall select materials of commercially appropriate quality unless "
+            "specific selections are specified in writing.\n\n"
+            "\"Client Provides\" — The contract price covers labor only. Client shall "
+            "procure and deliver all materials on schedule. Contractor is not liable for "
+            "delays caused by Client's failure to supply materials on time. Client-supplied "
+            "materials are accepted as-is.\n\n"
+            "\"Partial — Labor Only\" — The parties shall specify in writing which materials "
+            "each party provides. Material cost overruns require a written change order "
+            "and Client approval before additional expenditure is incurred."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Permits and Compliance",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PERMITS AND COMPLIANCE\n\n"
+            "Permit Responsibility: {{permit_responsibility}}\n\n"
+            "All renovation work shall be performed in compliance with applicable local, "
+            "state, and federal building codes and regulations. The party designated above "
+            "is responsible for obtaining all required building permits and paying all "
+            "associated permit fees prior to commencement of regulated work.\n\n"
+            "Contractor represents that all tradespeople performing licensed work (electrical, "
+            "plumbing, HVAC) hold the required licenses for the jurisdiction. Client shall "
+            "provide reasonable access to the property for inspections required by permitting "
+            "authorities. Project delays caused by permit processing are not a breach of "
+            "this agreement."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Change Order",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CHANGE ORDER\n\n"
+            "All scope changes — including additions, deletions, substitutions, or "
+            "modifications to the work described in this agreement — require a written "
+            "change order signed by both parties before work on the changed scope proceeds. "
+            "Each change order shall specify the nature of the change, the adjusted contract "
+            "price, and any impact on the project timeline.\n\n"
+            "Contractor may stop work on affected portions of the project pending change "
+            "order execution. Verbal agreements to change the scope are not binding. Client "
+            "acknowledges that change orders may increase both cost and project duration."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Damage Liability",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "DAMAGE LIABILITY\n\n"
+            "Contractor shall exercise reasonable care and shall be liable for damage to "
+            "Client's property caused by Contractor's negligence or willful misconduct "
+            "during renovation work. Contractor carries general liability insurance and "
+            "shall provide evidence of coverage upon request.\n\n"
+            "Contractor is not liable for pre-existing structural deficiencies, concealed "
+            "damage discovered during demolition, or conditions not visible or disclosed "
+            "prior to work commencement. Discovery of hidden defects (e.g., mold, "
+            "asbestos, faulty wiring) shall be documented, communicated to Client "
+            "immediately, and addressed via change order."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Workmanship Warranty",
+        "order": 6,
+        "is_required": False,
+        "is_conditional": True,
+        "condition_description": "Applies when warranty_days is provided",
+        "body": (
+            "WORKMANSHIP WARRANTY\n\n"
+            "Contractor warrants all work performed under this agreement against defects "
+            "in workmanship for {{warranty_days}} days from the date of substantial "
+            "completion. During this period, Contractor shall correct defects caused by "
+            "poor construction technique or materials failure attributable to Contractor, "
+            "at no additional charge.\n\n"
+            "This warranty does not cover normal wear and tear, damage caused by Client "
+            "modifications, misuse, or neglect, defects in Client-supplied materials, or "
+            "damage from events outside Contractor's control. Manufacturer warranties on "
+            "installed products are separate and governed by the manufacturer's terms."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Total Contract Value: ${{total_contract_value}}\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"deposit_balance\" — A deposit of {{deposit_percentage}}% is due upon "
+            "execution of this agreement. The remaining balance is due upon substantial "
+            "completion and Client acceptance.\n\n"
+            "\"milestone\" — Payments are tied to agreed project milestones per the "
+            "attached milestone schedule. Each milestone payment is due within 7 days "
+            "of milestone completion. Contractor may pause work if a milestone payment "
+            "is more than 14 days overdue.\n\n"
+            "\"installments\" — Payments are made per the agreed installment schedule. "
+            "Each installment is due on the agreed date. Contractor may suspend work "
+            "for non-payment. Late payments accrue interest at 5% per month."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "If Client cancels this agreement after work has commenced, Client shall pay "
+            "Contractor for all work completed and materials procured to the cancellation "
+            "date at a pro-rata rate, plus 20% of the remaining contract value as a "
+            "cancellation fee to compensate Contractor for lost revenue and reserved "
+            "labor capacity.\n\n"
+            "If Contractor cancels without cause after work has commenced, Contractor "
+            "shall refund all prepaid amounts less reasonable compensation for work "
+            "completed and materials procured. Cancellations must be submitted in writing."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 9,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate this agreement for material breach if the "
+            "breaching party fails to cure within 7 days of written notice. Client may "
+            "terminate for persistent failure to meet quality standards or to progress "
+            "the work within a reasonable extension of the agreed timeline. Contractor "
+            "may terminate for non-payment or unsafe working conditions.\n\n"
+            "Upon termination, Client shall pay for all work satisfactorily completed "
+            "and materials procured through the termination date. Warranty, permit, and "
+            "liability obligations survive termination."
+        ),
+    },
+]
+
+
+# ===========================================================================
+# MANUAL LABOR — PLUMBING
+# ===========================================================================
+
+PLUMBING_GUIDED_FIELDS = [
+    {
+        "field_key": "service_type",
+        "label": "Service Type",
+        "field_type": "choice",
+        "choices": ["Repair", "Installation", "Pipe Replacement", "Drain Cleaning", "Emergency Service"],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "property_address",
+        "label": "Property Address",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "total_fee",
+        "label": "Total Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["flat_fee", "deposit_balance", "hourly"],
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "deposit_percentage",
+        "label": "Deposit Percentage (%)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "payment_model",
+        "condition_value": "deposit_balance",
+    },
+    {
+        "field_key": "materials_included",
+        "label": "Materials and Parts Included",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "permit_responsibility",
+        "label": "Permit Responsibility",
+        "field_type": "choice",
+        "choices": ["Contractor", "Client", "Not Required"],
+        "is_required": True,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "warranty_days",
+        "label": "Workmanship Warranty Period (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "cancellation_notice_hours",
+        "label": "Cancellation Notice Window (hours)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+PLUMBING_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Contractor\") agrees to perform plumbing services "
+            "for {{counterparty_name}} (\"Client\") at the following property:\n\n"
+            "Property Address: {{property_address}}\n"
+            "Service Type: {{service_type}}\n\n"
+            "All plumbing work shall be performed in a professional and workmanlike manner "
+            "in compliance with applicable plumbing codes and local regulations. Contractor "
+            "shall assess the work site before commencing to confirm scope and identify "
+            "conditions that may affect cost or timeline. Work beyond the agreed scope "
+            "requires a written change order before proceeding."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Licensing and Permits",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "LICENSING AND PERMITS\n\n"
+            "Permit Responsibility: {{permit_responsibility}}\n\n"
+            "Contractor represents that all personnel performing plumbing work under this "
+            "agreement hold the required plumbing licenses for the applicable jurisdiction. "
+            "All work shall be performed to applicable plumbing code standards.\n\n"
+            "The party designated above is responsible for obtaining all required plumbing "
+            "permits and paying associated fees prior to commencement of permitted work. "
+            "If permit responsibility is \"Not Required\", both parties acknowledge that "
+            "the work type does not require a permit under applicable local regulations. "
+            "Delays caused by permit processing are not a breach of this agreement."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Materials and Parts",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "MATERIALS AND PARTS\n\n"
+            "Materials and Parts Included: {{materials_included}}\n\n"
+            "If materials are included, all required replacement parts, pipe fittings, "
+            "fixtures, sealants, and supplies are covered in the agreed fee. Contractor "
+            "shall use materials of commercially appropriate grade and quality.\n\n"
+            "If materials are not included, Client shall be invoiced separately for all "
+            "materials at cost plus a reasonable handling markup, with itemized invoices "
+            "provided. Contractor shall obtain Client approval before purchasing parts "
+            "above a pre-agreed threshold. Client-supplied parts are accepted as-is; "
+            "Contractor is not liable for defects or failure of Client-supplied components."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Change Order",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CHANGE ORDER\n\n"
+            "If additional work is discovered during service — including hidden pipe "
+            "damage, concealed leaks, or adjacent components requiring replacement — "
+            "Contractor shall stop work on the affected area and issue a written change "
+            "order before proceeding. The change order shall describe the additional work, "
+            "its estimated cost, and any timeline impact. Contractor is not liable for "
+            "incomplete results in areas where necessary additional work was declined."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Damage Liability",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "DAMAGE LIABILITY\n\n"
+            "Contractor shall be liable for damage to Client's property caused by "
+            "Contractor's negligence or improper workmanship. Client must report any "
+            "damage claim in writing within 48 hours of service.\n\n"
+            "Contractor is not liable for: pre-existing pipe corrosion, scale buildup, "
+            "or deterioration; damage to concealed components not visible before work "
+            "commenced; water damage from pre-existing leaks in adjacent systems; or "
+            "Client's failure to disclose known plumbing issues. Contractor's liability "
+            "is capped at the total fees paid under this agreement except in cases of "
+            "gross negligence."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Workmanship Warranty",
+        "order": 6,
+        "is_required": False,
+        "is_conditional": True,
+        "condition_description": "Applies when warranty_days is provided",
+        "body": (
+            "WORKMANSHIP WARRANTY\n\n"
+            "Contractor warrants all work performed under this agreement against defects "
+            "in workmanship for {{warranty_days}} days from the service completion date. "
+            "During this period Contractor shall correct any plumbing defect attributable "
+            "to Contractor's work — including leaks at connections made by Contractor "
+            "or installation failures — at no additional charge.\n\n"
+            "This warranty does not cover: Client-supplied parts; damage from pipe "
+            "corrosion or scale unrelated to Contractor's work; normal wear on seals "
+            "and washers; or damage caused by Client modifications after service."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Total Fee: ${{total_fee}}\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"flat_fee\" — Full payment is due upon completion of the service.\n\n"
+            "\"deposit_balance\" — A deposit of {{deposit_percentage}}% is due upon "
+            "execution. The remaining balance is due upon completion.\n\n"
+            "\"hourly\" — Client is billed at the agreed hourly rate for all time "
+            "on-site, billed in half-hour increments; estimates are guides only. "
+            "Invoice is due within 7 days of issuance.\n\n"
+            "Late payments accrue interest at 5% per month."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "Client must provide at least {{cancellation_notice_hours}} hours notice to "
+            "cancel or reschedule a scheduled service appointment. Late cancellations "
+            "may incur a service call fee to compensate Contractor for reserved labor "
+            "time and travel costs. If Contractor has already procured materials specific "
+            "to the job, Client shall reimburse Contractor for any non-returnable parts "
+            "purchased."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 9,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate this agreement for material breach if the "
+            "breaching party fails to cure within 7 days of written notice. Contractor "
+            "may suspend work for non-payment or unsafe working conditions. Upon "
+            "termination, Client shall pay for all work satisfactorily completed and "
+            "materials procured through the termination date. Warranty and liability "
+            "obligations survive termination."
+        ),
+    },
+]
+
+
+# ===========================================================================
+# MANUAL LABOR — ELECTRICAL WORK
+# ===========================================================================
+
+ELECTRICAL_GUIDED_FIELDS = [
+    {
+        "field_key": "service_type",
+        "label": "Service Type",
+        "field_type": "choice",
+        "choices": ["Repair", "Installation", "Panel Upgrade", "Wiring Inspection", "Rewiring"],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "property_address",
+        "label": "Property Address",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "total_fee",
+        "label": "Total Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["flat_fee", "deposit_balance", "hourly"],
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "deposit_percentage",
+        "label": "Deposit Percentage (%)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "payment_model",
+        "condition_value": "deposit_balance",
+    },
+    {
+        "field_key": "materials_included",
+        "label": "Materials and Parts Included",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "permit_responsibility",
+        "label": "Permit Responsibility",
+        "field_type": "choice",
+        "choices": ["Contractor", "Client"],
+        "is_required": True,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "warranty_days",
+        "label": "Workmanship Warranty Period (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "cancellation_notice_hours",
+        "label": "Cancellation Notice Window (hours)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+ELECTRICAL_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Contractor\") agrees to perform electrical work "
+            "for {{counterparty_name}} (\"Client\") at the following property:\n\n"
+            "Property Address: {{property_address}}\n"
+            "Service Type: {{service_type}}\n\n"
+            "All electrical work shall be performed in a safe, professional, and "
+            "workmanlike manner in compliance with the National Electrical Code (NEC) "
+            "and applicable local amendments. Contractor shall assess the work site "
+            "before commencing to confirm scope and identify conditions affecting cost "
+            "or safety. Work beyond the agreed scope requires a written change order."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Licensing and Permits",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "LICENSING AND PERMITS\n\n"
+            "Permit Responsibility: {{permit_responsibility}}\n\n"
+            "Contractor represents that all personnel performing electrical work hold "
+            "the required electrician's license for the applicable jurisdiction and that "
+            "all work will be performed to NEC and local code standards.\n\n"
+            "The party designated above is responsible for obtaining all required "
+            "electrical permits and paying associated fees before commencement of "
+            "permitted work. Client shall provide reasonable property access for any "
+            "required inspections. Delays caused by permit processing or inspection "
+            "scheduling are not a breach of this agreement."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Materials and Parts",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "MATERIALS AND PARTS\n\n"
+            "Materials and Parts Included: {{materials_included}}\n\n"
+            "If included, all required wiring, fixtures, breakers, panels, conduit, "
+            "and electrical components are covered in the agreed fee. Contractor shall "
+            "use UL-listed components and materials meeting applicable code requirements.\n\n"
+            "If not included, Client shall be invoiced separately for all materials at "
+            "cost plus a reasonable handling markup with itemized documentation. "
+            "Client-supplied components must meet applicable code requirements; Contractor "
+            "is not liable for failures attributable to non-compliant Client-supplied parts."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Change Order",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CHANGE ORDER\n\n"
+            "If additional electrical issues are discovered during work — including "
+            "pre-existing code violations, deteriorated wiring, or undersized panels — "
+            "Contractor shall document the finding, stop work on the affected area, and "
+            "issue a written change order before proceeding. Contractor shall not "
+            "knowingly conceal code violations or safety hazards. Client is advised that "
+            "declining to address discovered code violations may create safety risks; "
+            "Contractor is not liable for hazards arising from declined additional work."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Damage Liability",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "DAMAGE LIABILITY\n\n"
+            "Contractor shall be liable for damage to Client's property caused by "
+            "Contractor's negligence or code-non-compliant workmanship. Client must "
+            "report any damage claim in writing within 48 hours of service.\n\n"
+            "Contractor is not liable for: pre-existing wiring faults discovered during "
+            "work; damage to electronics or appliances from pre-existing electrical "
+            "issues; damage from Client's failure to disclose known electrical hazards; "
+            "or fire, equipment damage, or injury caused by Client-supplied non-compliant "
+            "components. Contractor's maximum liability is capped at total fees paid."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Workmanship Warranty",
+        "order": 6,
+        "is_required": False,
+        "is_conditional": True,
+        "condition_description": "Applies when warranty_days is provided",
+        "body": (
+            "WORKMANSHIP WARRANTY\n\n"
+            "Contractor warrants all electrical work against defects in workmanship for "
+            "{{warranty_days}} days from completion. During this period Contractor shall "
+            "correct any fault attributable to Contractor's installation or connection — "
+            "including loose connections, incorrect wiring, or circuit failures from "
+            "improper installation — at no additional charge.\n\n"
+            "This warranty does not cover: Client-supplied components; damage from power "
+            "surges, lightning, or utility fluctuations; modifications made by other "
+            "parties after service; or component failure under normal operating life."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Total Fee: ${{total_fee}}\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"flat_fee\" — Full payment due upon completion of service.\n\n"
+            "\"deposit_balance\" — A deposit of {{deposit_percentage}}% is due upon "
+            "execution. The remaining balance is due upon completion.\n\n"
+            "\"hourly\" — Client is billed at the agreed hourly rate for all time "
+            "on-site; estimates are guides only. Invoice due within 7 days of issuance.\n\n"
+            "Contractor may withhold energization and final connection until outstanding "
+            "balances are paid. Late payments accrue interest at 5% per month."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "Client must provide at least {{cancellation_notice_hours}} hours notice to "
+            "cancel or reschedule a scheduled appointment. Late cancellations may incur "
+            "a service call fee for reserved labor time and travel. If Contractor has "
+            "procured materials specific to the job, Client shall reimburse Contractor "
+            "for any non-returnable parts purchased."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 9,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate for material breach if not cured within 7 days "
+            "of written notice. Contractor may suspend work for non-payment, unsafe "
+            "conditions, or Client's direction to perform work Contractor determines "
+            "is unsafe or code-non-compliant. Upon termination, Client pays for all "
+            "work completed and materials procured through the termination date. "
+            "Warranty and liability obligations survive termination."
+        ),
+    },
+]
+
+
+# ===========================================================================
+# MANUAL LABOR — HVAC AND AC REPAIR
+# ===========================================================================
+
+HVAC_GUIDED_FIELDS = [
+    {
+        "field_key": "service_type",
+        "label": "Service Type",
+        "field_type": "choice",
+        "choices": ["Repair", "Installation", "Maintenance Tune-Up", "Inspection", "System Replacement"],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "property_address",
+        "label": "Property Address",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "total_fee",
+        "label": "Total Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["flat_fee", "deposit_balance", "monthly"],
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "deposit_percentage",
+        "label": "Deposit Percentage (%)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "payment_model",
+        "condition_value": "deposit_balance",
+    },
+    {
+        "field_key": "parts_included",
+        "label": "Parts and Refrigerant Included",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "permit_responsibility",
+        "label": "Permit Responsibility",
+        "field_type": "choice",
+        "choices": ["Contractor", "Client", "Not Required"],
+        "is_required": True,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "warranty_days",
+        "label": "Parts and Labor Warranty Period (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "cancellation_notice_hours",
+        "label": "Cancellation Notice Window (hours)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+HVAC_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Contractor\") agrees to perform HVAC and AC services "
+            "for {{counterparty_name}} (\"Client\") at the following property:\n\n"
+            "Property Address: {{property_address}}\n"
+            "Service Type: {{service_type}}\n\n"
+            "All HVAC work shall be performed in a professional and workmanlike manner "
+            "in compliance with applicable mechanical codes and manufacturer specifications. "
+            "Contractor shall assess the system before commencing to confirm scope and "
+            "identify conditions affecting cost or timeline. Work beyond the agreed scope "
+            "requires a written change order before proceeding."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Licensing and Permits",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "LICENSING AND PERMITS\n\n"
+            "Permit Responsibility: {{permit_responsibility}}\n\n"
+            "Contractor represents that all technicians performing HVAC work hold "
+            "required HVAC/R licenses for the applicable jurisdiction and are EPA "
+            "Section 608 certified for refrigerant handling where applicable.\n\n"
+            "The party designated above is responsible for obtaining required mechanical "
+            "permits and paying associated fees. If permits are not required, both parties "
+            "acknowledge that the work type falls within applicable permit exemptions. "
+            "Delays caused by permit processing are not a breach of this agreement."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Parts and Materials",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PARTS AND MATERIALS\n\n"
+            "Parts and Refrigerant Included: {{parts_included}}\n\n"
+            "If included, all required replacement parts, refrigerant, filters, and "
+            "consumables are covered in the agreed fee. Contractor shall use OEM or "
+            "equivalent-grade components suitable for the system specifications.\n\n"
+            "If not included, Client shall be invoiced separately for all parts at "
+            "cost plus a reasonable handling markup with itemized documentation. "
+            "Refrigerant charges will be itemized separately per applicable regulations. "
+            "Contractor shall obtain Client approval before purchasing high-cost components."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Change Order",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CHANGE ORDER\n\n"
+            "If additional issues are discovered during service — including failed "
+            "components, refrigerant leaks in unexpected locations, or code deficiencies — "
+            "Contractor shall document the finding and issue a written change order before "
+            "proceeding. Contractor shall not proceed with additional work without written "
+            "Client authorization. Client is responsible for decisions to decline "
+            "recommended additional repairs."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Damage Liability",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "DAMAGE LIABILITY\n\n"
+            "Contractor shall be liable for damage to Client's property caused by "
+            "Contractor's negligence. Client must report any damage claim in writing "
+            "within 48 hours of service.\n\n"
+            "Contractor is not liable for: pre-existing system deterioration or wear; "
+            "damage from refrigerant leaks in system sections not serviced; compressor "
+            "or component failure unrelated to Contractor's work; or damage caused by "
+            "Client's continued operation of a system Contractor has recommended "
+            "shutting down pending repairs."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Parts and Labor Warranty",
+        "order": 6,
+        "is_required": False,
+        "is_conditional": True,
+        "condition_description": "Applies when warranty_days is provided",
+        "body": (
+            "PARTS AND LABOR WARRANTY\n\n"
+            "Contractor warrants labor performed and parts installed under this agreement "
+            "for {{warranty_days}} days from the service completion date. During this "
+            "period, Contractor shall repair or replace any component that fails due to "
+            "improper installation or a manufacturing defect in parts supplied by "
+            "Contractor, at no additional labor charge.\n\n"
+            "Manufacturer parts warranties are governed separately by the manufacturer's "
+            "terms. This warranty does not cover: normal wear; Client-supplied parts; "
+            "damage from electrical surges or extreme weather; or system abuse or misuse."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Total Fee: ${{total_fee}}\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"flat_fee\" — Full payment due upon completion of service.\n\n"
+            "\"deposit_balance\" — A deposit of {{deposit_percentage}}% due upon "
+            "execution; remaining balance due upon completion.\n\n"
+            "\"monthly\" — Invoiced on the first of each service month; due within "
+            "7 days. Contractor may suspend service for non-payment.\n\n"
+            "Late payments accrue interest at 5% per month."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "Client must provide at least {{cancellation_notice_hours}} hours notice "
+            "to cancel or reschedule. Late cancellations may incur a service call fee "
+            "for reserved labor time and travel. If Contractor has procured non-returnable "
+            "parts specific to the job, Client shall reimburse those costs."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 9,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate for material breach not cured within 7 days "
+            "of written notice. Contractor may suspend work for non-payment or unsafe "
+            "conditions. Upon termination, Client pays for all work completed and parts "
+            "procured through the termination date. Warranty and liability provisions "
+            "survive termination."
+        ),
+    },
+]
+
+
+# ===========================================================================
+# MANUAL LABOR — PAINTING (INTERIOR AND EXTERIOR)
+# ===========================================================================
+
+PAINTING_GUIDED_FIELDS = [
+    {
+        "field_key": "painting_type",
+        "label": "Painting Type",
+        "field_type": "choice",
+        "choices": ["Interior", "Exterior", "Both"],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "property_address",
+        "label": "Property Address",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "total_fee",
+        "label": "Total Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["deposit_balance", "flat_fee", "installments"],
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "deposit_percentage",
+        "label": "Deposit Percentage (%)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "payment_model",
+        "condition_value": "deposit_balance",
+    },
+    {
+        "field_key": "num_installments",
+        "label": "Number of Installments",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "payment_model",
+        "condition_value": "installments",
+    },
+    {
+        "field_key": "installment_interval_days",
+        "label": "Installment Interval",
+        "field_type": "choice",
+        "choices": ["7", "30"],
+        "is_required": True,
+        "order": 7,
+        "condition_field_key": "payment_model",
+        "condition_value": "installments",
+    },
+    {
+        "field_key": "paint_provided_by",
+        "label": "Paint Provided By",
+        "field_type": "choice",
+        "choices": ["Contractor", "Client"],
+        "is_required": True,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "num_coats",
+        "label": "Number of Coats",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "surface_prep_included",
+        "label": "Surface Preparation Included",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": True,
+        "order": 10,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "estimated_duration_days",
+        "label": "Estimated Duration (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 11,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "warranty_days",
+        "label": "Workmanship Warranty Period (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 12,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+PAINTING_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Contractor\") agrees to perform painting services "
+            "for {{counterparty_name}} (\"Client\") at the following property:\n\n"
+            "Property Address: {{property_address}}\n"
+            "Painting Type: {{painting_type}}\n"
+            "Number of Coats: {{num_coats}}\n"
+            "Estimated Duration: {{estimated_duration_days}} days\n\n"
+            "Contractor shall paint all agreed surfaces to a professional standard "
+            "with uniform coverage, clean edges, and consistent finish. The specific "
+            "rooms, surfaces, and areas to be painted are set forth in the project "
+            "proposal or addendum. Color changes or additional surfaces after commencement "
+            "require a written change order."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Paint and Materials",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAINT AND MATERIALS\n\n"
+            "Paint Provided By: {{paint_provided_by}}\n\n"
+            "If provided by Contractor, Contractor shall supply paint of commercially "
+            "appropriate quality (minimum standard-grade) in the colors selected by "
+            "Client. All brushes, rollers, tape, drop cloths, and supplies are included. "
+            "Contractor shall select paint type appropriate to the surface "
+            "(e.g., exterior-grade for outdoor surfaces).\n\n"
+            "If provided by Client, Client shall supply sufficient quantities of paint "
+            "for all agreed coats. Client-supplied paint is accepted as-is; Contractor "
+            "is not liable for finish quality issues attributable to inadequate paint "
+            "coverage, poor-quality paint, or incorrect paint type for the surface."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Surface Preparation",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SURFACE PREPARATION\n\n"
+            "Surface Preparation Included: {{surface_prep_included}}\n\n"
+            "If included, Contractor shall clean surfaces, fill minor holes and cracks, "
+            "sand rough areas, and apply primer where required before painting. "
+            "Furniture, flooring, and fixtures will be protected with drop cloths and "
+            "tape. Contractor is not responsible for damage to items not moved or "
+            "protected at Client's direction.\n\n"
+            "If not included, Client is responsible for all surface preparation prior "
+            "to Contractor's arrival. Contractor shall not be liable for finish quality "
+            "issues attributable to inadequate surface preparation performed by others."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Change Order",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CHANGE ORDER\n\n"
+            "Any request for color changes after work has commenced, additional surfaces "
+            "beyond the agreed scope, or changes to the agreed number of coats requires "
+            "a written change order before work on the change proceeds. Color change "
+            "mid-job may require re-priming and additional coats; such additional labor "
+            "and materials will be itemized in the change order."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Damage Liability",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "DAMAGE LIABILITY\n\n"
+            "Contractor shall protect floors, furniture, and fixtures with appropriate "
+            "drop cloths and masking and shall be liable for overspray, spills, or "
+            "drips caused by Contractor's negligence. Client must report any damage "
+            "claim in writing within 48 hours of the service date.\n\n"
+            "Contractor is not liable for: damage to items Client declined to have moved "
+            "or covered; pre-existing surface cracks or defects that affect finish quality; "
+            "paint adhesion failure on surfaces with pre-existing moisture or contamination "
+            "not visible before painting; or normal paint wear on exterior surfaces "
+            "due to weather."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Workmanship Warranty",
+        "order": 6,
+        "is_required": False,
+        "is_conditional": True,
+        "condition_description": "Applies when warranty_days is provided",
+        "body": (
+            "WORKMANSHIP WARRANTY\n\n"
+            "Contractor warrants painting work against defects in application for "
+            "{{warranty_days}} days from completion. During this period, Contractor "
+            "shall correct peeling, cracking, or blistering attributable to improper "
+            "application technique at no additional charge.\n\n"
+            "This warranty does not cover: normal paint wear on exterior surfaces "
+            "from weather; damage from Client modifications; paint failure on "
+            "Client-supplied surfaces with pre-existing moisture or contamination; "
+            "or color fading over time."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Total Fee: ${{total_fee}}\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"deposit_balance\" — A deposit of {{deposit_percentage}}% is due upon "
+            "execution to confirm the booking and secure the schedule. The remaining "
+            "balance is due upon completion and Client walk-through acceptance.\n\n"
+            "\"flat_fee\" — Full payment is due upon completion.\n\n"
+            "\"installments\" — Payments per the agreed installment schedule. "
+            "Contractor may pause work if an installment is more than 7 days overdue.\n\n"
+            "Late payments accrue interest at 5% per month."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "If Client cancels after work has commenced, Client shall pay for all work "
+            "completed and materials procured to the cancellation date, plus 25% of "
+            "the remaining contract value as a cancellation fee for reserved labor "
+            "capacity. Deposits are non-refundable once materials have been purchased "
+            "and scheduling has been confirmed."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 9,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate for material breach not cured within 7 days "
+            "of written notice. Upon termination, Client pays for work completed and "
+            "materials procured through the termination date. Contractor shall leave "
+            "the property clean and tidy. Warranty and liability provisions survive."
+        ),
+    },
+]
+
+
+# ===========================================================================
+# MANUAL LABOR — MOVING SERVICES
+# ===========================================================================
+
+MOVING_SERVICES_GUIDED_FIELDS = [
+    {
+        "field_key": "move_type",
+        "label": "Move Type",
+        "field_type": "choice",
+        "choices": ["Local Move", "Long-Distance Move", "Commercial Move", "Packing Only"],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "pickup_address",
+        "label": "Pickup Address",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "delivery_address",
+        "label": "Delivery Address",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "total_fee",
+        "label": "Total Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["flat_fee", "deposit_balance", "hourly"],
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "deposit_percentage",
+        "label": "Deposit Percentage (%)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "payment_model",
+        "condition_value": "deposit_balance",
+    },
+    {
+        "field_key": "packing_included",
+        "label": "Full Packing Service Included",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": True,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "insurance_coverage",
+        "label": "Insurance Coverage",
+        "field_type": "choice",
+        "choices": ["Basic Coverage", "Full Value Protection", "None"],
+        "is_required": True,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "num_movers",
+        "label": "Number of Movers",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "cancellation_notice_days",
+        "label": "Cancellation Notice Period (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 10,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+MOVING_SERVICES_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Mover\") agrees to provide moving services "
+            "for {{counterparty_name}} (\"Client\") under the following terms:\n\n"
+            "Move Type: {{move_type}}\n"
+            "Pickup Address: {{pickup_address}}\n"
+            "Delivery Address: {{delivery_address}}\n"
+            "Number of Movers: {{num_movers}}\n\n"
+            "Mover shall load, transport, and unload Client's belongings with reasonable "
+            "care. For long-distance moves, estimated transit times are provided as "
+            "guides and are subject to weather, road conditions, and routing. Client "
+            "shall ensure all items to be moved are accessible and disclosed to Mover "
+            "before service date."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Packing and Materials",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PACKING AND MATERIALS\n\n"
+            "Full Packing Service Included: {{packing_included}}\n\n"
+            "If packing is included, Mover shall supply all boxes, packing paper, "
+            "bubble wrap, tape, and materials required to safely pack Client's belongings. "
+            "Mover shall pack items with reasonable care using appropriate protective "
+            "materials for fragile items.\n\n"
+            "If packing is not included, Client is responsible for packing all items "
+            "prior to the move date. Mover is not liable for damage to items packed "
+            "by Client unless caused by Mover's mishandling of properly packed boxes. "
+            "Client shall label all boxes with contents and fragility indicators."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Insurance and Damage Coverage",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "INSURANCE AND DAMAGE COVERAGE\n\n"
+            "Insurance Coverage Selected: {{insurance_coverage}}\n\n"
+            "\"Basic Coverage\" — Mover's liability is limited to $0.60 per pound per "
+            "item as required by applicable federal and state regulations. Client is "
+            "advised this provides minimal protection for high-value items.\n\n"
+            "\"Full Value Protection\" — Mover is liable for the replacement cost or "
+            "repair of damaged items up to their declared value. Client must declare "
+            "high-value items (over $100 per item) in writing before the move date; "
+            "undeclared high-value items default to basic coverage.\n\n"
+            "\"None\" — Client assumes all risk for damage. Mover is not liable for "
+            "any damage to Client's belongings during the move.\n\n"
+            "All damage claims must be reported in writing within 9 months of delivery."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Prohibited Items",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PROHIBITED ITEMS\n\n"
+            "Mover will not transport the following items regardless of coverage level: "
+            "hazardous materials (flammables, explosives, corrosives), perishable food "
+            "and plants, cash, jewelry, securities and negotiable instruments, firearms "
+            "and ammunition (without prior written agreement), prescription medications, "
+            "irreplaceable documents, and items of extraordinary personal or sentimental "
+            "value.\n\n"
+            "Client is responsible for transporting all prohibited items independently. "
+            "Client's failure to disclose prohibited items discovered during loading may "
+            "result in refusal to transport those items and no adjustment to the fee."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Total Fee: ${{total_fee}}\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"flat_fee\" — Full payment is due upon completion of delivery.\n\n"
+            "\"deposit_balance\" — A deposit of {{deposit_percentage}}% is due upon "
+            "booking to confirm the move date. The remaining balance is due upon "
+            "completion of delivery. Mover may withhold delivery of items until the "
+            "outstanding balance is paid in full.\n\n"
+            "\"hourly\" — Client is billed at the agreed hourly rate per mover for "
+            "all time from first pick-up to last item placed; estimates are guides only.\n\n"
+            "Late payments accrue interest at 5% per month."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "Client must cancel with at least {{cancellation_notice_days}} days written "
+            "notice to receive a full refund of any deposit paid. Cancellations within "
+            "48 hours of the scheduled move date forfeit the deposit in full to "
+            "compensate Mover for reserved crew time and truck scheduling that cannot "
+            "be recovered on short notice.\n\n"
+            "Mover may reschedule due to vehicle mechanical failure, weather making "
+            "transport unsafe, or crew illness, and shall provide prompt notice with "
+            "a proposed alternative date."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate for material breach not cured within 7 days "
+            "of written notice. Mover may suspend service if Client fails to make "
+            "required payments or creates unsafe working conditions. Upon termination "
+            "during an active move, Client pays for all work completed to the "
+            "termination date at a pro-rata rate. Insurance, liability, and damage "
+            "claim provisions survive termination."
+        ),
+    },
+]
+
+
+# ===========================================================================
+# MANUAL LABOR — GENERAL HANDYMAN
+# ===========================================================================
+
+HANDYMAN_GUIDED_FIELDS = [
+    {
+        "field_key": "service_description",
+        "label": "Description of Work",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "property_address",
+        "label": "Property Address",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "total_fee",
+        "label": "Total Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["flat_fee", "deposit_balance", "hourly"],
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "deposit_percentage",
+        "label": "Deposit Percentage (%)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "payment_model",
+        "condition_value": "deposit_balance",
+    },
+    {
+        "field_key": "materials_included",
+        "label": "Materials Included in Price",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "estimated_hours",
+        "label": "Estimated Hours",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "warranty_days",
+        "label": "Workmanship Warranty Period (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "cancellation_notice_hours",
+        "label": "Cancellation Notice Window (hours)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+HANDYMAN_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Provider\") agrees to perform handyman services "
+            "for {{counterparty_name}} (\"Client\") at the following property:\n\n"
+            "Property Address: {{property_address}}\n"
+            "Work Description: {{service_description}}\n\n"
+            "Provider shall perform all work in a professional and workmanlike manner. "
+            "A written service order confirming the scope and price will be provided "
+            "before work begins. Work beyond the agreed scope requires a written "
+            "change order signed by both parties before proceeding."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Materials",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "MATERIALS\n\n"
+            "Materials Included: {{materials_included}}\n\n"
+            "If included, all required materials, hardware, fasteners, and supplies "
+            "are covered in the agreed fee. Provider shall use commercially appropriate "
+            "materials for the work type.\n\n"
+            "If not included, Client shall be invoiced for materials at cost plus a "
+            "reasonable handling markup with itemized documentation. Provider shall "
+            "obtain Client approval before purchasing materials above a pre-agreed "
+            "threshold. Client-supplied materials are accepted as-is."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Change Order",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CHANGE ORDER\n\n"
+            "If additional work is discovered beyond the original agreed scope, "
+            "Provider shall stop work on the affected area and issue a written change "
+            "order before proceeding. The change order shall describe the additional "
+            "work, estimated cost, and timeline impact. Client may authorize or decline "
+            "the additional work. Provider is not liable for incomplete results in areas "
+            "where necessary additional work was declined."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Damage Liability",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "DAMAGE LIABILITY\n\n"
+            "Provider shall be liable for damage to Client's property caused by "
+            "Provider's negligence or improper workmanship. Client must notify Provider "
+            "of any damage in writing within 48 hours of the service date.\n\n"
+            "Provider is not liable for pre-existing damage or deterioration; damage "
+            "caused by Client-supplied materials or parts; or conditions discovered "
+            "during work that were not visible or disclosed before commencement. "
+            "Provider's maximum liability shall not exceed the total fees paid."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Workmanship Warranty",
+        "order": 5,
+        "is_required": False,
+        "is_conditional": True,
+        "condition_description": "Applies when warranty_days is provided",
+        "body": (
+            "WORKMANSHIP WARRANTY\n\n"
+            "Provider warrants all work against defects in workmanship for "
+            "{{warranty_days}} days from completion. During this period Provider shall "
+            "correct any defect attributable to Provider's technique or installation "
+            "at no additional charge. This warranty does not cover normal wear, "
+            "Client modifications, damage from misuse, or failures in Client-supplied "
+            "materials."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Total Fee: ${{total_fee}}\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"flat_fee\" — Full payment due upon completion.\n\n"
+            "\"deposit_balance\" — A deposit of {{deposit_percentage}}% is due upon "
+            "execution; remaining balance due upon completion.\n\n"
+            "\"hourly\" — Billed at the agreed hourly rate for all time on-site; "
+            "estimates are guides only. Invoice due within 7 days.\n\n"
+            "Late payments accrue interest at 5% per month."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "Client must provide at least {{cancellation_notice_hours}} hours notice "
+            "to cancel or reschedule. Late cancellations may incur a service call fee "
+            "for reserved labor time. If Provider has procured non-returnable materials "
+            "for the job, Client shall reimburse those costs."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate for material breach not cured within 7 days "
+            "of written notice. Provider may suspend work for non-payment, unsafe "
+            "conditions, or Client's direction to perform work outside Provider's "
+            "competency. Upon termination, Client pays for all work satisfactorily "
+            "completed and materials procured through the termination date."
+        ),
+    },
+]
+
+
+# ===========================================================================
+# MANUAL LABOR — PEST CONTROL
+# ===========================================================================
+
+PEST_CONTROL_GUIDED_FIELDS = [
+    {
+        "field_key": "pest_type",
+        "label": "Pest Type",
+        "field_type": "choice",
+        "choices": [
+            "General Pests",
+            "Rodents",
+            "Termites",
+            "Bed Bugs",
+            "Mosquito Control",
+            "Ants and Roaches",
+        ],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "service_model",
+        "label": "Service Model",
+        "field_type": "choice",
+        "choices": ["One-Time Treatment", "Monthly Plan", "Quarterly Plan", "Annual Plan"],
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "property_address",
+        "label": "Property Address",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "total_fee",
+        "label": "Total Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["flat_fee", "prepaid_plan", "per_visit"],
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "treatment_method",
+        "label": "Treatment Method / Chemicals Used",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "re_treatment_included",
+        "label": "Free Re-Treatment Included",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": True,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "warranty_days",
+        "label": "Re-Treatment Guarantee Period (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "cancellation_notice_days",
+        "label": "Cancellation Notice Period (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+PEST_CONTROL_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Provider\") agrees to provide pest control services "
+            "for {{counterparty_name}} (\"Client\") at the following property:\n\n"
+            "Property Address: {{property_address}}\n"
+            "Pest Type: {{pest_type}}\n"
+            "Service Model: {{service_model}}\n\n"
+            "Provider shall apply treatments appropriate to the pest type and property "
+            "using licensed technicians. Services are limited to the property address "
+            "specified. Treatment of additional structures or adjacent properties requires "
+            "a separate agreement."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Treatment Method and Chemical Safety",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TREATMENT METHOD AND CHEMICAL SAFETY\n\n"
+            "Treatment Method: {{treatment_method}}\n\n"
+            "All chemicals and treatments will be applied by licensed pest control "
+            "technicians in accordance with applicable state and federal regulations "
+            "and EPA label directions. Safety data sheets (SDS) for all products used "
+            "are available upon request.\n\n"
+            "Client must ensure all children, pets, and sensitive individuals vacate "
+            "the treated areas for the re-entry period specified on product labels. "
+            "Client shall disclose any known allergies or chemical sensitivities before "
+            "treatment. Provider is not liable for adverse reactions caused by Client's "
+            "failure to follow re-entry instructions."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Client Preparation Requirements",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CLIENT PREPARATION REQUIREMENTS\n\n"
+            "Client shall prepare the property per Provider's pre-treatment instructions "
+            "provided before each service visit. Preparation typically includes clearing "
+            "access areas, removing food from counters, and securing pets. Failure to "
+            "prepare the property per instructions may reduce treatment effectiveness.\n\n"
+            "Provider is not responsible for treatment failure or incomplete pest "
+            "elimination resulting from Client's failure to follow preparation "
+            "instructions, Client's refusal to allow access to all affected areas, "
+            "or re-infestation from adjacent structures outside the agreed service scope."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Re-Treatment Guarantee",
+        "order": 4,
+        "is_required": False,
+        "is_conditional": True,
+        "condition_description": "Applies when re_treatment_included is true",
+        "body": (
+            "RE-TREATMENT GUARANTEE\n\n"
+            "Free Re-Treatment Included: {{re_treatment_included}}\n\n"
+            "If re-treatment is included and the treated pest population returns within "
+            "{{warranty_days}} days of the initial treatment, Provider shall perform "
+            "one additional treatment at no additional charge upon Client's written "
+            "notification.\n\n"
+            "The re-treatment guarantee applies only where Client has followed all "
+            "preparation and post-treatment instructions, has not introduced new "
+            "infestation sources (e.g., infested furniture or adjacent units), and "
+            "the property has not been structurally altered in ways that create new "
+            "entry points. The guarantee is void upon termination of this agreement "
+            "by Client."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Damage Liability",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "DAMAGE LIABILITY\n\n"
+            "Provider shall be liable for property damage caused by Provider's "
+            "negligence in applying treatments. Client must report any damage claim "
+            "in writing within 48 hours of service.\n\n"
+            "Provider is not liable for: property damage caused by the pest infestation "
+            "itself; staining or surface damage from treatments applied in compliance "
+            "with label directions; damage caused by Client's failure to follow "
+            "pre-treatment preparation or post-treatment instructions; or incomplete "
+            "pest control results where Client denied access to affected areas."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Total Fee: ${{total_fee}}\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"flat_fee\" — Full payment is due upon completion of the treatment.\n\n"
+            "\"prepaid_plan\" — Full plan fee is due upon execution of this agreement "
+            "and covers all scheduled visits within the plan period.\n\n"
+            "\"per_visit\" — Client is invoiced after each treatment visit; payment "
+            "due within 7 days of invoice.\n\n"
+            "Late payments accrue interest at 5% per month. Provider may suspend "
+            "service for invoices more than 14 days past due."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "Either party may cancel this agreement with {{cancellation_notice_days}} "
+            "days written notice. For prepaid plans, Client will receive a prorated "
+            "refund for any unrendered visits remaining after the cancellation date. "
+            "Re-treatment guarantees are void upon cancellation by Client."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate for material breach not cured within 7 days "
+            "of written notice. Upon termination, Client pays all fees accrued through "
+            "the last completed treatment. Provider shall provide SDS sheets for any "
+            "chemicals applied within 30 days of termination upon Client's request. "
+            "Re-treatment and liability provisions survive termination."
+        ),
+    },
+]
+
+
+# ===========================================================================
+# MANUAL LABOR — CUSTOM BUILD AND FABRICATION
+# ===========================================================================
+
+CUSTOM_FABRICATION_GUIDED_FIELDS = [
+    {
+        "field_key": "project_type",
+        "label": "Project Type",
+        "field_type": "choice",
+        "choices": ["Custom Furniture", "Cabinetry", "Metalwork", "Woodwork", "Custom Structure", "Other"],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "total_contract_value",
+        "label": "Total Contract Value (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["deposit_balance", "milestone", "installments"],
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "deposit_percentage",
+        "label": "Deposit Percentage (%)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "payment_model",
+        "condition_value": "deposit_balance",
+    },
+    {
+        "field_key": "num_installments",
+        "label": "Number of Installments",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "payment_model",
+        "condition_value": "installments",
+    },
+    {
+        "field_key": "installment_interval_days",
+        "label": "Installment Interval",
+        "field_type": "choice",
+        "choices": ["7", "30"],
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "payment_model",
+        "condition_value": "installments",
+    },
+    {
+        "field_key": "materials_included",
+        "label": "Materials",
+        "field_type": "choice",
+        "choices": ["Included in Price", "Client Provides", "Partial — Labor Only"],
+        "is_required": True,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "estimated_duration_days",
+        "label": "Estimated Build Time (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "design_approval_required",
+        "label": "Design Approval Required Before Build",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": True,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "warranty_days",
+        "label": "Workmanship Warranty Period (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 10,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "cancellation_window_days",
+        "label": "Cancellation Window (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 11,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+CUSTOM_FABRICATION_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Builder\") agrees to design and fabricate "
+            "{{project_type}} for {{counterparty_name}} (\"Client\") per the agreed "
+            "project brief or specification.\n\n"
+            "Estimated Build Time: {{estimated_duration_days}} days from design "
+            "approval or commencement date. All work shall be performed by skilled "
+            "craftspeople using professional fabrication methods appropriate to the "
+            "materials and project type. Work beyond the agreed specification requires "
+            "a written change order."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Materials and Labor",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "MATERIALS AND LABOR\n\n"
+            "Materials: {{materials_included}}\n\n"
+            "\"Included in Price\" — All raw materials, hardware, finishes, and "
+            "consumables required are covered in the contract value.\n\n"
+            "\"Client Provides\" — The contract price covers labor only. Client shall "
+            "procure and deliver materials on schedule. Builder assumes no liability "
+            "for defects in Client-supplied stock.\n\n"
+            "\"Partial — Labor Only\" — Parties shall specify in writing which materials "
+            "each supplies. Material cost overruns require a written change order and "
+            "Client approval before additional expenditure is incurred."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Design Approval and Change Order",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "DESIGN APPROVAL AND CHANGE ORDER\n\n"
+            "Design Approval Required: {{design_approval_required}}\n\n"
+            "If design approval is required, Builder shall produce final drawings or "
+            "renders for Client review. Fabrication shall not commence until Client "
+            "provides written approval. Changes after written approval require a "
+            "written change order and may extend the timeline and increase cost.\n\n"
+            "In all cases, modifications to agreed dimensions, materials, or finishes "
+            "after fabrication has commenced require a written change order. Builder "
+            "is not obligated to undo completed work pending change order execution."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Damage Liability",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "DAMAGE LIABILITY\n\n"
+            "Builder shall be liable for damage to Client's property caused by "
+            "Builder's negligence during fabrication, delivery, or installation. "
+            "Client must inspect the finished item upon delivery and notify Builder "
+            "of any damage claim in writing within 48 hours of receipt.\n\n"
+            "Builder is not liable for natural material variation (wood grain, metal "
+            "finish characteristics inherent to the material) disclosed at design "
+            "stage, or dimensional variance within commercially accepted tolerances "
+            "for the fabrication method used."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Workmanship Warranty",
+        "order": 5,
+        "is_required": False,
+        "is_conditional": True,
+        "condition_description": "Applies when warranty_days is provided",
+        "body": (
+            "WORKMANSHIP WARRANTY\n\n"
+            "Builder warrants all work against structural defects in workmanship for "
+            "{{warranty_days}} days from the date of delivery. During this period "
+            "Builder shall repair or replace any item with a structural defect "
+            "attributable to poor construction technique at no charge.\n\n"
+            "This warranty does not cover: normal wear; scratches or dents after "
+            "delivery; Client modifications; damage from improper use; or cosmetic "
+            "characteristics of natural materials disclosed before fabrication."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Total Contract Value: ${{total_contract_value}}\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"deposit_balance\" — A deposit of {{deposit_percentage}}% is due upon "
+            "execution to secure materials and the build slot. The remaining balance "
+            "is due upon delivery and Client acceptance.\n\n"
+            "\"milestone\" — Payments tied to defined build milestones; due within "
+            "7 days of milestone completion notice.\n\n"
+            "\"installments\" — Equal installment payments per the agreed schedule.\n\n"
+            "Builder may withhold delivery until all outstanding balances are paid. "
+            "Late payments accrue interest at 5% per month."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation and Kill Fee",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION AND KILL FEE\n\n"
+            "Client may cancel within {{cancellation_window_days}} days of execution "
+            "and receive a full deposit refund less any design costs incurred, provided "
+            "fabrication has not yet commenced. If Client cancels after materials have "
+            "been ordered or fabrication has commenced, Client shall pay the full cost "
+            "of all materials procured plus 30% of the remaining labor value as a "
+            "kill fee for lost revenue and build slot opportunity.\n\n"
+            "Finished or partially finished items for which the kill fee has been paid "
+            "become the property of Client. Cancellations must be submitted in writing."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate for material breach not cured within 7 days "
+            "of written notice. Upon termination, Client pays for all work completed "
+            "and materials procured through the termination date per the Cancellation "
+            "and Kill Fee clause. Builder shall deliver any completed portions upon "
+            "receipt of all amounts owed. Warranty and liability provisions survive."
+        ),
+    },
+]
+
+
+# ===========================================================================
+# MANUAL LABOR — GENERAL REPAIR
+# ===========================================================================
+
+GENERAL_REPAIR_GUIDED_FIELDS = [
+    {
+        "field_key": "repair_description",
+        "label": "Description of Repair",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "property_address",
+        "label": "Property Address",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "total_fee",
+        "label": "Total Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["flat_fee", "deposit_balance", "hourly"],
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "deposit_percentage",
+        "label": "Deposit Percentage (%)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "payment_model",
+        "condition_value": "deposit_balance",
+    },
+    {
+        "field_key": "materials_included",
+        "label": "Materials and Parts Included",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "warranty_days",
+        "label": "Workmanship Warranty Period (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "cancellation_notice_hours",
+        "label": "Cancellation Notice Window (hours)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+GENERAL_REPAIR_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Provider\") agrees to perform the following repair "
+            "work for {{counterparty_name}} (\"Client\") at the property located at "
+            "{{property_address}}:\n\n"
+            "Repair Description: {{repair_description}}\n\n"
+            "All work shall be performed in a professional and workmanlike manner. "
+            "Provider shall assess the repair site before commencing to confirm scope. "
+            "A written service order confirming scope and price shall be provided "
+            "before work begins. Work beyond the agreed scope requires a written "
+            "change order."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Materials and Parts",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "MATERIALS AND PARTS\n\n"
+            "Materials Included: {{materials_included}}\n\n"
+            "If included, all replacement parts, hardware, and supplies required to "
+            "complete the repair are covered in the agreed fee. Provider shall use "
+            "commercially appropriate quality parts suitable for the application.\n\n"
+            "If not included, Client shall be invoiced separately for all materials "
+            "at cost plus a reasonable handling markup with itemized documentation. "
+            "Client-supplied parts are accepted as-is; Provider is not liable for "
+            "defects or failure of Client-supplied components."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Change Order",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CHANGE ORDER\n\n"
+            "If additional damage or conditions exceeding the original scope are "
+            "discovered during repair, Provider shall stop work on the affected area "
+            "and issue a written change order before proceeding. Client may authorize "
+            "or decline the additional work. Provider is not liable for incomplete "
+            "results in areas where necessary additional work was declined."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Damage Liability",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "DAMAGE LIABILITY\n\n"
+            "Provider shall be liable for damage to Client's property caused by "
+            "Provider's negligence or improper workmanship. Client must notify "
+            "Provider of any damage claim in writing within 48 hours of service.\n\n"
+            "Provider is not liable for pre-existing damage or deterioration; damage "
+            "caused by Client-supplied parts; or conditions discovered during work "
+            "not visible or disclosed before commencement. Provider's maximum "
+            "liability shall not exceed total fees paid."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Workmanship Warranty",
+        "order": 5,
+        "is_required": False,
+        "is_conditional": True,
+        "condition_description": "Applies when warranty_days is provided",
+        "body": (
+            "WORKMANSHIP WARRANTY\n\n"
+            "Provider warrants all repair work against defects in workmanship for "
+            "{{warranty_days}} days from completion. During this period Provider shall "
+            "remedy any defect caused by improper technique at no additional charge.\n\n"
+            "This warranty does not cover: normal wear and tear; Client modifications; "
+            "damage from misuse or environmental conditions beyond the repair scope; "
+            "or failures attributable to Client-supplied parts."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Total Fee: ${{total_fee}}\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"flat_fee\" — Full payment due upon completion.\n\n"
+            "\"deposit_balance\" — A deposit of {{deposit_percentage}}% is due upon "
+            "execution; remaining balance due upon completion.\n\n"
+            "\"hourly\" — Billed at the agreed hourly rate for all time on-site "
+            "in half-hour increments; estimates are guides only. Invoice due within "
+            "7 days of issuance.\n\n"
+            "Late payments accrue interest at 5% per month."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "Client must provide at least {{cancellation_notice_hours}} hours notice "
+            "to cancel or reschedule. Late cancellations may incur a service call fee "
+            "for reserved labor time and travel costs. If Provider has procured "
+            "non-returnable materials for the job, Client shall reimburse those costs."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate for material breach not cured within 7 days "
+            "of written notice. Provider may suspend work for non-payment or unsafe "
+            "conditions. Upon termination, Client pays for all work satisfactorily "
+            "completed and materials procured through the termination date. Warranty "
+            "and liability provisions survive termination."
+        ),
+    },
+]
+
+
 class Command(BaseCommand):
     help = "Seed the database with initial ContractTemplate records."
 
@@ -3994,6 +7131,18 @@ class Command(BaseCommand):
         self._seed_software_consulting(force)
         self._seed_cybersecurity(force)
         self._seed_data_analytics(force)
+        self._seed_lawn_care(force)
+        self._seed_home_cleaning(force)
+        self._seed_home_renovation(force)
+        self._seed_plumbing(force)
+        self._seed_electrical(force)
+        self._seed_hvac(force)
+        self._seed_painting(force)
+        self._seed_moving_services(force)
+        self._seed_handyman(force)
+        self._seed_pest_control(force)
+        self._seed_custom_fabrication(force)
+        self._seed_general_repair(force)
 
     def _seed_personal_training(self, force):
         name = "Personal Training Agreement"
@@ -4705,5 +7854,363 @@ class Command(BaseCommand):
                 "amount_token": "total_fee",
                 "installments_token": "num_installments",
                 "interval_days_token": "installment_interval_days",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # MANUAL LABOR — shared helper
+    # ------------------------------------------------------------------
+
+    def _create_manual_labor_template(
+        self, force, name, subcategory, description, structure_type, fields, clauses, obligation_params
+    ):
+        if ContractTemplate.objects.filter(name=name).exists():
+            if not force:
+                self.stdout.write(self.style.WARNING(
+                    f'Template "{name}" already exists. Use --force to recreate.'
+                ))
+                return
+            ContractTemplate.objects.filter(name=name).delete()
+            self.stdout.write(self.style.WARNING(f'Deleted existing "{name}" for recreation.'))
+
+        template = ContractTemplate.objects.create(
+            category="manual_labor",
+            subcategory=subcategory,
+            name=name,
+            description=description,
+            structure_type=structure_type,
+            is_active=True,
+            tier_required="free",
+        )
+        for f in fields:
+            TemplateGuidedField.objects.create(template=template, **f)
+        for c in clauses:
+            TemplateClause.objects.create(template=template, **c)
+        TemplateObligationPattern.objects.create(template=template, **obligation_params)
+        self.stdout.write(self.style.SUCCESS(
+            f'Seeded template "{name}" with {len(fields)} guided fields and {len(clauses)} clauses.'
+        ))
+
+    # ------------------------------------------------------------------
+    # MANUAL LABOR — LAWN CARE AND LANDSCAPING
+    # ------------------------------------------------------------------
+
+    def _seed_lawn_care(self, force):
+        self._create_manual_labor_template(
+            force=force,
+            name="Lawn Care and Landscaping Agreement",
+            subcategory="lawn_care",
+            description=(
+                "A lawn care and landscaping services agreement covering mowing, trimming, "
+                "fertilization, and general yard maintenance. Includes materials and equipment "
+                "terms, scheduling, payment model, and cancellation policy."
+            ),
+            structure_type="ONGOING",
+            fields=LAWN_CARE_GUIDED_FIELDS,
+            clauses=LAWN_CARE_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "per_session",
+                "payment_model_token": "payment_model",
+                "amount_token": "total_fee",
+                "installments_token": "",
+                "interval_days_token": "",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # MANUAL LABOR — HOME CLEANING SERVICE
+    # ------------------------------------------------------------------
+
+    def _seed_home_cleaning(self, force):
+        self._create_manual_labor_template(
+            force=force,
+            name="Home Cleaning Service Agreement",
+            subcategory="home_cleaning",
+            description=(
+                "A residential home cleaning services agreement covering regular or one-time "
+                "cleaning visits. Includes scope of rooms and tasks, supplies, scheduling, "
+                "per-visit or monthly payment model, and cancellation policy."
+            ),
+            structure_type="ONGOING",
+            fields=HOME_CLEANING_GUIDED_FIELDS,
+            clauses=HOME_CLEANING_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "per_session",
+                "payment_model_token": "payment_model",
+                "amount_token": "rate_per_visit",
+                "installments_token": "",
+                "interval_days_token": "",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # MANUAL LABOR — HOME RENOVATION AND REMODELING
+    # ------------------------------------------------------------------
+
+    def _seed_home_renovation(self, force):
+        self._create_manual_labor_template(
+            force=force,
+            name="Home Renovation and Remodeling Agreement",
+            subcategory="home_renovation",
+            description=(
+                "A home renovation and remodeling agreement covering scope of work, materials "
+                "vs. labor breakdown, permit responsibility, change order approval, deposit or "
+                "installment payment structure, and damage liability terms."
+            ),
+            structure_type="ONE_TIME",
+            fields=HOME_RENOVATION_GUIDED_FIELDS,
+            clauses=HOME_RENOVATION_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "one_time",
+                "payment_model_token": "payment_model",
+                "amount_token": "total_fee",
+                "installments_token": "num_installments",
+                "interval_days_token": "installment_interval_days",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # MANUAL LABOR — PLUMBING
+    # ------------------------------------------------------------------
+
+    def _seed_plumbing(self, force):
+        self._create_manual_labor_template(
+            force=force,
+            name="Plumbing Services Agreement",
+            subcategory="plumbing",
+            description=(
+                "A plumbing services agreement covering repair, installation, and maintenance "
+                "work. Includes materials and parts breakdown, permit responsibility, deposit "
+                "payment model, warranty terms, and damage liability."
+            ),
+            structure_type="ONE_TIME",
+            fields=PLUMBING_GUIDED_FIELDS,
+            clauses=PLUMBING_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "one_time",
+                "payment_model_token": "payment_model",
+                "amount_token": "total_fee",
+                "installments_token": "deposit_percentage",
+                "interval_days_token": "",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # MANUAL LABOR — ELECTRICAL WORK
+    # ------------------------------------------------------------------
+
+    def _seed_electrical(self, force):
+        self._create_manual_labor_template(
+            force=force,
+            name="Electrical Work Agreement",
+            subcategory="electrical",
+            description=(
+                "An electrical services agreement covering installation, repair, and inspection "
+                "work. Includes permit responsibility, materials breakdown, deposit payment "
+                "model, workmanship warranty, and liability terms."
+            ),
+            structure_type="ONE_TIME",
+            fields=ELECTRICAL_GUIDED_FIELDS,
+            clauses=ELECTRICAL_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "one_time",
+                "payment_model_token": "payment_model",
+                "amount_token": "total_fee",
+                "installments_token": "deposit_percentage",
+                "interval_days_token": "",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # MANUAL LABOR — HVAC AND AC REPAIR
+    # ------------------------------------------------------------------
+
+    def _seed_hvac(self, force):
+        self._create_manual_labor_template(
+            force=force,
+            name="HVAC and AC Repair Agreement",
+            subcategory="hvac",
+            description=(
+                "An HVAC and air conditioning services agreement covering installation, repair, "
+                "and maintenance. Includes equipment and parts terms, deposit or monthly payment "
+                "model, workmanship warranty, and service liability."
+            ),
+            structure_type="ONE_TIME",
+            fields=HVAC_GUIDED_FIELDS,
+            clauses=HVAC_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "one_time",
+                "payment_model_token": "payment_model",
+                "amount_token": "total_fee",
+                "installments_token": "deposit_percentage",
+                "interval_days_token": "",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # MANUAL LABOR — PAINTING (INTERIOR AND EXTERIOR)
+    # ------------------------------------------------------------------
+
+    def _seed_painting(self, force):
+        self._create_manual_labor_template(
+            force=force,
+            name="Painting Services Agreement",
+            subcategory="painting",
+            description=(
+                "A painting services agreement covering interior and exterior paint work. "
+                "Includes materials vs. labor breakdown, surface preparation scope, deposit "
+                "or installment payment structure, change order process, and warranty terms."
+            ),
+            structure_type="ONE_TIME",
+            fields=PAINTING_GUIDED_FIELDS,
+            clauses=PAINTING_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "one_time",
+                "payment_model_token": "payment_model",
+                "amount_token": "total_fee",
+                "installments_token": "num_installments",
+                "interval_days_token": "installment_interval_days",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # MANUAL LABOR — MOVING SERVICES
+    # ------------------------------------------------------------------
+
+    def _seed_moving_services(self, force):
+        self._create_manual_labor_template(
+            force=force,
+            name="Moving Services Agreement",
+            subcategory="moving_services",
+            description=(
+                "A moving services agreement covering residential or commercial relocation. "
+                "Includes inventory and access terms, packing services, deposit payment model, "
+                "damage liability, and cancellation policy."
+            ),
+            structure_type="ONE_TIME",
+            fields=MOVING_SERVICES_GUIDED_FIELDS,
+            clauses=MOVING_SERVICES_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "one_time",
+                "payment_model_token": "payment_model",
+                "amount_token": "total_fee",
+                "installments_token": "deposit_percentage",
+                "interval_days_token": "",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # MANUAL LABOR — GENERAL HANDYMAN
+    # ------------------------------------------------------------------
+
+    def _seed_handyman(self, force):
+        self._create_manual_labor_template(
+            force=force,
+            name="General Handyman Agreement",
+            subcategory="handyman",
+            description=(
+                "A general handyman services agreement covering miscellaneous repair, "
+                "installation, and maintenance tasks. Includes materials and labor breakdown, "
+                "flat fee or deposit payment model, scope of work, and liability terms."
+            ),
+            structure_type="ONE_TIME",
+            fields=HANDYMAN_GUIDED_FIELDS,
+            clauses=HANDYMAN_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "one_time",
+                "payment_model_token": "payment_model",
+                "amount_token": "total_fee",
+                "installments_token": "deposit_percentage",
+                "interval_days_token": "",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # MANUAL LABOR — PEST CONTROL
+    # ------------------------------------------------------------------
+
+    def _seed_pest_control(self, force):
+        self._create_manual_labor_template(
+            force=force,
+            name="Pest Control Agreement",
+            subcategory="pest_control",
+            description=(
+                "A pest control services agreement covering treatment for common household "
+                "and commercial pests. Includes treatment method, chemicals disclosure, "
+                "re-treatment guarantee, payment model, and cancellation policy."
+            ),
+            structure_type="ONGOING",
+            fields=PEST_CONTROL_GUIDED_FIELDS,
+            clauses=PEST_CONTROL_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "per_session",
+                "payment_model_token": "payment_model",
+                "amount_token": "total_fee",
+                "installments_token": "",
+                "interval_days_token": "",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # MANUAL LABOR — CUSTOM BUILD AND FABRICATION
+    # ------------------------------------------------------------------
+
+    def _seed_custom_fabrication(self, force):
+        self._create_manual_labor_template(
+            force=force,
+            name="Custom Build and Fabrication Agreement",
+            subcategory="custom_fabrication",
+            description=(
+                "A custom build and fabrication agreement for furniture, cabinetry, metalwork, "
+                "and structural builds. Includes materials sourcing, milestone or installment "
+                "payment structure, design approval process, change orders, and delivery terms."
+            ),
+            structure_type="ONE_TIME",
+            fields=CUSTOM_FABRICATION_GUIDED_FIELDS,
+            clauses=CUSTOM_FABRICATION_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "one_time",
+                "payment_model_token": "payment_model",
+                "amount_token": "total_contract_value",
+                "installments_token": "num_installments",
+                "interval_days_token": "installment_interval_days",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # MANUAL LABOR — GENERAL REPAIR
+    # ------------------------------------------------------------------
+
+    def _seed_general_repair(self, force):
+        self._create_manual_labor_template(
+            force=force,
+            name="General Repair Agreement",
+            subcategory="general_repair",
+            description=(
+                "A general repair services agreement covering appliance, structural, and "
+                "equipment repair work. Includes diagnosis fee terms, parts and labor "
+                "breakdown, deposit or flat fee payment model, and warranty terms."
+            ),
+            structure_type="ONE_TIME",
+            fields=GENERAL_REPAIR_GUIDED_FIELDS,
+            clauses=GENERAL_REPAIR_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "one_time",
+                "payment_model_token": "payment_model",
+                "amount_token": "total_fee",
+                "installments_token": "deposit_percentage",
+                "interval_days_token": "",
             },
         )

@@ -65,6 +65,10 @@ class TemplateGuidedField(models.Model):
     choices = models.JSONField(null=True, blank=True)
     is_required = models.BooleanField(default=True)
     order = models.IntegerField(default=0)
+    # Conditionality: this field is only active/required when another field
+    # equals a specific value. Both must be set together or left empty.
+    condition_field_key = models.CharField(max_length=100, blank=True, default="")
+    condition_value = models.CharField(max_length=100, blank=True, default="")
 
     class Meta:
         ordering = ["order"]
@@ -144,6 +148,10 @@ class TemplateObligationPattern(models.Model):
     amount_token = models.CharField(max_length=100, blank=True, default="")
     installments_token = models.CharField(max_length=100, blank=True, default="")
     interval_days_token = models.CharField(max_length=100, blank=True, default="")
+    # When set, names the guided field that selects the payment model
+    # (e.g. "single_session" / "package_upfront" / "package_installments").
+    # The instantiation service branches on this value to resolve amounts and counts.
+    payment_model_token = models.CharField(max_length=100, blank=True, default="")
 
     def __str__(self):
         return f"{self.template.name} — obligation pattern ({self.obligation_type}, {self.frequency_type})"

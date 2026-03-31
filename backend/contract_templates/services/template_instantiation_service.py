@@ -41,7 +41,7 @@ class TemplateInstantiationService:
     Instantiates a ContractTemplate into a live Contract.
 
     Responsibilities:
-    - Validate required guided field values
+    - Validate required guided field values (respecting conditionality)
     - Render clause token bodies
     - Create Contract + draft ContractVersion
     - Generate and persist obligations when both parties are known users
@@ -110,9 +110,20 @@ class TemplateInstantiationService:
             raise TemplateInstantiationError(f"Template {template_id} not found or inactive.")
 
     def _validate_required_fields(self, template, values):
+        """
+        Validates required fields, respecting conditionality.
+
+        A field with condition_field_key/condition_value is only required
+        when the named field equals the named value. Fields whose condition
+        is not met are skipped entirely.
+        """
         missing = []
-        for field in template.guided_fields.filter(is_required=True):
-            if field.field_key not in values or values[field.field_key] in (None, ""):
+        for field in template.guided_fields.all():
+            if field.condition_field_key:
+                condition_met = values.get(field.condition_field_key) == field.condition_value
+                if not condition_met:
+                    continue
+            if field.is_required and (field.field_key not in values or values[field.field_key] in (None, "")):
                 missing.append(field.field_key)
         if missing:
             raise TemplateInstantiationError(
@@ -122,7 +133,7 @@ class TemplateInstantiationService:
     def _build_token_context(self, guided_field_values, initiator, counterparty_email):
         ctx = {k: str(v) for k, v in guided_field_values.items()}
 
-        # Computed tokens
+        # Computed token: total package value
         rate_str = ctx.get("rate_per_session")
         sessions_str = ctx.get("num_sessions")
         if rate_str and sessions_str:
@@ -132,7 +143,7 @@ class TemplateInstantiationService:
             except Exception:
                 pass
 
-        # Context tokens
+        # Context tokens from request
         initiator_name = initiator.get_full_name().strip() or initiator.email
         ctx["initiator_name"] = initiator_name
         ctx["counterparty_name"] = counterparty_email
@@ -183,26 +194,15 @@ class TemplateInstantiationService:
         if not counterparty_user:
             return payment_obligations, service_obligations
 
-        amount_str = token_context.get(pattern.amount_token, "0") if pattern.amount_token else "0"
-        installments_str = token_context.get(pattern.installments_token, "1") if pattern.installments_token else "1"
-
+        rate_str = token_context.get(pattern.amount_token, "0") if pattern.amount_token else "0"
         try:
-            rate = Decimal(str(amount_str))
-            installments = max(1, int(installments_str))
+            rate = Decimal(str(rate_str))
         except (ValueError, TypeError) as exc:
-            raise TemplateInstantiationError(
-                f"Could not parse obligation amounts from tokens: {exc}"
-            )
+            raise TemplateInstantiationError(f"Could not parse rate from token '{pattern.amount_token}': {exc}")
 
-        total_amount = rate * installments
-
-        if pattern.interval_days_token and pattern.interval_days_token in token_context:
-            try:
-                interval_days = int(token_context[pattern.interval_days_token])
-            except (ValueError, TypeError):
-                interval_days = _FREQUENCY_INTERVAL_DEFAULTS.get(pattern.frequency_type, 7)
-        else:
-            interval_days = _FREQUENCY_INTERVAL_DEFAULTS.get(pattern.frequency_type, 7)
+        total_amount, installments, interval_days = self._resolve_schedule_params(
+            pattern, token_context, rate
+        )
 
         engine_obligations = ObligationScheduler.generate_parallel_schedule(
             obligor_id=initiator.pk,
@@ -246,3 +246,48 @@ class TemplateInstantiationService:
                     )
 
         return payment_obligations, service_obligations
+
+    def _resolve_schedule_params(self, pattern, token_context, rate):
+        """
+        Returns (total_amount, installments, interval_days) for the scheduler.
+
+        When payment_model_token is set, branches on its value:
+          single_session      → 1 session, 1 payment of rate
+          package_upfront     → num_sessions sessions, 1 payment of rate × num_sessions
+          package_installments → num_sessions sessions, N installments over installment_interval_days
+        Falls back to the generic token resolution when payment_model_token is not set.
+        """
+        payment_model = None
+        if pattern.payment_model_token:
+            payment_model = token_context.get(pattern.payment_model_token)
+
+        num_sessions = max(1, int(token_context.get("num_sessions", "1") or "1"))
+
+        if payment_model == "single_session":
+            return rate, 1, 1
+
+        if payment_model == "package_upfront":
+            session_interval = int(token_context.get("session_frequency_days", "7") or "7")
+            return rate * num_sessions, 1, session_interval
+
+        if payment_model == "package_installments":
+            installments_str = token_context.get(pattern.installments_token, "1") if pattern.installments_token else "1"
+            installments = max(1, int(installments_str or "1"))
+            interval_str = token_context.get(pattern.interval_days_token, "30") if pattern.interval_days_token else "30"
+            interval_days = int(interval_str or "30")
+            return rate * num_sessions, installments, interval_days
+
+        # Generic fallback (no payment_model_token on this template)
+        installments_str = token_context.get(pattern.installments_token, "1") if pattern.installments_token else "1"
+        installments = max(1, int(installments_str or "1"))
+        total_amount = rate * installments
+
+        if pattern.interval_days_token and pattern.interval_days_token in token_context:
+            try:
+                interval_days = int(token_context[pattern.interval_days_token])
+            except (ValueError, TypeError):
+                interval_days = _FREQUENCY_INTERVAL_DEFAULTS.get(pattern.frequency_type, 7)
+        else:
+            interval_days = _FREQUENCY_INTERVAL_DEFAULTS.get(pattern.frequency_type, 7)
+
+        return total_amount, installments, interval_days

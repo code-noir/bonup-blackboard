@@ -12,7 +12,7 @@ from .models import (
 class TemplateGuidedFieldInline(admin.TabularInline):
     model = TemplateGuidedField
     extra = 0
-    fields = ("order", "field_key", "label", "field_type", "choices", "is_required")
+    fields = ("order", "field_key", "label", "field_type", "choices", "is_required", "condition_field_key", "condition_value")
     ordering = ("order",)
 
 
@@ -38,6 +38,7 @@ class TemplateObligationPatternInline(admin.StackedInline):
     fields = (
         "obligation_type",
         "frequency_type",
+        "payment_model_token",
         "amount_token",
         "installments_token",
         "interval_days_token",

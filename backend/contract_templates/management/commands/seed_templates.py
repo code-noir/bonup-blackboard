@@ -23,7 +23,7 @@ PERSONAL_TRAINING_CLAUSES = [
             "to {{counterparty_name}} (\"Client\") under the following terms:\n\n"
             "Service Format: {{service_delivery}}\n"
             "Session Duration: {{session_duration_minutes}} minutes per session\n"
-            "Session Frequency: {{frequency_type}}\n"
+            "Payment Model: {{payment_model}}\n"
             "Total Sessions: {{num_sessions}} sessions\n"
             "Training Location: {{location}}\n\n"
             "Trainer shall design and supervise exercise programs appropriate to Client's fitness "
@@ -138,6 +138,8 @@ PERSONAL_TRAINING_GUIDED_FIELDS = [
         "choices": None,
         "is_required": True,
         "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
     },
     {
         "field_key": "session_duration_minutes",
@@ -146,14 +148,18 @@ PERSONAL_TRAINING_GUIDED_FIELDS = [
         "choices": None,
         "is_required": True,
         "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
     },
     {
-        "field_key": "frequency_type",
-        "label": "Session Frequency",
+        "field_key": "payment_model",
+        "label": "Payment Model",
         "field_type": "choice",
-        "choices": ["Weekly", "Twice Weekly", "Three Times Per Week", "Monthly"],
+        "choices": ["single_session", "package_upfront", "package_installments"],
         "is_required": True,
         "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
     },
     {
         "field_key": "num_sessions",
@@ -162,6 +168,8 @@ PERSONAL_TRAINING_GUIDED_FIELDS = [
         "choices": None,
         "is_required": True,
         "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
     },
     {
         "field_key": "rate_per_session",
@@ -170,14 +178,8 @@ PERSONAL_TRAINING_GUIDED_FIELDS = [
         "choices": None,
         "is_required": True,
         "order": 5,
-    },
-    {
-        "field_key": "payment_timing",
-        "label": "Payment Timing",
-        "field_type": "choice",
-        "choices": ["Upfront (full package)", "Per session", "Monthly"],
-        "is_required": True,
-        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
     },
     {
         "field_key": "location",
@@ -185,7 +187,9 @@ PERSONAL_TRAINING_GUIDED_FIELDS = [
         "field_type": "text",
         "choices": None,
         "is_required": True,
-        "order": 7,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
     },
     {
         "field_key": "session_frequency_days",
@@ -193,7 +197,9 @@ PERSONAL_TRAINING_GUIDED_FIELDS = [
         "field_type": "number",
         "choices": None,
         "is_required": True,
-        "order": 8,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
     },
     {
         "field_key": "cancellation_window_hours",
@@ -201,15 +207,41 @@ PERSONAL_TRAINING_GUIDED_FIELDS = [
         "field_type": "number",
         "choices": None,
         "is_required": False,
-        "order": 9,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
     },
+    # --- Conditional: only required when payment_model == package_installments ---
+    {
+        "field_key": "num_installments",
+        "label": "Number of Installments",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 9,
+        "condition_field_key": "payment_model",
+        "condition_value": "package_installments",
+    },
+    {
+        "field_key": "installment_interval_days",
+        "label": "Installment Interval",
+        "field_type": "choice",
+        "choices": ["7", "30"],
+        "is_required": True,
+        "order": 10,
+        "condition_field_key": "payment_model",
+        "condition_value": "package_installments",
+    },
+    # --- Optional for all models ---
     {
         "field_key": "package_expiry_days",
         "label": "Package Expiry (days from start)",
         "field_type": "number",
         "choices": None,
         "is_required": False,
-        "order": 10,
+        "order": 11,
+        "condition_field_key": "",
+        "condition_value": "",
     },
     {
         "field_key": "termination_notice_days",
@@ -217,7 +249,9 @@ PERSONAL_TRAINING_GUIDED_FIELDS = [
         "field_type": "number",
         "choices": None,
         "is_required": False,
-        "order": 11,
+        "order": 12,
+        "condition_field_key": "",
+        "condition_value": "",
     },
 ]
 
@@ -272,9 +306,10 @@ class Command(BaseCommand):
             template=template,
             obligation_type="both",
             frequency_type="per_session",
+            payment_model_token="payment_model",
             amount_token="rate_per_session",
-            installments_token="num_sessions",
-            interval_days_token="session_frequency_days",
+            installments_token="num_installments",
+            interval_days_token="installment_interval_days",
         )
 
         self.stdout.write(

@@ -251,15 +251,26 @@ class TemplateInstantiationService:
         """
         Returns (total_amount, installments, interval_days) for the scheduler.
 
-        When payment_model_token is set, branches on its value:
-          single_session      → 1 session, 1 payment of rate
-          package_upfront     → num_sessions sessions, 1 payment of rate × num_sessions
-          package_installments → num_sessions sessions, N installments over installment_interval_days
-        Falls back to the generic token resolution when payment_model_token is not set.
+        Per-session / package templates (health, education):
+          single_session       → rate × 1
+          package_upfront      → rate × num_sessions, 1 payment
+          package_installments → rate × num_sessions, N installments
+
+        Fixed-total templates (creative services):
+          full_upfront         → rate as total, 1 payment   (rate IS the total fee)
+          deposit_balance      → rate as total, 1 payment
+          milestone            → rate as total, 1 payment
+          installments         → rate as total, N installments
+          per_session          → rate × num_sessions, N payments at session interval
+          per_episode          → rate × num_episodes, N payments
+
+        Falls back to generic token resolution when payment_model_token is not set.
         """
         payment_model = None
         if pattern.payment_model_token:
             payment_model = token_context.get(pattern.payment_model_token)
+
+        # -- Per-session / package models --
 
         num_sessions = max(1, int(token_context.get("num_sessions", "1") or "1"))
 
@@ -276,6 +287,26 @@ class TemplateInstantiationService:
             interval_str = token_context.get(pattern.interval_days_token, "30") if pattern.interval_days_token else "30"
             interval_days = int(interval_str or "30")
             return rate * num_sessions, installments, interval_days
+
+        # -- Fixed-total models (rate IS the total fee, not a per-unit rate) --
+
+        if payment_model in ("full_upfront", "deposit_balance", "milestone"):
+            return rate, 1, 1
+
+        if payment_model == "installments":
+            installments_str = token_context.get(pattern.installments_token, "1") if pattern.installments_token else "1"
+            installments = max(1, int(installments_str or "1"))
+            interval_str = token_context.get(pattern.interval_days_token, "30") if pattern.interval_days_token else "30"
+            interval_days = int(interval_str or "30")
+            return rate, installments, interval_days
+
+        if payment_model == "per_session":
+            session_interval = int(token_context.get("session_frequency_days", "7") or "7")
+            return rate * num_sessions, num_sessions, session_interval
+
+        if payment_model == "per_episode":
+            num_episodes = max(1, int(token_context.get("num_episodes", "1") or "1"))
+            return rate * num_episodes, num_episodes, 7
 
         # Generic fallback (no payment_model_token on this template)
         installments_str = token_context.get(pattern.installments_token, "1") if pattern.installments_token else "1"

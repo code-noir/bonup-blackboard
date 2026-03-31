@@ -2382,6 +2382,1587 @@ CONTENT_COLLABORATION_CLAUSES = [
 ]
 
 
+# ===========================================================================
+# TECHNOLOGY SERVICES — WEB DEVELOPMENT
+# ===========================================================================
+
+WEB_DEVELOPMENT_GUIDED_FIELDS = [
+    {
+        "field_key": "project_type",
+        "label": "Project Type",
+        "field_type": "choice",
+        "choices": ["Website", "Web Application", "E-Commerce", "Landing Page"],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "total_fee",
+        "label": "Total Project Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["full_upfront", "milestone", "installments"],
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "num_installments",
+        "label": "Number of Installments",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "payment_model",
+        "condition_value": "installments",
+    },
+    {
+        "field_key": "installment_interval_days",
+        "label": "Installment Interval",
+        "field_type": "choice",
+        "choices": ["7", "30"],
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "payment_model",
+        "condition_value": "installments",
+    },
+    {
+        "field_key": "delivery_days",
+        "label": "Delivery Timeline (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "revision_rounds",
+        "label": "Included Revision Rounds",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "ip_ownership",
+        "label": "Intellectual Property Ownership",
+        "field_type": "choice",
+        "choices": ["Client Owns Full Rights", "Developer Retains Portfolio Rights", "Shared"],
+        "is_required": True,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "source_code_delivery",
+        "label": "Source Code Delivery",
+        "field_type": "choice",
+        "choices": ["Yes", "No"],
+        "is_required": True,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "bug_warranty_days",
+        "label": "Bug Warranty Period (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 10,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "hosting_included",
+        "label": "Hosting Included",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": False,
+        "order": 11,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "cancellation_window_days",
+        "label": "Cancellation Window (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 12,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+WEB_DEVELOPMENT_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Developer\") agrees to design and develop a {{project_type}} "
+            "for {{counterparty_name}} (\"Client\") under the following terms:\n\n"
+            "Project Type: {{project_type}}\n"
+            "Delivery Timeline: {{delivery_days}} days from the agreement start date\n\n"
+            "Developer shall deliver the completed project in accordance with any written "
+            "requirements, wireframes, or design specifications agreed upon by the parties prior "
+            "to or concurrent with the execution of this agreement. Any scope changes requested "
+            "after agreement execution must be submitted in writing and may result in revised "
+            "fees and timelines."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Intellectual Property and Ownership",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "INTELLECTUAL PROPERTY AND OWNERSHIP\n\n"
+            "IP Ownership: {{ip_ownership}}\n\n"
+            "Upon receipt of full payment, intellectual property rights in the completed "
+            "deliverables are governed by the IP Ownership selection above:\n\n"
+            "\"Client Owns Full Rights\" — All copyrights, source code, design assets, and "
+            "derivative rights transfer exclusively to Client upon full payment. Developer "
+            "retains no rights to reuse or redistribute the deliverables.\n\n"
+            "\"Developer Retains Portfolio Rights\" — Client receives a perpetual, exclusive "
+            "license to use the deliverables for their intended purpose. Developer may display "
+            "the project in their portfolio with Client's prior written consent.\n\n"
+            "\"Shared\" — Both parties retain joint ownership of the deliverables and may each "
+            "use them without accounting to the other, unless otherwise specified in writing.\n\n"
+            "IP rights transfer only after full payment has been received. Developer retains "
+            "all rights until payment is complete."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Source Code Delivery",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SOURCE CODE DELIVERY\n\n"
+            "Source Code Delivery: {{source_code_delivery}}\n\n"
+            "If \"Yes\": Developer shall deliver all source files, code repositories, and build "
+            "assets to Client upon completion and full payment, via an agreed version control "
+            "repository or file transfer method within 5 business days of final payment.\n\n"
+            "If \"No\": Developer will deliver the compiled or deployed project only. Source "
+            "code, build files, and development assets remain Developer's property and will "
+            "not be transferred."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Bug Warranty",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "BUG WARRANTY\n\n"
+            "Warranty Period: {{bug_warranty_days}} days from project delivery\n\n"
+            "Developer warrants that the delivered project will function materially as specified "
+            "for {{bug_warranty_days}} days following delivery. During this period, Developer "
+            "shall fix reproducible bugs arising from Developer's original work at no additional "
+            "charge to Client.\n\n"
+            "This warranty does not cover: modifications made by Client or third parties after "
+            "delivery; incompatibilities caused by Client's hosting environment or third-party "
+            "services; feature additions requested after delivery; or browser/device "
+            "compatibility issues not specified in the original requirements.\n\n"
+            "After the warranty period, bug fixes and support are available at Developer's "
+            "then-current hourly rate."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Revision Policy",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "REVISION POLICY\n\n"
+            "Included Revision Rounds: {{revision_rounds}}\n\n"
+            "This agreement includes {{revision_rounds}} round(s) of revisions. A revision "
+            "round is a consolidated set of feedback submitted in writing by Client. Developer "
+            "will action all items within a round before the next commences. Requests that "
+            "constitute new scope items will be quoted separately. Additional rounds beyond "
+            "the included number are available at Developer's current hourly rate."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Independent Contractor Status",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "INDEPENDENT CONTRACTOR STATUS\n\n"
+            "Developer is an independent contractor and not an employee, agent, partner, or "
+            "joint venturer of Client. Developer retains sole control over the manner and "
+            "means by which services are performed, subject to agreed deliverables and "
+            "timelines. Developer is solely responsible for all taxes, withholding, insurance, "
+            "and benefits. Developer may engage subcontractors, provided Developer remains "
+            "responsible for the quality and timely delivery of all deliverables."
+        ),
+    },
+    {
+        "clause_type": "confidentiality",
+        "title": "Confidentiality",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CONFIDENTIALITY\n\n"
+            "Each party may receive confidential or proprietary information from the other "
+            "including business strategies, technical specifications, customer data, financial "
+            "information, and system credentials (\"Confidential Information\"). Each Receiving "
+            "Party shall: (i) hold all Confidential Information in strict confidence; (ii) not "
+            "disclose it to third parties without prior written consent; and (iii) use it "
+            "solely to perform obligations under this agreement.\n\n"
+            "Client data and credentials provided to Developer shall be used solely for project "
+            "delivery and will not be retained or accessed after project completion."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Total Project Fee: ${{total_fee}}\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"full_upfront\" — Full payment of ${{total_fee}} is due before work commences.\n\n"
+            "\"milestone\" — Payment is tied to agreed project milestones. Developer will "
+            "invoice at each milestone completion; invoices are due within 7 days. Developer "
+            "may pause work if a milestone invoice remains unpaid for more than 14 days.\n\n"
+            "\"installments\" — Payment is divided into equal installments per the agreed "
+            "schedule. Each installment is due on the agreed date.\n\n"
+            "Late payments may incur a fee of 5% per month on the outstanding balance. "
+            "Developer reserves the right to withhold delivery until all outstanding amounts "
+            "are paid in full."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation and Kill Fee",
+        "order": 9,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION AND KILL FEE\n\n"
+            "Either party may cancel this agreement with {{cancellation_window_days}} days "
+            "written notice.\n\n"
+            "If Client cancels after work has commenced, Client shall pay for all work "
+            "completed to the cancellation date at a pro-rata rate, subject to a minimum "
+            "kill fee of 25% of the total project fee.\n\n"
+            "If Developer cancels without cause after work has commenced, Developer shall "
+            "refund prepaid amounts less reasonable compensation for work completed to date.\n\n"
+            "All completed work product remains Developer's property until the kill fee and "
+            "all outstanding amounts have been paid in full."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 10,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate this agreement immediately upon written notice if the "
+            "other party materially breaches any term and fails to cure within 7 days of "
+            "written notice of the breach.\n\n"
+            "Upon termination by Client for cause: Developer shall refund prepaid amounts "
+            "less compensation for work completed to the termination date.\n\n"
+            "Upon termination by Developer for cause (including non-payment): Developer may "
+            "retain all payments received and suspend all deliverables until outstanding "
+            "amounts are paid.\n\n"
+            "Confidentiality and IP clauses survive termination."
+        ),
+    },
+]
+
+
+# ===========================================================================
+# TECHNOLOGY SERVICES — MOBILE APP DEVELOPMENT
+# ===========================================================================
+
+MOBILE_DEVELOPMENT_GUIDED_FIELDS = [
+    {
+        "field_key": "platform",
+        "label": "Target Platform",
+        "field_type": "choice",
+        "choices": ["iOS", "Android", "Both"],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "total_fee",
+        "label": "Total Project Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["full_upfront", "milestone", "installments"],
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "num_installments",
+        "label": "Number of Installments",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "payment_model",
+        "condition_value": "installments",
+    },
+    {
+        "field_key": "installment_interval_days",
+        "label": "Installment Interval",
+        "field_type": "choice",
+        "choices": ["7", "30"],
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "payment_model",
+        "condition_value": "installments",
+    },
+    {
+        "field_key": "delivery_days",
+        "label": "Delivery Timeline (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "revision_rounds",
+        "label": "Included Revision Rounds",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "ip_ownership",
+        "label": "Intellectual Property Ownership",
+        "field_type": "choice",
+        "choices": ["Client Owns Full Rights", "Developer Retains Portfolio Rights"],
+        "is_required": True,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "source_code_delivery",
+        "label": "Source Code Delivery",
+        "field_type": "choice",
+        "choices": ["Yes", "No"],
+        "is_required": True,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "bug_warranty_days",
+        "label": "Bug Warranty Period (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 10,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "app_store_submission_included",
+        "label": "App Store Submission Included",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": False,
+        "order": 11,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "cancellation_window_days",
+        "label": "Cancellation Window (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 12,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+MOBILE_DEVELOPMENT_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Developer\") agrees to design and develop a mobile application "
+            "for {{counterparty_name}} (\"Client\") under the following terms:\n\n"
+            "Target Platform: {{platform}}\n"
+            "Delivery Timeline: {{delivery_days}} days from the agreement start date\n\n"
+            "Developer shall deliver the mobile application in accordance with any written "
+            "requirements, wireframes, and design specifications agreed upon by the parties. "
+            "If \"Both\" platforms are selected, Developer shall deliver functionally equivalent "
+            "applications for iOS and Android. Scope changes after execution must be submitted "
+            "in writing and may result in revised fees and timelines."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Intellectual Property and Ownership",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "INTELLECTUAL PROPERTY AND OWNERSHIP\n\n"
+            "IP Ownership: {{ip_ownership}}\n\n"
+            "Upon receipt of full payment, IP rights in the delivered application are governed "
+            "by the selection above:\n\n"
+            "\"Client Owns Full Rights\" — All copyrights, source code, design assets, and "
+            "derivative rights transfer exclusively to Client upon full payment.\n\n"
+            "\"Developer Retains Portfolio Rights\" — Client receives a perpetual, exclusive "
+            "license to use the application for its intended purpose. Developer may display "
+            "the project in their portfolio with Client's prior written consent.\n\n"
+            "IP rights transfer only after full payment has been received."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Source Code Delivery",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SOURCE CODE DELIVERY\n\n"
+            "Source Code Delivery: {{source_code_delivery}}\n\n"
+            "If \"Yes\": Developer shall deliver all source files, code repositories, and build "
+            "assets upon completion and full payment, within 5 business days of final payment.\n\n"
+            "If \"No\": Developer will deliver the compiled application binary only. Source "
+            "code, build files, and development assets remain Developer's property."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "App Store Submission",
+        "order": 4,
+        "is_required": False,
+        "is_conditional": True,
+        "condition_description": "Applies when app_store_submission_included is true",
+        "body": (
+            "APP STORE SUBMISSION\n\n"
+            "App Store Submission Included: {{app_store_submission_included}}\n\n"
+            "If included, Developer will prepare and submit the completed application to the "
+            "Apple App Store and/or Google Play Store as applicable. Client is responsible for "
+            "maintaining active developer accounts on relevant platforms and granting Developer "
+            "necessary access.\n\n"
+            "Developer is not responsible for delays caused by app store review processes or "
+            "rejections due to platform policy violations outside Developer's control. "
+            "Resubmission required due to Developer's implementation errors will be addressed "
+            "at no additional charge."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Bug Warranty",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "BUG WARRANTY\n\n"
+            "Warranty Period: {{bug_warranty_days}} days from project delivery\n\n"
+            "Developer warrants that the delivered application will function materially as "
+            "specified for {{bug_warranty_days}} days following delivery. Developer shall fix "
+            "reproducible bugs arising from Developer's original work at no additional charge.\n\n"
+            "This warranty does not cover: modifications made by Client or third parties after "
+            "delivery; issues caused by OS updates or platform policy changes after delivery; "
+            "feature additions requested after delivery; or device/OS combinations not "
+            "specified in the original requirements."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Revision Policy",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "REVISION POLICY\n\n"
+            "Included Revision Rounds: {{revision_rounds}}\n\n"
+            "This agreement includes {{revision_rounds}} round(s) of revisions. A revision "
+            "round is a consolidated set of feedback submitted in writing by Client. Developer "
+            "will action all items within a round before the next commences. Additional rounds "
+            "are available at Developer's current hourly rate."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Independent Contractor Status",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "INDEPENDENT CONTRACTOR STATUS\n\n"
+            "Developer is an independent contractor and not an employee, agent, or joint "
+            "venturer of Client. Developer retains control over the manner and means of "
+            "performing services, subject to agreed deliverables and timelines. Developer is "
+            "solely responsible for all taxes, insurance, and benefits. Developer may engage "
+            "subcontractors provided Developer remains responsible for all deliverables."
+        ),
+    },
+    {
+        "clause_type": "confidentiality",
+        "title": "Confidentiality",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CONFIDENTIALITY\n\n"
+            "Each party may receive confidential information including business strategies, "
+            "technical specifications, customer data, financial information, and system "
+            "credentials (\"Confidential Information\"). Each Receiving Party shall hold all "
+            "Confidential Information in strict confidence, not disclose it to third parties "
+            "without prior written consent, and use it solely to perform obligations under "
+            "this agreement. Client data and credentials provided to Developer shall be used "
+            "solely for project delivery and not retained after project completion."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 9,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Total Project Fee: ${{total_fee}}\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"full_upfront\" — Full payment of ${{total_fee}} is due before work commences.\n\n"
+            "\"milestone\" — Payment is tied to agreed milestones. Invoices are due within "
+            "7 days of each milestone completion. Developer may pause work if an invoice "
+            "remains unpaid for more than 14 days.\n\n"
+            "\"installments\" — Payment is divided per the agreed installment schedule.\n\n"
+            "Developer reserves the right to withhold delivery until all outstanding amounts "
+            "are paid. Late payments may incur a fee of 5% per month on the outstanding balance."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation and Kill Fee",
+        "order": 10,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION AND KILL FEE\n\n"
+            "Either party may cancel this agreement with {{cancellation_window_days}} days "
+            "written notice.\n\n"
+            "If Client cancels after work has commenced, Client shall pay for all work "
+            "completed to the cancellation date at a pro-rata rate, subject to a minimum "
+            "kill fee of 25% of the total project fee. All completed work product remains "
+            "Developer's property until all outstanding amounts have been paid."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 11,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate this agreement immediately for material breach if "
+            "the breaching party fails to cure within 7 days of written notice.\n\n"
+            "Upon termination by Client for cause, Developer shall refund prepaid amounts "
+            "less compensation for completed work. Upon termination by Developer for cause "
+            "(including non-payment), Developer may retain all payments received and withhold "
+            "deliverables until outstanding amounts are paid.\n\n"
+            "Confidentiality and IP clauses survive termination."
+        ),
+    },
+]
+
+
+# ===========================================================================
+# TECHNOLOGY SERVICES — IT SUPPORT AND MAINTENANCE
+# ===========================================================================
+
+IT_SUPPORT_GUIDED_FIELDS = [
+    {
+        "field_key": "support_type",
+        "label": "Support Type",
+        "field_type": "choice",
+        "choices": ["Remote Only", "On-Site", "Both"],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "response_time_hours",
+        "label": "Response Time Guarantee (hours)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "monthly_fee",
+        "label": "Monthly Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["monthly", "installments"],
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "num_months",
+        "label": "Contract Duration (months)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "cancellation_notice_days",
+        "label": "Cancellation Notice Period (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "equipment_covered",
+        "label": "Client Equipment Covered",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": False,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+IT_SUPPORT_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Provider\") agrees to provide IT support and maintenance "
+            "services to {{counterparty_name}} (\"Client\") under the following terms:\n\n"
+            "Support Type: {{support_type}}\n"
+            "Response Time Guarantee: {{response_time_hours}} hours\n\n"
+            "Services include general technical support, software troubleshooting, system "
+            "maintenance, security updates, and network monitoring as applicable to the "
+            "Support Type selected. Services are limited to systems and infrastructure "
+            "specified at agreement commencement. Coverage of additional systems requires "
+            "a written amendment."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Response Time Guarantee",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "RESPONSE TIME GUARANTEE\n\n"
+            "Provider shall acknowledge all support requests within {{response_time_hours}} "
+            "hours of receipt during normal business hours (Monday–Friday, 9:00 AM–6:00 PM "
+            "local time). Response time means initial acknowledgment and triage, not "
+            "resolution.\n\n"
+            "For critical issues causing complete system outages, Provider shall use "
+            "commercially reasonable efforts to respond outside normal business hours. "
+            "Provider's response time obligation is contingent on Client providing timely "
+            "access to affected systems and accurate issue descriptions.\n\n"
+            "Provider is not liable for delays caused by third-party outages, force majeure "
+            "events, or Client's failure to cooperate."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Independent Contractor Status",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "INDEPENDENT CONTRACTOR STATUS\n\n"
+            "Provider is an independent contractor and not an employee, agent, or joint "
+            "venturer of Client. Provider retains control over the manner and means of "
+            "delivering support services, subject to agreed service levels. Provider is "
+            "solely responsible for all taxes, insurance, and employment obligations "
+            "associated with Provider's personnel."
+        ),
+    },
+    {
+        "clause_type": "confidentiality",
+        "title": "Confidentiality",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CONFIDENTIALITY\n\n"
+            "Provider shall treat all Client data, credentials, system configurations, and "
+            "business information accessed during service delivery as strictly confidential. "
+            "Provider shall not disclose such information to any third party without Client's "
+            "prior written consent, except as required by law.\n\n"
+            "All credentials and system access granted to Provider shall be limited to what "
+            "is necessary to perform the agreed services and shall be returned or destroyed "
+            "upon termination."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Monthly Fee: ${{monthly_fee}}\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"monthly\" — Invoices are issued on the first day of each service month and "
+            "are due within 7 days. Provider may suspend services if payment is more than "
+            "14 days past due.\n\n"
+            "\"installments\" — Payment is divided per the agreed installment schedule.\n\n"
+            "Late payments may incur a fee of 5% per month on the outstanding balance. "
+            "Provider reserves the right to suspend services for non-payment without "
+            "liability for resulting downtime."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "Either party may cancel this agreement with {{cancellation_notice_days}} days "
+            "written notice.\n\n"
+            "Fees accrued to the effective cancellation date are payable in full. Prepaid "
+            "fees for periods after cancellation will be refunded on a pro-rata basis. "
+            "Cancellation does not relieve Client of outstanding payment obligations.\n\n"
+            "Upon cancellation, Provider shall cease access to Client systems, return or "
+            "destroy all Client credentials and data, and assist with reasonable transition "
+            "activities for up to 5 business days at Provider's then-current hourly rate."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate this agreement immediately for material breach if "
+            "the breaching party fails to cure within 7 days of written notice.\n\n"
+            "Upon termination, Provider shall promptly cease all access to Client systems, "
+            "return all Client data and credentials, and provide reasonable transition "
+            "assistance. Client shall pay all fees accrued through the termination date.\n\n"
+            "Confidentiality obligations survive termination."
+        ),
+    },
+]
+
+
+# ===========================================================================
+# TECHNOLOGY SERVICES — SOFTWARE CONSULTING
+# ===========================================================================
+
+SOFTWARE_CONSULTING_GUIDED_FIELDS = [
+    {
+        "field_key": "consulting_type",
+        "label": "Consulting Type",
+        "field_type": "choice",
+        "choices": ["Architecture Review", "Technical Advisory", "Code Review", "CTO Services"],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "engagement_type",
+        "label": "Engagement Type",
+        "field_type": "choice",
+        "choices": ["One-Time", "Retainer"],
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "total_fee",
+        "label": "Total Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["full_upfront", "hourly", "monthly", "installments"],
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "num_installments",
+        "label": "Number of Installments",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "payment_model",
+        "condition_value": "installments",
+    },
+    {
+        "field_key": "installment_interval_days",
+        "label": "Installment Interval",
+        "field_type": "choice",
+        "choices": ["7", "30"],
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "payment_model",
+        "condition_value": "installments",
+    },
+    {
+        "field_key": "delivery_days",
+        "label": "Engagement Duration (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "cancellation_notice_days",
+        "label": "Cancellation Notice Period (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+SOFTWARE_CONSULTING_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Consultant\") agrees to provide software consulting services "
+            "to {{counterparty_name}} (\"Client\") under the following terms:\n\n"
+            "Consulting Type: {{consulting_type}}\n"
+            "Engagement Type: {{engagement_type}}\n\n"
+            "Consultant shall provide expert technical guidance, recommendations, and advisory "
+            "services in the agreed consulting area. Deliverables may include written reports, "
+            "architecture diagrams, code review findings, or advisory sessions as appropriate "
+            "to the selected consulting type. Scope changes must be agreed in writing."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Independent Contractor Status",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "INDEPENDENT CONTRACTOR STATUS\n\n"
+            "Consultant is an independent contractor and not an employee, agent, or joint "
+            "venturer of Client. Consultant retains control over the manner and means of "
+            "performing consulting services. Consultant is solely responsible for all taxes, "
+            "insurance, and benefits. Client shall not withhold payroll taxes from payments "
+            "under this agreement."
+        ),
+    },
+    {
+        "clause_type": "confidentiality",
+        "title": "Confidentiality and NDA",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CONFIDENTIALITY AND NDA\n\n"
+            "Consultant shall treat all Client information disclosed during this engagement — "
+            "including technical architecture, source code, product roadmaps, business "
+            "strategies, customer data, and financial information — as strictly confidential "
+            "(\"Confidential Information\").\n\n"
+            "Consultant shall: (i) not disclose Confidential Information to any third party "
+            "without Client's prior written consent; (ii) use Confidential Information solely "
+            "to perform obligations under this agreement; and (iii) protect it with at least "
+            "reasonable care.\n\n"
+            "These obligations survive termination for 3 years."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Non-Solicitation",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "NON-SOLICITATION\n\n"
+            "During this agreement and for 12 months following termination, Client shall not "
+            "directly or indirectly solicit, recruit, or hire any employee, contractor, or "
+            "subcontractor of Consultant who was involved in performing services hereunder, "
+            "without Consultant's prior written consent.\n\n"
+            "Similarly, Consultant shall not solicit Client's employees or contractors to "
+            "leave Client's employment during the same period.\n\n"
+            "A breach of this clause entitles the non-breaching party to seek injunctive "
+            "relief and liquidated damages equal to six months of the solicited person's "
+            "most recent annual compensation."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Total Fee: ${{total_fee}}\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"full_upfront\" — Full payment is due before the engagement commences.\n\n"
+            "\"hourly\" — Consultant will invoice Client weekly based on hours worked. "
+            "Invoices are due within 7 days of issuance.\n\n"
+            "\"monthly\" — Consultant will invoice Client at the start of each month. "
+            "Invoices are due within 7 days of issuance.\n\n"
+            "\"installments\" — Payment is divided per the agreed installment schedule.\n\n"
+            "Late payments may incur a fee of 5% per month on the outstanding balance. "
+            "Consultant may suspend services for payments more than 14 days overdue."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "Either party may cancel this agreement with {{cancellation_notice_days}} days "
+            "written notice.\n\n"
+            "Upon cancellation, Client shall pay for all work completed and expenses incurred "
+            "to the cancellation date. For retainer engagements, the current month's retainer "
+            "fee is non-refundable. Consultant shall deliver all work product completed to "
+            "the cancellation date within 5 business days."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate this agreement immediately for material breach if "
+            "the breaching party fails to cure within 7 days of written notice.\n\n"
+            "Upon termination, Consultant shall deliver all completed work product and "
+            "Client shall pay all fees accrued through the termination date. Confidentiality, "
+            "non-solicitation, and IP clauses survive termination."
+        ),
+    },
+]
+
+
+# ===========================================================================
+# TECHNOLOGY SERVICES — CYBERSECURITY
+# ===========================================================================
+
+CYBERSECURITY_GUIDED_FIELDS = [
+    {
+        "field_key": "service_type",
+        "label": "Service Type",
+        "field_type": "choice",
+        "choices": [
+            "Security Audit",
+            "Penetration Testing",
+            "Vulnerability Assessment",
+            "Ongoing Monitoring",
+        ],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "total_fee",
+        "label": "Total Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["full_upfront", "milestone", "monthly"],
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "delivery_days",
+        "label": "Delivery Timeline (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "report_included",
+        "label": "Findings Report Included",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "confidentiality_level",
+        "label": "Confidentiality Level",
+        "field_type": "choice",
+        "choices": ["Standard", "Enhanced NDA"],
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "cancellation_notice_days",
+        "label": "Cancellation Notice Period (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+CYBERSECURITY_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Consultant\") agrees to provide cybersecurity services "
+            "to {{counterparty_name}} (\"Client\") under the following terms:\n\n"
+            "Service Type: {{service_type}}\n"
+            "Delivery Timeline: {{delivery_days}} days from the agreement start date\n\n"
+            "Services are limited to the systems, networks, and applications explicitly "
+            "identified by Client at the time of engagement. Testing or access beyond the "
+            "agreed scope requires prior written authorization. Consultant shall document "
+            "all systems accessed and activities performed throughout the engagement."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Authorization",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "AUTHORIZATION\n\n"
+            "Client hereby explicitly authorizes Consultant to perform the agreed "
+            "cybersecurity services — including security testing, vulnerability scanning, "
+            "penetration testing, and network analysis — on the systems and infrastructure "
+            "specified in the engagement scope.\n\n"
+            "Client represents and warrants that: (i) Client owns or has lawful authority "
+            "to authorize security testing on all in-scope systems; (ii) Client has obtained "
+            "all necessary approvals from hosting providers, cloud platforms, and third-party "
+            "service operators whose systems may be accessed; and (iii) Client accepts "
+            "responsibility for any service disruption arising from authorized testing.\n\n"
+            "This authorization is specific to the agreed scope and duration. Any expansion "
+            "requires separate written authorization from Client."
+        ),
+    },
+    {
+        "clause_type": "confidentiality",
+        "title": "Confidentiality and NDA",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CONFIDENTIALITY AND NDA\n\n"
+            "Confidentiality Level: {{confidentiality_level}}\n\n"
+            "All findings, vulnerability details, system information, credentials, and "
+            "security weaknesses discovered during this engagement are strictly confidential. "
+            "Consultant shall: not disclose findings to any third party without Client's "
+            "prior written consent; store all findings and client data in encrypted form; "
+            "destroy or return all Client credentials and sensitive data upon completion; "
+            "and not use findings to access Client systems after the engagement.\n\n"
+            "If \"Enhanced NDA\" is selected, Consultant shall execute a separate "
+            "non-disclosure agreement incorporating Client's standard NDA terms before "
+            "commencing work.\n\n"
+            "These obligations survive termination indefinitely with respect to all "
+            "security findings and system information."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Report Delivery",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "REPORT DELIVERY\n\n"
+            "Findings Report Included: {{report_included}}\n\n"
+            "If a findings report is included, Consultant shall deliver a written report "
+            "documenting all vulnerabilities identified, their severity classification "
+            "(Critical / High / Medium / Low / Informational), evidence of findings, and "
+            "recommended remediation steps, within the agreed timeline following testing.\n\n"
+            "The report is classified as Confidential Information and is for Client's "
+            "internal use only. Client shall not distribute it to third parties without "
+            "Consultant's prior written consent."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Limitation of Liability",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "LIMITATION OF LIABILITY\n\n"
+            "Consultant's liability under this agreement is limited to the total fees paid "
+            "by Client for the engagement in which the liability arises.\n\n"
+            "Consultant shall not be liable for: vulnerabilities existing prior to this "
+            "engagement; breaches caused by third parties after findings are reported; "
+            "service disruptions from authorized testing within scope; indirect or "
+            "consequential damages arising from findings or recommendations; or Client's "
+            "failure to implement recommended remediation steps.\n\n"
+            "Client acknowledges that no security assessment is exhaustive and that "
+            "Consultant's findings represent a point-in-time evaluation."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Independent Contractor Status",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "INDEPENDENT CONTRACTOR STATUS\n\n"
+            "Consultant is an independent contractor and not an employee, agent, or joint "
+            "venturer of Client. Consultant retains control over the methods and processes "
+            "used to perform cybersecurity services, subject to the agreed scope. Consultant "
+            "is solely responsible for all taxes, insurance, and employment obligations "
+            "associated with Consultant's personnel."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Total Fee: ${{total_fee}}\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"full_upfront\" — Full payment is due before work commences.\n\n"
+            "\"milestone\" — Payment is tied to agreed engagement milestones. Invoices are "
+            "due within 7 days of each milestone completion.\n\n"
+            "\"monthly\" — Invoices are issued at the start of each service month and are "
+            "due within 7 days. Consultant may suspend services for non-payment.\n\n"
+            "Late payments may incur a fee of 5% per month on the outstanding balance."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate this agreement immediately for material breach if "
+            "the breaching party fails to cure within 7 days of written notice.\n\n"
+            "Upon termination, Consultant shall immediately cease all access to Client "
+            "systems and deliver a summary of work completed to date. Client shall pay "
+            "all fees accrued through the termination date.\n\n"
+            "Confidentiality and authorization obligations survive termination."
+        ),
+    },
+]
+
+
+# ===========================================================================
+# TECHNOLOGY SERVICES — DATA AND ANALYTICS
+# ===========================================================================
+
+DATA_ANALYTICS_GUIDED_FIELDS = [
+    {
+        "field_key": "service_type",
+        "label": "Service Type",
+        "field_type": "choice",
+        "choices": ["Data Analysis", "Dashboard Build", "Reporting", "Data Strategy"],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "total_fee",
+        "label": "Total Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["full_upfront", "milestone", "installments"],
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "num_installments",
+        "label": "Number of Installments",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "payment_model",
+        "condition_value": "installments",
+    },
+    {
+        "field_key": "installment_interval_days",
+        "label": "Installment Interval",
+        "field_type": "choice",
+        "choices": ["7", "30"],
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "payment_model",
+        "condition_value": "installments",
+    },
+    {
+        "field_key": "delivery_days",
+        "label": "Delivery Timeline (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "data_ownership",
+        "label": "Data Ownership",
+        "field_type": "choice",
+        "choices": ["Client Owns All Data", "Analyst May Use Anonymized Data"],
+        "is_required": True,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "revision_rounds",
+        "label": "Included Revision Rounds",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "cancellation_notice_days",
+        "label": "Cancellation Notice Period (days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+DATA_ANALYTICS_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Analyst\") agrees to provide data and analytics services "
+            "to {{counterparty_name}} (\"Client\") under the following terms:\n\n"
+            "Service Type: {{service_type}}\n"
+            "Delivery Timeline: {{delivery_days}} days from the agreement start date\n\n"
+            "Analyst shall perform the agreed analytics work using data provided by Client. "
+            "Deliverables may include analytical reports, interactive dashboards, data models, "
+            "or strategic recommendations appropriate to the selected service type. Scope "
+            "changes must be submitted in writing and may affect timelines and fees."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Data Ownership and Privacy",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "DATA OWNERSHIP AND PRIVACY\n\n"
+            "Data Ownership: {{data_ownership}}\n\n"
+            "All data provided by Client remains the sole property of Client at all times. "
+            "Analyst shall use Client data exclusively to deliver services under this "
+            "agreement and shall not share, sell, license, or transfer Client data to any "
+            "third party without prior written consent.\n\n"
+            "\"Client Owns All Data\" — Analyst shall not retain, copy, or use any Client "
+            "data or derived datasets after project completion. All data will be returned or "
+            "securely destroyed within 14 days of final delivery.\n\n"
+            "\"Analyst May Use Anonymized Data\" — Analyst may retain and use anonymized, "
+            "aggregated insights derived from Client data to improve models and methodologies, "
+            "provided no Client-identifiable information is retained or disclosed.\n\n"
+            "Analyst shall implement reasonable safeguards to protect Client data from "
+            "unauthorized access, loss, or disclosure."
+        ),
+    },
+    {
+        "clause_type": "confidentiality",
+        "title": "Confidentiality",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CONFIDENTIALITY\n\n"
+            "Analyst shall treat all Client data, business information, strategic plans, "
+            "financial records, and technical specifications accessed during this engagement "
+            "as strictly confidential. Analyst shall not disclose such information to any "
+            "third party without Client's prior written consent.\n\n"
+            "Analyst shall protect Confidential Information with at least reasonable care "
+            "and shall limit access to personnel who need it to deliver services. These "
+            "obligations survive termination."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Revision Policy",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "REVISION POLICY\n\n"
+            "Included Revision Rounds: {{revision_rounds}}\n\n"
+            "This agreement includes {{revision_rounds}} round(s) of revisions. A revision "
+            "round is a consolidated set of feedback submitted by Client in writing. Analyst "
+            "will action all items within a round before the next commences. Requests that "
+            "constitute new scope items will be quoted separately. Additional rounds are "
+            "available at Analyst's current hourly rate."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Independent Contractor Status",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "INDEPENDENT CONTRACTOR STATUS\n\n"
+            "Analyst is an independent contractor and not an employee, agent, or joint "
+            "venturer of Client. Analyst retains control over the analytical methods and "
+            "tools used to deliver services, subject to agreed deliverables and timelines. "
+            "Analyst is solely responsible for all taxes, insurance, and benefits."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Total Fee: ${{total_fee}}\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"full_upfront\" — Full payment is due before work commences.\n\n"
+            "\"milestone\" — Payment is tied to agreed project milestones. Invoices are due "
+            "within 7 days of each milestone completion.\n\n"
+            "\"installments\" — Payment is divided per the agreed installment schedule.\n\n"
+            "Late payments may incur a fee of 5% per month on the outstanding balance. "
+            "Analyst reserves the right to withhold final deliverables until all outstanding "
+            "amounts are paid."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "Either party may cancel this agreement with {{cancellation_notice_days}} days "
+            "written notice.\n\n"
+            "Upon cancellation, Client shall pay for all work completed to date at a pro-rata "
+            "rate. Analyst shall deliver all completed work product within 5 business days. "
+            "All Client data will be returned or destroyed within 14 days of cancellation."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate this agreement immediately for material breach if "
+            "the breaching party fails to cure within 7 days of written notice.\n\n"
+            "Upon termination, Analyst shall deliver all completed work product and destroy "
+            "or return all Client data. Client shall pay all fees accrued through the "
+            "termination date. Confidentiality and data ownership obligations survive "
+            "termination."
+        ),
+    },
+]
+
+
 class Command(BaseCommand):
     help = "Seed the database with initial ContractTemplate records."
 
@@ -2407,6 +3988,12 @@ class Command(BaseCommand):
         self._seed_recording_session(force)
         self._seed_dj_performance(force)
         self._seed_content_collaboration(force)
+        self._seed_web_development(force)
+        self._seed_mobile_development(force)
+        self._seed_it_support(force)
+        self._seed_software_consulting(force)
+        self._seed_cybersecurity(force)
+        self._seed_data_analytics(force)
 
     def _seed_personal_training(self, force):
         name = "Personal Training Agreement"
@@ -2914,6 +4501,208 @@ class Command(BaseCommand):
                 "frequency_type": "one_time",
                 "payment_model_token": "payment_model",
                 "amount_token": "rate",
+                "installments_token": "num_installments",
+                "interval_days_token": "installment_interval_days",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # TECHNOLOGY SERVICES — SHARED HELPER
+    # ------------------------------------------------------------------
+
+    def _create_technology_template(
+        self, force, name, subcategory, description, structure_type, fields, clauses, obligation_params
+    ):
+        if ContractTemplate.objects.filter(name=name).exists():
+            if not force:
+                self.stdout.write(self.style.WARNING(
+                    f'Template "{name}" already exists. Use --force to recreate.'
+                ))
+                return
+            ContractTemplate.objects.filter(name=name).delete()
+            self.stdout.write(self.style.WARNING(f'Deleted existing "{name}" for recreation.'))
+
+        template = ContractTemplate.objects.create(
+            category="technology_services",
+            subcategory=subcategory,
+            name=name,
+            description=description,
+            structure_type=structure_type,
+            is_active=True,
+            tier_required="free",
+        )
+        for f in fields:
+            TemplateGuidedField.objects.create(template=template, **f)
+        for c in clauses:
+            TemplateClause.objects.create(template=template, **c)
+        TemplateObligationPattern.objects.create(template=template, **obligation_params)
+        self.stdout.write(self.style.SUCCESS(
+            f'Seeded template "{name}" with {len(fields)} guided fields and {len(clauses)} clauses.'
+        ))
+
+    # ------------------------------------------------------------------
+    # TECHNOLOGY SERVICES — WEB DEVELOPMENT
+    # ------------------------------------------------------------------
+
+    def _seed_web_development(self, force):
+        self._create_technology_template(
+            force=force,
+            name="Web Development Agreement",
+            subcategory="web_development",
+            description=(
+                "A professional web development agreement covering websites, web applications, "
+                "e-commerce stores, and landing pages. Includes scope, IP ownership, source "
+                "code delivery, bug warranty, revision policy, payment terms, and cancellation "
+                "kill fee."
+            ),
+            structure_type="ONE_TIME",
+            fields=WEB_DEVELOPMENT_GUIDED_FIELDS,
+            clauses=WEB_DEVELOPMENT_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "one_time",
+                "payment_model_token": "payment_model",
+                "amount_token": "total_fee",
+                "installments_token": "num_installments",
+                "interval_days_token": "installment_interval_days",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # TECHNOLOGY SERVICES — MOBILE APP DEVELOPMENT
+    # ------------------------------------------------------------------
+
+    def _seed_mobile_development(self, force):
+        self._create_technology_template(
+            force=force,
+            name="Mobile App Development Agreement",
+            subcategory="mobile_development",
+            description=(
+                "A professional mobile application development agreement for iOS, Android, "
+                "or both platforms. Covers scope, IP ownership, source code delivery, app "
+                "store submission, bug warranty, revision policy, payment terms, and "
+                "cancellation kill fee."
+            ),
+            structure_type="ONE_TIME",
+            fields=MOBILE_DEVELOPMENT_GUIDED_FIELDS,
+            clauses=MOBILE_DEVELOPMENT_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "one_time",
+                "payment_model_token": "payment_model",
+                "amount_token": "total_fee",
+                "installments_token": "num_installments",
+                "interval_days_token": "installment_interval_days",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # TECHNOLOGY SERVICES — IT SUPPORT AND MAINTENANCE
+    # ------------------------------------------------------------------
+
+    def _seed_it_support(self, force):
+        self._create_technology_template(
+            force=force,
+            name="IT Support and Maintenance Agreement",
+            subcategory="it_support",
+            description=(
+                "An ongoing IT support and maintenance agreement covering remote, on-site, "
+                "or hybrid support. Includes response time guarantee, confidentiality, "
+                "payment terms, and cancellation policy. Suitable for small businesses and "
+                "growing teams."
+            ),
+            structure_type="ONGOING",
+            fields=IT_SUPPORT_GUIDED_FIELDS,
+            clauses=IT_SUPPORT_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "monthly",
+                "payment_model_token": "payment_model",
+                "amount_token": "monthly_fee",
+                "installments_token": "num_months",
+                "interval_days_token": "",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # TECHNOLOGY SERVICES — SOFTWARE CONSULTING
+    # ------------------------------------------------------------------
+
+    def _seed_software_consulting(self, force):
+        self._create_technology_template(
+            force=force,
+            name="Software Consulting Agreement",
+            subcategory="software_consulting",
+            description=(
+                "A software consulting agreement for architecture reviews, technical advisory, "
+                "code reviews, and fractional CTO engagements. Covers independent contractor "
+                "status, confidentiality and NDA, non-solicitation, payment terms, and "
+                "cancellation policy."
+            ),
+            structure_type="ONE_TIME",
+            fields=SOFTWARE_CONSULTING_GUIDED_FIELDS,
+            clauses=SOFTWARE_CONSULTING_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "one_time",
+                "payment_model_token": "payment_model",
+                "amount_token": "total_fee",
+                "installments_token": "num_installments",
+                "interval_days_token": "installment_interval_days",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # TECHNOLOGY SERVICES — CYBERSECURITY
+    # ------------------------------------------------------------------
+
+    def _seed_cybersecurity(self, force):
+        self._create_technology_template(
+            force=force,
+            name="Cybersecurity Services Agreement",
+            subcategory="cybersecurity",
+            description=(
+                "A cybersecurity services agreement for security audits, penetration testing, "
+                "vulnerability assessments, and ongoing monitoring. Includes explicit client "
+                "authorization, confidentiality and NDA, findings report delivery, limitation "
+                "of liability, and payment terms."
+            ),
+            structure_type="ONE_TIME",
+            fields=CYBERSECURITY_GUIDED_FIELDS,
+            clauses=CYBERSECURITY_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "one_time",
+                "payment_model_token": "payment_model",
+                "amount_token": "total_fee",
+                "installments_token": "",
+                "interval_days_token": "",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # TECHNOLOGY SERVICES — DATA AND ANALYTICS
+    # ------------------------------------------------------------------
+
+    def _seed_data_analytics(self, force):
+        self._create_technology_template(
+            force=force,
+            name="Data and Analytics Agreement",
+            subcategory="data_analytics",
+            description=(
+                "A data and analytics services agreement covering data analysis, dashboard "
+                "builds, reporting, and data strategy engagements. Includes data ownership "
+                "and privacy terms, confidentiality, revision policy, payment terms, and "
+                "cancellation policy."
+            ),
+            structure_type="ONE_TIME",
+            fields=DATA_ANALYTICS_GUIDED_FIELDS,
+            clauses=DATA_ANALYTICS_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "one_time",
+                "payment_model_token": "payment_model",
+                "amount_token": "total_fee",
                 "installments_token": "num_installments",
                 "interval_days_token": "installment_interval_days",
             },

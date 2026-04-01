@@ -9,6 +9,7 @@ from backend.contracts.models import ContractObligation, ContractServiceObligati
 from backend.api.contracts.services.payment_resolution_service import (
     PaymentResolutionService,
 )
+from backend.activity.log import log_activity
 from .permissions import contract_party_response, is_party
 
 
@@ -38,6 +39,13 @@ class ObligationResolveAPIView(APIView):
                 return Response(payload, status=status.HTTP_200_OK)
 
             obligation.mark_completed()
+            log_activity(
+                contract=obligation.contract,
+                user=request.user,
+                activity_type="obligation_resolved",
+                description=f"Service obligation resolved: {obligation.description}",
+                metadata={"obligation_id": str(obligation.id)},
+            )
 
             payload = {
                 "id": str(obligation.id),
@@ -83,6 +91,18 @@ class ContractPaymentResolveAPIView(APIView):
             obligation = self.service.resolve(obligation_id=obligation_id)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        log_activity(
+            contract=obligation.contract,
+            user=request.user,
+            activity_type="payment_obligation_resolved",
+            description=f"Payment obligation #{obligation.installment_number} resolved.",
+            metadata={
+                "obligation_id": str(obligation.id),
+                "amount_due": str(obligation.amount_due),
+                "amount_paid": str(obligation.amount_paid),
+            },
+        )
 
         payload = {
             "id": str(obligation.id),

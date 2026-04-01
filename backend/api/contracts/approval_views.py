@@ -21,6 +21,7 @@ from backend.contracts.models import (
 from backend.infrastructure.repositories.contract_approval_repository import (
     ContractApprovalRepository,
 )
+from backend.activity.log import log_activity
 from .permissions import contract_party_response, is_party
 
 User = get_user_model()
@@ -101,6 +102,14 @@ class ObligationApprovalRequestListCreateAPIView(APIView):
             metadata=serializer.validated_data.get("metadata"),
         )
 
+        log_activity(
+            contract=obligation.contract,
+            user=request.user,
+            activity_type="approval_requested",
+            description=f"Approval requested: {serializer.validated_data['summary']}",
+            metadata={"approval_id": str(approval.id)},
+        )
+
         return Response(
             ApprovalRequestSerializer(self._serialize_approval(approval)).data,
             status=status.HTTP_201_CREATED,
@@ -153,6 +162,14 @@ class ApprovalRequestApproveAPIView(APIView):
 
         approval = self.service.approve(approval_id=approval_id)
 
+        log_activity(
+            contract=approval_obj.contract,
+            user=request.user,
+            activity_type="approval_granted",
+            description=f"Approval granted: {approval_obj.summary}",
+            metadata={"approval_id": str(approval.id)},
+        )
+
         return Response(
             ApprovalRequestSerializer({
                 "id": approval.id,
@@ -201,6 +218,14 @@ class ApprovalRequestRejectAPIView(APIView):
         serializer.is_valid(raise_exception=True)
 
         approval = self.service.reject(approval_id=approval_id)
+
+        log_activity(
+            contract=approval_obj.contract,
+            user=request.user,
+            activity_type="approval_rejected",
+            description=f"Approval rejected: {approval_obj.summary}",
+            metadata={"approval_id": str(approval.id)},
+        )
 
         return Response(
             ApprovalRequestSerializer({

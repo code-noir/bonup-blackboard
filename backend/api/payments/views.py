@@ -15,6 +15,7 @@ from backend.api.contracts.permissions import (
 from backend.contracts.models import Contract, ContractObligation
 from backend.engine.contracts.obligations.lifecycle import process_obligation_lifecycle
 from backend.payments.models import Payment
+from backend.activity.log import log_activity
 from .serializers import PaymentSerializer
 
 # Valid source states for each status transition endpoint.
@@ -128,6 +129,14 @@ class PaymentListCreateAPIView(APIView):
 
         with transaction.atomic():
             payment = serializer.save()
+
+        log_activity(
+            contract=payment.contract,
+            user=request.user,
+            activity_type="payment_created",
+            description=f"Payment of {payment.amount} created.",
+            metadata={"payment_id": str(payment.id), "amount": str(payment.amount)},
+        )
         return Response(
             PaymentSerializer(payment).data,
             status=status.HTTP_201_CREATED,
@@ -236,6 +245,13 @@ class PaymentConfirmAPIView(APIView):
                     update_fields=["amount_paid", "state", "is_defaulted", "updated_at"]
                 )
 
+        log_activity(
+            contract=payment.contract,
+            user=request.user,
+            activity_type="payment_confirmed",
+            description=f"Payment of {payment.amount} confirmed.",
+            metadata={"payment_id": str(payment.id), "amount": str(payment.amount)},
+        )
         return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
 
 
@@ -283,6 +299,13 @@ class PaymentFailAPIView(APIView):
             payment.failed_at = timezone.now()
             payment.save(update_fields=["status", "failed_at", "updated_at"])
 
+        log_activity(
+            contract=payment.contract,
+            user=request.user,
+            activity_type="payment_failed",
+            description=f"Payment of {payment.amount} failed.",
+            metadata={"payment_id": str(payment.id), "amount": str(payment.amount)},
+        )
         return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
 
 
@@ -307,6 +330,13 @@ class PaymentCancelAPIView(APIView):
             payment.cancelled_at = timezone.now()
             payment.save(update_fields=["status", "cancelled_at", "updated_at"])
 
+        log_activity(
+            contract=payment.contract,
+            user=request.user,
+            activity_type="payment_cancelled",
+            description=f"Payment of {payment.amount} cancelled.",
+            metadata={"payment_id": str(payment.id), "amount": str(payment.amount)},
+        )
         return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
 
 
@@ -348,6 +378,13 @@ class PaymentRefundAPIView(APIView):
                 obligation.updated_at = now
                 obligation.save(update_fields=["amount_paid", "state", "is_defaulted", "updated_at"])
 
+        log_activity(
+            contract=payment.contract,
+            user=request.user,
+            activity_type="payment_refunded",
+            description=f"Payment of {payment.amount} refunded.",
+            metadata={"payment_id": str(payment.id), "amount": str(payment.amount)},
+        )
         return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
 
 
@@ -389,6 +426,13 @@ class PaymentReverseAPIView(APIView):
                 obligation.updated_at = now
                 obligation.save(update_fields=["amount_paid", "state", "is_defaulted", "updated_at"])
 
+        log_activity(
+            contract=payment.contract,
+            user=request.user,
+            activity_type="payment_reversed",
+            description=f"Payment of {payment.amount} reversed.",
+            metadata={"payment_id": str(payment.id), "amount": str(payment.amount)},
+        )
         return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
 
 

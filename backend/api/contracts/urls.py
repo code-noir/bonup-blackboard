@@ -3,6 +3,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .management_views import ContractManagementSummaryAPIView
+from backend.api.activity.views import ContractActivityAPIView
 
 from .promotion_views import ExecutionEventPromotionAPIView
 
@@ -125,6 +126,11 @@ urlpatterns = [
         "<uuid:contract_id>/management-summary/",
         ContractManagementSummaryAPIView.as_view(),
         name="contract-management-summary",
+    ),
+    path(
+        "<uuid:contract_id>/activity/",
+        ContractActivityAPIView.as_view(),
+        name="contract-activity",
     ),
 
     # --------------------------------------------------

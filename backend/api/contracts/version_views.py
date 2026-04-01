@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from backend.contracts.models import Contract, ContractVersion
+from backend.activity.log import log_activity
 
 from .permissions import contract_party_response, is_party
 from .serializers import ContractVersionSerializer
@@ -95,6 +96,13 @@ class ContractVersionCreateAPIView(APIView):
                 content_snapshot=content_snapshot,
                 status="draft",
             )
+            log_activity(
+                contract=contract,
+                user=request.user,
+                activity_type="version_created",
+                description=f"Version {new_version_number} created.",
+                metadata={"version_id": str(new_version.id), "version_number": new_version_number},
+            )
 
         response_data = ContractVersionSerializer(new_version).data
 
@@ -154,6 +162,14 @@ class ContractVersionSignAPIView(APIView):
         version.status = "signed"
         version.save(update_fields=["status"])
 
+        log_activity(
+            contract=contract,
+            user=request.user,
+            activity_type="version_signed",
+            description=f"Version {version.version_number} signed by {request.user}. Contract is now locked.",
+            metadata={"version_id": str(version.id), "version_number": version.version_number},
+        )
+
         return Response(
             {
                 "message": "Contract version signed. The contract is now locked.",
@@ -201,6 +217,14 @@ class ContractVersionRejectAPIView(APIView):
 
         version.status = "rejected"
         version.save(update_fields=["status"])
+
+        log_activity(
+            contract=contract,
+            user=request.user,
+            activity_type="version_rejected",
+            description=f"Version {version.version_number} rejected by {request.user}.",
+            metadata={"version_id": str(version.id), "version_number": version.version_number},
+        )
 
         warning = None
         if version.version_number >= contract.max_versions:

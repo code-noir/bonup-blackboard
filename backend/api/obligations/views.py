@@ -50,6 +50,7 @@ from backend.infrastructure.repositories.contract_obligation_promotion_repositor
 from backend.infrastructure.repositories.contract_value_adjustment_repository import (
     ContractValueAdjustmentRepository,
 )
+from backend.activity.log import log_activity
 
 User = get_user_model()
 
@@ -584,6 +585,13 @@ class ObligationResolveAPIView(APIView):
                     status=status.HTTP_409_CONFLICT,
                 )
             obligation.mark_completed()
+            log_activity(
+                contract=obligation.contract,
+                user=request.user,
+                activity_type="obligation_resolved",
+                description=f"Service obligation resolved: {obligation.description}",
+                metadata={"obligation_id": str(obligation.id)},
+            )
             return Response({
                 "id": str(obligation.id),
                 "type": "service",
@@ -624,6 +632,18 @@ class ObligationPaymentResolveAPIView(APIView):
             obligation = self.service.resolve(obligation_id=obligation_id)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        log_activity(
+            contract=obligation.contract,
+            user=request.user,
+            activity_type="payment_obligation_resolved",
+            description=f"Payment obligation #{obligation.installment_number} resolved.",
+            metadata={
+                "obligation_id": str(obligation.id),
+                "amount_due": str(obligation.amount_due),
+                "amount_paid": str(obligation.amount_paid),
+            },
+        )
 
         return Response({
             "id": str(obligation.id),
@@ -994,6 +1014,14 @@ class ObligationApprovalRequestListAPIView(APIView):
             metadata=serializer.validated_data.get("metadata"),
         )
 
+        log_activity(
+            contract=obligation.contract,
+            user=request.user,
+            activity_type="approval_requested",
+            description=f"Approval requested: {serializer.validated_data['summary']}",
+            metadata={"approval_id": str(approval.id)},
+        )
+
         return Response(ApprovalRequestSerializer({
             "id": approval.id,
             "approval_type": approval.approval_type,
@@ -1037,6 +1065,13 @@ class ObligationApprovalRequestApproveAPIView(APIView):
         serializer.is_valid(raise_exception=True)
 
         approval = self.service.approve(approval_id=approval_id)
+        log_activity(
+            contract=approval_obj.contract,
+            user=request.user,
+            activity_type="approval_granted",
+            description=f"Approval granted: {approval_obj.summary}",
+            metadata={"approval_id": str(approval.id)},
+        )
         return Response(ApprovalRequestSerializer({
             "id": approval.id,
             "approval_type": approval.approval_type,
@@ -1080,6 +1115,13 @@ class ObligationApprovalRequestRejectAPIView(APIView):
         serializer.is_valid(raise_exception=True)
 
         approval = self.service.reject(approval_id=approval_id)
+        log_activity(
+            contract=approval_obj.contract,
+            user=request.user,
+            activity_type="approval_rejected",
+            description=f"Approval rejected: {approval_obj.summary}",
+            metadata={"approval_id": str(approval.id)},
+        )
         return Response(ApprovalRequestSerializer({
             "id": approval.id,
             "approval_type": approval.approval_type,

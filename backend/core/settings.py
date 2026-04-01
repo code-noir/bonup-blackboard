@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'backend.contracts',
     'backend.payments',
     'backend.contract_templates',
+    'backend.activity',
     'django_extensions',
 ]
 

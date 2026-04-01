@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
 
 from backend.contracts.models import Contract
+from backend.activity.log import log_activity
 
 from .permissions import contract_party_response, is_party
 from .serializers import ContractSerializer
@@ -33,7 +34,14 @@ class ContractViewSet(ViewSet):
         """
         serializer = ContractSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save(initiator=request.user)
+            contract = serializer.save(initiator=request.user)
+            log_activity(
+                contract=contract,
+                user=request.user,
+                activity_type="contract_created",
+                description=f"Contract created by {request.user}.",
+                metadata={"structure_type": contract.structure_type},
+            )
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from backend.contracts.models import Contract, ContractRoleSwitchRequest
+from backend.activity.log import log_activity
 
 from .permissions import contract_party_response, is_party
 
@@ -70,6 +71,14 @@ class ContractRoleSwitchRequestAPIView(APIView):
             contract=contract,
             requested_by=request.user,
             expires_at=now + timedelta(days=ROLE_SWITCH_TTL_DAYS),
+        )
+
+        log_activity(
+            contract=contract,
+            user=request.user,
+            activity_type="role_switch_requested",
+            description=f"Role switch requested by {request.user}.",
+            metadata={"switch_request_id": str(switch_request.id)},
         )
 
         return Response(
@@ -175,6 +184,19 @@ class ContractRoleSwitchConfirmAPIView(APIView):
                 counterparty_email=new_counterparty_email,
                 structure_type=structure_type,
                 max_versions=max_versions,
+            )
+            log_activity(
+                contract=new_contract,
+                user=request.user,
+                activity_type="role_switch_confirmed",
+                description=(
+                    f"Roles switched. {new_initiator} is now the initiator; "
+                    f"{new_counterparty_email} is the counterparty."
+                ),
+                metadata={
+                    "new_initiator_id": new_initiator.pk,
+                    "new_counterparty_email": new_counterparty_email,
+                },
             )
 
         return Response(

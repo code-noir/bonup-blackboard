@@ -1,10 +1,8 @@
-from rest_framework.routers import DefaultRouter
-from .views import ActivityViewSet
+# backend/api/activity/urls.py
 
-router = DefaultRouter()
-router.register(r'', ActivityViewSet, basename='activity')
+from django.urls import path
+from .views import ActivityListAPIView
 
-urlpatterns = router.urls
-
-
-
+urlpatterns = [
+    path("", ActivityListAPIView.as_view(), name="activity-list"),
+]

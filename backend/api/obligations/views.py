@@ -89,6 +89,10 @@ def _invalid_type_response():
 # List + Dashboard
 # ---------------------------------------------------------------------------
 
+_OBLIGATION_LIST_DEFAULT_PAGE_SIZE = 20
+_OBLIGATION_LIST_MAX_PAGE_SIZE = 100
+
+
 class ObligationListAPIView(APIView):
     """
     GET /api/obligations/
@@ -100,12 +104,29 @@ class ObligationListAPIView(APIView):
     - type=payment|service
     - state=<state>
     - role=obligor|obligee  (filters to obligations where the caller holds that role)
+    - contract_id=<uuid>    (narrow to a single contract)
+    - page=<int>            (1-based, default 1)
+    - page_size=<int>       (default 20, max 100)
     """
 
     def get(self, request):
         obligation_type = request.query_params.get("type")
         state = request.query_params.get("state")
         role = request.query_params.get("role")
+        contract_id = request.query_params.get("contract_id")
+
+        try:
+            page = max(1, int(request.query_params.get("page", 1)))
+        except (ValueError, TypeError):
+            page = 1
+
+        try:
+            page_size = min(
+                _OBLIGATION_LIST_MAX_PAGE_SIZE,
+                max(1, int(request.query_params.get("page_size", _OBLIGATION_LIST_DEFAULT_PAGE_SIZE))),
+            )
+        except (ValueError, TypeError):
+            page_size = _OBLIGATION_LIST_DEFAULT_PAGE_SIZE
 
         results = []
 
@@ -124,6 +145,8 @@ class ObligationListAPIView(APIView):
                 payment_qs = payment_qs.filter(obligor=request.user)
             elif role == "obligee":
                 payment_qs = payment_qs.filter(obligee=request.user)
+            if contract_id:
+                payment_qs = payment_qs.filter(contract_id=contract_id)
 
             for ob in payment_qs:
                 results.append({
@@ -151,6 +174,8 @@ class ObligationListAPIView(APIView):
                 service_qs = service_qs.filter(obligor=request.user)
             elif role == "obligee":
                 service_qs = service_qs.filter(obligee=request.user)
+            if contract_id:
+                service_qs = service_qs.filter(contract_id=contract_id)
 
             for ob in service_qs:
                 results.append({
@@ -166,7 +191,20 @@ class ObligationListAPIView(APIView):
                 })
 
         results.sort(key=lambda x: (x["due_date"] is None, x["due_date"]))
-        return Response({"count": len(results), "results": results}, status=status.HTTP_200_OK)
+
+        total = len(results)
+        offset = (page - 1) * page_size
+        page_results = results[offset:offset + page_size]
+
+        return Response(
+            {
+                "count": total,
+                "page": page,
+                "page_size": page_size,
+                "results": page_results,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class ObligationDashboardSummaryAPIView(APIView):

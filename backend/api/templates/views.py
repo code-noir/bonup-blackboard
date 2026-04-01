@@ -33,6 +33,14 @@ class TemplatesViewSet(ViewSet):
         if tier:
             qs = qs.filter(tier_required=tier)
 
+        category = request.query_params.get("category")
+        if category:
+            qs = qs.filter(category=category)
+
+        subcategory = request.query_params.get("subcategory")
+        if subcategory:
+            qs = qs.filter(subcategory=subcategory)
+
         templates = [_serialize_template_summary(t) for t in qs]
         return Response(templates)
 
@@ -164,6 +172,8 @@ def _serialize_template_detail(template):
             "choices": f.choices,
             "is_required": f.is_required,
             "order": f.order,
+            "condition_field_key": f.condition_field_key,
+            "condition_value": f.condition_value,
         }
         for f in template.guided_fields.all()
     ]

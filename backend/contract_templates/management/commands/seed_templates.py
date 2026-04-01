@@ -8358,6 +8358,1975 @@ LEGAL_DOCUMENT_PREP_CLAUSES = [
     },
 ]
 
+
+# ==============================================================================
+# RENTAL TEMPLATES
+# ==============================================================================
+
+PROPERTY_RENTAL_GUIDED_FIELDS = [
+    {
+        "field_key": "property_type",
+        "label": "Property Type",
+        "field_type": "choice",
+        "choices": ["Residential", "Commercial"],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "monthly_rent",
+        "label": "Monthly Rent (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "security_deposit",
+        "label": "Security Deposit (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "lease_term_months",
+        "label": "Lease Term (Months)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_due_day",
+        "label": "Rent Due Day of Month",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "late_fee_amount",
+        "label": "Late Fee Amount (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "late_fee_grace_days",
+        "label": "Late Fee Grace Period (Days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "utilities_included",
+        "label": "Utilities Included in Rent",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": False,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "pets_allowed",
+        "label": "Pets Allowed",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": False,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "early_termination_notice_days",
+        "label": "Early Termination Notice Period (Days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 10,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "early_termination_penalty",
+        "label": "Early Termination Penalty (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 11,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+PROPERTY_RENTAL_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Rental",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF RENTAL\n\n"
+            "{{initiator_name}} (\"Landlord\") agrees to lease property to "
+            "{{counterparty_name}} (\"Tenant\") under the following terms:\n\n"
+            "Property Type: {{property_type}}\n"
+            "Lease Term: {{lease_term_months}} months\n\n"
+            "Tenant agrees to occupy the property solely for lawful purposes consistent with the "
+            "designated property type and applicable zoning regulations. Tenant shall not sublease "
+            "or assign this agreement without Landlord's prior written consent. The property must "
+            "be maintained in a clean and sanitary condition throughout the full lease term."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Rent and Payment Terms",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "RENT AND PAYMENT TERMS\n\n"
+            "Monthly Rent: ${{monthly_rent}}\n"
+            "Due Date: The {{payment_due_day}}th of each calendar month\n"
+            "Security Deposit: ${{security_deposit}}\n\n"
+            "Rent is due on or before the {{payment_due_day}}th of each month. Payment shall be "
+            "made via the method agreed upon by both parties. The security deposit of ${{security_deposit}} "
+            "is due upon signing of this agreement and is held to cover potential damages beyond "
+            "normal wear and tear or unpaid rent at the end of the lease term."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Late Fee Policy",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "LATE FEE POLICY\n\n"
+            "Late Fee: ${{late_fee_amount}}\n"
+            "Grace Period: {{late_fee_grace_days}} days after the rent due date\n\n"
+            "If rent is not received within {{late_fee_grace_days}} days of the due date, a late "
+            "fee of ${{late_fee_amount}} will be assessed and added to the outstanding balance. "
+            "Repeated late payments may constitute grounds for lease termination in accordance with "
+            "applicable landlord-tenant law. Where no late fee amount has been specified, no late "
+            "fees shall apply."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Security Deposit",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SECURITY DEPOSIT\n\n"
+            "Security Deposit Amount: ${{security_deposit}}\n\n"
+            "The security deposit of ${{security_deposit}} will be returned to Tenant within "
+            "30 days of the end of the lease term, less any lawful deductions for unpaid rent, "
+            "damage beyond normal wear and tear, or uncleaned premises. Landlord shall provide "
+            "an itemized written statement of any deductions within the same 30-day period. "
+            "Normal wear and tear shall not constitute damage and shall not be deducted."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Maintenance and Repairs",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "MAINTENANCE AND REPAIRS\n\n"
+            "Tenant is responsible for maintaining the property in a clean and orderly condition "
+            "and for the cost of minor repairs caused by Tenant's negligence or misuse. Landlord "
+            "is responsible for all structural repairs, major appliance failures not caused by "
+            "Tenant, plumbing and electrical systems, and any defect that renders the property "
+            "uninhabitable or unsafe.\n\n"
+            "Tenant must notify Landlord promptly of any condition requiring repair. Unauthorized "
+            "alterations, installations, or improvements require Landlord's prior written consent. "
+            "Tenant shall not remove any fixtures or Landlord-provided appliances from the property."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Pet Policy",
+        "order": 6,
+        "is_required": False,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PET POLICY\n\n"
+            "Pets Allowed: {{pets_allowed}}\n\n"
+            "If pets are permitted, Tenant is fully responsible for any damage caused by pets and "
+            "must ensure that pets do not disturb neighbors or other occupants. All pets must be "
+            "licensed and vaccinated in accordance with applicable local regulations. A pet deposit "
+            "or additional monthly pet fee may be required as separately agreed in writing. "
+            "Landlord may revoke pet permission if Tenant fails to comply with these obligations."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Early Termination",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "EARLY TERMINATION\n\n"
+            "Notice Period Required: {{early_termination_notice_days}} days written notice\n"
+            "Early Termination Penalty: ${{early_termination_penalty}}\n\n"
+            "Either party may terminate this lease before the end of the agreed term by providing "
+            "{{early_termination_notice_days}} days prior written notice. If Tenant terminates "
+            "early, an early termination penalty of ${{early_termination_penalty}} may apply in "
+            "addition to any rent owed through the notice period. Landlord's early termination "
+            "rights are subject to applicable local landlord-tenant laws and tenant protections."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination and Lease End",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION AND LEASE END\n\n"
+            "At the end of the lease term, Tenant must vacate the property and return all keys "
+            "and access devices in good working order. Tenant shall leave the property in a clean "
+            "condition, reasonable wear and tear excepted. Holdover beyond the lease end date "
+            "without a signed renewal converts to a month-to-month tenancy at Landlord's "
+            "discretion, subject to applicable law.\n\n"
+            "Landlord may terminate this lease for non-payment, material breach, or other cause "
+            "permitted by law, with notice as required by applicable landlord-tenant statutes."
+        ),
+    },
+]
+
+EQUIPMENT_RENTAL_GUIDED_FIELDS = [
+    {
+        "field_key": "equipment_description",
+        "label": "Equipment Description",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "rental_period_type",
+        "label": "Rental Period Type",
+        "field_type": "choice",
+        "choices": ["Daily", "Weekly", "Monthly"],
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "rental_rate",
+        "label": "Rental Rate (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "rental_duration",
+        "label": "Rental Duration (Number of Periods)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "security_deposit",
+        "label": "Security Deposit (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["full_upfront", "installments"],
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "num_installments",
+        "label": "Number of Installments",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 7,
+        "condition_field_key": "payment_model",
+        "condition_value": "installments",
+    },
+    {
+        "field_key": "installment_interval_days",
+        "label": "Installment Interval",
+        "field_type": "choice",
+        "choices": ["7", "30"],
+        "is_required": True,
+        "order": 8,
+        "condition_field_key": "payment_model",
+        "condition_value": "installments",
+    },
+    {
+        "field_key": "late_return_fee_per_day",
+        "label": "Late Return Fee Per Day (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "damage_liability",
+        "label": "Damage Liability",
+        "field_type": "choice",
+        "choices": ["Renter Fully Liable", "Liability Capped at Deposit"],
+        "is_required": True,
+        "order": 10,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "cancellation_notice_days",
+        "label": "Cancellation Notice Period (Days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 11,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+EQUIPMENT_RENTAL_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Equipment Rental",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF EQUIPMENT RENTAL\n\n"
+            "{{initiator_name}} (\"Owner\") agrees to rent the following equipment to "
+            "{{counterparty_name}} (\"Renter\") under the terms of this agreement:\n\n"
+            "Equipment: {{equipment_description}}\n"
+            "Rental Period: {{rental_period_type}}\n"
+            "Duration: {{rental_duration}} {{rental_period_type}} period(s)\n\n"
+            "Renter shall use the equipment solely for its intended lawful purpose and shall not "
+            "permit unauthorized third parties to operate or use the equipment. The equipment must "
+            "be returned to Owner at the agreed location on or before the scheduled return date."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Rental Rate and Payment",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "RENTAL RATE AND PAYMENT\n\n"
+            "Rental Rate: ${{rental_rate}} per {{rental_period_type}} period\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"full_upfront\" — The full rental amount is due prior to equipment pickup.\n\n"
+            "\"installments\" — Rental fees are paid in agreed installments per the schedule "
+            "specified in this agreement. Failure to make installment payments on time may "
+            "result in immediate termination of rental rights and return of equipment.\n\n"
+            "All payments are non-refundable once the rental period has commenced, except as "
+            "provided in the cancellation policy."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Security Deposit",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SECURITY DEPOSIT\n\n"
+            "Security Deposit: ${{security_deposit}}\n\n"
+            "A refundable security deposit of ${{security_deposit}} is required prior to equipment "
+            "release. The deposit will be returned within 7 business days following the return of "
+            "the equipment in acceptable condition, less any deductions for damage beyond normal "
+            "wear and tear, missing accessories, or outstanding fees. Owner will provide an "
+            "itemized statement of any deductions applied."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Damage Liability",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "DAMAGE LIABILITY\n\n"
+            "Damage Liability: {{damage_liability}}\n\n"
+            "Renter is responsible for all damage to the equipment occurring during the rental "
+            "period, beyond normal wear and tear. If \"Renter Fully Liable\" applies, Renter "
+            "bears the full cost of repair or replacement. If \"Liability Capped at Deposit\" "
+            "applies, Renter's liability is limited to the security deposit amount, provided the "
+            "damage was not caused by gross negligence or intentional misuse.\n\n"
+            "Renter must report any damage immediately to Owner. Failure to report damage may "
+            "void the liability cap and result in full repair or replacement costs being assessed."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Late Return Policy",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "LATE RETURN POLICY\n\n"
+            "Late Return Fee: ${{late_return_fee_per_day}} per day\n\n"
+            "If Renter fails to return the equipment by the agreed return date and time, a late "
+            "return fee of ${{late_return_fee_per_day}} per day will be assessed for each day "
+            "the equipment is held beyond the agreed return date. Owner reserves the right to "
+            "recover the equipment at Renter's expense if it is not returned within 3 days of "
+            "the scheduled return date. Where no late return fee has been specified, the standard "
+            "daily rental rate applies."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Equipment Condition",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "EQUIPMENT CONDITION\n\n"
+            "Renter must inspect the equipment at the time of pickup and report any pre-existing "
+            "damage or defects to Owner in writing within 24 hours of pickup. Failure to report "
+            "pre-existing damage within this period creates a presumption that the equipment was "
+            "received in satisfactory condition.\n\n"
+            "Renter shall not perform repairs, modifications, or maintenance on the equipment "
+            "without Owner's prior written consent. Equipment must be returned in the same "
+            "condition as received, with all accessories, manuals, and components included."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "Cancellation Notice Required: {{cancellation_notice_days}} days prior written notice\n\n"
+            "Renter may cancel this rental agreement by providing {{cancellation_notice_days}} days "
+            "written notice to Owner prior to the scheduled rental start date. Cancellations made "
+            "with sufficient notice may receive a full or partial refund of prepaid rental fees "
+            "at Owner's discretion. Cancellations after the rental period has commenced are not "
+            "eligible for refunds. Where no cancellation notice period has been specified, "
+            "24 hours notice is required."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Owner may terminate this agreement immediately if Renter misuses the equipment, "
+            "fails to make required payments, subleases the equipment without permission, or "
+            "causes or threatens to cause damage to the equipment. Upon termination, Renter "
+            "must return the equipment immediately and all outstanding fees become due.\n\n"
+            "This agreement terminates automatically upon the scheduled return of the equipment "
+            "in acceptable condition and the settlement of all outstanding fees and deposits."
+        ),
+    },
+]
+
+VEHICLE_RENTAL_GUIDED_FIELDS = [
+    {
+        "field_key": "vehicle_description",
+        "label": "Vehicle Description (Year, Make, Model)",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "rental_period_type",
+        "label": "Rental Period Type",
+        "field_type": "choice",
+        "choices": ["Daily", "Weekly", "Monthly"],
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "rental_rate",
+        "label": "Rental Rate (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "rental_duration",
+        "label": "Rental Duration (Number of Periods)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "security_deposit",
+        "label": "Security Deposit (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "mileage_limit_per_day",
+        "label": "Mileage Limit Per Day",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "excess_mileage_fee",
+        "label": "Excess Mileage Fee (USD per Mile)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "fuel_policy",
+        "label": "Fuel Policy",
+        "field_type": "choice",
+        "choices": ["Full to Full", "Pre-purchase"],
+        "is_required": True,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "insurance_responsibility",
+        "label": "Insurance Responsibility",
+        "field_type": "choice",
+        "choices": ["Renter Provides Own", "Owner Provides", "Shared"],
+        "is_required": True,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "late_return_fee_per_hour",
+        "label": "Late Return Fee Per Hour (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 10,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "cancellation_notice_days",
+        "label": "Cancellation Notice Period (Days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 11,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+VEHICLE_RENTAL_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Vehicle Rental",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF VEHICLE RENTAL\n\n"
+            "{{initiator_name}} (\"Owner\") agrees to rent the following vehicle to "
+            "{{counterparty_name}} (\"Renter\") under the terms of this agreement:\n\n"
+            "Vehicle: {{vehicle_description}}\n"
+            "Rental Period: {{rental_period_type}}\n"
+            "Duration: {{rental_duration}} {{rental_period_type}} period(s)\n\n"
+            "Renter must hold a valid driver's license and be of legal rental age. Renter shall "
+            "operate the vehicle lawfully and not permit unauthorized drivers to operate the vehicle "
+            "without Owner's prior written consent. The vehicle must be returned to the agreed "
+            "location in the same condition as received, on or before the scheduled return date."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Rental Rate and Payment",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "RENTAL RATE AND PAYMENT\n\n"
+            "Rental Rate: ${{rental_rate}} per {{rental_period_type}} period\n"
+            "Security Deposit: ${{security_deposit}}\n\n"
+            "The rental rate of ${{rental_rate}} per {{rental_period_type}} period is due in full "
+            "prior to vehicle pickup. A security deposit of ${{security_deposit}} is also required "
+            "at pickup and will be returned within 5 business days after the vehicle is returned "
+            "in acceptable condition, less any deductions for damage, excess mileage, fuel charges, "
+            "or outstanding fees."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Mileage Policy",
+        "order": 3,
+        "is_required": False,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "MILEAGE POLICY\n\n"
+            "Daily Mileage Limit: {{mileage_limit_per_day}} miles\n"
+            "Excess Mileage Fee: ${{excess_mileage_fee}} per mile\n\n"
+            "Renter agrees to keep daily mileage within the agreed limit of {{mileage_limit_per_day}} "
+            "miles. Any mileage in excess of this limit will be charged at the rate of "
+            "${{excess_mileage_fee}} per mile, billed at the time of vehicle return. Odometer "
+            "readings will be recorded at pickup and return to calculate total mileage. Where no "
+            "mileage limit is specified, unlimited mileage applies."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Fuel Policy",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "FUEL POLICY\n\n"
+            "Fuel Policy: {{fuel_policy}}\n\n"
+            "\"Full to Full\" — Renter receives the vehicle with a full tank and must return it "
+            "with a full tank. Failure to return with a full tank will result in a fuel charge "
+            "calculated at the current local pump price plus a refueling service fee.\n\n"
+            "\"Pre-purchase\" — Renter pre-purchases a full tank at an agreed rate. Unused fuel "
+            "is not refunded. Renter may return the vehicle at any fuel level without additional "
+            "fuel charges."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Insurance Responsibility",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "INSURANCE RESPONSIBILITY\n\n"
+            "Insurance Arrangement: {{insurance_responsibility}}\n\n"
+            "\"Renter Provides Own\" — Renter is responsible for maintaining adequate automobile "
+            "insurance coverage for the duration of the rental period. Proof of insurance must "
+            "be provided at pickup.\n\n"
+            "\"Owner Provides\" — Owner's insurance covers the vehicle during the rental period. "
+            "Renter must comply with all policy terms and restrictions.\n\n"
+            "\"Shared\" — Both parties contribute to insurance coverage as separately agreed. "
+            "Each party is responsible for their agreed coverage obligations.\n\n"
+            "Renter is responsible for all uninsured losses resulting from violations of this "
+            "agreement or unauthorized use."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Damage and Security Deposit",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "DAMAGE AND SECURITY DEPOSIT\n\n"
+            "Security Deposit: ${{security_deposit}}\n\n"
+            "Renter is liable for all damage to the vehicle occurring during the rental period, "
+            "including but not limited to collision damage, interior damage, tire damage, and "
+            "windshield damage, beyond normal wear and tear. Renter must report any accident or "
+            "damage to Owner immediately and cooperate fully with any insurance claim process.\n\n"
+            "The security deposit of ${{security_deposit}} may be applied toward the cost of "
+            "repairs. If repair costs exceed the deposit, Renter remains liable for the balance."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Late Return Policy",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "LATE RETURN POLICY\n\n"
+            "Late Return Fee: ${{late_return_fee_per_hour}} per hour\n\n"
+            "Renter must return the vehicle by the agreed return date and time. If the vehicle "
+            "is returned late, a late return fee of ${{late_return_fee_per_hour}} per hour will "
+            "be assessed for each hour beyond the agreed return time, up to the equivalent of "
+            "one full day's rental rate. Continued delay beyond 24 hours may be treated as an "
+            "unauthorized extension of the rental and may result in reporting to authorities. "
+            "Where no hourly fee is specified, the daily rental rate applies on a prorated basis."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "Cancellation Notice Required: {{cancellation_notice_days}} days prior written notice\n\n"
+            "Renter may cancel this rental agreement by providing {{cancellation_notice_days}} days "
+            "written notice before the scheduled pickup date. Cancellations with sufficient notice "
+            "may be eligible for a full refund of any prepaid rental fees. Cancellations with "
+            "less than the required notice may result in forfeiture of any deposit or prepayment. "
+            "Where no cancellation notice period is specified, 48 hours notice is required."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 9,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Owner may terminate this rental agreement immediately if Renter violates any material "
+            "term of this agreement, operates the vehicle recklessly or under the influence of "
+            "alcohol or drugs, uses the vehicle for illegal purposes, or abandons the vehicle. "
+            "Upon termination, Renter must return the vehicle immediately.\n\n"
+            "This agreement terminates automatically upon the scheduled return of the vehicle in "
+            "acceptable condition and the full settlement of all outstanding fees, deposits, and charges."
+        ),
+    },
+]
+
+# ==============================================================================
+# FINANCIAL SERVICES TEMPLATES
+# ==============================================================================
+
+TAX_SERVICES_GUIDED_FIELDS = [
+    {
+        "field_key": "service_type",
+        "label": "Service Type",
+        "field_type": "choice",
+        "choices": ["Tax Preparation", "Tax Filing", "Tax Advisory", "Full Service"],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "tax_year",
+        "label": "Tax Year",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "total_fee",
+        "label": "Total Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["full_upfront", "installments"],
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "num_installments",
+        "label": "Number of Installments",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "payment_model",
+        "condition_value": "installments",
+    },
+    {
+        "field_key": "installment_interval_days",
+        "label": "Installment Interval",
+        "field_type": "choice",
+        "choices": ["7", "30"],
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "payment_model",
+        "condition_value": "installments",
+    },
+    {
+        "field_key": "delivery_days",
+        "label": "Delivery Timeframe (Days from Document Receipt)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "cancellation_notice_days",
+        "label": "Cancellation Notice Period (Days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+TAX_SERVICES_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Preparer\") agrees to provide tax services to "
+            "{{counterparty_name}} (\"Client\") under the following terms:\n\n"
+            "Service Type: {{service_type}}\n"
+            "Tax Year: {{tax_year}}\n"
+            "Estimated Delivery: {{delivery_days}} days from receipt of all required documents\n\n"
+            "Preparer shall complete the agreed {{service_type}} services for the {{tax_year}} "
+            "tax year upon receipt of all required financial documents, statements, and information "
+            "from Client. Preparer will notify Client of any missing items that may delay delivery."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Client Responsibility and Accuracy Disclaimer",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CLIENT RESPONSIBILITY AND ACCURACY DISCLAIMER\n\n"
+            "Preparer's work is based entirely on information, documents, and representations "
+            "provided by Client. Client is solely responsible for the accuracy, completeness, "
+            "and truthfulness of all information submitted. Preparer is not responsible for "
+            "errors, penalties, or liabilities arising from inaccurate, incomplete, or "
+            "misleading information provided by Client.\n\n"
+            "Client must review all completed documents before signing or filing. By approving "
+            "the completed work, Client confirms the accuracy of all information reflected therein. "
+            "Preparer recommends that Client retain copies of all documents submitted and completed."
+        ),
+    },
+    {
+        "clause_type": "confidentiality",
+        "title": "Confidentiality",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CONFIDENTIALITY\n\n"
+            "All financial records, personal information, tax documents, and related data shared "
+            "by Client with Preparer are strictly confidential. Preparer shall not disclose "
+            "Client's information to any third party without Client's prior written consent, "
+            "except as required by applicable law or regulatory authority.\n\n"
+            "Preparer shall maintain appropriate security measures to protect Client's financial "
+            "information and shall promptly notify Client of any unauthorized access or breach "
+            "affecting Client's data. This confidentiality obligation survives termination of "
+            "this agreement."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Independent Contractor Status",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "INDEPENDENT CONTRACTOR STATUS\n\n"
+            "Preparer is an independent contractor and not an employee, partner, or agent of "
+            "Client. Preparer retains the right to provide services to other clients and is "
+            "solely responsible for all applicable taxes, insurance, and professional licensing "
+            "obligations. Nothing in this agreement creates an employment relationship or "
+            "partnership between the parties.\n\n"
+            "Preparer is not a registered investment advisor, securities broker, or licensed "
+            "attorney. Services are limited to the tax preparation and advisory scope defined "
+            "herein. Preparer is not responsible for legal advice or investment decisions."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Total Fee: ${{total_fee}}\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"full_upfront\" — The full fee of ${{total_fee}} is due upon engagement. Work "
+            "will commence upon receipt of payment.\n\n"
+            "\"installments\" — The total fee of ${{total_fee}} will be paid in installments "
+            "per the agreed schedule. Preparer reserves the right to withhold delivery of "
+            "completed documents until all installments are paid in full.\n\n"
+            "Late payments accrue interest at 1.5% per month on any outstanding balance "
+            "more than 14 days past due."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "Cancellation Notice Required: {{cancellation_notice_days}} days written notice\n\n"
+            "Either party may cancel this agreement by providing {{cancellation_notice_days}} days "
+            "written notice. If Client cancels after work has commenced, Client remains responsible "
+            "for fees proportional to the work completed up to the date of cancellation. Preparer "
+            "may cancel if Client fails to provide required documents within a reasonable time, "
+            "fails to make required payments, or requests services that violate applicable law. "
+            "Where no notice period is specified, 7 days notice applies."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate this agreement with written notice. Client shall pay for "
+            "all services rendered prior to the termination date. Preparer shall return all "
+            "original documents provided by Client upon termination.\n\n"
+            "Preparer may terminate immediately if Client requests preparation of fraudulent, "
+            "misleading, or illegal tax documents, or fails to pay amounts due within 30 days "
+            "of the due date. All completed work product shall be delivered to Client upon "
+            "payment of all outstanding fees."
+        ),
+    },
+]
+
+FINANCIAL_PLANNING_GUIDED_FIELDS = [
+    {
+        "field_key": "service_type",
+        "label": "Service Type",
+        "field_type": "choice",
+        "choices": ["Budget Planning", "Retirement Planning", "Investment Strategy", "Comprehensive Planning"],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "session_type",
+        "label": "Session Type",
+        "field_type": "choice",
+        "choices": ["Single Session", "Ongoing Monthly"],
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "num_sessions",
+        "label": "Number of Sessions",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "rate_per_session",
+        "label": "Rate Per Session (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["per_session", "monthly", "package_upfront"],
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "num_installments",
+        "label": "Number of Installments",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "payment_model",
+        "condition_value": "package_upfront",
+    },
+    {
+        "field_key": "installment_interval_days",
+        "label": "Installment Interval",
+        "field_type": "choice",
+        "choices": ["7", "30"],
+        "is_required": True,
+        "order": 7,
+        "condition_field_key": "payment_model",
+        "condition_value": "package_upfront",
+    },
+    {
+        "field_key": "cancellation_notice_days",
+        "label": "Cancellation Notice Period (Days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+FINANCIAL_PLANNING_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Advisor\") agrees to provide financial planning services to "
+            "{{counterparty_name}} (\"Client\") under the following terms:\n\n"
+            "Service Type: {{service_type}}\n"
+            "Session Format: {{session_type}}\n"
+            "Number of Sessions: {{num_sessions}}\n\n"
+            "Advisor will provide {{service_type}} guidance over {{num_sessions}} session(s) in "
+            "a {{session_type}} format. Sessions will be conducted via the method agreed upon by "
+            "both parties. Advisor will prepare session materials and action plans as appropriate "
+            "for the service type. Additional sessions beyond the agreed number may be scheduled "
+            "at the standard per-session rate."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Not a Licensed Investment Advisor Disclaimer",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "NOT A LICENSED INVESTMENT ADVISOR DISCLAIMER\n\n"
+            "Unless explicitly stated in a separate written disclosure, Advisor is not a registered "
+            "investment advisor, securities broker-dealer, or licensed financial planner under "
+            "applicable federal or state law. Services provided under this agreement constitute "
+            "general financial education, planning guidance, and budgeting support only.\n\n"
+            "Nothing in this agreement constitutes investment advice, a securities recommendation, "
+            "or a solicitation to buy or sell any financial instrument. Client should consult a "
+            "licensed financial advisor or investment professional before making any investment "
+            "or major financial decisions."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "No Guarantee of Returns",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "NO GUARANTEE OF RETURNS\n\n"
+            "Financial outcomes are inherently uncertain and depend on market conditions, economic "
+            "factors, and Client's personal decisions. Advisor makes no representation, warranty, "
+            "or guarantee regarding any specific financial result, investment return, retirement "
+            "income level, or financial outcome.\n\n"
+            "Past financial performance is not indicative of future results. Client acknowledges "
+            "that all financial planning recommendations carry risk and that actual outcomes may "
+            "differ materially from projections or illustrations provided during sessions."
+        ),
+    },
+    {
+        "clause_type": "confidentiality",
+        "title": "Confidentiality",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CONFIDENTIALITY\n\n"
+            "All financial information, account details, income data, debt information, and "
+            "personal circumstances disclosed by Client are strictly confidential. Advisor shall "
+            "not disclose Client's information to any third party without Client's prior written "
+            "consent, except as required by applicable law.\n\n"
+            "Advisor shall implement reasonable security measures to protect Client's financial "
+            "information. Client's data will be retained only for the duration necessary to "
+            "provide the agreed services. This obligation survives the termination of this agreement."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Independent Contractor Status",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "INDEPENDENT CONTRACTOR STATUS\n\n"
+            "Advisor is an independent contractor and not an employee, partner, or agent of Client. "
+            "Advisor is solely responsible for all applicable taxes, professional licensing, "
+            "insurance, and regulatory obligations. Nothing in this agreement creates an employment "
+            "relationship, partnership, or fiduciary relationship between the parties.\n\n"
+            "Advisor retains the right to provide financial planning services to other clients, "
+            "provided there is no conflict of interest with Client's engagement."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Rate Per Session: ${{rate_per_session}}\n"
+            "Payment Model: {{payment_model}}\n\n"
+            "\"per_session\" — Payment of ${{rate_per_session}} is due before or at the time "
+            "of each session.\n\n"
+            "\"monthly\" — A monthly fee is due on the 1st of each month, covering all sessions "
+            "scheduled that month at the agreed rate.\n\n"
+            "\"package_upfront\" — The full package fee is paid in installments per the agreed "
+            "schedule prior to or during the service period. Sessions will not be scheduled "
+            "beyond installments that are current and paid.\n\n"
+            "Payments more than 14 days past due may result in suspension of sessions."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "Cancellation Notice Required: {{cancellation_notice_days}} days written notice\n\n"
+            "Individual sessions must be rescheduled or cancelled with at least 24 hours notice. "
+            "Sessions cancelled with less than 24 hours notice may be charged at the full "
+            "per-session rate. To cancel the full engagement, {{cancellation_notice_days}} days "
+            "written notice is required. Client shall pay for all sessions completed prior to "
+            "cancellation. Where no notice period is specified, 14 days notice applies."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate this agreement with written notice. Client shall pay for "
+            "all sessions completed and any applicable cancellation fees through the termination "
+            "date. Prepaid package amounts for undelivered sessions will be refunded on a prorated "
+            "basis within 14 days of termination.\n\n"
+            "Advisor may terminate immediately if Client engages in abusive conduct, requests "
+            "advice that would constitute fraud or illegal activity, or fails to pay amounts due "
+            "for more than 30 days."
+        ),
+    },
+]
+
+CREDIT_CONSULTING_GUIDED_FIELDS = [
+    {
+        "field_key": "consulting_focus",
+        "label": "Consulting Focus",
+        "field_type": "choice",
+        "choices": [
+            "Credit Analysis",
+            "Dispute Strategy",
+            "Financial Education",
+            "Comprehensive Credit Consulting",
+        ],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "num_consulting_rounds",
+        "label": "Number of Consulting Rounds",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "fee_per_round",
+        "label": "Fee Per Consulting Round (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "cancellation_notice_days",
+        "label": "Cancellation Notice Period (Days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+CREDIT_CONSULTING_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (\"Consultant\") agrees to provide credit consulting services to "
+            "{{counterparty_name}} (\"Client\") under the following terms:\n\n"
+            "Consulting Focus: {{consulting_focus}}\n"
+            "Number of Consulting Rounds: {{num_consulting_rounds}}\n\n"
+            "Consultant will provide {{consulting_focus}} services over {{num_consulting_rounds}} "
+            "consulting round(s). Each round consists of a review session, analysis of Client's "
+            "credit situation, and delivery of a written action plan or strategy. Consultant will "
+            "provide educational materials and guidance relevant to Client's consulting focus."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "No Upfront Fee Policy",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "NO UPFRONT FEE POLICY\n\n"
+            "No fees are charged to Client before services are performed. Payment for each "
+            "consulting round is due only after that round of service has been fully completed "
+            "and delivered to Client. This agreement complies with applicable consumer protection "
+            "laws governing credit repair and consulting services, including prohibitions on "
+            "collecting advance fees.\n\n"
+            "Client is not obligated to pay for any round of consulting until that round has "
+            "been completed to the standard described in this agreement."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Three Business Day Right to Cancel",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "THREE BUSINESS DAY RIGHT TO CANCEL\n\n"
+            "Client has the right to cancel this agreement within three (3) business days of "
+            "signing, without any penalty, obligation, or charge. Cancellation must be made in "
+            "writing and delivered to Consultant via email or written notice.\n\n"
+            "If Client cancels within the three business day period, any amounts paid will be "
+            "fully refunded within 10 business days of receipt of the cancellation notice. "
+            "This right exists in addition to, and does not limit, any other cancellation rights "
+            "provided under applicable state or federal law."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "No Guarantee of Results",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "NO GUARANTEE OF RESULTS\n\n"
+            "Credit outcomes vary significantly based on individual circumstances, credit history, "
+            "creditor policies, and responses from credit bureaus. Consultant makes no guarantee, "
+            "representation, or promise of any specific credit score improvement, removal of "
+            "negative items, or improvement in credit standing.\n\n"
+            "This engagement provides credit education and consulting guidance only. Results "
+            "depend on factors outside Consultant's control, including Client's ongoing financial "
+            "behavior, creditor decisions, and credit bureau procedures. Client is encouraged to "
+            "maintain realistic expectations and to continue practicing sound financial habits."
+        ),
+    },
+    {
+        "clause_type": "confidentiality",
+        "title": "Confidentiality",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CONFIDENTIALITY\n\n"
+            "All credit reports, financial information, personal identification, account details, "
+            "and related data shared by Client are strictly confidential. Consultant shall not "
+            "disclose Client's information to any third party without Client's prior written "
+            "consent, except as required by law.\n\n"
+            "Consultant shall implement appropriate security measures to protect Client's sensitive "
+            "credit and financial information. Client's data will be used exclusively for the "
+            "purpose of delivering the consulting services described in this agreement."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Fee Per Consulting Round: ${{fee_per_round}}\n"
+            "Total Consulting Rounds: {{num_consulting_rounds}}\n\n"
+            "Payment of ${{fee_per_round}} is due after the completion of each consulting round. "
+            "Consultant will issue an invoice at the conclusion of each round, and payment is "
+            "due within 7 days of invoice. Failure to pay completed rounds may result in "
+            "suspension of subsequent consulting rounds until the outstanding balance is settled. "
+            "No payment is collected in advance of any consulting round."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "Cancellation Notice Required: {{cancellation_notice_days}} days written notice\n\n"
+            "Either party may cancel this agreement with {{cancellation_notice_days}} days written "
+            "notice. Client shall pay for all consulting rounds fully completed prior to the "
+            "cancellation date. No payment is due for rounds that have not commenced at the "
+            "time of cancellation. Where no cancellation notice period is specified, 7 days "
+            "notice applies."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate this agreement with written notice. Client pays only for "
+            "consulting rounds completed before termination. Consultant shall return or destroy "
+            "any sensitive documents or credit data provided by Client within 14 days of "
+            "termination upon request.\n\n"
+            "Consultant may terminate immediately if Client provides fraudulent information, "
+            "engages in abusive conduct, or requests services that would constitute illegal "
+            "credit repair activity under applicable law."
+        ),
+    },
+]
+
+# ==============================================================================
+# LENDING TEMPLATES
+# ==============================================================================
+
+PERSONAL_LOAN_GUIDED_FIELDS = [
+    {
+        "field_key": "principal_amount",
+        "label": "Principal Loan Amount (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "interest_type",
+        "label": "Interest Type",
+        "field_type": "choice",
+        "choices": ["Simple Interest", "Compound Interest", "Interest Free"],
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "interest_rate_percentage",
+        "label": "Annual Interest Rate (%)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_schedule_type",
+        "label": "Payment Schedule Type",
+        "field_type": "choice",
+        "choices": ["Fixed Installments", "Flexible"],
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "num_installments",
+        "label": "Number of Installments",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "installment_interval_days",
+        "label": "Installment Interval",
+        "field_type": "choice",
+        "choices": ["7", "14", "30"],
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "collateral_required",
+        "label": "Collateral Required",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": True,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "collateral_description",
+        "label": "Collateral Description",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 8,
+        "condition_field_key": "collateral_required",
+        "condition_value": "true",
+    },
+    {
+        "field_key": "late_fee_percentage",
+        "label": "Late Fee (% of Missed Installment)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "default_threshold_days",
+        "label": "Default Threshold (Days of Missed Payment)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 10,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "prepayment_allowed",
+        "label": "Prepayment Allowed Without Penalty",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": True,
+        "order": 11,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "governing_state",
+        "label": "Governing State / Jurisdiction",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 12,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+PERSONAL_LOAN_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Loan Terms",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "LOAN TERMS\n\n"
+            "{{initiator_name}} (\"Lender\") agrees to loan the following amount to "
+            "{{counterparty_name}} (\"Borrower\") under the terms of this agreement:\n\n"
+            "Principal Amount: ${{principal_amount}}\n"
+            "Interest Type: {{interest_type}}\n"
+            "Interest Rate: {{interest_rate_percentage}}% per annum\n"
+            "Payment Schedule: {{payment_schedule_type}}\n"
+            "Number of Installments: {{num_installments}}\n\n"
+            "Borrower agrees to repay the principal amount plus any applicable interest in "
+            "accordance with the payment schedule defined in this agreement. Borrower must "
+            "notify Lender promptly if circumstances arise that may affect repayment ability."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Interest Terms",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "INTEREST TERMS\n\n"
+            "Interest Type: {{interest_type}}\n"
+            "Annual Interest Rate: {{interest_rate_percentage}}%\n\n"
+            "\"Simple Interest\" — Interest is calculated on the original principal only. "
+            "Total interest = Principal × Rate × Time. Interest accrues daily and is included "
+            "in each installment payment.\n\n"
+            "\"Compound Interest\" — Interest is calculated on the outstanding principal plus "
+            "accrued interest at the agreed compounding frequency. The installment schedule "
+            "reflects the amortized payment amount.\n\n"
+            "\"Interest Free\" — No interest is charged. Borrower repays only the principal "
+            "amount of ${{principal_amount}} in the agreed installments with no additional charges "
+            "beyond applicable late fees."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Collateral",
+        "order": 3,
+        "is_required": False,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "COLLATERAL\n\n"
+            "Collateral Required: {{collateral_required}}\n"
+            "Collateral Description: {{collateral_description}}\n\n"
+            "Where collateral is required, Borrower pledges the described collateral as security "
+            "for this loan. In the event of default, Lender has the right to pursue the collateral "
+            "as remediation for the outstanding loan balance, subject to applicable law.\n\n"
+            "Borrower represents that the collateral is owned free and clear, or that Borrower "
+            "has the legal right to pledge it. Borrower shall not sell, transfer, or encumber "
+            "the collateral without Lender's prior written consent during the loan term."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Late Fee Policy",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "LATE FEE POLICY\n\n"
+            "Late Fee: {{late_fee_percentage}}% of missed installment amount\n\n"
+            "If any installment is not received by its due date, a late fee of "
+            "{{late_fee_percentage}}% of the missed installment amount will be applied and "
+            "added to the outstanding balance. Late fees accrue from the day following the "
+            "missed due date. Where no late fee percentage has been specified, no late fees "
+            "apply, but the obligation to repay principal and interest remains. Consistent "
+            "late payment may be considered an event of default under this agreement."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Default Clause",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "DEFAULT CLAUSE\n\n"
+            "Default Threshold: {{default_threshold_days}} days of missed or insufficient payment\n\n"
+            "This loan shall be considered in default if Borrower fails to make a required "
+            "installment payment within {{default_threshold_days}} days of its due date, or "
+            "upon any material breach of this agreement. Upon default, the full remaining loan "
+            "balance, including accrued interest and fees, becomes immediately due and payable "
+            "in full.\n\n"
+            "Lender may pursue all available legal remedies upon default, including but not "
+            "limited to recovery of collateral, legal action, and reporting to credit bureaus "
+            "as permitted by law. Lender will provide written notice of default before initiating "
+            "collection action where practicable."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Prepayment Policy",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PREPAYMENT POLICY\n\n"
+            "Prepayment Without Penalty: {{prepayment_allowed}}\n\n"
+            "If prepayment is allowed, Borrower may repay the outstanding loan balance in full "
+            "or make additional principal payments at any time without penalty. Early repayment "
+            "reduces the total interest paid over the loan term.\n\n"
+            "If prepayment is not allowed, Borrower may be subject to a prepayment penalty "
+            "as separately agreed upon in writing. Any partial prepayments will be applied first "
+            "to outstanding fees, then accrued interest, then principal, unless otherwise agreed."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Governing Law",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "GOVERNING LAW\n\n"
+            "Governing State / Jurisdiction: {{governing_state}}\n\n"
+            "This agreement shall be governed by and construed in accordance with the laws of "
+            "{{governing_state}}, without regard to conflicts of law principles. Any dispute "
+            "arising out of or relating to this agreement shall be resolved in the courts of "
+            "{{governing_state}}, and both parties consent to personal jurisdiction in such courts.\n\n"
+            "This agreement complies with applicable usury laws and consumer lending regulations "
+            "of {{governing_state}}. If any provision is found to violate applicable law, it shall "
+            "be modified to the minimum extent necessary to achieve compliance."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "This loan agreement terminates upon full repayment of all principal, interest, and "
+            "fees owed under this agreement. Upon full repayment, Lender shall provide Borrower "
+            "with a written confirmation of loan satisfaction within 14 days.\n\n"
+            "Early termination by Borrower through full prepayment is permitted subject to the "
+            "prepayment policy herein. This agreement does not terminate upon Borrower's failure "
+            "to pay — default triggers acceleration of all amounts owed, not termination of the "
+            "repayment obligation."
+        ),
+    },
+]
+
+# ==============================================================================
+# BARTER TEMPLATES
+# ==============================================================================
+
+BARTER_GUIDED_FIELDS = [
+    {
+        "field_key": "party_a_service_description",
+        "label": "Party A Service Description",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "party_a_service_value",
+        "label": "Party A Service Estimated Value (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "party_b_service_description",
+        "label": "Party B Service Description",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "party_b_service_value",
+        "label": "Party B Service Estimated Value (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "exchange_start_date",
+        "label": "Exchange Start Date",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "completion_deadline_days",
+        "label": "Completion Deadline (Days from Start)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "verification_method",
+        "label": "Completion Verification Method",
+        "field_type": "choice",
+        "choices": ["Mutual Written Confirmation", "Third Party Verification", "Completion Certificate"],
+        "is_required": True,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "imbalance_handling",
+        "label": "Value Imbalance Handling",
+        "field_type": "choice",
+        "choices": ["Cash Settlement for Difference", "Additional Service", "Mutual Agreement"],
+        "is_required": False,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+BARTER_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Exchange",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF EXCHANGE\n\n"
+            "{{initiator_name}} (\"Party A\") and {{counterparty_name}} (\"Party B\") agree to "
+            "exchange services of equivalent value under the terms of this barter agreement:\n\n"
+            "Party A provides: {{party_a_service_description}}\n"
+            "Estimated Value: ${{party_a_service_value}}\n\n"
+            "Party B provides: {{party_b_service_description}}\n"
+            "Estimated Value: ${{party_b_service_value}}\n\n"
+            "Each party agrees to perform their respective service to a professional standard "
+            "and in good faith. The scope of each party's service is limited to the description "
+            "provided above, and any material changes to scope must be agreed upon in writing."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Exchange Timeline",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "EXCHANGE TIMELINE\n\n"
+            "Exchange Start Date: {{exchange_start_date}}\n"
+            "Completion Deadline: {{completion_deadline_days}} days from the exchange start date\n\n"
+            "Both parties agree to complete their respective service obligations within "
+            "{{completion_deadline_days}} days of {{exchange_start_date}}. If either party "
+            "anticipates a delay, they must notify the other party in writing as soon as "
+            "practicable and both parties must agree on a revised completion date. Unreasonable "
+            "delays without communication or agreed extension may constitute non-performance."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Completion Verification",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "COMPLETION VERIFICATION\n\n"
+            "Verification Method: {{verification_method}}\n\n"
+            "Both parties must confirm completion of their respective obligations using the "
+            "agreed verification method before either obligation is marked as resolved. "
+            "\"Mutual Written Confirmation\" requires written acknowledgment from both parties "
+            "that service was received and accepted. \"Third Party Verification\" requires "
+            "confirmation from an agreed neutral third party. \"Completion Certificate\" requires "
+            "a signed certificate documenting delivery and acceptance of services.\n\n"
+            "Neither obligation is considered fulfilled until the verification process is complete."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "Value Imbalance Handling",
+        "order": 4,
+        "is_required": False,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "VALUE IMBALANCE HANDLING\n\n"
+            "Imbalance Resolution Method: {{imbalance_handling}}\n\n"
+            "If the services exchanged are determined to be of unequal value, the difference "
+            "will be addressed per the agreed method. \"Cash Settlement for Difference\" requires "
+            "the party receiving greater value to pay the difference in cash. \"Additional Service\" "
+            "requires the party receiving greater value to provide an additional agreed service of "
+            "equivalent value. \"Mutual Agreement\" requires both parties to negotiate a fair "
+            "resolution at the time the imbalance is identified. Where no imbalance handling "
+            "method is specified, both parties agree the exchange is of equal value."
+        ),
+    },
+    {
+        "clause_type": "risk",
+        "title": "Non-Performance Clause",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "NON-PERFORMANCE CLAUSE\n\n"
+            "If either party is unable to fulfill their agreed service obligation due to "
+            "unforeseen circumstances, they must notify the other party in writing immediately "
+            "upon becoming aware of the impediment. Both parties must then negotiate in good "
+            "faith to reach a mutually acceptable resolution, which may include substitution "
+            "of an equivalent service, an extension of the completion deadline, or dissolution "
+            "of the exchange agreement.\n\n"
+            "Failure to notify the other party of non-performance and failure to engage in good "
+            "faith resolution may entitle the performing party to seek appropriate remedy."
+        ),
+    },
+    {
+        "clause_type": "scope",
+        "title": "No Money Exchange",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "NO MONEY EXCHANGE\n\n"
+            "This is a service-for-service barter agreement. No monetary payment is owed between "
+            "the parties as consideration for the exchange of services, except as specified under "
+            "the Value Imbalance Handling clause if applicable.\n\n"
+            "Both parties acknowledge that the IRS and applicable tax authorities may require "
+            "reporting of barter transactions as taxable income at the fair market value of "
+            "services received. Each party is solely responsible for their own tax obligations "
+            "arising from this barter exchange and should consult a tax professional as needed."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "This agreement terminates upon the mutual confirmation of completion of both "
+            "parties' service obligations using the agreed verification method.\n\n"
+            "Either party may terminate this agreement by written notice if the other party "
+            "fails to begin performance within the agreed timeframe, engages in material "
+            "breach of this agreement, or becomes unable to perform their obligation and "
+            "refuses to negotiate an alternative resolution. Upon termination, if one party "
+            "has already fully performed their obligation, both parties shall negotiate in "
+            "good faith to provide fair compensation or equivalent alternative service."
+        ),
+    },
+]
+
+
 class Command(BaseCommand):
     help = "Seed the database with initial ContractTemplate records."
 
@@ -8407,6 +10376,14 @@ class Command(BaseCommand):
         self._seed_marketing_consulting(force)
         self._seed_accounting_bookkeeping(force)
         self._seed_legal_document_prep(force)
+        self._seed_property_rental(force)
+        self._seed_equipment_rental(force)
+        self._seed_vehicle_rental(force)
+        self._seed_tax_services(force)
+        self._seed_financial_planning(force)
+        self._seed_credit_consulting(force)
+        self._seed_personal_loan(force)
+        self._seed_barter(force)
 
     def _seed_personal_training(self, force):
         name = "Personal Training Agreement"
@@ -9677,6 +11654,356 @@ class Command(BaseCommand):
                 "payment_model_token": "payment_model",
                 "amount_token": "total_fee",
                 "installments_token": "deposit_percentage",
+                "interval_days_token": "",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # RENTAL — shared helper
+    # ------------------------------------------------------------------
+
+    def _create_rental_template(
+        self, force, name, subcategory, description, structure_type, fields, clauses, obligation_params
+    ):
+        if ContractTemplate.objects.filter(name=name).exists():
+            if not force:
+                self.stdout.write(self.style.WARNING(
+                    f'Template "{name}" already exists. Use --force to recreate.'
+                ))
+                return
+            ContractTemplate.objects.filter(name=name).delete()
+            self.stdout.write(self.style.WARNING(f'Deleted existing "{name}" for recreation.'))
+        template = ContractTemplate.objects.create(
+            category="rental",
+            subcategory=subcategory,
+            name=name,
+            description=description,
+            structure_type=structure_type,
+            is_active=True,
+            tier_required="free",
+        )
+        for f in fields:
+            TemplateGuidedField.objects.create(template=template, **f)
+        for c in clauses:
+            TemplateClause.objects.create(template=template, **c)
+        TemplateObligationPattern.objects.create(template=template, **obligation_params)
+        self.stdout.write(self.style.SUCCESS(
+            f'Seeded template "{name}" with {len(fields)} guided fields and {len(clauses)} clauses.'
+        ))
+
+    # ------------------------------------------------------------------
+    # RENTAL — PROPERTY RENTAL
+    # ------------------------------------------------------------------
+
+    def _seed_property_rental(self, force):
+        self._create_rental_template(
+            force=force,
+            name="Property Rental Agreement",
+            subcategory="property_rental",
+            description=(
+                "A property rental agreement for residential and commercial leases. Includes "
+                "monthly rent, security deposit, late fee policy, maintenance responsibilities, "
+                "pet policy, early termination terms, and lease end procedures."
+            ),
+            structure_type="ONGOING",
+            fields=PROPERTY_RENTAL_GUIDED_FIELDS,
+            clauses=PROPERTY_RENTAL_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "monthly",
+                "payment_model_token": "",
+                "amount_token": "monthly_rent",
+                "installments_token": "lease_term_months",
+                "interval_days_token": "",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # RENTAL — EQUIPMENT RENTAL
+    # ------------------------------------------------------------------
+
+    def _seed_equipment_rental(self, force):
+        self._create_rental_template(
+            force=force,
+            name="Equipment Rental Agreement",
+            subcategory="equipment_rental",
+            description=(
+                "An equipment rental agreement covering tools, machinery, and other equipment. "
+                "Includes rental rate, security deposit, damage liability, late return policy, "
+                "equipment condition requirements, and cancellation terms."
+            ),
+            structure_type="ONE_TIME",
+            fields=EQUIPMENT_RENTAL_GUIDED_FIELDS,
+            clauses=EQUIPMENT_RENTAL_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "one_time",
+                "payment_model_token": "payment_model",
+                "amount_token": "rental_rate",
+                "installments_token": "num_installments",
+                "interval_days_token": "installment_interval_days",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # RENTAL — VEHICLE RENTAL
+    # ------------------------------------------------------------------
+
+    def _seed_vehicle_rental(self, force):
+        self._create_rental_template(
+            force=force,
+            name="Vehicle Rental Agreement",
+            subcategory="vehicle_rental",
+            description=(
+                "A vehicle rental agreement for cars, trucks, and other vehicles. Includes "
+                "rental rate, mileage policy, fuel policy, insurance responsibility, damage "
+                "liability, late return fee, and cancellation terms."
+            ),
+            structure_type="ONE_TIME",
+            fields=VEHICLE_RENTAL_GUIDED_FIELDS,
+            clauses=VEHICLE_RENTAL_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "one_time",
+                "payment_model_token": "",
+                "amount_token": "rental_rate",
+                "installments_token": "rental_duration",
+                "interval_days_token": "",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # FINANCIAL SERVICES — shared helper
+    # ------------------------------------------------------------------
+
+    def _create_financial_services_template(
+        self, force, name, subcategory, description, structure_type, fields, clauses, obligation_params
+    ):
+        if ContractTemplate.objects.filter(name=name).exists():
+            if not force:
+                self.stdout.write(self.style.WARNING(
+                    f'Template "{name}" already exists. Use --force to recreate.'
+                ))
+                return
+            ContractTemplate.objects.filter(name=name).delete()
+            self.stdout.write(self.style.WARNING(f'Deleted existing "{name}" for recreation.'))
+        template = ContractTemplate.objects.create(
+            category="financial_services",
+            subcategory=subcategory,
+            name=name,
+            description=description,
+            structure_type=structure_type,
+            is_active=True,
+            tier_required="free",
+        )
+        for f in fields:
+            TemplateGuidedField.objects.create(template=template, **f)
+        for c in clauses:
+            TemplateClause.objects.create(template=template, **c)
+        TemplateObligationPattern.objects.create(template=template, **obligation_params)
+        self.stdout.write(self.style.SUCCESS(
+            f'Seeded template "{name}" with {len(fields)} guided fields and {len(clauses)} clauses.'
+        ))
+
+    # ------------------------------------------------------------------
+    # FINANCIAL SERVICES — TAX SERVICES
+    # ------------------------------------------------------------------
+
+    def _seed_tax_services(self, force):
+        self._create_financial_services_template(
+            force=force,
+            name="Tax Services Agreement",
+            subcategory="tax_services",
+            description=(
+                "A tax services agreement covering tax preparation, filing, and advisory. "
+                "Includes client accuracy disclaimer, confidentiality, independent contractor "
+                "status, installment or upfront payment options, and cancellation terms."
+            ),
+            structure_type="ONE_TIME",
+            fields=TAX_SERVICES_GUIDED_FIELDS,
+            clauses=TAX_SERVICES_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "one_time",
+                "payment_model_token": "payment_model",
+                "amount_token": "total_fee",
+                "installments_token": "num_installments",
+                "interval_days_token": "installment_interval_days",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # FINANCIAL SERVICES — FINANCIAL PLANNING
+    # ------------------------------------------------------------------
+
+    def _seed_financial_planning(self, force):
+        self._create_financial_services_template(
+            force=force,
+            name="Financial Planning Agreement",
+            subcategory="financial_planning",
+            description=(
+                "A financial planning services agreement covering budget, retirement, and "
+                "investment strategy planning. Includes non-advisor disclaimer, no-guarantee "
+                "of returns clause, confidentiality, per-session or package payment model, "
+                "and cancellation policy."
+            ),
+            structure_type="ONGOING",
+            fields=FINANCIAL_PLANNING_GUIDED_FIELDS,
+            clauses=FINANCIAL_PLANNING_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "per_session",
+                "payment_model_token": "payment_model",
+                "amount_token": "rate_per_session",
+                "installments_token": "num_sessions",
+                "interval_days_token": "installment_interval_days",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # FINANCIAL SERVICES — CREDIT CONSULTING
+    # ------------------------------------------------------------------
+
+    def _seed_credit_consulting(self, force):
+        self._create_financial_services_template(
+            force=force,
+            name="Credit Consulting Agreement",
+            subcategory="credit_consulting",
+            description=(
+                "A credit consulting agreement covering credit analysis, dispute strategy, "
+                "and financial education. Includes no-upfront-fee policy, three-day right to "
+                "cancel, no-guarantee-of-results disclaimer, confidentiality, and pay-after "
+                "each round payment structure."
+            ),
+            structure_type="ONGOING",
+            fields=CREDIT_CONSULTING_GUIDED_FIELDS,
+            clauses=CREDIT_CONSULTING_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "per_session",
+                "payment_model_token": "",
+                "amount_token": "fee_per_round",
+                "installments_token": "num_consulting_rounds",
+                "interval_days_token": "",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # LENDING — shared helper
+    # ------------------------------------------------------------------
+
+    def _create_lending_template(
+        self, force, name, subcategory, description, structure_type, fields, clauses, obligation_params
+    ):
+        if ContractTemplate.objects.filter(name=name).exists():
+            if not force:
+                self.stdout.write(self.style.WARNING(
+                    f'Template "{name}" already exists. Use --force to recreate.'
+                ))
+                return
+            ContractTemplate.objects.filter(name=name).delete()
+            self.stdout.write(self.style.WARNING(f'Deleted existing "{name}" for recreation.'))
+        template = ContractTemplate.objects.create(
+            category="lending",
+            subcategory=subcategory,
+            name=name,
+            description=description,
+            structure_type=structure_type,
+            is_active=True,
+            tier_required="free",
+        )
+        for f in fields:
+            TemplateGuidedField.objects.create(template=template, **f)
+        for c in clauses:
+            TemplateClause.objects.create(template=template, **c)
+        TemplateObligationPattern.objects.create(template=template, **obligation_params)
+        self.stdout.write(self.style.SUCCESS(
+            f'Seeded template "{name}" with {len(fields)} guided fields and {len(clauses)} clauses.'
+        ))
+
+    # ------------------------------------------------------------------
+    # LENDING — PERSONAL LOAN
+    # ------------------------------------------------------------------
+
+    def _seed_personal_loan(self, force):
+        self._create_lending_template(
+            force=force,
+            name="Personal Loan Agreement",
+            subcategory="personal_loan",
+            description=(
+                "A personal loan agreement between individuals covering principal amount, "
+                "interest type and rate, installment schedule, collateral, late fee policy, "
+                "default clause, prepayment terms, and governing law."
+            ),
+            structure_type="ONE_TIME",
+            fields=PERSONAL_LOAN_GUIDED_FIELDS,
+            clauses=PERSONAL_LOAN_CLAUSES,
+            obligation_params={
+                "obligation_type": "payment",
+                "frequency_type": "installment",
+                "payment_model_token": "",
+                "amount_token": "principal_amount",
+                "installments_token": "num_installments",
+                "interval_days_token": "installment_interval_days",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # BARTER — shared helper
+    # ------------------------------------------------------------------
+
+    def _create_barter_template(
+        self, force, name, subcategory, description, structure_type, fields, clauses, obligation_params
+    ):
+        if ContractTemplate.objects.filter(name=name).exists():
+            if not force:
+                self.stdout.write(self.style.WARNING(
+                    f'Template "{name}" already exists. Use --force to recreate.'
+                ))
+                return
+            ContractTemplate.objects.filter(name=name).delete()
+            self.stdout.write(self.style.WARNING(f'Deleted existing "{name}" for recreation.'))
+        template = ContractTemplate.objects.create(
+            category="barter",
+            subcategory=subcategory,
+            name=name,
+            description=description,
+            structure_type=structure_type,
+            is_active=True,
+            tier_required="free",
+        )
+        for f in fields:
+            TemplateGuidedField.objects.create(template=template, **f)
+        for c in clauses:
+            TemplateClause.objects.create(template=template, **c)
+        TemplateObligationPattern.objects.create(template=template, **obligation_params)
+        self.stdout.write(self.style.SUCCESS(
+            f'Seeded template "{name}" with {len(fields)} guided fields and {len(clauses)} clauses.'
+        ))
+
+    # ------------------------------------------------------------------
+    # BARTER — BARTER AGREEMENT
+    # ------------------------------------------------------------------
+
+    def _seed_barter(self, force):
+        self._create_barter_template(
+            force=force,
+            name="Barter Agreement",
+            subcategory="barter_exchange",
+            description=(
+                "A service-for-service barter agreement covering scope of each party's "
+                "service, estimated values, exchange timeline, completion verification, "
+                "value imbalance handling, non-performance clause, and tax disclosure."
+            ),
+            structure_type="ONE_TIME",
+            fields=BARTER_GUIDED_FIELDS,
+            clauses=BARTER_CLAUSES,
+            obligation_params={
+                "obligation_type": "service",
+                "frequency_type": "one_time",
+                "payment_model_token": "",
+                "amount_token": "",
+                "installments_token": "",
                 "interval_days_token": "",
             },
         )

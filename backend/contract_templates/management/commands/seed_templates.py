@@ -7100,6 +7100,1264 @@ GENERAL_REPAIR_CLAUSES = [
 ]
 
 
+CONTENT_WRITING_GUIDED_FIELDS = [
+    {
+        "field_key": "content_type",
+        "label": "Content Type",
+        "field_type": "choice",
+        "choices": ["Blog Post", "Article", "Web Copy", "Whitepaper", "Email Copy", "Product Descriptions", "Social Media Copy", "Other"],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "num_pieces",
+        "label": "Number of Pieces",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "word_count_per_piece",
+        "label": "Word Count Per Piece",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "revision_rounds",
+        "label": "Revision Rounds Included",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "deadline_days",
+        "label": "Deadline (Days from Contract Start)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["flat_fee", "per_word", "monthly_retainer"],
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "total_fee",
+        "label": "Total Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "kill_fee_percentage",
+        "label": "Kill Fee Percentage (%)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+CONTENT_WRITING_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Work",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF WORK\n\n"
+            "{{initiator_name}} (the 'Writer') agrees to deliver {{num_pieces}} piece(s) of {{content_type}} content to {{counterparty_name}} (the 'Client'), with each piece not to exceed {{word_count_per_piece}} words unless otherwise agreed in writing. All content shall be original, written in the agreed voice and style, and delivered in a format mutually acceptable to both parties. The Writer retains no right to publish, license, or distribute the delivered content once full payment has been received, at which point all rights transfer to the Client as set forth in this agreement.\n\n"
+            "The Client shall provide a written brief, brand guidelines, and any reference materials reasonably necessary for the Writer to complete the work prior to commencement. If the Client fails to provide adequate direction within five (5) business days of contract execution, the Writer reserves the right to proceed based on reasonable interpretation of the project scope or to pause work without penalty until such direction is received. Scope changes requested after commencement may result in additional fees negotiated in a written amendment to this agreement."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "The Client agrees to pay {{initiator_name}} a total fee of ${{total_fee}} under the {{payment_model}} payment model as described herein. Payment is due within fourteen (14) days of delivery of the final approved content unless otherwise specified in a separate invoice. In the event that payment is not received within thirty (30) days of the due date, the Writer reserves the right to suspend delivery of any outstanding work and charge interest on the overdue balance at a rate of 1.5% per month.\n\n"
+            "For projects billed under the per_word model, the final invoice will be calculated based on the actual delivered word count, and any variance of more than ten percent (10%) from the estimated word count must be agreed to in writing before delivery. For monthly_retainer arrangements, payment is due on the first business day of each month covering that month's deliverables. The Writer will provide a written invoice for each payment cycle, and the Client agrees not to withhold payment for reasons not previously communicated in writing."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation and Kill Fee",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION AND KILL FEE\n\n"
+            "If the Client cancels this agreement after the Writer has commenced work, the Client shall pay a kill fee equal to {{kill_fee_percentage}}% of the total contracted fee (${{total_fee}}), in addition to payment for any fully completed deliverables already submitted. This kill fee compensates the Writer for time, research, and opportunity cost incurred prior to cancellation and is non-negotiable once work has begun. The kill fee is due within fourteen (14) days of the written cancellation notice.\n\n"
+            "If the Client cancels before any work has commenced, no kill fee is owed, but the Client must notify the Writer in writing at least forty-eight (48) hours before the scheduled start date. If {{initiator_name}} cancels due to circumstances beyond their control, they shall notify the Client in writing as soon as practicable and refund any advance payments for work not yet begun. Neither party shall be liable for consequential damages arising from a good-faith cancellation made in accordance with this clause."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Revisions",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "REVISIONS\n\n"
+            "This agreement includes {{revision_rounds}} round(s) of revisions per deliverable at no additional charge. A revision round is defined as a single consolidated set of changes submitted by the Client in one communication; multiple separate revision requests submitted after the Writer has responded to an initial round shall be counted as additional rounds. Revisions must be requested within five (5) business days of delivery; after this period, the deliverable is deemed accepted.\n\n"
+            "Revisions that constitute a fundamental change to the agreed brief — including changes to topic, audience, format, or tone — may be treated as new work and billed accordingly, at the Writer's discretion with prior written notice to the Client. Additional revision rounds beyond the included {{revision_rounds}} round(s) are available at a rate to be agreed upon in writing before proceeding. The Writer is not obligated to implement revisions that violate copyright law, constitute defamation, or require the production of misleading content."
+        ),
+    },
+    {
+        "clause_type": "confidentiality",
+        "title": "Confidentiality",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CONFIDENTIALITY\n\n"
+            "{{initiator_name}} agrees to keep confidential all non-public information disclosed by {{counterparty_name}} in connection with this engagement, including but not limited to business strategies, proprietary data, customer lists, product plans, and financial information. The Writer shall not disclose such information to any third party without the Client's prior written consent, and shall use such information solely for the purpose of fulfilling obligations under this agreement. This obligation of confidentiality survives termination of this agreement for a period of two (2) years.\n\n"
+            "The Client acknowledges that the Writer may work with other clients in similar industries, and that this agreement does not constitute an exclusive relationship unless separately agreed in writing. The confidentiality obligation does not apply to information that is already publicly available, independently developed by the Writer without use of the Client's confidential information, or required to be disclosed by law or court order. In the event of a required legal disclosure, the Writer shall provide the Client with prompt written notice to the extent permitted by law."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Independent Contractor Status",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "INDEPENDENT CONTRACTOR STATUS\n\n"
+            "{{initiator_name}} is engaged as an independent contractor and not as an employee, agent, partner, or joint venturer of {{counterparty_name}}. The Writer retains the right to determine the method, means, and manner of performing the services described herein, subject to the agreed deliverables and deadlines. The Client shall not withhold income taxes, Social Security, or any other payroll taxes on the Writer's behalf, and the Writer is solely responsible for all applicable tax obligations arising from compensation received under this agreement.\n\n"
+            "The Writer is not entitled to any employee benefits, including but not limited to health insurance, vacation pay, sick leave, retirement benefits, or workers' compensation. Nothing in this agreement shall be construed to create an employment relationship, and neither party has the authority to bind the other in any contract or obligation with third parties. The Writer may perform services for other clients during the term of this agreement, provided such work does not conflict with the Writer's obligations to the Client."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Non-Solicitation",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "NON-SOLICITATION\n\n"
+            "During the term of this agreement and for a period of twelve (12) months following its termination or expiration, neither party shall directly solicit for employment or independent engagement any employee, contractor, or key personnel of the other party who was introduced to or became known through this engagement. This restriction applies to direct solicitation only and does not prohibit either party from responding to general public job postings or advertisements. A breach of this clause shall entitle the non-breaching party to seek injunctive relief and damages as permitted by applicable law.\n\n"
+            "{{counterparty_name}} further agrees not to circumvent {{initiator_name}} by directly engaging any subcontractors or collaborators introduced by the Writer in the course of this project without the Writer's written consent. This non-circumvention obligation applies for a period of twelve (12) months following the conclusion of this agreement. These restrictions are intended to protect the legitimate business interests of both parties and are considered reasonable in scope, duration, and geography given the nature of the services provided."
+        ),
+    },
+    {
+        "clause_type": "liability",
+        "title": "Limitation of Liability",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "LIMITATION OF LIABILITY\n\n"
+            "{{initiator_name}}'s total liability to {{counterparty_name}} for any claim arising out of or related to this agreement shall not exceed the total fees paid to the Writer in the three (3) months preceding the event giving rise to the claim. In no event shall either party be liable for any indirect, incidental, special, consequential, or punitive damages, including lost profits, loss of business, or loss of data, even if advised of the possibility of such damages. The Client assumes all responsibility for how the delivered content is used, published, or distributed.\n\n"
+            "The Writer warrants that all content delivered under this agreement is original and does not knowingly infringe upon any third-party intellectual property rights; however, the Writer makes no representation that the content is suitable for any specific legal, regulatory, or commercial purpose, and the Client is responsible for obtaining independent legal or compliance review as needed. If the Client provides source material, data, or instructions that contribute to a claim of infringement or inaccuracy, the Writer's liability is limited accordingly. This limitation of liability reflects a reasonable allocation of risk between the parties."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 9,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate this agreement upon seven (7) days' written notice to the other party. In the event of termination by the Client, the kill fee provisions set forth in the Cancellation and Kill Fee clause shall apply. In the event of termination by {{initiator_name}}, the Writer shall deliver all work completed to the date of termination and refund any prepaid fees attributable to work not yet performed. All payment obligations for work already accepted by the Client survive termination.\n\n"
+            "Either party may terminate this agreement immediately and without notice if the other party materially breaches this agreement and fails to cure such breach within five (5) business days of receiving written notice specifying the breach. Upon termination, the Client's rights to use any deliverables are contingent upon full payment of all amounts due; work for which payment has not been received remains the intellectual property of the Writer. Clauses relating to confidentiality, intellectual property, limitation of liability, and non-solicitation shall survive the termination or expiration of this agreement."
+        ),
+    },
+]
+
+SOCIAL_MEDIA_MANAGEMENT_GUIDED_FIELDS = [
+    {
+        "field_key": "platforms",
+        "label": "Platforms to Manage (e.g., Instagram, LinkedIn, TikTok)",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "posts_per_month",
+        "label": "Posts Per Month",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "content_formats",
+        "label": "Content Formats (e.g., static images, reels, stories, carousels)",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "account_access_granted",
+        "label": "Account Access Granted to Manager",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "analytics_reporting",
+        "label": "Monthly Analytics Report Included",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["monthly_retainer", "per_platform", "project_based"],
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "monthly_fee",
+        "label": "Monthly Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 7,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "contract_duration_months",
+        "label": "Contract Duration (Months)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "revision_rounds",
+        "label": "Content Revision Rounds Per Month",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+SOCIAL_MEDIA_MANAGEMENT_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (the 'Manager') agrees to provide social media management services to {{counterparty_name}} (the 'Client') for the following platforms: {{platforms}}. Services include the creation and scheduling of {{posts_per_month}} posts per month using the following content formats: {{content_formats}}. All content will be developed in accordance with the Client's brand guidelines and subject to the revision and approval process described herein.\n\n"
+            "The Manager will maintain active management of all covered platforms for the duration of this agreement, including community engagement activities such as responding to comments and messages, where account access has been granted. The Client acknowledges that social media algorithms and platform policies are subject to change and that organic reach and engagement results cannot be guaranteed. Any additional platforms, post types, or services not listed above are outside the scope of this agreement and require a written amendment."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "The Client agrees to pay {{initiator_name}} ${{monthly_fee}} per month under the {{payment_model}} payment model for the duration of this agreement. Payment is due on or before the first business day of each calendar month for services rendered during that month. Failure to remit payment within fifteen (15) days of the due date may result in suspension of services, and the Manager shall not be liable for any losses arising from such suspension.\n\n"
+            "This agreement has a minimum term of {{contract_duration_months}} month(s); the Client is obligated for the full monthly fee for each month within this term even if services are not fully utilized. In the event the Client increases the scope of services mid-term, revised fees will apply from the date of the written amendment. All fees are exclusive of third-party advertising spend, platform subscription fees, or paid tools required to deliver the services, which are the Client's responsibility unless otherwise agreed in writing."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "Either party may terminate this agreement at the end of any calendar month by providing at least thirty (30) days' written notice prior to the desired termination date. If the Client cancels before the minimum term of {{contract_duration_months}} month(s) has elapsed, the Client shall pay an early termination fee equal to fifty percent (50%) of the remaining monthly fees due for the unexpired term. This fee compensates the Manager for resources committed and opportunity costs incurred in maintaining the engagement.\n\n"
+            "Upon receipt of a valid cancellation notice, the Manager will continue to deliver services through the end of the paid notice period. The Client is responsible for removing the Manager's access credentials from all platforms within forty-eight (48) hours following the effective termination date. Content assets, analytics reports, and media files produced during the engagement will be transferred to the Client upon receipt of all outstanding payments."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Content Approval and Revisions",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CONTENT APPROVAL AND REVISIONS\n\n"
+            "{{initiator_name}} will submit a content calendar for {{counterparty_name}}'s review and approval at least five (5) business days before the scheduled posting date. The Client agrees to provide consolidated feedback within three (3) business days of receiving the content calendar; failure to do so will be treated as approval and the Manager may proceed with scheduling. Each monthly content cycle includes {{revision_rounds}} round(s) of revisions; additional rounds will be billed at the Manager's standard hourly rate.\n\n"
+            "Approved content submitted for revision after it has already been scheduled or published will be treated as a new request and may incur additional charges. The Client accepts that time-sensitive content (e.g., trending topics, real-time event coverage) may require expedited approval, and the Manager will use reasonable judgment when the Client is unresponsive within a two (2) hour window for such content. The Manager reserves the right to decline requests that are factually misleading, potentially defamatory, or in violation of platform community standards."
+        ),
+    },
+    {
+        "clause_type": "confidentiality",
+        "title": "Confidentiality and Account Security",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CONFIDENTIALITY AND ACCOUNT SECURITY\n\n"
+            "{{initiator_name}} agrees to treat all login credentials, account access information, and non-public business information shared by {{counterparty_name}} as strictly confidential, and shall not disclose such information to any unauthorized third party. The Manager shall implement reasonable security practices to protect account credentials and will notify the Client immediately upon becoming aware of any unauthorized access or suspected security breach. Account credentials will be stored using industry-standard password management practices and will not be shared beyond the Manager's team members directly involved in delivering the services.\n\n"
+            "The Client is encouraged to use role-based access or dedicated business manager accounts where platform features allow, rather than sharing primary account passwords. The Manager shall not use the Client's platforms for any purpose other than delivering the services described in this agreement. All confidentiality obligations survive termination of this agreement for a period of two (2) years."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Independent Contractor Status",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "INDEPENDENT CONTRACTOR STATUS\n\n"
+            "{{initiator_name}} is engaged as an independent contractor and not as an employee of {{counterparty_name}}. The Manager retains full control over the manner and means by which services are performed, subject to the deliverable specifications and deadlines set forth in this agreement. The Client shall not withhold or remit taxes on the Manager's behalf, and the Manager is solely responsible for all federal, state, and local tax obligations arising from compensation received hereunder.\n\n"
+            "The Manager is not entitled to employee benefits of any kind, including but not limited to health coverage, paid time off, or retirement contributions. Nothing in this agreement creates a partnership, joint venture, or agency relationship between the parties, and neither party may bind the other in any contract with a third party without prior written authorization. The Manager may engage subcontractors to assist in delivering the services provided that the Manager remains fully responsible for the quality and timeliness of all deliverables."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Non-Solicitation",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "NON-SOLICITATION\n\n"
+            "During the term of this agreement and for twelve (12) months following its expiration or termination, {{counterparty_name}} agrees not to directly solicit, hire, or engage any employee, subcontractor, or team member of {{initiator_name}} who was introduced to or became known through this engagement, without the Manager's prior written consent. Similarly, {{initiator_name}} agrees not to directly solicit the Client's employees or key personnel for external engagements during the same period. Violation of this clause entitles the non-breaching party to seek appropriate legal remedies including injunctive relief.\n\n"
+            "This clause does not prohibit either party from hiring individuals who independently apply for publicly advertised positions. The restriction is narrowly intended to prevent circumvention of the professional relationship established between the parties. Both parties acknowledge this restriction is reasonable given the nature of the services and the access to personnel and business information involved."
+        ),
+    },
+    {
+        "clause_type": "liability",
+        "title": "Limitation of Liability",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "LIMITATION OF LIABILITY\n\n"
+            "{{initiator_name}}'s total liability to {{counterparty_name}} for any claim arising under this agreement shall not exceed the fees paid in the two (2) months preceding the event giving rise to such claim. Neither party shall be liable for indirect, incidental, punitive, or consequential damages, including but not limited to loss of revenue, loss of followers, reputational harm, or platform penalties resulting from the services or their outcomes. The Client acknowledges that social media results are inherently uncertain and that the Manager's services do not guarantee any particular level of engagement, follower growth, or business outcome.\n\n"
+            "The Manager is not responsible for platform outages, algorithm changes, policy updates, or account suspensions imposed by social media platforms outside the Manager's control. If the Client provides content, assets, or instructions that result in platform penalties or third-party claims, the Client shall indemnify and hold the Manager harmless from any resulting costs or liabilities. This limitation of liability constitutes an essential element of the basis of the bargain between the parties."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 9,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "This agreement commences on the date of execution and continues for a minimum term of {{contract_duration_months}} month(s), after which it renews on a month-to-month basis unless either party provides thirty (30) days' written notice of non-renewal. Either party may terminate immediately for cause if the other party materially breaches this agreement and fails to cure such breach within seven (7) days of written notice. Early termination by the Client within the minimum term triggers the early termination fee described in the Cancellation Policy clause.\n\n"
+            "Upon termination, {{initiator_name}} shall cease all activity on the Client's accounts, deliver a final analytics report if applicable, and transfer all content assets and account access back to the Client within five (5) business days. All outstanding invoices become immediately due upon termination. Clauses pertaining to confidentiality, intellectual property, limitation of liability, and non-solicitation shall survive the termination or expiration of this agreement."
+        ),
+    },
+]
+
+VIRTUAL_ASSISTANT_GUIDED_FIELDS = [
+    {
+        "field_key": "service_scope",
+        "label": "Service Scope (describe tasks and responsibilities)",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "hours_per_week",
+        "label": "Hours Per Week",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "availability_schedule",
+        "label": "Availability Schedule (e.g., Mon–Fri 9am–5pm EST)",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "communication_channels",
+        "label": "Communication Channels (e.g., email, Slack, phone)",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["hourly", "monthly_retainer"],
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "hourly_rate",
+        "label": "Hourly Rate (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 6,
+        "condition_field_key": "payment_model",
+        "condition_value": "hourly",
+    },
+    {
+        "field_key": "monthly_fee",
+        "label": "Monthly Retainer Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 7,
+        "condition_field_key": "payment_model",
+        "condition_value": "monthly_retainer",
+    },
+    {
+        "field_key": "response_time_hours",
+        "label": "Maximum Response Time (Hours)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "tools_access_required",
+        "label": "Tools / Systems Access Required (e.g., Google Workspace, CRM, project management software)",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+VIRTUAL_ASSISTANT_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (the 'Assistant') agrees to provide virtual assistant services to {{counterparty_name}} (the 'Client') as described in the following scope: {{service_scope}}. The Assistant will be available for up to {{hours_per_week}} hours per week during the schedule of {{availability_schedule}}, and will be reachable via {{communication_channels}}. The Assistant will acknowledge all communications within {{response_time_hours}} hours during the agreed availability schedule.\n\n"
+            "Access to the following tools and systems will be required to perform the services: {{tools_access_required}}. The Client is responsible for provisioning access to all necessary tools and systems prior to the commencement of services, and for revoking such access promptly upon termination of this agreement. Any tasks falling outside the described service scope require mutual written agreement before the Assistant is obligated to perform them."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Compensation shall be provided to {{initiator_name}} under the {{payment_model}} model as follows: if hourly, at a rate of ${{hourly_rate}} per hour, invoiced weekly or bi-weekly based on actual hours worked and supported by time logs; if monthly_retainer, at a flat fee of ${{monthly_fee}} per month due on the first business day of each month. Invoices are payable within fourteen (14) days of issuance, and late payments shall accrue interest at 1.5% per month on the outstanding balance.\n\n"
+            "For hourly engagements, the Assistant will maintain accurate time records and provide a detailed log with each invoice. Unused hours under a monthly retainer arrangement do not roll over to subsequent months. The Client agrees not to request work beyond the agreed {{hours_per_week}} hours per week without prior written approval and, where applicable, agreement on additional compensation."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "Either party may terminate this agreement by providing fourteen (14) days' written notice to the other party. The Client shall pay all fees accrued through the effective termination date, including any applicable prorated retainer fees or hourly time logged during the notice period. If the Client cancels with less than forty-eight (48) hours' notice in a given week after the Assistant has allocated and reserved that time, the Client may be charged for up to four (4) hours of reserved time as a scheduling fee.\n\n"
+            "If {{initiator_name}} cancels this agreement without reasonable cause and with less than fourteen (14) days' notice, the Assistant will use best efforts to ensure a smooth transition, including documentation of outstanding tasks and access hand-off. Neither party shall be liable for consequential damages arising from a good-faith termination in accordance with this clause. All outstanding payments are due immediately upon the effective termination date."
+        ),
+    },
+    {
+        "clause_type": "confidentiality",
+        "title": "Confidentiality and Data Security",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CONFIDENTIALITY AND DATA SECURITY\n\n"
+            "{{initiator_name}} agrees to maintain strict confidentiality with respect to all non-public information, data, documents, and materials accessed in the course of providing services to {{counterparty_name}}, including but not limited to business strategies, customer data, financial records, proprietary processes, and personal information. The Assistant shall not share, copy, or use such information for any purpose other than delivering the agreed services. This obligation of confidentiality is indefinite and survives the termination of this agreement.\n\n"
+            "The Assistant agrees to use only the tools and communication channels specified in this agreement for storing and transmitting the Client's data, and shall not copy or retain Client data on personal devices or unsecured storage systems. In the event of a suspected data breach or unauthorized access to any Client system, the Assistant shall notify the Client within twenty-four (24) hours of becoming aware of the incident. The Assistant agrees to comply with all reasonable data security policies communicated by the Client in writing."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Independent Contractor Status",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "INDEPENDENT CONTRACTOR STATUS\n\n"
+            "{{initiator_name}} is engaged as an independent contractor and not as an employee of {{counterparty_name}}. The Assistant has the right to determine how services are performed within the framework of the agreed deliverables, schedules, and communication standards. The Client shall not direct or control the manner of the Assistant's work beyond specifying outcomes, deadlines, and communication requirements, and shall not withhold payroll taxes on the Assistant's behalf.\n\n"
+            "The Assistant is solely responsible for self-employment taxes, business expenses, and any required professional licenses or certifications. The Assistant may work for other clients during the term of this agreement, provided such work does not interfere with the performance of obligations owed to the Client under this agreement. Nothing herein creates any partnership, employment, or agency relationship between the parties."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Non-Solicitation",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "NON-SOLICITATION\n\n"
+            "During the term of this agreement and for a period of twelve (12) months following its termination, {{counterparty_name}} agrees not to directly solicit, hire, or engage any subcontractors or team members of {{initiator_name}} who participated in delivering services under this agreement, without the Assistant's prior written consent. Likewise, the Assistant agrees not to directly solicit the Client's employees or contractors for unrelated engagements during the same period. This restriction applies only to direct solicitation and does not restrict either party from hiring individuals who respond to general public postings.\n\n"
+            "Both parties acknowledge that the virtual assistant relationship provides substantial access to internal operations, personnel, and business contacts, and that these restrictions are reasonably necessary to protect each party's legitimate interests. Breach of this clause by either party shall entitle the non-breaching party to seek injunctive relief in addition to monetary damages. The parties agree these restrictions are reasonable in scope and duration."
+        ),
+    },
+    {
+        "clause_type": "liability",
+        "title": "Limitation of Liability",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "LIMITATION OF LIABILITY\n\n"
+            "{{initiator_name}}'s total liability to {{counterparty_name}} for any claim arising under this agreement shall not exceed the fees paid to the Assistant in the sixty (60) days preceding the event giving rise to the claim. Neither party shall be liable to the other for indirect, consequential, special, incidental, or punitive damages, including lost profits, business interruption, or data loss, regardless of whether such damages were foreseeable. The Client accepts that errors or delays caused by third-party tools, platform outages, or the Client's own untimely provision of instructions or materials are outside the Assistant's control and liability.\n\n"
+            "The Assistant shall not be liable for any action taken in good faith based on the Client's express instructions, even if those instructions later prove to be incorrect or result in unintended outcomes. The Client is responsible for reviewing and verifying all completed work before using, publishing, or acting upon it. This limitation of liability is a fundamental term of this agreement and reflects the allocation of risk agreed to by both parties."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "This agreement may be terminated by either party upon fourteen (14) days' written notice, or immediately by either party in the event of a material breach that remains uncured for five (5) business days following written notice of such breach. Upon termination, the Assistant shall cease all work, return or securely delete all Client materials and access credentials, and submit a final invoice for all completed work through the termination date. The Client shall remit full payment of the final invoice within fourteen (14) days.\n\n"
+            "If the Client terminates the agreement due to the Assistant's material breach, no further fees shall be owed beyond work accepted and approved. If {{initiator_name}} terminates for the Client's material breach, all fees for work performed through the termination date become immediately due. Clauses relating to confidentiality, data security, limitation of liability, and non-solicitation shall survive the termination of this agreement."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Tools, Access, and Expense Reimbursement",
+        "order": 9,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TOOLS, ACCESS, AND EXPENSE REIMBURSEMENT\n\n"
+            "The Client agrees to provide {{initiator_name}} with the necessary access and credentials for all tools and systems listed as required: {{tools_access_required}}. The Assistant shall use Client-provisioned tools exclusively for work within the scope of this agreement and shall not store Client credentials in any system not approved by the Client. If the Client requires the Assistant to procure specific software, subscriptions, or other resources on the Client's behalf, all such expenses must be pre-approved in writing and will be reimbursed within fourteen (14) days of submission of valid receipts.\n\n"
+            "The Assistant is not required to acquire personal subscriptions to tools or platforms at their own expense in order to deliver services under this agreement. Any tools, accounts, or assets created or managed by the Assistant on behalf of the Client remain the property of the Client. Upon termination, the Assistant will promptly transfer all such accounts, assets, and associated data to the Client or a designee specified in writing."
+        ),
+    },
+]
+
+MARKETING_CONSULTING_GUIDED_FIELDS = [
+    {
+        "field_key": "consulting_type",
+        "label": "Consulting Type",
+        "field_type": "choice",
+        "choices": ["Strategy Development", "Campaign Management", "SEO and SEM", "Brand Consulting", "Market Research", "Full Service", "Other"],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "deliverables_description",
+        "label": "Deliverables Description",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["flat_fee", "hourly", "monthly_retainer", "milestone"],
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "total_fee",
+        "label": "Total Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "hourly_rate",
+        "label": "Hourly Rate (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 5,
+        "condition_field_key": "payment_model",
+        "condition_value": "hourly",
+    },
+    {
+        "field_key": "num_installments",
+        "label": "Number of Installments",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 6,
+        "condition_field_key": "payment_model",
+        "condition_value": "milestone",
+    },
+    {
+        "field_key": "installment_interval_days",
+        "label": "Installment Interval",
+        "field_type": "choice",
+        "choices": ["7", "30"],
+        "is_required": False,
+        "order": 7,
+        "condition_field_key": "payment_model",
+        "condition_value": "milestone",
+    },
+    {
+        "field_key": "revision_rounds",
+        "label": "Revision Rounds Included",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "contract_duration_months",
+        "label": "Contract Duration (Months)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+MARKETING_CONSULTING_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Consulting Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF CONSULTING SERVICES\n\n"
+            "{{initiator_name}} (the 'Consultant') agrees to provide {{consulting_type}} marketing consulting services to {{counterparty_name}} (the 'Client') over a period of {{contract_duration_months}} month(s) from the date of contract execution. The specific deliverables to be produced under this engagement are as follows: {{deliverables_description}}. All deliverables shall be produced to professional standards and delivered in formats agreed upon by both parties in writing prior to commencement.\n\n"
+            "The Consultant will work collaboratively with the Client to understand the Client's business objectives, target audiences, and competitive landscape as necessary to deliver the agreed services. The Client agrees to provide timely access to brand assets, historical data, market research, and relevant internal stakeholders as reasonably requested by the Consultant. Any material change to the project scope, timeline, or deliverables must be agreed upon in a written amendment signed by both parties."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "The Client agrees to pay {{initiator_name}} a total of ${{total_fee}} under the {{payment_model}} payment model. For flat_fee engagements, fifty percent (50%) is due upon contract execution and the balance is due upon delivery of final deliverables. For hourly engagements, the Client will be billed at ${{hourly_rate}} per hour, invoiced bi-weekly based on time logs, with payment due within fourteen (14) days of each invoice. For monthly_retainer arrangements, ${{total_fee}} is due on the first business day of each month. For milestone-based arrangements, the total fee will be divided into {{num_installments}} equal installments paid every {{installment_interval_days}} days, with the first installment due upon contract execution.\n\n"
+            "All invoices not paid within the agreed period will accrue interest at 1.5% per month on the outstanding balance. The Consultant reserves the right to suspend work in the event of non-payment after providing seven (7) days' written notice to the Client. All fees are exclusive of applicable taxes and out-of-pocket expenses such as travel, advertising spend, or third-party tool costs, which require prior written approval and will be billed at cost."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation and Early Termination",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION AND EARLY TERMINATION\n\n"
+            "If the Client cancels this agreement after work has commenced but before all deliverables have been completed, the Client shall pay for all work completed to date plus thirty percent (30%) of the remaining unpaid balance as a cancellation fee. This fee reflects the Consultant's investment in project planning, research, and resource allocation that cannot be recovered after commencement. Cancellation must be made in writing and is effective upon receipt by the Consultant.\n\n"
+            "If {{initiator_name}} cancels this agreement without cause, the Consultant shall deliver all work completed to date, refund any prepaid fees proportional to undelivered work, and provide a transition brief to assist the Client in engaging a replacement consultant. Neither party shall be liable for delays or cancellations caused by force majeure events, including but not limited to natural disasters, government actions, or platform-wide outages. Written notice of force majeure events must be provided within forty-eight (48) hours of the triggering event."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Revisions and Approval",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "REVISIONS AND APPROVAL\n\n"
+            "Each deliverable includes {{revision_rounds}} round(s) of revisions at no additional charge. A revision is defined as a single consolidated set of changes communicated in one written submission. Revisions representing a change in project direction, target audience, or strategic approach may be treated as new scope and billed accordingly, at the Consultant's discretion with advance written notice. Additional revision rounds beyond the included {{revision_rounds}} are billed at the Consultant's standard hourly rate.\n\n"
+            "The Client agrees to review and provide written feedback on each deliverable within five (5) business days of receipt. Failure to provide feedback within this period will result in the deliverable being deemed approved. Once approved or deemed approved, a deliverable may be modified only through a written change order. The Consultant is not responsible for outcomes resulting from the Client's modification of approved deliverables without the Consultant's involvement."
+        ),
+    },
+    {
+        "clause_type": "confidentiality",
+        "title": "Confidentiality",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CONFIDENTIALITY\n\n"
+            "{{initiator_name}} agrees to hold in confidence all non-public information disclosed by {{counterparty_name}} in connection with this engagement, including business strategies, customer data, campaign performance data, financial information, and competitive intelligence. The Consultant shall not disclose such information to any third party without the Client's prior written consent and shall use it solely to fulfill obligations under this agreement. This obligation survives termination of this agreement for a period of three (3) years.\n\n"
+            "The Consultant may disclose the existence of the engagement (but not its contents) for portfolio and business development purposes unless the Client expressly requests otherwise in writing. The Client acknowledges that the Consultant works with multiple clients, including potential competitors, and that this agreement does not grant exclusivity unless separately agreed in writing. Confidential information does not include information that is publicly known, independently developed, or required to be disclosed by law."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Independent Contractor Status",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "INDEPENDENT CONTRACTOR STATUS\n\n"
+            "{{initiator_name}} is engaged as an independent contractor, not an employee, agent, or partner of {{counterparty_name}}. The Consultant determines the methods, tools, and approach for delivering the agreed services, subject to the deliverable specifications and deadlines in this agreement. The Client shall not withhold or remit taxes on behalf of the Consultant, and the Consultant is solely responsible for all tax obligations arising from this engagement.\n\n"
+            "The Consultant is not entitled to employee benefits and may perform services for other clients during the term of this agreement, provided there is no direct conflict of interest with the Client's business. The Consultant will disclose any material conflicts of interest to the Client in writing as soon as they become known. Nothing in this agreement creates an employment, partnership, or joint venture relationship between the parties."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Non-Solicitation",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "NON-SOLICITATION\n\n"
+            "For the duration of this agreement and for twelve (12) months following its termination, {{counterparty_name}} agrees not to directly solicit or hire any employee, subcontractor, or associate of {{initiator_name}} who worked on this engagement. Similarly, {{initiator_name}} agrees not to directly solicit or hire any key employee or contractor of the Client who was introduced through this engagement. Violations of this clause entitle the non-breaching party to pursue monetary damages and injunctive relief.\n\n"
+            "This clause does not apply to hires resulting from publicly advertised positions. Both parties acknowledge that the consulting relationship provides significant exposure to the other party's personnel, business relationships, and confidential strategies, and that these restrictions are proportionate and reasonable. These obligations survive the expiration or termination of this agreement for the full twelve (12) month period."
+        ),
+    },
+    {
+        "clause_type": "liability",
+        "title": "Limitation of Liability",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "LIMITATION OF LIABILITY\n\n"
+            "{{initiator_name}}'s total liability to {{counterparty_name}} under or in connection with this agreement shall not exceed the total fees paid to the Consultant in the three (3) months preceding the event giving rise to the claim. Neither party shall be liable for any indirect, incidental, special, consequential, or punitive damages, including loss of revenue, brand harm, or missed business opportunities, even if such damages were foreseeable. Marketing outcomes, including but not limited to campaign performance, lead generation, search rankings, or revenue impact, are not guaranteed and are subject to market conditions beyond the Consultant's control.\n\n"
+            "The Client is solely responsible for reviewing and approving all strategies, campaigns, and content before implementation, and the Consultant shall not be liable for outcomes resulting from the Client's implementation decisions. The Consultant makes no warranty that services will be error-free or achieve any specific commercial result. This limitation of liability is a material term of this agreement and reflects the parties' agreement on the allocation of commercial risk."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 9,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "This agreement terminates upon the completion of all deliverables and receipt of final payment, or upon the expiration of {{contract_duration_months}} month(s), whichever occurs first. Either party may terminate this agreement early upon fourteen (14) days' written notice, subject to the cancellation provisions set forth herein. Immediate termination for cause is available to either party if the other materially breaches this agreement and fails to remedy the breach within seven (7) days of written notice.\n\n"
+            "Upon termination, {{initiator_name}} shall deliver all completed work product and transfer any Client-owned assets, accounts, or data in the Consultant's possession within five (5) business days. All fees accrued through the termination date are immediately due. Provisions relating to confidentiality, intellectual property ownership, limitation of liability, and non-solicitation shall survive the termination or expiration of this agreement."
+        ),
+    },
+]
+
+ACCOUNTING_BOOKKEEPING_GUIDED_FIELDS = [
+    {
+        "field_key": "service_type",
+        "label": "Service Type",
+        "field_type": "choice",
+        "choices": ["Bookkeeping", "Tax Preparation", "Payroll", "Financial Reporting", "Full Accounting", "Audit Support", "Other"],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "accounting_software",
+        "label": "Accounting Software",
+        "field_type": "choice",
+        "choices": ["QuickBooks", "Xero", "FreshBooks", "Wave", "Sage", "Other"],
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "reporting_period",
+        "label": "Reporting Period",
+        "field_type": "choice",
+        "choices": ["Monthly", "Quarterly", "Annually"],
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["monthly_retainer", "per_project", "hourly"],
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "monthly_fee",
+        "label": "Monthly Retainer Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 5,
+        "condition_field_key": "payment_model",
+        "condition_value": "monthly_retainer",
+    },
+    {
+        "field_key": "project_fee",
+        "label": "Project Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 6,
+        "condition_field_key": "payment_model",
+        "condition_value": "per_project",
+    },
+    {
+        "field_key": "hourly_rate",
+        "label": "Hourly Rate (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 7,
+        "condition_field_key": "payment_model",
+        "condition_value": "hourly",
+    },
+    {
+        "field_key": "data_access_method",
+        "label": "Data Access Method",
+        "field_type": "choice",
+        "choices": ["Shared Credentials", "View-Only Access", "Document Submission", "Other"],
+        "is_required": True,
+        "order": 8,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+ACCOUNTING_BOOKKEEPING_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF SERVICES\n\n"
+            "{{initiator_name}} (the 'Accountant') agrees to provide {{service_type}} services to {{counterparty_name}} (the 'Client') using {{accounting_software}} as the primary platform. Financial data will be processed and reports delivered on a {{reporting_period}} basis unless a different schedule is mutually agreed in writing. The Client will provide access to financial records through the {{data_access_method}} method, and is responsible for ensuring that all submitted data is accurate, complete, and timely.\n\n"
+            "The Accountant's services are limited to the specific functions described herein and do not include legal advice, investment advisory services, or representation before tax authorities unless separately agreed in writing. Any services outside this defined scope — including additional reporting, payroll runs not included in the original scope, or multi-entity consolidations — will require a written amendment and may be subject to additional fees. The Client agrees to cooperate fully with the Accountant by providing requested documents and responses to queries within five (5) business days."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "Compensation shall be provided to {{initiator_name}} under the {{payment_model}} model: for monthly_retainer engagements, the Client will pay ${{monthly_fee}} per month due on the first business day of each month; for per_project engagements, the Client will pay ${{project_fee}} with fifty percent (50%) due upon contract execution and the balance due upon delivery of final reports; for hourly engagements, the Client will be invoiced at ${{hourly_rate}} per hour, billed bi-weekly with payment due within fourteen (14) days. All fees are exclusive of applicable taxes, filing fees, and third-party software subscription costs.\n\n"
+            "Late payments will accrue interest at 1.5% per month on the outstanding balance from the due date. If payment is not received within thirty (30) days of the due date, the Accountant reserves the right to suspend services and withhold delivery of financial reports until the account is made current. The Client acknowledges that suspension of services due to non-payment may result in penalties from tax authorities and agrees to hold the Accountant harmless for any such consequences."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "Either party may terminate this agreement upon thirty (30) days' written notice. The Client remains responsible for all fees accrued through the termination date, including any prorated monthly fees for partial billing periods. If the Client terminates the agreement during an active reporting cycle, the Accountant will complete the current cycle's deliverables and invoice for the full cycle amount before closing the engagement.\n\n"
+            "Upon termination, {{initiator_name}} will provide the Client with a transition package including all financial records, working documents, and software access credentials within ten (10) business days of the termination date, contingent on receipt of full payment. If {{initiator_name}} terminates the agreement without cause, the Accountant shall provide at minimum thirty (30) days of continued services to allow the Client time to arrange a replacement. The parties agree to cooperate in good faith to ensure continuity of financial record-keeping through the transition period."
+        ),
+    },
+    {
+        "clause_type": "confidentiality",
+        "title": "Confidentiality and Data Security",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CONFIDENTIALITY AND DATA SECURITY\n\n"
+            "{{initiator_name}} acknowledges that financial records, tax information, payroll data, and related business information provided by {{counterparty_name}} are highly sensitive and confidential. The Accountant agrees not to disclose any such information to third parties without the Client's express written consent, except as required by law or regulatory authority. All financial data will be stored and transmitted using industry-standard encryption and security practices, and access will be restricted to team members directly involved in delivering the agreed services.\n\n"
+            "The Accountant shall promptly notify the Client of any suspected unauthorized access to the Client's financial data or accounting systems within twenty-four (24) hours of discovery. Confidential information shall not be used for any purpose other than delivering the services described in this agreement. This obligation of confidentiality survives the termination of this agreement indefinitely with respect to personal financial information and for a period of five (5) years with respect to all other business information."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Independent Contractor Status",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "INDEPENDENT CONTRACTOR STATUS\n\n"
+            "{{initiator_name}} is engaged as an independent contractor and not as an employee of {{counterparty_name}}. The Accountant determines the methods and approaches used to deliver the agreed services and is responsible for obtaining and maintaining any professional certifications required to perform them. The Client shall not withhold or remit payroll taxes on behalf of the Accountant, and the Accountant is solely responsible for all tax obligations arising from compensation received under this agreement.\n\n"
+            "The Accountant is not entitled to employee benefits, including health insurance, retirement contributions, or paid leave. The Accountant may serve other clients concurrently, provided there is no conflict of interest with the Client's business. Nothing in this agreement shall be construed to create an employment, partnership, or fiduciary relationship beyond the professional services engagement described herein."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Non-Solicitation",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "NON-SOLICITATION\n\n"
+            "For a period of twelve (12) months following the termination of this agreement, {{counterparty_name}} agrees not to directly solicit or engage any staff member, associate, or subcontractor of {{initiator_name}} who contributed to services under this agreement. Similarly, {{initiator_name}} agrees not to directly solicit the Client's employees or key financial staff for unrelated engagements during the same period. This restriction does not apply to individuals hired through general public advertising.\n\n"
+            "Both parties recognize that the accounting and bookkeeping relationship provides access to sensitive financial information and key personnel, and that these non-solicitation provisions are reasonably necessary to protect each party's business interests. Breach of this clause shall entitle the non-breaching party to pursue available legal remedies, including injunctive relief and damages. These obligations survive the termination or expiration of this agreement for the full twelve (12) month period."
+        ),
+    },
+    {
+        "clause_type": "liability",
+        "title": "Limitation of Liability",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "LIMITATION OF LIABILITY\n\n"
+            "{{initiator_name}}'s total liability to {{counterparty_name}} for any claim arising under this agreement shall not exceed the fees paid to the Accountant in the six (6) months preceding the event giving rise to the claim. Neither party shall be liable for indirect, consequential, incidental, or punitive damages, including tax penalties, interest charges, or regulatory fines, regardless of whether such damages were foreseeable. The Accountant's work product is based on information provided by the Client; the Accountant shall not be held liable for errors or omissions resulting from inaccurate, incomplete, or untimely data submitted by the Client.\n\n"
+            "The Client is solely responsible for reviewing and approving all financial statements, tax filings, and reports before submission or use. The Accountant is not responsible for audits, assessments, or penalties arising from the Client's pre-existing financial practices, prior-period errors, or decisions made after delivery of services. This limitation of liability reflects a reasonable allocation of professional risk and constitutes an essential term of this agreement."
+        ),
+    },
+    {
+        "clause_type": "termination",
+        "title": "Termination",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "TERMINATION\n\n"
+            "Either party may terminate this agreement upon thirty (30) days' written notice to the other party. Immediate termination for cause is available in the event of a material breach — including non-payment by the Client or gross negligence by the Accountant — that remains uncured for ten (10) business days following written notice. Upon termination, all outstanding invoices become immediately due, and the Accountant shall cease processing Client transactions after the effective termination date.\n\n"
+            "{{initiator_name}} agrees to deliver a complete handover package within ten (10) business days of the effective termination date, including all financial records, chart of accounts, reconciliation files, and credentials for the {{accounting_software}} account. The Client is advised to engage a replacement accountant before the effective termination date to ensure continuity of financial reporting obligations. Confidentiality, data security, limitation of liability, and non-solicitation clauses survive the termination of this agreement."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Client Responsibilities and Accuracy",
+        "order": 9,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CLIENT RESPONSIBILITIES AND ACCURACY\n\n"
+            "{{counterparty_name}} is responsible for the accuracy, completeness, and timely delivery of all financial data, source documents, bank statements, receipts, and other information required for {{initiator_name}} to perform the agreed services. The Client agrees to respond to queries from the Accountant within five (5) business days and to notify the Accountant promptly of any changes in business structure, ownership, tax status, or financial activity that may affect the services. Delays caused by the Client's failure to provide required information will not be attributed to the Accountant and may result in deadline extensions or additional fees.\n\n"
+            "The Client acknowledges that the Accountant's work product is only as reliable as the information provided, and accepts full responsibility for the accuracy of underlying source data. The Client is responsible for maintaining primary copies of all financial records and for complying with applicable record retention requirements. The Accountant will make reasonable efforts to identify and flag inconsistencies in the data provided, but is not required to independently verify the accuracy of third-party documents submitted by the Client."
+        ),
+    },
+]
+
+LEGAL_DOCUMENT_PREP_GUIDED_FIELDS = [
+    {
+        "field_key": "document_type",
+        "label": "Document Type",
+        "field_type": "choice",
+        "choices": ["Contract Drafting", "Terms and Conditions", "Privacy Policy", "NDA", "Business Formation", "Demand Letter", "Will or Trust", "Other"],
+        "is_required": True,
+        "order": 1,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "jurisdiction",
+        "label": "Jurisdiction (State/Country where document will be used)",
+        "field_type": "text",
+        "choices": None,
+        "is_required": True,
+        "order": 2,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "revision_rounds",
+        "label": "Revision Rounds Included",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 3,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "turnaround_days",
+        "label": "Turnaround Time (Business Days)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 4,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "payment_model",
+        "label": "Payment Model",
+        "field_type": "choice",
+        "choices": ["flat_fee", "hourly", "deposit_balance"],
+        "is_required": True,
+        "order": 5,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "total_fee",
+        "label": "Total Fee (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": True,
+        "order": 6,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+    {
+        "field_key": "deposit_percentage",
+        "label": "Deposit Percentage (%)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 7,
+        "condition_field_key": "payment_model",
+        "condition_value": "deposit_balance",
+    },
+    {
+        "field_key": "hourly_rate",
+        "label": "Hourly Rate (USD)",
+        "field_type": "number",
+        "choices": None,
+        "is_required": False,
+        "order": 8,
+        "condition_field_key": "payment_model",
+        "condition_value": "hourly",
+    },
+    {
+        "field_key": "not_attorney_disclaimer_accepted",
+        "label": "Client Acknowledges Preparer Is NOT a Licensed Attorney",
+        "field_type": "boolean",
+        "choices": None,
+        "is_required": True,
+        "order": 9,
+        "condition_field_key": "",
+        "condition_value": "",
+    },
+]
+
+LEGAL_DOCUMENT_PREP_CLAUSES = [
+    {
+        "clause_type": "scope",
+        "title": "Scope of Document Preparation Services",
+        "order": 1,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "SCOPE OF DOCUMENT PREPARATION SERVICES\n\n"
+            "{{initiator_name}} (the 'Preparer') agrees to prepare a {{document_type}} document for {{counterparty_name}} (the 'Client') for use in the jurisdiction of {{jurisdiction}}. The Preparer will deliver a draft of the requested document within {{turnaround_days}} business days of receiving all necessary information from the Client, subject to the revision provisions described herein. This engagement covers document preparation services only; it does not constitute the practice of law, legal advice, or legal representation of any kind.\n\n"
+            "IMPORTANT NOTICE: {{initiator_name}} IS NOT A LICENSED ATTORNEY. The Preparer is a non-attorney document preparation service. Nothing produced under this agreement constitutes legal advice, and the Client is strongly encouraged to have any prepared document reviewed by a licensed attorney in {{jurisdiction}} before signing or relying upon it. The Client confirms, by entering into this agreement, that they have been informed of and understand the non-attorney status of the Preparer."
+        ),
+    },
+    {
+        "clause_type": "payment",
+        "title": "Payment Terms",
+        "order": 2,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "PAYMENT TERMS\n\n"
+            "The Client agrees to pay {{initiator_name}} a total fee of ${{total_fee}} under the {{payment_model}} payment model. For flat_fee engagements, full payment is due upon contract execution before work commences. For hourly engagements, the Client will be invoiced at ${{hourly_rate}} per hour, billed upon delivery of the draft document and any subsequent revision work, with payment due within fourteen (14) days of each invoice. For deposit_balance arrangements, a deposit of {{deposit_percentage}}% of the total fee is due upon contract execution, with the remaining balance due upon delivery of the final document.\n\n"
+            "Late payments will accrue interest at 1.5% per month on the outstanding balance. The Preparer reserves the right to withhold delivery of final documents until all outstanding fees have been paid. All fees are non-refundable once work has commenced, given the bespoke nature of document preparation services. Additional fees may apply for rush delivery requests, jurisdictional research not included in the original scope, or services beyond those specified in this agreement."
+        ),
+    },
+    {
+        "clause_type": "cancellation",
+        "title": "Cancellation Policy",
+        "order": 3,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CANCELLATION POLICY\n\n"
+            "If the Client cancels this agreement before work has commenced, any deposit paid will be refunded less a $50 administrative processing fee. If the Client cancels after work has commenced, all fees for work completed to date are non-refundable, including any deposit or advance payment. The Client must provide written notice of cancellation; cancellations communicated verbally are not effective until confirmed in writing by the Preparer.\n\n"
+            "If {{initiator_name}} is unable to complete the requested document due to circumstances beyond the Preparer's control — including jurisdictional complexity outside the Preparer's competence or legal requirements that necessitate attorney involvement — the Preparer will notify the Client in writing, refund all prepaid fees for uncompleted work, and provide a referral to a licensed attorney where possible. Neither party shall be liable for consequential damages arising from a cancellation made in accordance with this clause."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Revisions",
+        "order": 4,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "REVISIONS\n\n"
+            "This agreement includes {{revision_rounds}} round(s) of revisions to the prepared document at no additional charge. A revision round consists of one consolidated set of changes submitted in a single written communication. Revisions that constitute a fundamental change to the nature, purpose, or structure of the document — or that require preparation of an entirely different document — are outside this provision and may be subject to additional fees. Revision requests must be submitted within ten (10) business days of document delivery; after this period, the document is deemed accepted.\n\n"
+            "Additional revision rounds beyond {{revision_rounds}} are available at the Preparer's standard rate, to be agreed upon in writing before proceeding. The Preparer will not implement revisions that, in the Preparer's professional judgment, would render the document internally inconsistent, unlawful in the stated jurisdiction, or likely to mislead any party who relies upon it. If the Client insists on language the Preparer considers problematic, the Preparer reserves the right to withdraw from the engagement and refund fees proportional to undelivered work."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Not Legal Advice — Non-Attorney Disclaimer",
+        "order": 5,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "NOT LEGAL ADVICE — NON-ATTORNEY DISCLAIMER\n\n"
+            "{{initiator_name}} IS NOT A LICENSED ATTORNEY AND DOES NOT PROVIDE LEGAL ADVICE OR LEGAL REPRESENTATION. All services provided under this agreement constitute document preparation only. The documents prepared by the Preparer are based on information provided by the Client and templates adapted for the described purpose; they do not represent legal counsel, legal strategy, or a legal opinion regarding the Client's rights or obligations. {{counterparty_name}} confirms acceptance of this disclaimer by executing this agreement, as indicated by the acknowledgment field (not_attorney_disclaimer_accepted: {{not_attorney_disclaimer_accepted}}).\n\n"
+            "The Client is strongly advised to consult with a licensed attorney admitted to practice in {{jurisdiction}} before executing, relying upon, or distributing any document prepared under this agreement. The Preparer makes no representation or warranty that any document prepared hereunder will be enforceable, complete, or appropriate for the Client's specific legal situation. The Client assumes all legal risk associated with using documents prepared under this agreement without obtaining independent legal review."
+        ),
+    },
+    {
+        "clause_type": "confidentiality",
+        "title": "Confidentiality",
+        "order": 6,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "CONFIDENTIALITY\n\n"
+            "{{initiator_name}} agrees to hold in strict confidence all personal, financial, and business information disclosed by {{counterparty_name}} in connection with the preparation of the requested document. The Preparer shall not disclose such information to any third party without the Client's prior written consent, except as required by applicable law or court order. This obligation of confidentiality applies indefinitely with respect to personal identifying information and for a period of five (5) years with respect to all other information.\n\n"
+            "The Preparer shall store all Client documents and data using secure, password-protected systems and shall not retain copies of completed documents beyond the period necessary to fulfill revision obligations under this agreement, unless the Client expressly requests archival. The Client acknowledges that document preparation is not subject to attorney-client privilege, and that information shared with the Preparer may not receive the same legal protection as information shared with a licensed attorney. The Client should consult legal counsel before disclosing particularly sensitive information to a non-attorney document preparer."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Independent Contractor Status",
+        "order": 7,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "INDEPENDENT CONTRACTOR STATUS\n\n"
+            "{{initiator_name}} is engaged as an independent contractor and not as an employee or agent of {{counterparty_name}}. The Preparer determines the methods and processes used to prepare the requested document, subject to the specifications and deadlines set forth in this agreement. The Client shall not withhold or remit taxes on behalf of the Preparer, and the Preparer is solely responsible for all applicable tax obligations arising from compensation received under this agreement.\n\n"
+            "The Preparer is not entitled to any employee benefits and may perform document preparation services for other clients during the term of this agreement. Nothing in this agreement creates an employment, attorney-client, partnership, or fiduciary relationship between the parties. The Preparer's engagement is limited strictly to the document preparation services described herein, and the Preparer has no authority to act on the Client's behalf in any legal, administrative, or regulatory proceeding."
+        ),
+    },
+    {
+        "clause_type": "general",
+        "title": "Non-Solicitation",
+        "order": 8,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "NON-SOLICITATION\n\n"
+            "During the term of this agreement and for twelve (12) months following its termination, {{counterparty_name}} agrees not to directly solicit or hire any associate, subcontractor, or team member of {{initiator_name}} who participated in the preparation of documents under this agreement, without the Preparer's prior written consent. Similarly, {{initiator_name}} agrees not to directly solicit the Client's employees or key personnel for unrelated engagements during the same period. This restriction is limited to direct solicitation and does not prevent either party from responding to or hiring individuals from general public postings.\n\n"
+            "Both parties acknowledge that the document preparation relationship involves access to sensitive personal and business information and that these non-solicitation provisions are reasonably necessary to protect the legitimate professional interests of both parties. Breach of this clause entitles the non-breaching party to seek injunctive relief and monetary damages as permitted by the laws of {{jurisdiction}}. These obligations survive the termination or expiration of this agreement for the full twelve (12) month period."
+        ),
+    },
+    {
+        "clause_type": "liability",
+        "title": "Limitation of Liability",
+        "order": 9,
+        "is_required": True,
+        "is_conditional": False,
+        "condition_description": "",
+        "body": (
+            "LIMITATION OF LIABILITY\n\n"
+            "{{initiator_name}}'s total liability to {{counterparty_name}} for any claim arising under or in connection with this agreement shall not exceed the total fees paid to the Preparer under this agreement. Neither party shall be liable for any indirect, incidental, consequential, punitive, or special damages, including but not limited to legal fees, court costs, penalties, financial losses, or reputational harm arising from the use or non-use of any document prepared hereunder. THE CLIENT EXPRESSLY ACKNOWLEDGES THAT {{initiator_name}} IS NOT A LICENSED ATTORNEY AND THAT ANY LEGAL CONSEQUENCES ARISING FROM THE USE OF DOCUMENTS PREPARED UNDER THIS AGREEMENT ARE THE SOLE RESPONSIBILITY OF THE CLIENT.\n\n"
+            "The Preparer makes no warranty, express or implied, that any document prepared under this agreement will be legally valid, enforceable, or appropriate for the Client's particular circumstances in {{jurisdiction}} or any other jurisdiction. The Client's sole remedy for any deficiency in the Preparer's services is a revision as provided in the Revisions clause or, where revision is not feasible, a partial refund of fees proportional to undelivered work. This limitation of liability is a material and essential term of this agreement and is agreed to by the parties as a condition of the Preparer offering services at the stated fee."
+        ),
+    },
+]
+
 class Command(BaseCommand):
     help = "Seed the database with initial ContractTemplate records."
 
@@ -7143,6 +8401,12 @@ class Command(BaseCommand):
         self._seed_pest_control(force)
         self._seed_custom_fabrication(force)
         self._seed_general_repair(force)
+        self._seed_content_writing(force)
+        self._seed_social_media_management(force)
+        self._seed_virtual_assistant(force)
+        self._seed_marketing_consulting(force)
+        self._seed_accounting_bookkeeping(force)
+        self._seed_legal_document_prep(force)
 
     def _seed_personal_training(self, force):
         name = "Personal Training Agreement"
@@ -8205,6 +9469,208 @@ class Command(BaseCommand):
             structure_type="ONE_TIME",
             fields=GENERAL_REPAIR_GUIDED_FIELDS,
             clauses=GENERAL_REPAIR_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "one_time",
+                "payment_model_token": "payment_model",
+                "amount_token": "total_fee",
+                "installments_token": "deposit_percentage",
+                "interval_days_token": "",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # FREELANCER — shared helper
+    # ------------------------------------------------------------------
+
+    def _create_freelancer_template(
+        self, force, name, subcategory, description, structure_type, fields, clauses, obligation_params
+    ):
+        if ContractTemplate.objects.filter(name=name).exists():
+            if not force:
+                self.stdout.write(self.style.WARNING(
+                    f'Template "{name}" already exists. Use --force to recreate.'
+                ))
+                return
+            ContractTemplate.objects.filter(name=name).delete()
+            self.stdout.write(self.style.WARNING(f'Deleted existing "{name}" for recreation.'))
+
+        template = ContractTemplate.objects.create(
+            category="freelancer",
+            subcategory=subcategory,
+            name=name,
+            description=description,
+            structure_type=structure_type,
+            is_active=True,
+            tier_required="free",
+        )
+        for f in fields:
+            TemplateGuidedField.objects.create(template=template, **f)
+        for c in clauses:
+            TemplateClause.objects.create(template=template, **c)
+        TemplateObligationPattern.objects.create(template=template, **obligation_params)
+        self.stdout.write(self.style.SUCCESS(
+            f'Seeded template "{name}" with {len(fields)} guided fields and {len(clauses)} clauses.'
+        ))
+
+    # ------------------------------------------------------------------
+    # FREELANCER — CONTENT WRITING
+    # ------------------------------------------------------------------
+
+    def _seed_content_writing(self, force):
+        self._create_freelancer_template(
+            force=force,
+            name="Content Writing Agreement",
+            subcategory="content_writing",
+            description=(
+                "A content writing agreement covering blog posts, articles, web copy, "
+                "whitepapers, email copy, and other written deliverables. Includes revision "
+                "rounds, kill fee, independent contractor status, confidentiality, "
+                "non-solicitation, and payment terms."
+            ),
+            structure_type="ONE_TIME",
+            fields=CONTENT_WRITING_GUIDED_FIELDS,
+            clauses=CONTENT_WRITING_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "one_time",
+                "payment_model_token": "payment_model",
+                "amount_token": "total_fee",
+                "installments_token": "",
+                "interval_days_token": "",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # FREELANCER — SOCIAL MEDIA MANAGEMENT
+    # ------------------------------------------------------------------
+
+    def _seed_social_media_management(self, force):
+        self._create_freelancer_template(
+            force=force,
+            name="Social Media Management Agreement",
+            subcategory="social_media_management",
+            description=(
+                "A social media management agreement covering content creation, scheduling, "
+                "and community management across platforms. Includes posting schedule, "
+                "analytics reporting, monthly retainer payment, revision policy, "
+                "independent contractor status, and confidentiality."
+            ),
+            structure_type="ONGOING",
+            fields=SOCIAL_MEDIA_MANAGEMENT_GUIDED_FIELDS,
+            clauses=SOCIAL_MEDIA_MANAGEMENT_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "monthly",
+                "payment_model_token": "payment_model",
+                "amount_token": "monthly_fee",
+                "installments_token": "contract_duration_months",
+                "interval_days_token": "",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # FREELANCER — VIRTUAL ASSISTANT
+    # ------------------------------------------------------------------
+
+    def _seed_virtual_assistant(self, force):
+        self._create_freelancer_template(
+            force=force,
+            name="Virtual Assistant Agreement",
+            subcategory="virtual_assistant",
+            description=(
+                "A virtual assistant services agreement covering administrative, research, "
+                "scheduling, customer support, and data entry tasks. Includes availability "
+                "schedule, response time, communication channels, hourly or retainer payment "
+                "model, independent contractor status, and confidentiality."
+            ),
+            structure_type="ONGOING",
+            fields=VIRTUAL_ASSISTANT_GUIDED_FIELDS,
+            clauses=VIRTUAL_ASSISTANT_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "monthly",
+                "payment_model_token": "payment_model",
+                "amount_token": "monthly_fee",
+                "installments_token": "",
+                "interval_days_token": "",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # FREELANCER — MARKETING CONSULTING
+    # ------------------------------------------------------------------
+
+    def _seed_marketing_consulting(self, force):
+        self._create_freelancer_template(
+            force=force,
+            name="Marketing Consulting Agreement",
+            subcategory="marketing_consulting",
+            description=(
+                "A marketing consulting agreement covering strategy development, campaign "
+                "management, SEO, brand consulting, and market research. Includes deliverables, "
+                "revision policy, milestone or flat fee payment structure, independent "
+                "contractor status, non-solicitation, and confidentiality."
+            ),
+            structure_type="ONE_TIME",
+            fields=MARKETING_CONSULTING_GUIDED_FIELDS,
+            clauses=MARKETING_CONSULTING_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "one_time",
+                "payment_model_token": "payment_model",
+                "amount_token": "total_fee",
+                "installments_token": "num_installments",
+                "interval_days_token": "installment_interval_days",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # FREELANCER — ACCOUNTING AND BOOKKEEPING
+    # ------------------------------------------------------------------
+
+    def _seed_accounting_bookkeeping(self, force):
+        self._create_freelancer_template(
+            force=force,
+            name="Accounting and Bookkeeping Agreement",
+            subcategory="accounting_bookkeeping",
+            description=(
+                "An accounting and bookkeeping services agreement covering bookkeeping, "
+                "tax preparation, payroll, and financial reporting. Includes data access "
+                "terms, reporting schedule, software platform, monthly retainer or "
+                "per-project payment, confidentiality, and independent contractor status."
+            ),
+            structure_type="ONGOING",
+            fields=ACCOUNTING_BOOKKEEPING_GUIDED_FIELDS,
+            clauses=ACCOUNTING_BOOKKEEPING_CLAUSES,
+            obligation_params={
+                "obligation_type": "both",
+                "frequency_type": "monthly",
+                "payment_model_token": "payment_model",
+                "amount_token": "monthly_fee",
+                "installments_token": "",
+                "interval_days_token": "",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # FREELANCER — LEGAL DOCUMENT PREPARATION
+    # ------------------------------------------------------------------
+
+    def _seed_legal_document_prep(self, force):
+        self._create_freelancer_template(
+            force=force,
+            name="Legal Document Preparation Agreement",
+            subcategory="legal_document_prep",
+            description=(
+                "A legal document preparation agreement for contract drafting, terms and "
+                "conditions, privacy policies, NDAs, and business formation documents. "
+                "Includes not-attorney disclaimer, jurisdiction, revision rounds, flat fee "
+                "or deposit payment model, confidentiality, and independent contractor status."
+            ),
+            structure_type="ONE_TIME",
+            fields=LEGAL_DOCUMENT_PREP_GUIDED_FIELDS,
+            clauses=LEGAL_DOCUMENT_PREP_CLAUSES,
             obligation_params={
                 "obligation_type": "both",
                 "frequency_type": "one_time",

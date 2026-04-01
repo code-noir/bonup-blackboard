@@ -1,7 +1,17 @@
-from rest_framework.routers import DefaultRouter
-from .views import NotificationsViewSet
+# backend/api/notifications/urls.py
 
-router = DefaultRouter()
-router.register(r'', NotificationsViewSet, basename='notifications')
+from django.urls import path
+from .views import (
+    NotificationListAPIView,
+    NotificationMarkReadAPIView,
+    NotificationReadAllAPIView,
+    NotificationUnreadCountAPIView,
+)
 
-urlpatterns = router.urls
+urlpatterns = [
+    path("", NotificationListAPIView.as_view(), name="notification-list"),
+    # Fixed paths must come before the UUID capture pattern.
+    path("unread-count/", NotificationUnreadCountAPIView.as_view(), name="notification-unread-count"),
+    path("read-all/", NotificationReadAllAPIView.as_view(), name="notification-read-all"),
+    path("<uuid:notification_id>/read/", NotificationMarkReadAPIView.as_view(), name="notification-mark-read"),
+]

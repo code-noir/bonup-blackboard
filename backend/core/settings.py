@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'backend.contract_templates',
     'backend.activity',
     'backend.sessions',
+    'backend.notifications',
     'django_extensions',
 ]
 
@@ -141,6 +142,12 @@ STATIC_URL = 'static/'
 LIVEKIT_HOST = "https://live.bonup.cloud"
 LIVEKIT_API_KEY = "bonup-7218feb964d0c2e7"
 LIVEKIT_API_SECRET = "ogIL0Jv7yr4fwHt6SDaPgIMcQ3Q4YV6QOR7VFrgc"
+
+# ----------------------------------------
+# Email
+# ----------------------------------------
+EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+DEFAULT_FROM_EMAIL = "noreply@bonup.cloud"
 
 CELERY_BROKER_URL = "redis://127.0.0.1:6379/0"
 CELERY_RESULT_BACKEND = "redis://127.0.0.1:6379/0"

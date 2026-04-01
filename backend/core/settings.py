@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'backend.payments',
     'backend.contract_templates',
     'backend.activity',
+    'backend.sessions',
     'django_extensions',
 ]
 
@@ -132,6 +133,14 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+
+# ----------------------------------------
+# LiveKit
+# ----------------------------------------
+
+LIVEKIT_HOST = "https://live.bonup.cloud"
+LIVEKIT_API_KEY = "bonup-7218feb964d0c2e7"
+LIVEKIT_API_SECRET = "ogIL0Jv7yr4fwHt6SDaPgIMcQ3Q4YV6QOR7VFrgc"
 
 CELERY_BROKER_URL = "redis://127.0.0.1:6379/0"
 CELERY_RESULT_BACKEND = "redis://127.0.0.1:6379/0"

@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     'backend.activity',
     'backend.sessions',
     'backend.notifications',
+    'backend.negotiation_prep',
     'django_extensions',
 ]
 

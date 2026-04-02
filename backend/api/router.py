@@ -10,6 +10,7 @@ urlpatterns = [
     path("notifications/", include("backend.api.notifications.urls")),
     path("obligations/", include("backend.api.obligations.urls")),
     path("payments/", include("backend.api.payments.urls")),
+    path("prep/", include("backend.api.prep.urls")),
     path("search/", include("backend.api.search.urls")),
     path("sessions/", include("backend.api.sessions.urls")),
     path("templates/", include("backend.api.templates.urls")),

@@ -40,6 +40,11 @@ class LiveSession(models.Model):
         related_name="created_live_sessions",
     )
 
+    CONTROLLER_CHOICES = [
+        ("initiator", "Initiator"),
+        ("counterparty", "Counterparty"),
+    ]
+
     title = models.CharField(max_length=200, blank=True, default="")
     room_name = models.CharField(max_length=200, unique=True)
 
@@ -47,6 +52,12 @@ class LiveSession(models.Model):
         max_length=20,
         choices=STATUS_CHOICES,
         default="scheduled",
+    )
+
+    presentation_controller = models.CharField(
+        max_length=20,
+        choices=CONTROLLER_CHOICES,
+        default="initiator",
     )
 
     scheduled_at = models.DateTimeField(null=True, blank=True)

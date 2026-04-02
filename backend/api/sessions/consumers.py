@@ -1,6 +1,6 @@
 # backend/api/sessions/consumers.py
 #
-# SessionConsumer — real-time contract broadcast during a Live Session.
+# SessionConsumer — real-time broadcast during a Live Session.
 #
 # WebSocket URL:  ws/sessions/<session_id>/?token=<jwt_access_token>
 #
@@ -8,22 +8,29 @@
 #   JWT access token passed as ?token= query parameter (browsers cannot
 #   set Authorization headers on WebSocket connections).
 #
-# Connection rules:
-#   - Token must be valid.
-#   - Session must exist and be active.
-#   - User must be a party to the session's contract.
+# Connection close codes:
+#   4001 — invalid or missing token
+#   4002 — session does not exist or is not active
+#   4003 — user is not a party to the contract
+#   4004 — action requires initiator role
 #
 # Events (client → server):
 #   { "type": "editor_update", "content": "<text>" }
-#       Initiator only.  Broadcasts the current contract content to all
-#       connected participants.
+#       Initiator only.  Broadcasts current contract content to all participants.
+#
+#   { "type": "slide_update", "slide_index": 0, "slide_url": "https://..." }
+#       Either party.  Broadcasts the current slide to all participants.
+#
+#   { "type": "presentation_control", "controller": "initiator" | "counterparty" }
+#       Initiator only.  Grants/revokes presentation control.
+#       Non-initiator sending this is disconnected with code 4004.
 #
 # Events (server → client):
 #   { "type": "editor_update", "content": "...", "sender_id": "..." }
-#       Relayed to all group members when initiator sends an update.
+#   { "type": "slide_update", "slide_index": N, "slide_url": "...", "sender_id": "..." }
+#   { "type": "presentation_control", "controller": "initiator" | "counterparty" }
 #   { "type": "session_ended" }
-#       Pushed to all group members when POST /api/sessions/<id>/end/
-#       is called.  Consumer closes after sending.
+#       Consumer closes after sending.
 
 import json
 from urllib.parse import parse_qs
@@ -55,7 +62,9 @@ class SessionConsumer(AsyncWebsocketConsumer):
             return
 
         # 3. User must be a contract party.
-        if not await self._is_party():
+        # _is_party / _is_initiator use the already-fetched select_related("contract")
+        # so they are plain sync checks — no DB round trip.
+        if not self._is_party():
             await self.close(code=4003)
             return
 
@@ -76,9 +85,11 @@ class SessionConsumer(AsyncWebsocketConsumer):
         except (json.JSONDecodeError, TypeError):
             return
 
-        if data.get("type") == "editor_update":
-            # Only the initiator may broadcast content updates.
-            if await self._is_initiator():
+        event_type = data.get("type")
+
+        if event_type == "editor_update":
+            # Initiator only.
+            if self._is_initiator():
                 await self.channel_layer.group_send(
                     self.group_name,
                     {
@@ -87,6 +98,35 @@ class SessionConsumer(AsyncWebsocketConsumer):
                         "sender_id": str(self.user.id),
                     },
                 )
+
+        elif event_type == "slide_update":
+            # Either party may broadcast slide position.
+            await self.channel_layer.group_send(
+                self.group_name,
+                {
+                    "type": "session.slide_update",
+                    "slide_index": data.get("slide_index", 0),
+                    "slide_url": data.get("slide_url", ""),
+                    "sender_id": str(self.user.id),
+                },
+            )
+
+        elif event_type == "presentation_control":
+            # Only initiator may grant or revoke presentation control.
+            if not self._is_initiator():
+                await self.close(code=4004)
+                return
+            controller = data.get("controller", "initiator")
+            if controller not in ("initiator", "counterparty"):
+                return
+            await self._update_presentation_controller(controller)
+            await self.channel_layer.group_send(
+                self.group_name,
+                {
+                    "type": "session.presentation_control",
+                    "controller": controller,
+                },
+            )
 
     # ------------------------------------------------------------------
     # Outbound handlers (channel layer → client)
@@ -100,6 +140,30 @@ class SessionConsumer(AsyncWebsocketConsumer):
                     "type": "editor_update",
                     "content": event["content"],
                     "sender_id": event["sender_id"],
+                }
+            )
+        )
+
+    async def session_slide_update(self, event):
+        """Relay slide position broadcast to this client."""
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "type": "slide_update",
+                    "slide_index": event["slide_index"],
+                    "slide_url": event["slide_url"],
+                    "sender_id": event["sender_id"],
+                }
+            )
+        )
+
+    async def session_presentation_control(self, event):
+        """Relay presentation control change to this client."""
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "type": "presentation_control",
+                    "controller": event["controller"],
                 }
             )
         )
@@ -145,14 +209,21 @@ class SessionConsumer(AsyncWebsocketConsumer):
         except LiveSession.DoesNotExist:
             return None
 
-    @database_sync_to_async
     def _is_party(self):
+        """Uses the contract already loaded via select_related at connect time."""
         contract = self.session.contract
         return (
             contract.initiator_id == self.user.pk
             or contract.counterparty_email == self.user.email
         )
 
-    @database_sync_to_async
     def _is_initiator(self):
+        """Uses the contract already loaded via select_related at connect time."""
         return self.session.contract.initiator_id == self.user.pk
+
+    @database_sync_to_async
+    def _update_presentation_controller(self, controller):
+        from backend.sessions.models import LiveSession
+        LiveSession.objects.filter(id=self.session_id).update(
+            presentation_controller=controller
+        )

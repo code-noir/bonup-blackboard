@@ -585,6 +585,28 @@ class SessionConsumerTests(
         from asgiref.sync import async_to_sync
         async_to_sync(self._test_session_ended_event)()
 
+    # slide_update
+    def test_initiator_slide_update_broadcast(self):
+        from asgiref.sync import async_to_sync
+        async_to_sync(self._test_slide_update)(sender=self.alice)
+
+    def test_counterparty_slide_update_broadcast(self):
+        from asgiref.sync import async_to_sync
+        async_to_sync(self._test_slide_update)(sender=self.bob)
+
+    # presentation_control
+    def test_initiator_grants_presentation_control(self):
+        from asgiref.sync import async_to_sync
+        async_to_sync(self._test_presentation_control_initiator)()
+
+    def test_counterparty_presentation_control_rejected_4004(self):
+        from asgiref.sync import async_to_sync
+        async_to_sync(self._test_presentation_control_counterparty_rejected)()
+
+    def test_presentation_controller_persisted_in_db(self):
+        from asgiref.sync import async_to_sync
+        async_to_sync(self._test_presentation_controller_db_update)()
+
     # ------------------------------------------------------------------
     # Async helpers
     # ------------------------------------------------------------------
@@ -669,4 +691,111 @@ class SessionConsumerTests(
         msg = await alice_comm.receive_json_from()
         self.assertEqual(msg["type"], "session_ended")
         # Consumer should close after sending session_ended
+        await alice_comm.disconnect()
+
+    async def _test_slide_update(self, sender):
+        """Either party sends slide_update; both participants receive it."""
+        from channels.testing import WebsocketCommunicator
+        from backend.core.asgi import application
+
+        alice_comm = WebsocketCommunicator(application, self._ws_url(self.alice))
+        bob_comm = WebsocketCommunicator(application, self._ws_url(self.bob))
+
+        await alice_comm.connect()
+        await bob_comm.connect()
+
+        sender_comm = alice_comm if sender == self.alice else bob_comm
+        await sender_comm.send_json_to({
+            "type": "slide_update",
+            "slide_index": 3,
+            "slide_url": "https://cdn.bonup.cloud/slides/slide3.png",
+        })
+
+        msg_a = await alice_comm.receive_json_from()
+        msg_b = await bob_comm.receive_json_from()
+
+        for msg in (msg_a, msg_b):
+            self.assertEqual(msg["type"], "slide_update")
+            self.assertEqual(msg["slide_index"], 3)
+            self.assertEqual(msg["slide_url"], "https://cdn.bonup.cloud/slides/slide3.png")
+            self.assertIn("sender_id", msg)
+
+        await alice_comm.disconnect()
+        await bob_comm.disconnect()
+
+    async def _test_presentation_control_initiator(self):
+        """Initiator grants control to counterparty; all participants are notified."""
+        from channels.testing import WebsocketCommunicator
+        from backend.core.asgi import application
+
+        alice_comm = WebsocketCommunicator(application, self._ws_url(self.alice))
+        bob_comm = WebsocketCommunicator(application, self._ws_url(self.bob))
+
+        await alice_comm.connect()
+        await bob_comm.connect()
+
+        await alice_comm.send_json_to({
+            "type": "presentation_control",
+            "controller": "counterparty",
+        })
+
+        msg_a = await alice_comm.receive_json_from()
+        msg_b = await bob_comm.receive_json_from()
+
+        self.assertEqual(msg_a["type"], "presentation_control")
+        self.assertEqual(msg_a["controller"], "counterparty")
+        self.assertEqual(msg_b["type"], "presentation_control")
+        self.assertEqual(msg_b["controller"], "counterparty")
+
+        await alice_comm.disconnect()
+        await bob_comm.disconnect()
+
+    async def _test_presentation_control_counterparty_rejected(self):
+        """Non-initiator sending presentation_control is disconnected with code 4004."""
+        from channels.testing import WebsocketCommunicator
+        from backend.core.asgi import application
+
+        alice_comm = WebsocketCommunicator(application, self._ws_url(self.alice))
+        bob_comm = WebsocketCommunicator(application, self._ws_url(self.bob))
+
+        await alice_comm.connect()
+        await bob_comm.connect()
+
+        # Bob (counterparty) attempts to take presentation control.
+        await bob_comm.send_json_to({
+            "type": "presentation_control",
+            "controller": "counterparty",
+        })
+
+        # Bob's connection should be closed with code 4004.
+        close_msg = await bob_comm.receive_output(timeout=1)
+        self.assertEqual(close_msg["type"], "websocket.close")
+        self.assertEqual(close_msg.get("code"), 4004)
+
+        # Alice should receive nothing — no broadcast happened.
+        self.assertTrue(await alice_comm.receive_nothing())
+
+        await alice_comm.disconnect()
+
+    async def _test_presentation_controller_db_update(self):
+        """Initiator granting control updates the presentation_controller DB field."""
+        from asgiref.sync import sync_to_async
+        from channels.testing import WebsocketCommunicator
+        from backend.core.asgi import application
+        from backend.sessions.models import LiveSession
+
+        alice_comm = WebsocketCommunicator(application, self._ws_url(self.alice))
+        await alice_comm.connect()
+
+        await alice_comm.send_json_to({
+            "type": "presentation_control",
+            "controller": "counterparty",
+        })
+        # Consume the broadcast back to alice.
+        await alice_comm.receive_json_from()
+
+        # Verify DB was updated.
+        session = await sync_to_async(LiveSession.objects.get)(id=self.session_id)
+        self.assertEqual(session.presentation_controller, "counterparty")
+
         await alice_comm.disconnect()

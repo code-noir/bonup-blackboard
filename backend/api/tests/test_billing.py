@@ -97,8 +97,8 @@ class PlanSeedingTests(TestCase):
     def test_professional_plan(self):
         plan = SubscriptionPlan.objects.get(slug="professional")
         self.assertEqual(plan.price_monthly, Decimal("83.00"))
-        self.assertFalse(plan.all_templates)
-        self.assertEqual(plan.excluded_categories, ["creative_services"])
+        self.assertTrue(plan.all_templates)
+        self.assertEqual(plan.excluded_categories, [])
         self.assertIsNone(plan.max_active_contracts)
         self.assertEqual(plan.max_live_sessions_per_month, 20)
         self.assertEqual(plan.ai_tier, "basic")
@@ -225,11 +225,10 @@ class CanAccessTemplateTests(TestCase):
         allowed, _ = can_access_template(self.user, self.hw_template)
         self.assertFalse(allowed)
 
-    def test_professional_excluded_category_blocked(self):
+    def test_professional_allows_creative_services(self):
         subscribe(self.user, "professional")
-        allowed, msg = can_access_template(self.user, self.cs_template)
-        self.assertFalse(allowed)
-        self.assertIn("creative_services", msg)
+        allowed, _ = can_access_template(self.user, self.cs_template)
+        self.assertTrue(allowed)
 
     def test_professional_allowed_category(self):
         subscribe(self.user, "professional")
@@ -605,18 +604,18 @@ class TemplateGateIntegrationTests(TestCase):
         self.assertIn("HW Template Gate", names)
         self.assertIn("CS Template Gate", names)
 
-    def test_professional_excludes_creative_services(self):
+    def test_professional_sees_all_templates(self):
         subscribe(self.user, "professional")
         r = self.client.get("/api/templates/")
         self.assertEqual(r.status_code, 200)
         names = [t["name"] for t in r.data]
         self.assertIn("HW Template Gate", names)
-        self.assertNotIn("CS Template Gate", names)
+        self.assertIn("CS Template Gate", names)
 
-    def test_detail_blocked_for_excluded_category(self):
+    def test_detail_allowed_for_professional(self):
         subscribe(self.user, "professional")
         r = self.client.get(f"/api/templates/{self.cs.id}/")
-        self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.status_code, 200)
 
     def test_detail_allowed_for_accessible_template(self):
         subscribe(self.user, "professional")

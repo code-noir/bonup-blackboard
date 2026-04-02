@@ -2,6 +2,8 @@
 
 import uuid as _uuid
 
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.conf import settings
 from django.db import transaction
 from django.shortcuts import get_object_or_404
@@ -37,6 +39,17 @@ def _serialize(session):
 def _party_q_sessions(user):
     from django.db.models import Q
     return Q(contract__initiator=user) | Q(contract__counterparty_email=user.email)
+
+
+def _broadcast_to_group(group_name, event):
+    """Fire-and-forget broadcast to a Channels group. Silently no-ops if the
+    channel layer is not configured or the group is empty."""
+    channel_layer = get_channel_layer()
+    if channel_layer is not None:
+        try:
+            async_to_sync(channel_layer.group_send)(group_name, event)
+        except Exception:
+            pass
 
 
 class SessionListCreateAPIView(APIView):
@@ -83,7 +96,6 @@ class SessionListCreateAPIView(APIView):
 
         scheduled_at = request.data.get("scheduled_at") or None
 
-        # Generate a stable, unique room name tied to this session UUID
         session_uuid = _uuid.uuid4()
         room_name = f"bonup-{session_uuid}"
 
@@ -102,9 +114,8 @@ class SessionListCreateAPIView(APIView):
                 user=request.user,
                 activity_type="session_held",
                 description=(
-                    f"Live session scheduled"
-                    + (f": {session.title}" if session.title else "")
-                    + ("." if not session.title else "")
+                    "Live session scheduled"
+                    + (f": {session.title}" if session.title else ".")
                 ),
                 metadata={
                     "session_id": str(session.id),
@@ -118,15 +129,81 @@ class SessionListCreateAPIView(APIView):
 
 class SessionDetailAPIView(APIView):
     """
-    GET /api/sessions/<session_id>/
+    GET   /api/sessions/<session_id>/  — session detail
+    PATCH /api/sessions/<session_id>/  — update title / scheduled_at
 
-    Returns session detail. Requires party membership on the linked contract.
+    PATCH is only allowed on scheduled sessions; returns 409 if already
+    active, ended, or cancelled. Either party may update.
     """
 
     def get(self, request, session_id):
         session = get_object_or_404(LiveSession, id=session_id)
         if not is_party(request.user, session.contract):
             return contract_party_response()
+        return Response(_serialize(session))
+
+    def patch(self, request, session_id):
+        session = get_object_or_404(LiveSession, id=session_id)
+        if not is_party(request.user, session.contract):
+            return contract_party_response()
+
+        if session.status != "scheduled":
+            return Response(
+                {"error": "Only scheduled sessions can be updated."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        update_fields = ["updated_at"]
+        if "title" in request.data:
+            session.title = request.data["title"]
+            update_fields.append("title")
+        if "scheduled_at" in request.data:
+            session.scheduled_at = request.data["scheduled_at"] or None
+            update_fields.append("scheduled_at")
+
+        session.save(update_fields=update_fields)
+        return Response(_serialize(session))
+
+
+class SessionCancelAPIView(APIView):
+    """
+    POST /api/sessions/<session_id>/cancel/
+
+    Cancel a scheduled session before it starts.
+    Returns 409 if the session is already active or ended.
+    Either party may cancel.
+    """
+
+    def post(self, request, session_id):
+        session = get_object_or_404(LiveSession, id=session_id)
+        if not is_party(request.user, session.contract):
+            return contract_party_response()
+
+        if session.status != "scheduled":
+            return Response(
+                {"error": "Only scheduled sessions can be cancelled."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        with transaction.atomic():
+            session.status = "cancelled"
+            session.save(update_fields=["status", "updated_at"])
+
+            log_activity(
+                contract=session.contract,
+                user=request.user,
+                activity_type="session_held",
+                description=(
+                    "Live session cancelled"
+                    + (f": {session.title}" if session.title else ".")
+                ),
+                metadata={
+                    "session_id": str(session.id),
+                    "room_name": session.room_name,
+                    "version_id": str(session.version_id) if session.version_id else None,
+                },
+            )
+
         return Response(_serialize(session))
 
 
@@ -145,9 +222,9 @@ class SessionJoinAPIView(APIView):
         if not is_party(request.user, session.contract):
             return contract_party_response()
 
-        if session.status == "ended":
+        if session.status in ("ended", "cancelled"):
             return Response(
-                {"error": "This session has ended."},
+                {"error": "This session has ended or been cancelled."},
                 status=status.HTTP_409_CONFLICT,
             )
 
@@ -176,7 +253,8 @@ class SessionEndAPIView(APIView):
     """
     POST /api/sessions/<session_id>/end/
 
-    Marks the session as ended and logs a PBVD activity record.
+    Marks the session as ended, logs a PBVD activity record, and broadcasts
+    a session_ended event to all connected WebSocket participants.
     Either party may end the session.
     """
 
@@ -206,7 +284,7 @@ class SessionEndAPIView(APIView):
                 user=request.user,
                 activity_type="session_held",
                 description=(
-                    f"Live session ended"
+                    "Live session ended"
                     + (f": {session.title}" if session.title else "")
                     + (f" — {duration_seconds}s" if duration_seconds is not None else "")
                     + "."
@@ -219,7 +297,55 @@ class SessionEndAPIView(APIView):
                 },
             )
 
+        # Notify all connected WebSocket participants that the session ended.
+        _broadcast_to_group(
+            f"session_{session_id}",
+            {"type": "session.ended"},
+        )
+
         return Response(_serialize(session))
+
+
+class SessionBroadcastAPIView(APIView):
+    """
+    POST /api/sessions/<session_id>/broadcast/
+
+    Initiator pushes current contract content to all participants connected
+    to the session's WebSocket room via the channel layer.
+
+    Body:
+      content  (required) string — the current contract text/content
+    """
+
+    def post(self, request, session_id):
+        session = get_object_or_404(LiveSession, id=session_id)
+        if not is_party(request.user, session.contract):
+            return contract_party_response()
+
+        if session.status != "active":
+            return Response(
+                {"error": "Session is not active."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        if session.contract.initiator_id != request.user.pk:
+            return Response(
+                {"error": "Only the initiator can broadcast content."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        content = request.data.get("content", "")
+
+        _broadcast_to_group(
+            f"session_{session_id}",
+            {
+                "type": "session.editor_update",
+                "content": content,
+                "sender_id": str(request.user.id),
+            },
+        )
+
+        return Response({"broadcasted": True, "session_id": str(session_id)})
 
 
 class ContractSessionListAPIView(APIView):

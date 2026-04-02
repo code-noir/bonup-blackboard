@@ -1,16 +1,21 @@
 """
-ASGI config for core project.
+ASGI config for bonUP Blackboard.
 
-It exposes the ASGI callable as a module-level variable named ``application``.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/6.0/howto/deployment/asgi/
+Handles both HTTP (Django) and WebSocket (Channels) traffic.
 """
 
 import os
 
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "backend.core.settings")
+
 from django.core.asgi import get_asgi_application
+from channels.routing import ProtocolTypeRouter, URLRouter
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.core.settings')
+from backend.api.sessions.routing import websocket_urlpatterns
 
-application = get_asgi_application()
+application = ProtocolTypeRouter(
+    {
+        "http": get_asgi_application(),
+        "websocket": URLRouter(websocket_urlpatterns),
+    }
+)

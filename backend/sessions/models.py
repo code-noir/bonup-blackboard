@@ -16,6 +16,7 @@ class LiveSession(models.Model):
         ("scheduled", "Scheduled"),
         ("active", "Active"),
         ("ended", "Ended"),
+        ("cancelled", "Cancelled"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

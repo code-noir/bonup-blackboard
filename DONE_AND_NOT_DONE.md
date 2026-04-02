@@ -1,6 +1,6 @@
 # DONE_AND_NOT_DONE.md — Feature Completion Status
 
-Last updated: 2026-03-30
+Last updated: 2026-04-01
 
 ---
 
@@ -117,7 +117,28 @@ These things are implemented, tested, and have no known critical bugs.
 - [x] Contract summary, obligation summary — ownership guarded
 - [x] All mutations wrapped in `transaction.atomic()`
 
+### API — Templates
+- [x] Template list (`GET /api/templates/`) — all active templates, `?tier=` filter
+- [x] Template detail (`GET /api/templates/<id>/`) — guided fields and clauses included
+- [x] Template instantiation (`POST /api/templates/<id>/instantiate/`) — creates contract, version, and obligations from template; `counterparty_email`, `start_date`, `guided_field_values` body
+- [x] `TemplateInstantiationService` — resolves guided field values into clause bodies, schedules obligations per obligation pattern, handles `one_time` / `per_session` / `monthly` / `installment` frequency types and `fixed_total` / `deposit_balance` / `installments` / `package_upfront` payment models
+- [x] Template library — **45 templates seeded** across 10 categories:
+
+  | Category | Count | Templates |
+  |---|---|---|
+  | `health_wellness` | 3 | Personal Training, Nutrition Coaching, Wellness Coaching |
+  | `education` | 3 | Academic Tutoring, Skills Coaching, Test Prep |
+  | `creative_services` | 7 | Photography, Videography, Graphic Design, Beat Production, Recording Session, DJ Performance, Content Collaboration |
+  | `technology_services` | 6 | Web Development, Mobile App Development, IT Support, Software Consulting, Cybersecurity, Data Analytics |
+  | `manual_labor` | 12 | Lawn Care, Home Cleaning, Home Renovation, Plumbing, Electrical, HVAC, Painting, Moving Services, Handyman, Pest Control, Custom Fabrication, General Repair |
+  | `freelancer` | 6 | Content Writing, Social Media Management, Virtual Assistant, Marketing Consulting, Accounting & Bookkeeping, Legal Document Prep |
+  | `rental` | 3 | Property Rental, Equipment Rental, Vehicle Rental |
+  | `financial_services` | 3 | Tax Services, Financial Planning, Credit Consulting |
+  | `lending` | 1 | Personal Loan |
+  | `barter` | 1 | Barter Agreement |
+
 ### Models
+- [x] `ContractTemplate`, `TemplateGuidedField`, `TemplateClause`, `TemplateObligationPattern`
 - [x] `Contract`, `ContractVersion`, `ContractObligation`, `ContractServiceObligation`
 - [x] `ObligationExecutionSession`, `ObligationExecutionEvent`
 - [x] `ContractValueAdjustment`, `ContractApprovalRequest`, `ContractObligationPromotion`
@@ -126,8 +147,38 @@ These things are implemented, tested, and have no known critical bugs.
 - [x] `Payment`
 - [x] `BonUserProfile`, `ReservedBonId` (with bonID generation and reservation logic)
 
+### API — Activity
+- [x] `ContractActivity` model — UUID pk, contract FK, user FK, activity_type (19 choices), description, metadata JSON, created_at; indexed on `[contract, -created_at]`
+- [x] `log_activity()` write-through helper called at every mutation site
+- [x] Write-through hooks on: contract create/update, version create/sign/reject, role switch request/confirm, obligation resolve (service + payment), payment create/confirm/fail/cancel/refund/reverse, approval request/grant/reject, session create/cancel/end
+- [x] `GET /api/activity/` — paginated, `?contract_id=`, `?activity_type=` filters
+- [x] `GET /api/contracts/<id>/activity/` — ownership enforced, paginated
+
+### API — Notifications
+- [x] `Notification` model — UUID pk, user FK, notification_type, title, message, is_read (default False), related_contract FK (nullable), metadata JSON, created_at; indexed on `[user, -created_at]` and `[user, is_read]`
+- [x] `notify()` helper — creates DB record + calls `send_mail(fail_silently=True)`; integrated into `log_activity()` to notify the other contract party on every event
+- [x] `GET /api/notifications/` — paginated, `?is_read=true|false` filter
+- [x] `GET /api/notifications/unread-count/` — returns `{ unread_count: N }`
+- [x] `POST /api/notifications/read-all/` — marks all user's unread as read
+- [x] `POST /api/notifications/<id>/read/` — marks single notification read; 403 if not owner
+
+### API — Sessions (Live Sessions)
+- [x] `LiveSession` model — UUID pk, contract FK, version FK (nullable), created_by FK, title, room_name (unique), status (scheduled/active/ended/cancelled), scheduled_at, started_at, ended_at, created_at, updated_at; indexed on `[contract, -created_at]`
+- [x] LiveKit token generation via `livekit-api` SDK (`backend/sessions/token.py`)
+- [x] `POST /api/sessions/` — create session; logs activity
+- [x] `GET /api/sessions/` — list across user's contracts; `?contract_id=`, `?status=` filters
+- [x] `GET /api/sessions/<id>/` — detail; ownership enforced
+- [x] `PATCH /api/sessions/<id>/` — update title/scheduled_at; 409 if not scheduled
+- [x] `POST /api/sessions/<id>/cancel/` — cancel scheduled session; logs activity; 409 if not scheduled
+- [x] `POST /api/sessions/<id>/join/` — returns LiveKit token; auto-activates scheduled sessions; 409 if ended/cancelled
+- [x] `POST /api/sessions/<id>/end/` — ends session, records duration, logs activity, broadcasts `session_ended` WS event
+- [x] `POST /api/sessions/<id>/broadcast/` — initiator pushes contract content to WS group; 403 for counterparty; 409 if not active
+- [x] `GET /api/contracts/<id>/sessions/` — contract-scoped list; ownership enforced
+- [x] WebSocket `ws/sessions/<id>/?token=<jwt>` — JWT auth, party check, active-only; `editor_update` events from initiator broadcast to all; `session_ended` event closes consumer
+- [x] Django Channels 4.3.2 installed; InMemoryChannelLayer configured; ASGI routing wired
+
 ### Tests
-- [x] 11 engine tests passing (payment service, reconstruction, lifecycle, contract import)
+- [x] 201 tests passing (engine + all API domains)
 - [x] No deprecation warnings
 
 ### Documentation
@@ -158,8 +209,6 @@ These have a foundation but meaningful gaps remain.
 - [ ] Approval workflow is data-only — approval/rejection has no downstream effect on obligation state
 - [ ] Value adjustments are stored but not applied anywhere
 
-### Filtering and Pagination
-- [ ] Filtering and pagination on obligation list endpoints (`/api/obligations/`) — done for payments, not yet for obligations
 
 ---
 
@@ -169,13 +218,9 @@ These domains and features do not exist yet beyond empty stubs.
 
 ### API Domains (all stubs)
 - [ ] Workspace — team/org management, member roles
-- [ ] Activity — feed of contract/obligation events
 - [ ] Billing — billing records, invoices
 - [ ] Documents — file attachments on contracts
-- [ ] Notifications — push/email delivery of lifecycle events
 - [ ] Search — full-text contract/obligation search
-- [ ] Sessions — (purpose unclear, likely user session management)
-- [ ] Templates — contract template library
 - [ ] Tools — (purpose unclear)
 - [ ] Uploads — file upload handling
 

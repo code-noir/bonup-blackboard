@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'backend.contracts',
     'backend.payments',
     'backend.contract_templates',
+    'channels',
     'backend.activity',
     'backend.sessions',
     'backend.notifications',
@@ -139,6 +140,20 @@ STATIC_URL = 'static/'
 # LiveKit
 # ----------------------------------------
 
+# ----------------------------------------
+# Django Channels
+# ----------------------------------------
+ASGI_APPLICATION = "backend.core.asgi.application"
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
+    }
+}
+
+# ----------------------------------------
+# LiveKit
+# ----------------------------------------
 LIVEKIT_HOST = "https://live.bonup.cloud"
 LIVEKIT_API_KEY = "bonup-7218feb964d0c2e7"
 LIVEKIT_API_SECRET = "ogIL0Jv7yr4fwHt6SDaPgIMcQ3Q4YV6QOR7VFrgc"

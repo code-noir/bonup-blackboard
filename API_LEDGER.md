@@ -250,6 +250,75 @@ Valid state machine: `draft → pending → confirmed → refunded / reversed`; 
 
 ---
 
+## Templates — `/api/templates/`
+
+| Method | Path | Description | Status |
+|--------|------|-------------|--------|
+| GET | `/api/templates/` | List all active templates; `?tier=` filter | Working |
+| GET | `/api/templates/<id>/` | Template detail with guided fields and clauses | Working |
+| POST | `/api/templates/<id>/instantiate/` | Create contract + version + obligations from template; body: `counterparty_email`, `start_date`, `guided_field_values` | Working |
+
+**Template library**: 45 templates seeded across 10 categories (`health_wellness`, `education`, `creative_services`, `technology_services`, `manual_labor`, `freelancer`, `rental`, `financial_services`, `lending`, `barter`).
+
+**Known gaps**:
+- `obligation_pattern` is not included in the detail response
+
+---
+
+## Activity — `/api/activity/`
+
+All endpoints enforce ownership — only the authenticated user's contracts are visible.
+
+| Method | Path | Description | Status |
+|--------|------|-------------|--------|
+| GET | `/api/activity/` | List activity across all user's contracts; `?contract_id=`, `?activity_type=`, paginated | Working |
+| GET | `/api/contracts/<id>/activity/` | Activity for a specific contract; paginated, ownership enforced | Working |
+
+Write-through hooks fire on all contract, obligation, payment, approval, version, role-switch, and session mutations.
+
+---
+
+## Notifications — `/api/notifications/`
+
+All endpoints scoped to the authenticated user.
+
+| Method | Path | Description | Status |
+|--------|------|-------------|--------|
+| GET | `/api/notifications/` | List user's notifications; `?is_read=true\|false`, paginated | Working |
+| GET | `/api/notifications/unread-count/` | `{ unread_count: N }` | Working |
+| POST | `/api/notifications/read-all/` | Mark all unread as read; `{ marked_read: N }` | Working |
+| POST | `/api/notifications/<id>/read/` | Mark single notification read; 403 if not owner | Working |
+
+Notifications are created automatically via `log_activity()` — every activity event notifies the other contract party via in-app record + email (`send_mail`, `fail_silently=True`).
+
+---
+
+## Sessions — `/api/sessions/`
+
+All endpoints enforce `is_party`. WebSocket requires JWT via `?token=` query param.
+
+| Method | Path | Description | Status |
+|--------|------|-------------|--------|
+| GET | `/api/sessions/` | List sessions across user's contracts; `?contract_id=`, `?status=` | Working |
+| POST | `/api/sessions/` | Create session; body: `contract_id`, `version_id?`, `title?`, `scheduled_at?` | Working |
+| GET | `/api/sessions/<id>/` | Session detail | Working |
+| PATCH | `/api/sessions/<id>/` | Update `title` / `scheduled_at`; 409 if not scheduled | Working |
+| POST | `/api/sessions/<id>/cancel/` | Cancel scheduled session; 409 if active/ended | Working |
+| POST | `/api/sessions/<id>/join/` | Get LiveKit token; auto-activates scheduled sessions | Working |
+| POST | `/api/sessions/<id>/end/` | End session; logs duration; broadcasts `session_ended` to WS group | Working |
+| POST | `/api/sessions/<id>/broadcast/` | Initiator pushes contract content to WS group; 403 for counterparty | Working |
+| GET | `/api/contracts/<id>/sessions/` | Contract-scoped session list | Working |
+| WS | `ws/sessions/<id>/?token=<jwt>` | Real-time contract broadcast; JWT auth, party check, active sessions only | Working |
+
+**Session state machine**: `scheduled → active → ended`; `scheduled → cancelled`. Join auto-transitions `scheduled → active`. Cancel and update are only valid from `scheduled`.
+
+**WebSocket events**:
+- Client → server: `{ "type": "editor_update", "content": "..." }` (initiator only)
+- Server → client: `{ "type": "editor_update", "content": "...", "sender_id": "..." }`
+- Server → client: `{ "type": "session_ended" }` (pushed when `POST /end/` is called; consumer closes)
+
+---
+
 ## Stub Domains
 
 These domains are registered in the router but contain only empty ViewSets.
@@ -258,13 +327,9 @@ No business logic exists. All routes return `[]` or DRF defaults.
 | Domain | Path | Notes |
 |--------|------|-------|
 | workspace | `/api/workspace/` | No workspace endpoints |
-| activity | `/api/activity/` | No activity feed |
 | billing | `/api/billing/` | No billing logic |
 | documents | `/api/documents/` | No document endpoints |
-| notifications | `/api/notifications/` | No notification delivery |
 | search | `/api/search/` | No search endpoints |
-| sessions | `/api/sessions/` | No session management |
-| templates | `/api/templates/` | No template endpoints |
 | tools | `/api/tools/` | No tools endpoints |
 | uploads | `/api/uploads/` | No upload handling |
 
@@ -272,6 +337,4 @@ No business logic exists. All routes return `[]` or DRF defaults.
 
 ## Known Issues Across Working Endpoints
 
-- **No filtering or pagination** on obligation list endpoints (done for payments, not yet for obligations)
-- **No API tests** — all endpoints are untested at the HTTP level
 - **Duplicate URL patterns** in `api/obligations/urls.py` — `approval-request-list` is registered twice; second registration shadows first

@@ -199,3 +199,34 @@ class UsageAPIView(APIView):
             "current_period_start": sub.current_period_start,
             "current_period_end": sub.current_period_end,
         })
+
+
+# ---------------------------------------------------------------------------
+# GET /api/billing/trial/
+# ---------------------------------------------------------------------------
+
+class TrialStatusAPIView(APIView):
+    """Trial status and remaining contracts for the authenticated user."""
+
+    def get(self, request):
+        try:
+            sub = UserSubscription.objects.select_related("plan").get(user=request.user)
+        except UserSubscription.DoesNotExist:
+            return Response({
+                "is_trial": False,
+                "trial_expired": False,
+                "trial_contracts_remaining": 0,
+                "plan": None,
+                "status": None,
+            })
+
+        is_trial = sub.status == "trialing"
+        trial_expired = sub.status == "no_subscription"
+
+        return Response({
+            "is_trial": is_trial,
+            "trial_expired": trial_expired,
+            "trial_contracts_remaining": sub.trial_contracts_remaining if is_trial else 0,
+            "plan": sub.plan.slug,
+            "status": sub.status,
+        })

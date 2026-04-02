@@ -52,6 +52,10 @@ class RegisterAPIView(APIView):
         profile.email_verification_token = uuid.uuid4()
         profile.save(update_fields=["email_verification_token"])
 
+        # Start free trial on the business tier
+        from backend.billing.gates import start_trial
+        start_trial(user)
+
         # In production: send verification email with the token.
         # In dev: return the token in the response so it can be used directly.
         return Response(

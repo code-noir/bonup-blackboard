@@ -6,7 +6,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
 
-from backend.billing.gates import can_create_contract, increment_contracts_used
+from backend.billing.gates import can_create_contract, consume_trial_contract, increment_contracts_used
 from backend.contracts.models import Contract
 
 from backend.api.contracts.permissions import contract_party_response, is_party
@@ -43,6 +43,7 @@ class ContractViewSet(ViewSet):
         if serializer.is_valid():
             contract = serializer.save(initiator=request.user)
             increment_contracts_used(request.user)
+            consume_trial_contract(request.user)
             log_activity(
                 contract=contract,
                 user=request.user,

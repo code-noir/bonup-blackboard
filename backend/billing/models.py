@@ -57,6 +57,7 @@ class UserSubscription(models.Model):
         ("past_due", "Past Due"),
         ("trialing", "Trialing"),
         ("per_contract", "Per Contract"),
+        ("no_subscription", "No Subscription"),
     ]
 
     BILLING_PERIOD_CHOICES = [
@@ -88,6 +89,9 @@ class UserSubscription(models.Model):
     # Usage counters (reset on period renewal)
     contracts_used_this_period = models.PositiveIntegerField(default=0)
     live_sessions_used_this_month = models.PositiveIntegerField(default=0)
+
+    # Trial
+    trial_contracts_remaining = models.PositiveIntegerField(default=0)
 
     # Stripe stubs
     stripe_customer_id = models.CharField(max_length=255, blank=True, default="")

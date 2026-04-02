@@ -17,10 +17,12 @@ from backend.billing.gates import (
     can_create_contract,
     can_create_session,
     can_access_template,
+    consume_trial_contract,
     get_ai_tier,
     has_feature,
     increment_contracts_used,
     increment_sessions_used,
+    start_trial,
 )
 from backend.contract_templates.models import ContractTemplate
 
@@ -625,3 +627,228 @@ class TemplateGateIntegrationTests(TestCase):
     def test_detail_blocked_no_subscription(self):
         r = self.client.get(f"/api/templates/{self.hw.id}/")
         self.assertEqual(r.status_code, 403)
+
+
+# ---------------------------------------------------------------------------
+# Trial — start_trial / consume_trial_contract gates
+# ---------------------------------------------------------------------------
+
+class TrialGateTests(TestCase):
+
+    def setUp(self):
+        self.user = make_user("u_tr", "u_tr@example.com")
+
+    def test_start_trial_creates_subscription(self):
+        start_trial(self.user)
+        sub = UserSubscription.objects.get(user=self.user)
+        self.assertEqual(sub.status, "trialing")
+        self.assertEqual(sub.plan.slug, "business")
+        self.assertEqual(sub.billing_period, "monthly")
+        self.assertEqual(sub.trial_contracts_remaining, 1)
+
+    def test_start_trial_idempotent(self):
+        start_trial(self.user)
+        start_trial(self.user)
+        self.assertEqual(UserSubscription.objects.filter(user=self.user).count(), 1)
+
+    def test_trial_allows_first_contract(self):
+        start_trial(self.user)
+        allowed, _ = can_create_contract(self.user)
+        self.assertTrue(allowed)
+
+    def test_trial_blocks_when_remaining_zero(self):
+        start_trial(self.user)
+        sub = UserSubscription.objects.get(user=self.user)
+        sub.trial_contracts_remaining = 0
+        sub.save()
+        allowed, msg = can_create_contract(self.user)
+        self.assertFalse(allowed)
+        self.assertIn("trial", msg.lower())
+
+    def test_consume_decrements_remaining(self):
+        start_trial(self.user)
+        consume_trial_contract(self.user)
+        sub = UserSubscription.objects.get(user=self.user)
+        self.assertEqual(sub.trial_contracts_remaining, 0)
+
+    def test_consume_transitions_to_no_subscription(self):
+        start_trial(self.user)
+        consume_trial_contract(self.user)
+        sub = UserSubscription.objects.get(user=self.user)
+        self.assertEqual(sub.status, "no_subscription")
+
+    def test_consume_noop_for_non_trialing_user(self):
+        subscribe(self.user, "business")
+        consume_trial_contract(self.user)
+        sub = UserSubscription.objects.get(user=self.user)
+        self.assertEqual(sub.status, "active")
+
+    def test_no_subscription_status_blocks_contract(self):
+        start_trial(self.user)
+        consume_trial_contract(self.user)
+        allowed, _ = can_create_contract(self.user)
+        self.assertFalse(allowed)
+
+
+# ---------------------------------------------------------------------------
+# Trial — registration auto-creates trial
+# ---------------------------------------------------------------------------
+
+class TrialRegistrationTests(TestCase):
+
+    def test_registration_creates_trial_subscription(self):
+        r = authed_client(make_user("dummy_reg", "dummy_reg@example.com")).post(
+            "/api/users/register/",
+            {
+                "username": "trialuser",
+                "email": "trialuser@example.com",
+                "password": "StrongPass123!",
+            },
+            format="json",
+        )
+        # Registration is open (AllowAny) so use an unauthenticated client
+        from rest_framework.test import APIClient
+        client = APIClient()
+        r = client.post(
+            "/api/users/register/",
+            {
+                "username": "trialuser2",
+                "email": "trialuser2@example.com",
+                "password": "StrongPass123!",
+            },
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201)
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        user = User.objects.get(username="trialuser2")
+        sub = UserSubscription.objects.get(user=user)
+        self.assertEqual(sub.status, "trialing")
+        self.assertEqual(sub.plan.slug, "business")
+        self.assertEqual(sub.trial_contracts_remaining, 1)
+
+    def test_registered_user_can_create_one_contract(self):
+        from rest_framework.test import APIClient
+        client = APIClient()
+        client.post(
+            "/api/users/register/",
+            {
+                "username": "trialcreate",
+                "email": "trialcreate@example.com",
+                "password": "StrongPass123!",
+            },
+            format="json",
+        )
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        user = User.objects.get(username="trialcreate")
+        authed = authed_client(user)
+        r = authed.post(
+            "/api/contracts/",
+            {"counterparty_email": "other@example.com", "structure_type": "ONE_TIME"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201)
+
+    def test_registered_user_blocked_after_trial_contract(self):
+        from rest_framework.test import APIClient
+        client = APIClient()
+        client.post(
+            "/api/users/register/",
+            {
+                "username": "trialexpiry",
+                "email": "trialexpiry@example.com",
+                "password": "StrongPass123!",
+            },
+            format="json",
+        )
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        user = User.objects.get(username="trialexpiry")
+        authed = authed_client(user)
+        # First contract uses the trial
+        authed.post(
+            "/api/contracts/",
+            {"counterparty_email": "other@example.com", "structure_type": "ONE_TIME"},
+            format="json",
+        )
+        # Second contract should be blocked
+        r = authed.post(
+            "/api/contracts/",
+            {"counterparty_email": "other2@example.com", "structure_type": "ONE_TIME"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 403)
+
+    def test_trial_status_after_expiry(self):
+        from rest_framework.test import APIClient
+        client = APIClient()
+        client.post(
+            "/api/users/register/",
+            {
+                "username": "trialstatus",
+                "email": "trialstatus@example.com",
+                "password": "StrongPass123!",
+            },
+            format="json",
+        )
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        user = User.objects.get(username="trialstatus")
+        authed = authed_client(user)
+        # Use the trial contract
+        authed.post(
+            "/api/contracts/",
+            {"counterparty_email": "other@example.com", "structure_type": "ONE_TIME"},
+            format="json",
+        )
+        sub = UserSubscription.objects.get(user=user)
+        self.assertEqual(sub.status, "no_subscription")
+        self.assertEqual(sub.trial_contracts_remaining, 0)
+
+
+# ---------------------------------------------------------------------------
+# Trial — GET /api/billing/trial/ endpoint
+# ---------------------------------------------------------------------------
+
+class TrialAPITests(TestCase):
+
+    def setUp(self):
+        self.user = make_user("u_tapi", "u_tapi@example.com")
+        self.client = authed_client(self.user)
+
+    def test_trial_endpoint_no_subscription(self):
+        r = self.client.get("/api/billing/trial/")
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.data["is_trial"])
+        self.assertFalse(r.data["trial_expired"])
+        self.assertEqual(r.data["trial_contracts_remaining"], 0)
+        self.assertIsNone(r.data["plan"])
+
+    def test_trial_endpoint_active_trial(self):
+        start_trial(self.user)
+        r = self.client.get("/api/billing/trial/")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.data["is_trial"])
+        self.assertFalse(r.data["trial_expired"])
+        self.assertEqual(r.data["trial_contracts_remaining"], 1)
+        self.assertEqual(r.data["plan"], "business")
+        self.assertEqual(r.data["status"], "trialing")
+
+    def test_trial_endpoint_after_expiry(self):
+        start_trial(self.user)
+        consume_trial_contract(self.user)
+        r = self.client.get("/api/billing/trial/")
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.data["is_trial"])
+        self.assertTrue(r.data["trial_expired"])
+        self.assertEqual(r.data["trial_contracts_remaining"], 0)
+        self.assertEqual(r.data["status"], "no_subscription")
+
+    def test_trial_endpoint_active_subscription_not_trial(self):
+        subscribe(self.user, "business")
+        r = self.client.get("/api/billing/trial/")
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.data["is_trial"])
+        self.assertFalse(r.data["trial_expired"])
+        self.assertEqual(r.data["plan"], "business")

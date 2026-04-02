@@ -9,6 +9,7 @@
 # None subscription → blocked everywhere. Gates never raise exceptions.
 
 from django.db import models as django_models
+from django.utils import timezone
 
 from .models import UserSubscription
 
@@ -26,13 +27,21 @@ def get_user_subscription(user):
 def can_create_contract(user):
     """
     Returns (allowed: bool, message: str).
-    Checks max_active_contracts limit.
+    Checks trial limit first, then max_active_contracts plan limit.
     """
     sub = get_user_subscription(user)
     if sub is None:
         return False, "No active subscription. Please subscribe to create contracts."
     if sub.status not in _ACTIVE_STATUSES:
         return False, "Your subscription is not active. Please renew to create contracts."
+
+    # Trial-specific gate: enforce trial_contracts_remaining regardless of plan limit
+    if sub.status == "trialing" and sub.trial_contracts_remaining <= 0:
+        return (
+            False,
+            "Your free trial has been used. Please subscribe to create more contracts.",
+        )
+
     plan = sub.plan
     if plan.max_active_contracts is None:
         return True, ""
@@ -138,3 +147,58 @@ def increment_sessions_used(user):
     UserSubscription.objects.filter(user=user).update(
         live_sessions_used_this_month=django_models.F("live_sessions_used_this_month") + 1
     )
+
+
+# ---------------------------------------------------------------------------
+# Trial helpers
+# ---------------------------------------------------------------------------
+
+def start_trial(user):
+    """
+    Create a business-tier trial subscription for a newly registered user.
+    Silently no-ops if:
+      - the user already has a subscription, or
+      - the business plan does not exist (e.g., before migrations run in tests).
+    """
+    from .models import SubscriptionPlan
+
+    try:
+        plan = SubscriptionPlan.objects.get(slug="business")
+    except SubscriptionPlan.DoesNotExist:
+        return
+
+    UserSubscription.objects.get_or_create(
+        user=user,
+        defaults={
+            "plan": plan,
+            "status": "trialing",
+            "billing_period": "monthly",
+            "current_period_start": timezone.now(),
+            "trial_contracts_remaining": 1,
+        },
+    )
+
+
+def consume_trial_contract(user):
+    """
+    Called after a contract is successfully created.
+    For trialing users: decrements trial_contracts_remaining by 1.
+    When it reaches 0, transitions status to no_subscription.
+    No-op for non-trialing users.
+    """
+    # Decrement only if trialing and still has remaining contracts
+    updated = UserSubscription.objects.filter(
+        user=user,
+        status="trialing",
+        trial_contracts_remaining__gt=0,
+    ).update(
+        trial_contracts_remaining=django_models.F("trial_contracts_remaining") - 1
+    )
+
+    if updated:
+        # Transition to no_subscription if now exhausted
+        UserSubscription.objects.filter(
+            user=user,
+            status="trialing",
+            trial_contracts_remaining=0,
+        ).update(status="no_subscription")

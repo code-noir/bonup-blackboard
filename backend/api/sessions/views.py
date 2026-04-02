@@ -12,6 +12,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from backend.billing.gates import can_create_session, increment_sessions_used
 from backend.contracts.models import Contract, ContractVersion
 from backend.sessions.models import LiveSession
 from backend.sessions.token import generate_token
@@ -78,6 +79,10 @@ class SessionListCreateAPIView(APIView):
         return Response([_serialize(s) for s in qs])
 
     def post(self, request):
+        allowed, message = can_create_session(request.user)
+        if not allowed:
+            return Response({"error": message}, status=status.HTTP_403_FORBIDDEN)
+
         contract_id = request.data.get("contract_id")
         if not contract_id:
             return Response(
@@ -124,6 +129,7 @@ class SessionListCreateAPIView(APIView):
                 },
             )
 
+        increment_sessions_used(request.user)
         return Response(_serialize(session), status=status.HTTP_201_CREATED)
 
 

@@ -9,6 +9,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from backend.billing.models import SubscriptionPlan, UserSubscription
 from backend.contracts.models import (
     Contract,
     ContractApprovalRequest,
@@ -76,6 +77,40 @@ def make_approval_request(contract, summary="Approve this.", requested_from=None
         summary=summary,
         requested_from=requested_from,
         status="pending",
+    )
+
+
+def make_subscription(user):
+    """
+    Give *user* an unlimited subscription for test purposes.
+
+    Uses get_or_create on the plan so this works in both TestCase (where
+    migration-seeded plans persist) and TransactionTestCase (where they are
+    wiped between tests).
+    """
+    plan, _ = SubscriptionPlan.objects.get_or_create(
+        slug="_test_unlimited",
+        defaults={
+            "display_name": "Test Unlimited",
+            "price_monthly": Decimal("0.00"),
+            "max_active_contracts": None,
+            "max_live_sessions_per_month": None,
+            "has_lifecycle": True,
+            "has_notifications": True,
+            "has_negotiation_prep": True,
+            "all_templates": True,
+            "excluded_categories": [],
+            "ai_tier": "full",
+            "has_priority_support": True,
+            "has_early_access": True,
+        },
+    )
+    return UserSubscription.objects.create(
+        user=user,
+        plan=plan,
+        status="active",
+        billing_period="monthly",
+        current_period_start=timezone.now(),
     )
 
 

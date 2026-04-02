@@ -1,8 +1,12 @@
-from rest_framework.routers import DefaultRouter
-from .views import BillingViewSet
+# backend/api/billing/urls.py
 
-router = DefaultRouter()
-router.register(r'', BillingViewSet, basename='billing')
+from django.urls import path
 
-urlpatterns = router.urls
+from .views import InvoiceListAPIView, PlanListAPIView, SubscriptionAPIView, UsageAPIView
 
+urlpatterns = [
+    path("plans/", PlanListAPIView.as_view(), name="billing-plans"),
+    path("subscription/", SubscriptionAPIView.as_view(), name="billing-subscription"),
+    path("invoices/", InvoiceListAPIView.as_view(), name="billing-invoices"),
+    path("usage/", UsageAPIView.as_view(), name="billing-usage"),
+]

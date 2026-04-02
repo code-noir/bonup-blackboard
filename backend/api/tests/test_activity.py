@@ -18,7 +18,7 @@ from backend.contracts.models import (
 )
 from backend.payments.models import Payment
 
-from .helpers import authed_client, make_contract, make_obligation, make_user, make_version
+from .helpers import authed_client, make_contract, make_obligation, make_subscription, make_user, make_version
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +183,7 @@ class ContractCreatedHookTests(TestCase):
 
     def setUp(self):
         self.alice = make_user("alice_cc", "alice_cc@example.com")
+        make_subscription(self.alice)
 
     def test_contract_create_logs_activity(self):
         r = authed_client(self.alice).post(

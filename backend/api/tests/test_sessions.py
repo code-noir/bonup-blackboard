@@ -15,7 +15,7 @@
 from backend.activity.models import ContractActivity
 from backend.sessions.models import LiveSession
 
-from .helpers import authed_client, make_contract, make_user, make_version
+from .helpers import authed_client, make_contract, make_subscription, make_user, make_version
 
 
 # ---------------------------------------------------------------------------
@@ -38,6 +38,8 @@ class SessionCreateTests(__import__("django.test", fromlist=["TestCase"]).TestCa
         self.alice = make_user("alice_sc", "alice_sc@example.com")
         self.bob = make_user("bob_sc", "bob_sc@example.com")
         self.charlie = make_user("charlie_sc", "charlie_sc@example.com")
+        make_subscription(self.alice)
+        make_subscription(self.bob)
         self.contract = make_contract(self.alice, counterparty_email="bob_sc@example.com")
 
     def test_initiator_can_create_session(self):
@@ -106,6 +108,8 @@ class SessionListTests(__import__("django.test", fromlist=["TestCase"]).TestCase
         self.alice = make_user("alice_sl", "alice_sl@example.com")
         self.bob = make_user("bob_sl", "bob_sl@example.com")
         self.charlie = make_user("charlie_sl", "charlie_sl@example.com")
+        make_subscription(self.alice)
+        make_subscription(self.bob)
         self.contract = make_contract(self.alice, counterparty_email="bob_sl@example.com")
         _create_session(authed_client(self.alice), self.contract.id)
 
@@ -150,6 +154,7 @@ class SessionDetailTests(__import__("django.test", fromlist=["TestCase"]).TestCa
         self.alice = make_user("alice_sd", "alice_sd@example.com")
         self.bob = make_user("bob_sd", "bob_sd@example.com")
         self.charlie = make_user("charlie_sd", "charlie_sd@example.com")
+        make_subscription(self.alice)
         self.contract = make_contract(self.alice, counterparty_email="bob_sd@example.com")
         r = _create_session(authed_client(self.alice), self.contract.id)
         self.session_id = r.data["id"]
@@ -180,6 +185,7 @@ class SessionUpdateTests(__import__("django.test", fromlist=["TestCase"]).TestCa
         self.alice = make_user("alice_su", "alice_su@example.com")
         self.bob = make_user("bob_su", "bob_su@example.com")
         self.charlie = make_user("charlie_su", "charlie_su@example.com")
+        make_subscription(self.alice)
         self.contract = make_contract(self.alice, counterparty_email="bob_su@example.com")
         r = _create_session(authed_client(self.alice), self.contract.id)
         self.session_id = r.data["id"]
@@ -250,6 +256,7 @@ class SessionCancelTests(__import__("django.test", fromlist=["TestCase"]).TestCa
         self.alice = make_user("alice_sx", "alice_sx@example.com")
         self.bob = make_user("bob_sx", "bob_sx@example.com")
         self.charlie = make_user("charlie_sx", "charlie_sx@example.com")
+        make_subscription(self.alice)
         self.contract = make_contract(self.alice, counterparty_email="bob_sx@example.com")
         r = _create_session(authed_client(self.alice), self.contract.id)
         self.session_id = r.data["id"]
@@ -304,6 +311,7 @@ class SessionJoinTests(__import__("django.test", fromlist=["TestCase"]).TestCase
         self.alice = make_user("alice_sj", "alice_sj@example.com")
         self.bob = make_user("bob_sj", "bob_sj@example.com")
         self.charlie = make_user("charlie_sj", "charlie_sj@example.com")
+        make_subscription(self.alice)
         self.contract = make_contract(self.alice, counterparty_email="bob_sj@example.com")
         r = _create_session(authed_client(self.alice), self.contract.id)
         self.session_id = r.data["id"]
@@ -361,6 +369,7 @@ class SessionEndTests(__import__("django.test", fromlist=["TestCase"]).TestCase)
         self.alice = make_user("alice_se", "alice_se@example.com")
         self.bob = make_user("bob_se", "bob_se@example.com")
         self.charlie = make_user("charlie_se", "charlie_se@example.com")
+        make_subscription(self.alice)
         self.contract = make_contract(self.alice, counterparty_email="bob_se@example.com")
         r = _create_session(authed_client(self.alice), self.contract.id)
         self.session_id = r.data["id"]
@@ -416,6 +425,7 @@ class SessionBroadcastTests(__import__("django.test", fromlist=["TestCase"]).Tes
         self.alice = make_user("alice_sb", "alice_sb@example.com")
         self.bob = make_user("bob_sb", "bob_sb@example.com")
         self.charlie = make_user("charlie_sb", "charlie_sb@example.com")
+        make_subscription(self.alice)
         self.contract = make_contract(self.alice, counterparty_email="bob_sb@example.com")
         r = _create_session(authed_client(self.alice), self.contract.id)
         self.session_id = r.data["id"]
@@ -478,6 +488,7 @@ class ContractSessionListTests(__import__("django.test", fromlist=["TestCase"]).
         self.alice = make_user("alice_csl", "alice_csl@example.com")
         self.bob = make_user("bob_csl", "bob_csl@example.com")
         self.charlie = make_user("charlie_csl", "charlie_csl@example.com")
+        make_subscription(self.alice)
         self.contract = make_contract(self.alice, counterparty_email="bob_csl@example.com")
         _create_session(authed_client(self.alice), self.contract.id)
         _create_session(authed_client(self.alice), self.contract.id)
@@ -514,6 +525,7 @@ class SessionConsumerTests(
         self.alice = make_user("alice_ws", "alice_ws@example.com")
         self.bob = make_user("bob_ws", "bob_ws@example.com")
         self.charlie = make_user("charlie_ws", "charlie_ws@example.com")
+        make_subscription(self.alice)
         self.contract = make_contract(self.alice, counterparty_email="bob_ws@example.com")
         r = _create_session(authed_client(self.alice), self.contract.id)
         self.session_id = r.data["id"]

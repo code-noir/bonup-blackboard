@@ -7,6 +7,7 @@ from rest_framework.viewsets import ViewSet
 
 from django.shortcuts import get_object_or_404
 
+from backend.billing.gates import can_access_template
 from backend.contract_templates.models import ContractTemplate
 from backend.contract_templates.services.template_instantiation_service import (
     TemplateInstantiationService,
@@ -23,7 +24,7 @@ class TemplatesViewSet(ViewSet):
 
     def list(self, request):
         """
-        Returns all active templates, optionally filtered by ?tier=.
+        Returns all active templates the user can access, optionally filtered by ?tier=.
         """
         qs = ContractTemplate.objects.filter(is_active=True).prefetch_related(
             "guided_fields", "clauses"
@@ -41,8 +42,8 @@ class TemplatesViewSet(ViewSet):
         if subcategory:
             qs = qs.filter(subcategory=subcategory)
 
-        templates = [_serialize_template_summary(t) for t in qs]
-        return Response(templates)
+        accessible = [t for t in qs if can_access_template(request.user, t)[0]]
+        return Response([_serialize_template_summary(t) for t in accessible])
 
     def retrieve(self, request, pk=None):
         """
@@ -53,6 +54,9 @@ class TemplatesViewSet(ViewSet):
             pk=pk,
             is_active=True,
         )
+        allowed, message = can_access_template(request.user, template)
+        if not allowed:
+            return Response({"error": message}, status=status.HTTP_403_FORBIDDEN)
         return Response(_serialize_template_detail(template))
 
     @action(detail=True, methods=["post"], url_path="instantiate")

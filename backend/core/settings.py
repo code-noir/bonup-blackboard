@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     'backend.billing',
     'backend.uploads',
     'backend.documents',
+    'backend.ai',
     'storages',
     'django_extensions',
 ]
@@ -173,6 +174,9 @@ DEFAULT_FROM_EMAIL = "noreply@bonup.cloud"
 # ----------------------------------------
 # Digital Ocean Spaces (S3-compatible)
 # ----------------------------------------
+
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 
 AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID", "")
 AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "")

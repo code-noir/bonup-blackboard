@@ -2,6 +2,7 @@
 from django.urls import path, include
 
 urlpatterns = [
+    path("ai/", include("backend.api.ai.urls")),
     path("activity/", include("backend.api.activity.urls")),
     path("auth/", include("backend.api.auth.urls")),
     path("billing/", include("backend.api.billing.urls")),

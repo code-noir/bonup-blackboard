@@ -92,7 +92,7 @@ def build_user_context(user) -> str:
         excluded = plan.excluded_categories or []
         if excluded:
             template_qs = template_qs.exclude(category__in=excluded)
-        templates = template_qs.order_by("category", "name")[:20]
+        templates = template_qs.order_by("category", "name")[:50]
         if templates:
             lines.append(f"\nAvailable Templates ({templates.count()}):")
             for t in templates:

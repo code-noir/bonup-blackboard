@@ -1,6 +1,10 @@
 
 #backend/core/settings.py
 
+from dotenv import load_dotenv
+from pathlib import Path as _Path
+load_dotenv(_Path(__file__).resolve().parent.parent.parent / ".env")
+
 """
 Django settings for core project.
 

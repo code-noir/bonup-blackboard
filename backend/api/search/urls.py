@@ -1,7 +1,11 @@
-from rest_framework.routers import DefaultRouter
-from .views import SearchViewSet
+# backend/api/search/urls.py
 
-router = DefaultRouter()
-router.register(r'', SearchViewSet, basename='search')
+from django.urls import path
 
-urlpatterns = router.urls
+from .views import GlobalSearchView, ContractSearchView, TemplateSearchView
+
+urlpatterns = [
+    path("", GlobalSearchView.as_view(), name="search-global"),
+    path("contracts/", ContractSearchView.as_view(), name="search-contracts"),
+    path("templates/", TemplateSearchView.as_view(), name="search-templates"),
+]

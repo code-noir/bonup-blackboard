@@ -187,8 +187,32 @@ class UploadListTests(TestCase):
         self.assertEqual(r.status_code, 200)
         item = r.data[0]
         for field in ("id", "file_url", "file_name", "file_type", "file_size",
-                      "related_contract", "related_session", "is_prep_material", "uploaded_at"):
+                      "related_contract", "related_session", "is_prep_material",
+                      "is_draft_document", "uploaded_at"):
             self.assertIn(field, item, f"Missing field: {field}")
+
+    def test_list_filter_by_is_draft_document_true(self):
+        self._make_upload(is_draft_document=True)
+        self._make_upload(is_draft_document=False)
+        r = self.client.get(f"{UPLOAD_URL}?is_draft_document=true")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data), 1)
+        self.assertTrue(r.data[0]["is_draft_document"])
+
+    def test_list_filter_by_is_draft_document_false(self):
+        self._make_upload(is_draft_document=True)
+        self._make_upload(is_draft_document=False)
+        r = self.client.get(f"{UPLOAD_URL}?is_draft_document=false")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data), 1)
+        self.assertFalse(r.data[0]["is_draft_document"])
+
+    def test_list_no_filter_returns_all(self):
+        self._make_upload(is_draft_document=True)
+        self._make_upload(is_draft_document=False)
+        r = self.client.get(UPLOAD_URL)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data), 2)
 
 
 class UploadDeleteTests(TestCase):

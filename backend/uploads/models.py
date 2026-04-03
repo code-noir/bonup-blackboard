@@ -49,6 +49,7 @@ class Upload(models.Model):
     )
 
     is_prep_material = models.BooleanField(default=False)
+    is_draft_document = models.BooleanField(default=False)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -23,6 +23,7 @@ def _serialize(upload):
         "related_contract": str(upload.related_contract_id) if upload.related_contract_id else None,
         "related_session": str(upload.related_session_id) if upload.related_session_id else None,
         "is_prep_material": upload.is_prep_material,
+        "is_draft_document": upload.is_draft_document,
         "uploaded_at": upload.uploaded_at,
     }
 
@@ -39,6 +40,10 @@ class UploadsViewSet(ViewSet):
         session_id = request.query_params.get("session_id")
         if session_id:
             qs = qs.filter(related_session_id=session_id)
+
+        is_draft = request.query_params.get("is_draft_document")
+        if is_draft is not None:
+            qs = qs.filter(is_draft_document=is_draft.lower() in ("true", "1", "yes"))
 
         return Response([_serialize(u) for u in qs])
 

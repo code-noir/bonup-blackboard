@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     'backend.negotiation_prep',
     'backend.billing',
     'backend.uploads',
+    'backend.documents',
     'storages',
     'django_extensions',
 ]

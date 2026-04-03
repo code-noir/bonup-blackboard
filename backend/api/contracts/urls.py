@@ -38,6 +38,10 @@ from .approval_views import (
     ApprovalRequestApproveAPIView,
     ApprovalRequestRejectAPIView,
 )
+from .document_views import (
+    ContractDocumentListCreateAPIView,
+    ContractDocumentDeleteAPIView,
+)
 
 router = DefaultRouter()
 router.register(r"", ContractViewSet, basename="contract")
@@ -137,6 +141,16 @@ urlpatterns = [
         "<uuid:contract_id>/sessions/",
         ContractSessionListAPIView.as_view(),
         name="contract-sessions",
+    ),
+    path(
+        "<uuid:contract_id>/documents/",
+        ContractDocumentListCreateAPIView.as_view(),
+        name="contract-documents",
+    ),
+    path(
+        "<uuid:contract_id>/documents/<uuid:doc_id>/",
+        ContractDocumentDeleteAPIView.as_view(),
+        name="contract-document-delete",
     ),
 
     # --------------------------------------------------

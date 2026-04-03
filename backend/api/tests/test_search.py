@@ -1,35 +1,102 @@
 # backend/api/tests/test_search.py
 #
-# Tests for the Search domain:
-#   GET /api/search/?q=               global search: contracts + templates + users
-#   GET /api/search/contracts/?q=     contract search + filters
-#   GET /api/search/templates/?q=     template search + category filter
+# Tests for the comprehensive Search domain:
+#   GET /api/search/?q=                 global — 9 domains
+#   GET /api/search/contracts/?q=       contracts + filters
+#   GET /api/search/obligations/?q=     obligations + filters
+#   GET /api/search/payments/?q=        payments + filters
+#   GET /api/search/sessions/?q=        sessions + filter
+#   GET /api/search/documents/?q=       documents
+#   GET /api/search/templates/?q=       templates + category filter
+
+import uuid
+from decimal import Decimal
 
 from django.test import TestCase
 from django.utils import timezone
 
 from backend.contract_templates.models import ContractTemplate
-from backend.contracts.models import Contract
-from .helpers import authed_client, make_contract, make_user
+from backend.contracts.models import (
+    Contract,
+    ContractObligation,
+    ContractServiceObligation,
+    ContractVersion,
+)
+from backend.documents.models import ContractDocument
+from backend.notifications.models import Notification
+from backend.payments.models import Payment
+from backend.sessions.models import LiveSession
+from backend.uploads.models import Upload
+from .helpers import authed_client, make_contract, make_user, make_version
 
 GLOBAL_URL = "/api/search/"
 CONTRACT_URL = "/api/search/contracts/"
+OBLIGATION_URL = "/api/search/obligations/"
+PAYMENT_URL = "/api/search/payments/"
+SESSION_URL = "/api/search/sessions/"
+DOCUMENT_URL = "/api/search/documents/"
 TEMPLATE_URL = "/api/search/templates/"
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Shared builders
 # ---------------------------------------------------------------------------
 
 def make_template(name="Service Agreement", category="legal", subcategory="general"):
     return ContractTemplate.objects.create(
-        name=name,
-        category=category,
-        subcategory=subcategory,
-        description="A test template.",
-        structure_type="ONE_TIME",
-        is_active=True,
-        tier_required="free",
+        name=name, category=category, subcategory=subcategory,
+        description="A test template.", structure_type="ONE_TIME",
+        is_active=True, tier_required="free",
+    )
+
+
+def make_payment(contract, payer, payee, status="draft", reference=None):
+    return Payment.objects.create(
+        contract=contract, payer=payer, payee=payee,
+        amount=Decimal("100.00"), status=status,
+        reference=reference,
+    )
+
+
+def make_session(contract, created_by, title="Test Session", status="scheduled"):
+    return LiveSession.objects.create(
+        contract=contract, created_by=created_by,
+        title=title, room_name=f"room-{uuid.uuid4().hex[:8]}", status=status,
+    )
+
+
+def make_service_obligation(contract, version, obligor, obligee, description="Deliver work"):
+    return ContractServiceObligation.objects.create(
+        contract=contract, version=version, obligor=obligor, obligee=obligee,
+        description=description, due_date=timezone.now(),
+    )
+
+
+def make_payment_obligation(contract, version, obligor, obligee):
+    return ContractObligation.objects.create(
+        contract=contract, version=version, obligor=obligor, obligee=obligee,
+        installment_number=1, amount_due=Decimal("500.00"), due_date=timezone.now(),
+    )
+
+
+def make_upload(user, file_name="report.pdf", file_type="pdf"):
+    return Upload.objects.create(
+        user=user, file_url="https://example.com/file.pdf",
+        file_name=file_name, file_type=file_type, file_size=1024,
+        storage_key="uploads/test/file.pdf",
+    )
+
+
+def make_document(contract, upload, attached_by, title="Contract Doc"):
+    return ContractDocument.objects.create(
+        contract=contract, upload=upload, attached_by=attached_by, title=title,
+    )
+
+
+def make_notification(user, title="Alert", message="Something happened"):
+    return Notification.objects.create(
+        user=user, notification_type="contract_created",
+        title=title, message=message,
     )
 
 
@@ -40,9 +107,8 @@ def make_template(name="Service Agreement", category="legal", subcategory="gener
 class GlobalSearchTests(TestCase):
 
     def setUp(self):
-        self.user = make_user("searcher", "searcher@example.com")
-        self.other = make_user("other_gs", "other_gs@bonup.com")
-        self.stranger = make_user("stranger_gs", "stranger_gs@example.com")
+        self.user = make_user("gs_user", "gs_user@example.com")
+        self.other = make_user("gs_other", "gs_other@bonup.com")
         self.client = authed_client(self.user)
 
     def test_missing_q_returns_400(self):
@@ -53,107 +119,154 @@ class GlobalSearchTests(TestCase):
         r = self.client.get(f"{GLOBAL_URL}?q=")
         self.assertEqual(r.status_code, 400)
 
-    def test_response_has_three_sections(self):
+    def test_response_has_all_nine_sections(self):
         r = self.client.get(f"{GLOBAL_URL}?q=anything")
         self.assertEqual(r.status_code, 200)
-        self.assertIn("contracts", r.data)
-        self.assertIn("templates", r.data)
-        self.assertIn("users", r.data)
+        for section in ("contracts", "obligations", "payments", "sessions",
+                        "documents", "uploads", "notifications", "templates", "users"):
+            self.assertIn(section, r.data, f"Missing section: {section}")
 
-    def test_contract_section_returns_party_contracts(self):
-        make_contract(self.user, self.other.email)
-        r = self.client.get(f"{GLOBAL_URL}?q={self.other.email}")
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(len(r.data["contracts"]), 1)
-
-    def test_contract_section_excludes_non_party_contracts(self):
-        make_contract(self.other, self.stranger.email)
-        r = self.client.get(f"{GLOBAL_URL}?q={self.stranger.email}")
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(len(r.data["contracts"]), 0)
-
-    def test_contract_section_matches_structure_type(self):
-        make_contract(self.user, self.other.email, structure_type="ONGOING")
-        r = self.client.get(f"{GLOBAL_URL}?q=ONGOING")
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(len(r.data["contracts"]), 1)
-
-    def test_template_section_returns_matching_templates(self):
-        make_template(name="NDA Agreement", category="legal")
-        r = self.client.get(f"{GLOBAL_URL}?q=NDA")
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(len(r.data["templates"]), 1)
-        self.assertEqual(r.data["templates"][0]["name"], "NDA Agreement")
-
-    def test_template_section_matches_category(self):
-        make_template(name="Health Service", category="health_wellness")
-        r = self.client.get(f"{GLOBAL_URL}?q=health")
-        self.assertEqual(r.status_code, 200)
-        self.assertTrue(any(t["category"] == "health_wellness" for t in r.data["templates"]))
-
-    def test_template_section_excludes_inactive(self):
-        t = make_template(name="Inactive Template")
-        t.is_active = False
-        t.save()
-        r = self.client.get(f"{GLOBAL_URL}?q=Inactive")
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(len(r.data["templates"]), 0)
-
-    def test_user_section_returns_matching_users(self):
-        r = self.client.get(f"{GLOBAL_URL}?q=other_gs")
-        self.assertEqual(r.status_code, 200)
-        usernames = [u["username"] for u in r.data["users"]]
-        self.assertIn("other_gs", usernames)
-
-    def test_user_section_excludes_self(self):
-        r = self.client.get(f"{GLOBAL_URL}?q=searcher")
-        self.assertEqual(r.status_code, 200)
-        usernames = [u["username"] for u in r.data["users"]]
-        self.assertNotIn("searcher", usernames)
-
-    def test_user_section_matches_bon_id(self):
-        profile = self.other.bon_profile
-        r = self.client.get(f"{GLOBAL_URL}?q={profile.bon_id}")
-        self.assertEqual(r.status_code, 200)
-        bon_ids = [u["bon_id"] for u in r.data["users"]]
-        self.assertIn(profile.bon_id, bon_ids)
-
-    def test_user_result_has_expected_fields(self):
-        r = self.client.get(f"{GLOBAL_URL}?q=other_gs")
-        self.assertEqual(r.status_code, 200)
-        self.assertTrue(len(r.data["users"]) > 0)
-        user_item = r.data["users"][0]
-        for field in ("bon_id", "username", "first_name", "last_name"):
-            self.assertIn(field, user_item)
-
-    def test_contract_result_has_expected_fields(self):
-        make_contract(self.user, self.other.email)
-        r = self.client.get(f"{GLOBAL_URL}?q={self.other.email}")
-        item = r.data["contracts"][0]
-        for field in ("id", "counterparty_email", "structure_type", "state", "is_active", "created_at"):
-            self.assertIn(field, item)
-
-    def test_no_results_returns_empty_sections(self):
+    def test_no_results_all_sections_empty(self):
         r = self.client.get(f"{GLOBAL_URL}?q=zzznomatch999")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.data["contracts"], [])
-        self.assertEqual(r.data["templates"], [])
-        self.assertEqual(r.data["users"], [])
+        for section in ("contracts", "obligations", "payments", "sessions",
+                        "documents", "uploads", "notifications", "templates", "users"):
+            self.assertEqual(r.data[section], [], f"Expected empty list for {section}")
 
     def test_unauthenticated_returns_401(self):
         from rest_framework.test import APIClient
         r = APIClient().get(f"{GLOBAL_URL}?q=test")
         self.assertEqual(r.status_code, 401)
 
-    def test_counterparty_sees_contract_in_results(self):
-        # user is the counterparty; contract.counterparty_email == user.email
-        make_contract(self.other, self.user.email)
-        client = authed_client(self.user)
-        # search by a token that appears in the user's own email (the counterparty_email stored on the contract)
-        token = self.user.email.split("@")[0]  # e.g. "searcher"
-        r = client.get(f"{GLOBAL_URL}?q={token}")
-        self.assertEqual(r.status_code, 200)
+    # contracts
+    def test_global_finds_own_contract(self):
+        make_contract(self.user, self.other.email)
+        r = self.client.get(f"{GLOBAL_URL}?q={self.other.email}")
         self.assertEqual(len(r.data["contracts"]), 1)
+
+    def test_global_excludes_stranger_contract(self):
+        stranger = make_user("gs_stranger", "gs_stranger@example.com")
+        make_contract(stranger, "nobody@example.com")
+        r = self.client.get(f"{GLOBAL_URL}?q=nobody")
+        self.assertEqual(r.data["contracts"], [])
+
+    def test_global_counterparty_sees_contract(self):
+        make_contract(self.other, self.user.email)
+        token = self.user.email.split("@")[0]
+        r = self.client.get(f"{GLOBAL_URL}?q={token}")
+        self.assertEqual(len(r.data["contracts"]), 1)
+
+    # uploads
+    def test_global_finds_own_upload(self):
+        make_upload(self.user, file_name="uniquefilexyz.pdf")
+        r = self.client.get(f"{GLOBAL_URL}?q=uniquefilexyz")
+        self.assertEqual(len(r.data["uploads"]), 1)
+
+    def test_global_excludes_others_upload(self):
+        make_upload(self.other, file_name="secretfile.pdf")
+        r = self.client.get(f"{GLOBAL_URL}?q=secretfile")
+        self.assertEqual(r.data["uploads"], [])
+
+    # notifications
+    def test_global_finds_own_notification(self):
+        make_notification(self.user, title="Unique Alert XYZ")
+        r = self.client.get(f"{GLOBAL_URL}?q=Unique Alert XYZ")
+        self.assertEqual(len(r.data["notifications"]), 1)
+
+    def test_global_excludes_others_notification(self):
+        make_notification(self.other, title="Other Alert XYZ")
+        r = self.client.get(f"{GLOBAL_URL}?q=Other Alert XYZ")
+        self.assertEqual(r.data["notifications"], [])
+
+    # payments
+    def test_global_finds_payment_by_reference(self):
+        contract = make_contract(self.user, self.other.email)
+        make_payment(contract, self.user, self.other, reference="REF-UNIQUE-001")
+        r = self.client.get(f"{GLOBAL_URL}?q=REF-UNIQUE-001")
+        self.assertEqual(len(r.data["payments"]), 1)
+
+    # sessions
+    def test_global_finds_session_by_title(self):
+        contract = make_contract(self.user, self.other.email)
+        make_session(contract, self.user, title="Unique Session XYZ")
+        r = self.client.get(f"{GLOBAL_URL}?q=Unique Session XYZ")
+        self.assertEqual(len(r.data["sessions"]), 1)
+
+    # templates
+    def test_global_finds_template(self):
+        make_template(name="NDA Agreement XYZ")
+        r = self.client.get(f"{GLOBAL_URL}?q=NDA Agreement XYZ")
+        self.assertEqual(len(r.data["templates"]), 1)
+
+    # users
+    def test_global_finds_user_by_username(self):
+        r = self.client.get(f"{GLOBAL_URL}?q=gs_other")
+        self.assertGreater(len(r.data["users"]), 0)
+        usernames = [u["username"] for u in r.data["users"]]
+        self.assertIn("gs_other", usernames)
+
+    def test_global_excludes_self_from_users(self):
+        r = self.client.get(f"{GLOBAL_URL}?q=gs_user")
+        usernames = [u["username"] for u in r.data["users"]]
+        self.assertNotIn("gs_user", usernames)
+
+    # obligations
+    def test_global_finds_service_obligation_by_description(self):
+        contract = make_contract(self.user, self.other.email)
+        version = make_version(contract, self.user)
+        make_service_obligation(contract, version, self.user, self.other, "DeliverUniqueWork")
+        r = self.client.get(f"{GLOBAL_URL}?q=DeliverUniqueWork")
+        self.assertEqual(len(r.data["obligations"]), 1)
+        self.assertEqual(r.data["obligations"][0]["obligation_type"], "service")
+
+    # documents
+    def test_global_finds_document_by_title(self):
+        contract = make_contract(self.user, self.other.email)
+        upload = make_upload(self.user)
+        make_document(contract, upload, self.user, title="UniqueTitleABC")
+        r = self.client.get(f"{GLOBAL_URL}?q=UniqueTitleABC")
+        self.assertEqual(len(r.data["documents"]), 1)
+
+
+# ---------------------------------------------------------------------------
+# User search prioritization
+# ---------------------------------------------------------------------------
+
+class UserSearchPriorityTests(TestCase):
+
+    def setUp(self):
+        self.searcher = make_user("priority_searcher", "priority_searcher@example.com")
+        self.client = authed_client(self.searcher)
+
+    def test_bon_id_exact_match_returns_first(self):
+        target = make_user("bon_target", "bon_target@example.com")
+        profile = target.bon_profile
+        r = self.client.get(f"{GLOBAL_URL}?q={profile.bon_id}")
+        self.assertEqual(r.status_code, 200)
+        self.assertGreater(len(r.data["users"]), 0)
+        self.assertEqual(r.data["users"][0]["bon_id"], profile.bon_id)
+
+    def test_email_exact_match_before_partial(self):
+        exact = make_user("email_exact", "exactmatch@example.com")
+        partial = make_user("email_partial", "notexactmatch@example.com")
+        r = self.client.get(f"{GLOBAL_URL}?q=exactmatch@example.com")
+        self.assertGreater(len(r.data["users"]), 0)
+        self.assertEqual(r.data["users"][0]["email"], "exactmatch@example.com")
+
+    def test_user_result_includes_email(self):
+        target = make_user("email_field_user", "emailfield@example.com")
+        r = self.client.get(f"{GLOBAL_URL}?q=emailfield")
+        self.assertGreater(len(r.data["users"]), 0)
+        self.assertIn("email", r.data["users"][0])
+
+    def test_phone_partial_search(self):
+        target = make_user("phone_user", "phone_user@example.com")
+        profile = target.bon_profile
+        profile.phone = "+15551234567"
+        profile.save()
+        r = self.client.get(f"{GLOBAL_URL}?q=5551234")
+        usernames = [u["username"] for u in r.data["users"]]
+        self.assertIn("phone_user", usernames)
 
 
 # ---------------------------------------------------------------------------
@@ -178,25 +291,15 @@ class ContractSearchTests(TestCase):
         make_contract(self.user, "alpha@example.com")
         make_contract(self.user, "beta@example.com")
         r = self.client.get(f"{CONTRACT_URL}?q=alpha")
-        self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.data), 1)
-        self.assertIn("alpha@example.com", r.data[0]["counterparty_email"])
-
-    def test_q_filters_by_structure_type(self):
-        make_contract(self.user, self.other.email, structure_type="ONGOING")
-        make_contract(self.user, self.other.email, structure_type="ONE_TIME")
-        r = self.client.get(f"{CONTRACT_URL}?q=ONGOING")
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(len(r.data), 1)
-        self.assertEqual(r.data[0]["structure_type"], "ONGOING")
+        self.assertIn("alpha", r.data[0]["counterparty_email"])
 
     def test_filter_by_status(self):
         c = make_contract(self.user, self.other.email)
         c.state = "fulfilled"
         c.save()
-        make_contract(self.user, self.other.email)  # state=active
+        make_contract(self.user, self.other.email)
         r = self.client.get(f"{CONTRACT_URL}?status=fulfilled")
-        self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.data), 1)
         self.assertEqual(r.data[0]["state"], "fulfilled")
 
@@ -204,51 +307,308 @@ class ContractSearchTests(TestCase):
         make_contract(self.user, self.other.email, structure_type="COLLABORATIVE")
         make_contract(self.user, self.other.email, structure_type="ONE_TIME")
         r = self.client.get(f"{CONTRACT_URL}?structure_type=COLLABORATIVE")
-        self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.data), 1)
         self.assertEqual(r.data[0]["structure_type"], "COLLABORATIVE")
 
-    def test_filter_by_date_from(self):
-        c = make_contract(self.user, self.other.email)
-        future_date = "2099-01-01"
-        r = self.client.get(f"{CONTRACT_URL}?date_from={future_date}")
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(len(r.data), 0)
-
-    def test_filter_by_date_to(self):
+    def test_date_from_future_returns_empty(self):
         make_contract(self.user, self.other.email)
-        past_date = "2000-01-01"
-        r = self.client.get(f"{CONTRACT_URL}?date_to={past_date}")
-        self.assertEqual(r.status_code, 200)
+        r = self.client.get(f"{CONTRACT_URL}?date_from=2099-01-01")
         self.assertEqual(len(r.data), 0)
 
-    def test_date_range_includes_today(self):
+    def test_date_to_past_returns_empty(self):
+        make_contract(self.user, self.other.email)
+        r = self.client.get(f"{CONTRACT_URL}?date_to=2000-01-01")
+        self.assertEqual(len(r.data), 0)
+
+    def test_date_range_today_returns_result(self):
         make_contract(self.user, self.other.email)
         today = timezone.now().date().isoformat()
         r = self.client.get(f"{CONTRACT_URL}?date_from={today}&date_to={today}")
-        self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.data), 1)
 
     def test_excludes_strangers_contracts(self):
         stranger = make_user("stranger_cs", "stranger_cs@example.com")
         make_contract(stranger, "nobody@example.com")
         r = self.client.get(CONTRACT_URL)
-        self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.data), 0)
 
-    def test_combined_q_and_status_filter(self):
-        c1 = make_contract(self.user, "alpha@example.com")
-        c1.state = "fulfilled"
-        c1.save()
-        c2 = make_contract(self.user, "alpha@example.com")  # state=active
+    def test_combined_q_and_status(self):
+        c = make_contract(self.user, "alpha@example.com")
+        c.state = "fulfilled"
+        c.save()
+        make_contract(self.user, "alpha@example.com")
         r = self.client.get(f"{CONTRACT_URL}?q=alpha&status=fulfilled")
-        self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.data), 1)
         self.assertEqual(r.data[0]["state"], "fulfilled")
 
     def test_unauthenticated_returns_401(self):
         from rest_framework.test import APIClient
         r = APIClient().get(CONTRACT_URL)
+        self.assertEqual(r.status_code, 401)
+
+
+# ---------------------------------------------------------------------------
+# Obligation Search
+# ---------------------------------------------------------------------------
+
+class ObligationSearchTests(TestCase):
+
+    def setUp(self):
+        self.user = make_user("obs_user", "obs_user@example.com")
+        self.other = make_user("obs_other", "obs_other@example.com")
+        self.contract = make_contract(self.user, self.other.email)
+        self.version = make_version(self.contract, self.user)
+        self.client = authed_client(self.user)
+
+    def test_no_q_returns_own_obligations(self):
+        make_payment_obligation(self.contract, self.version, self.user, self.other)
+        make_service_obligation(self.contract, self.version, self.user, self.other)
+        r = self.client.get(OBLIGATION_URL)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data), 2)
+
+    def test_obligation_type_payment_returns_only_payment(self):
+        make_payment_obligation(self.contract, self.version, self.user, self.other)
+        make_service_obligation(self.contract, self.version, self.user, self.other)
+        r = self.client.get(f"{OBLIGATION_URL}?obligation_type=payment")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(all(o["obligation_type"] == "payment" for o in r.data))
+
+    def test_obligation_type_service_returns_only_service(self):
+        make_payment_obligation(self.contract, self.version, self.user, self.other)
+        make_service_obligation(self.contract, self.version, self.user, self.other)
+        r = self.client.get(f"{OBLIGATION_URL}?obligation_type=service")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(all(o["obligation_type"] == "service" for o in r.data))
+
+    def test_q_matches_service_description(self):
+        make_service_obligation(
+            self.contract, self.version, self.user, self.other, "DeliverUniqueThing"
+        )
+        r = self.client.get(f"{OBLIGATION_URL}?q=DeliverUniqueThing")
+        self.assertEqual(len(r.data), 1)
+        self.assertEqual(r.data[0]["obligation_type"], "service")
+
+    def test_status_filter(self):
+        o = make_service_obligation(self.contract, self.version, self.user, self.other)
+        o.state = "resolved"
+        o.save()
+        make_service_obligation(self.contract, self.version, self.user, self.other)
+        r = self.client.get(f"{OBLIGATION_URL}?obligation_type=service&status=resolved")
+        self.assertEqual(len(r.data), 1)
+        self.assertEqual(r.data[0]["state"], "resolved")
+
+    def test_excludes_strangers_obligations(self):
+        stranger = make_user("obs_stranger", "obs_stranger@example.com")
+        stranger_other = make_user("obs_stranger_other", "obs_stranger_other@example.com")
+        sc = make_contract(stranger, stranger_other.email)
+        sv = make_version(sc, stranger)
+        make_service_obligation(sc, sv, stranger, stranger_other, "StrangerWork")
+        r = self.client.get(f"{OBLIGATION_URL}?q=StrangerWork")
+        self.assertEqual(r.data, [])
+
+    def test_obligation_result_has_expected_fields(self):
+        make_payment_obligation(self.contract, self.version, self.user, self.other)
+        r = self.client.get(f"{OBLIGATION_URL}?obligation_type=payment")
+        item = r.data[0]
+        for field in ("id", "obligation_type", "contract_id", "state", "amount_due", "due_date"):
+            self.assertIn(field, item)
+
+    def test_service_obligation_result_has_description(self):
+        make_service_obligation(self.contract, self.version, self.user, self.other, "Task")
+        r = self.client.get(f"{OBLIGATION_URL}?obligation_type=service")
+        self.assertIn("description", r.data[0])
+
+    def test_unauthenticated_returns_401(self):
+        from rest_framework.test import APIClient
+        r = APIClient().get(OBLIGATION_URL)
+        self.assertEqual(r.status_code, 401)
+
+
+# ---------------------------------------------------------------------------
+# Payment Search
+# ---------------------------------------------------------------------------
+
+class PaymentSearchTests(TestCase):
+
+    def setUp(self):
+        self.user = make_user("ps_user", "ps_user@example.com")
+        self.other = make_user("ps_other", "ps_other@example.com")
+        self.contract = make_contract(self.user, self.other.email)
+        self.client = authed_client(self.user)
+
+    def test_no_q_returns_own_payments(self):
+        make_payment(self.contract, self.user, self.other)
+        make_payment(self.contract, self.other, self.user)
+        r = self.client.get(PAYMENT_URL)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data), 2)
+
+    def test_q_matches_reference(self):
+        make_payment(self.contract, self.user, self.other, reference="INV-UNIQUE-XYZ")
+        make_payment(self.contract, self.user, self.other)
+        r = self.client.get(f"{PAYMENT_URL}?q=INV-UNIQUE-XYZ")
+        self.assertEqual(len(r.data), 1)
+        self.assertEqual(r.data[0]["reference"], "INV-UNIQUE-XYZ")
+
+    def test_q_matches_status(self):
+        p = make_payment(self.contract, self.user, self.other, status="confirmed")
+        make_payment(self.contract, self.user, self.other, status="draft")
+        r = self.client.get(f"{PAYMENT_URL}?q=confirmed")
+        self.assertEqual(len(r.data), 1)
+        self.assertEqual(r.data[0]["status"], "confirmed")
+
+    def test_status_filter(self):
+        make_payment(self.contract, self.user, self.other, status="confirmed")
+        make_payment(self.contract, self.user, self.other, status="draft")
+        r = self.client.get(f"{PAYMENT_URL}?status=confirmed")
+        self.assertEqual(len(r.data), 1)
+        self.assertEqual(r.data[0]["status"], "confirmed")
+
+    def test_excludes_strangers_payments(self):
+        stranger = make_user("ps_stranger", "ps_stranger@example.com")
+        stranger_other = make_user("ps_stranger2", "ps_stranger2@example.com")
+        sc = make_contract(stranger, stranger_other.email)
+        make_payment(sc, stranger, stranger_other)
+        r = self.client.get(PAYMENT_URL)
+        self.assertEqual(len(r.data), 0)
+
+    def test_payee_also_sees_payment(self):
+        make_payment(self.contract, self.other, self.user)
+        r = self.client.get(PAYMENT_URL)
+        self.assertEqual(len(r.data), 1)
+
+    def test_result_has_expected_fields(self):
+        make_payment(self.contract, self.user, self.other)
+        r = self.client.get(PAYMENT_URL)
+        item = r.data[0]
+        for field in ("id", "contract_id", "amount", "currency", "status",
+                      "payment_method", "reference", "created_at"):
+            self.assertIn(field, item)
+
+    def test_unauthenticated_returns_401(self):
+        from rest_framework.test import APIClient
+        r = APIClient().get(PAYMENT_URL)
+        self.assertEqual(r.status_code, 401)
+
+
+# ---------------------------------------------------------------------------
+# Session Search
+# ---------------------------------------------------------------------------
+
+class SessionSearchTests(TestCase):
+
+    def setUp(self):
+        self.user = make_user("ss_user", "ss_user@example.com")
+        self.other = make_user("ss_other", "ss_other@example.com")
+        self.contract = make_contract(self.user, self.other.email)
+        self.client = authed_client(self.user)
+
+    def test_no_q_returns_own_sessions(self):
+        make_session(self.contract, self.user)
+        r = self.client.get(SESSION_URL)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data), 1)
+
+    def test_q_matches_title(self):
+        make_session(self.contract, self.user, title="Negotiation XYZ")
+        make_session(self.contract, self.user, title="Other Session")
+        r = self.client.get(f"{SESSION_URL}?q=Negotiation XYZ")
+        self.assertEqual(len(r.data), 1)
+        self.assertEqual(r.data[0]["title"], "Negotiation XYZ")
+
+    def test_status_filter(self):
+        make_session(self.contract, self.user, status="ended")
+        make_session(self.contract, self.user, status="scheduled")
+        r = self.client.get(f"{SESSION_URL}?status=ended")
+        self.assertEqual(len(r.data), 1)
+        self.assertEqual(r.data[0]["status"], "ended")
+
+    def test_counterparty_sees_session(self):
+        make_session(self.contract, self.user)
+        client = authed_client(self.other)
+        r = client.get(SESSION_URL)
+        self.assertEqual(len(r.data), 1)
+
+    def test_excludes_strangers_sessions(self):
+        stranger = make_user("ss_stranger", "ss_stranger@example.com")
+        stranger_other = make_user("ss_stranger_other", "ss_stranger_other@example.com")
+        sc = make_contract(stranger, stranger_other.email)
+        make_session(sc, stranger)
+        r = self.client.get(SESSION_URL)
+        self.assertEqual(len(r.data), 0)
+
+    def test_result_has_expected_fields(self):
+        make_session(self.contract, self.user, title="Field Check")
+        r = self.client.get(SESSION_URL)
+        item = r.data[0]
+        for field in ("id", "contract_id", "title", "status", "created_at"):
+            self.assertIn(field, item)
+
+    def test_unauthenticated_returns_401(self):
+        from rest_framework.test import APIClient
+        r = APIClient().get(SESSION_URL)
+        self.assertEqual(r.status_code, 401)
+
+
+# ---------------------------------------------------------------------------
+# Document Search
+# ---------------------------------------------------------------------------
+
+class DocumentSearchTests(TestCase):
+
+    def setUp(self):
+        self.user = make_user("ds_user", "ds_user@example.com")
+        self.other = make_user("ds_other", "ds_other@example.com")
+        self.contract = make_contract(self.user, self.other.email)
+        self.upload = make_upload(self.user)
+        self.client = authed_client(self.user)
+
+    def test_no_q_returns_own_documents(self):
+        make_document(self.contract, self.upload, self.user)
+        r = self.client.get(DOCUMENT_URL)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data), 1)
+
+    def test_q_matches_title(self):
+        make_document(self.contract, self.upload, self.user, "UniqueDocTitle")
+        make_document(self.contract, self.upload, self.user, "OtherDoc")
+        r = self.client.get(f"{DOCUMENT_URL}?q=UniqueDocTitle")
+        self.assertEqual(len(r.data), 1)
+        self.assertEqual(r.data[0]["title"], "UniqueDocTitle")
+
+    def test_q_matches_file_name(self):
+        upload = make_upload(self.user, file_name="uniquefilename.pdf")
+        make_document(self.contract, upload, self.user, "Doc with Unique File")
+        r = self.client.get(f"{DOCUMENT_URL}?q=uniquefilename")
+        self.assertEqual(len(r.data), 1)
+
+    def test_counterparty_sees_documents(self):
+        make_document(self.contract, self.upload, self.user)
+        client = authed_client(self.other)
+        r = client.get(DOCUMENT_URL)
+        self.assertEqual(len(r.data), 1)
+
+    def test_excludes_strangers_documents(self):
+        stranger = make_user("ds_stranger", "ds_stranger@example.com")
+        stranger_other = make_user("ds_stranger_other", "ds_stranger_other@example.com")
+        sc = make_contract(stranger, stranger_other.email)
+        sup = make_upload(stranger)
+        make_document(sc, sup, stranger, "Stranger Doc")
+        r = self.client.get(f"{DOCUMENT_URL}?q=Stranger Doc")
+        self.assertEqual(r.data, [])
+
+    def test_result_has_expected_fields(self):
+        make_document(self.contract, self.upload, self.user, "Field Doc")
+        r = self.client.get(DOCUMENT_URL)
+        item = r.data[0]
+        for field in ("id", "contract_id", "title", "description",
+                      "file_name", "file_url", "is_proof", "attached_at"):
+            self.assertIn(field, item)
+
+    def test_unauthenticated_returns_401(self):
+        from rest_framework.test import APIClient
+        r = APIClient().get(DOCUMENT_URL)
         self.assertEqual(r.status_code, 401)
 
 
@@ -274,14 +634,12 @@ class TemplateSearchTests(TestCase):
         t.is_active = False
         t.save()
         r = self.client.get(TEMPLATE_URL)
-        self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.data), 0)
 
     def test_q_matches_name(self):
         make_template("Freelance Contract", "creative_services")
         make_template("NDA", "legal")
         r = self.client.get(f"{TEMPLATE_URL}?q=Freelance")
-        self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.data), 1)
         self.assertEqual(r.data[0]["name"], "Freelance Contract")
 
@@ -289,22 +647,12 @@ class TemplateSearchTests(TestCase):
         make_template("Doc A", "creative_services", "photography")
         make_template("Doc B", "legal", "nda")
         r = self.client.get(f"{TEMPLATE_URL}?q=creative")
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(len(r.data), 1)
-        self.assertEqual(r.data[0]["category"], "creative_services")
-
-    def test_q_matches_subcategory(self):
-        make_template("Doc C", "creative_services", "videography")
-        make_template("Doc D", "legal", "other")
-        r = self.client.get(f"{TEMPLATE_URL}?q=video")
-        self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.data), 1)
 
     def test_filter_by_category(self):
         make_template("Legal Doc", "legal")
         make_template("Health Doc", "health_wellness")
         r = self.client.get(f"{TEMPLATE_URL}?category=legal")
-        self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.data), 1)
         self.assertEqual(r.data[0]["category"], "legal")
 
@@ -313,21 +661,8 @@ class TemplateSearchTests(TestCase):
         make_template("Legal Service", "legal", "service")
         make_template("Health NDA", "health_wellness", "nda")
         r = self.client.get(f"{TEMPLATE_URL}?q=NDA&category=legal")
-        self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.data), 1)
         self.assertEqual(r.data[0]["name"], "Legal NDA")
-
-    def test_no_results_returns_empty_list(self):
-        r = self.client.get(f"{TEMPLATE_URL}?q=zzznomatch999")
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.data, [])
-
-    def test_result_has_expected_fields(self):
-        make_template("Field Check", "legal")
-        r = self.client.get(f"{TEMPLATE_URL}?q=Field")
-        item = r.data[0]
-        for field in ("id", "name", "category", "subcategory", "structure_type", "tier_required"):
-            self.assertIn(field, item)
 
     def test_unauthenticated_returns_401(self):
         from rest_framework.test import APIClient

@@ -1,0 +1,44 @@
+# bonUP Blackboard — Haitian Creole translations
+# Copyright (C) 2026 bonUP
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: ht\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "No active subscription. Please subscribe to create contracts."
+msgstr "Pa gen abònnman aktif. Tanpri abòne pou kreye kontra."
+
+msgid "Your subscription is not active. Please renew to create contracts."
+msgstr "Abònnman ou pa aktif. Tanpri renouvle li pou kreye kontra."
+
+msgid "Your free trial has been used. Please subscribe to create more contracts."
+msgstr "Peryòd esè gratis ou te itilize. Tanpri abòne pou kreye plis kontra."
+
+msgid "Contract limit reached (%(limit)s). Please upgrade your plan to create more contracts."
+msgstr "Limit kontra rive (%(limit)s). Tanpri amelyore plan ou pou kreye plis kontra."
+
+msgid "No active subscription. Please subscribe to create live sessions."
+msgstr "Pa gen abònnman aktif. Tanpri abòne pou kreye sesyon an dirèk."
+
+msgid "Your subscription is not active."
+msgstr "Abònnman ou pa aktif."
+
+msgid "Live sessions are not included in your plan. Please upgrade."
+msgstr "Sesyon an dirèk pa enkli nan plan ou. Tanpri amelyore."
+
+msgid "Monthly session limit reached (%(limit)s). Please upgrade your plan."
+msgstr "Limit sesyon mansyèl rive (%(limit)s). Tanpri amelyore plan ou."
+
+msgid "No active subscription required to access templates."
+msgstr "Abònnman aktif obligatwa pou accède modèl yo."
+
+msgid "Templates in '%(category)s' are not included in your plan. Please upgrade."
+msgstr "Modèl nan '%(category)s' pa enkli nan plan ou. Tanpri amelyore."
+
+msgid "AI features require a Professional, Business, or Anchor subscription."
+msgstr "Fonksyon AI bezwen yon abònnman Pwofesyonèl, Biznis, oswa Anchor."
+
+msgid "message is required"
+msgstr "mesaj la obligatwa"

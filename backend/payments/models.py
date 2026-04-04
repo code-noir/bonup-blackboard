@@ -2,6 +2,8 @@ from django.db import models
 from django.conf import settings
 import uuid
 
+from backend.core.currencies import CURRENCY_CHOICES
+
 
 class Payment(models.Model):
     STATUS_CHOICES = [
@@ -52,7 +54,7 @@ class Payment(models.Model):
     )
 
     amount = models.DecimalField(max_digits=12, decimal_places=2)
-    currency = models.CharField(max_length=10, default="USD")
+    currency = models.CharField(max_length=10, choices=CURRENCY_CHOICES, default="USD")
 
     status = models.CharField(
         max_length=20,

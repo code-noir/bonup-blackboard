@@ -5,6 +5,8 @@ from django.utils import timezone
 from django.conf import settings
 import uuid
 
+from backend.core.currencies import CURRENCY_CHOICES
+
 
 # ============================================================
 # CONTRACT CONTAINER
@@ -46,6 +48,12 @@ class Contract(models.Model):
     )
 
     max_versions = models.PositiveIntegerField(default=3)
+
+    currency = models.CharField(
+        max_length=10,
+        choices=CURRENCY_CHOICES,
+        default="USD",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -373,6 +381,12 @@ class ContractObligation(models.Model):
     installment_number = models.PositiveIntegerField()
 
     amount_due = models.DecimalField(max_digits=12, decimal_places=2)
+
+    currency = models.CharField(
+        max_length=10,
+        choices=CURRENCY_CHOICES,
+        default="USD",
+    )
 
     amount_paid = models.DecimalField(
         max_digits=12,

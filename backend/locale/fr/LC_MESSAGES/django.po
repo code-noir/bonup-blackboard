@@ -1,0 +1,44 @@
+# bonUP Blackboard — French translations
+# Copyright (C) 2026 bonUP
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: fr\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "No active subscription. Please subscribe to create contracts."
+msgstr "Aucun abonnement actif. Veuillez vous abonner pour créer des contrats."
+
+msgid "Your subscription is not active. Please renew to create contracts."
+msgstr "Votre abonnement n'est pas actif. Veuillez le renouveler pour créer des contrats."
+
+msgid "Your free trial has been used. Please subscribe to create more contracts."
+msgstr "Votre essai gratuit a été utilisé. Veuillez vous abonner pour créer d'autres contrats."
+
+msgid "Contract limit reached (%(limit)s). Please upgrade your plan to create more contracts."
+msgstr "Limite de contrats atteinte (%(limit)s). Veuillez mettre à niveau votre forfait pour créer d'autres contrats."
+
+msgid "No active subscription. Please subscribe to create live sessions."
+msgstr "Aucun abonnement actif. Veuillez vous abonner pour créer des sessions en direct."
+
+msgid "Your subscription is not active."
+msgstr "Votre abonnement n'est pas actif."
+
+msgid "Live sessions are not included in your plan. Please upgrade."
+msgstr "Les sessions en direct ne sont pas incluses dans votre forfait. Veuillez mettre à niveau."
+
+msgid "Monthly session limit reached (%(limit)s). Please upgrade your plan."
+msgstr "Limite mensuelle de sessions atteinte (%(limit)s). Veuillez mettre à niveau votre forfait."
+
+msgid "No active subscription required to access templates."
+msgstr "Un abonnement actif est requis pour accéder aux modèles."
+
+msgid "Templates in '%(category)s' are not included in your plan. Please upgrade."
+msgstr "Les modèles dans '%(category)s' ne sont pas inclus dans votre forfait. Veuillez mettre à niveau."
+
+msgid "AI features require a Professional, Business, or Anchor subscription."
+msgstr "Les fonctionnalités IA nécessitent un abonnement Professionnel, Entreprise ou Anchor."
+
+msgid "message is required"
+msgstr "le message est requis"

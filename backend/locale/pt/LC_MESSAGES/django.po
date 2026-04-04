@@ -1,0 +1,44 @@
+# bonUP Blackboard — Portuguese translations
+# Copyright (C) 2026 bonUP
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: pt\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "No active subscription. Please subscribe to create contracts."
+msgstr "Sem assinatura ativa. Por favor assine para criar contratos."
+
+msgid "Your subscription is not active. Please renew to create contracts."
+msgstr "Sua assinatura não está ativa. Por favor renove para criar contratos."
+
+msgid "Your free trial has been used. Please subscribe to create more contracts."
+msgstr "Seu período de teste gratuito foi utilizado. Por favor assine para criar mais contratos."
+
+msgid "Contract limit reached (%(limit)s). Please upgrade your plan to create more contracts."
+msgstr "Limite de contratos atingido (%(limit)s). Por favor atualize seu plano para criar mais contratos."
+
+msgid "No active subscription. Please subscribe to create live sessions."
+msgstr "Sem assinatura ativa. Por favor assine para criar sessões ao vivo."
+
+msgid "Your subscription is not active."
+msgstr "Sua assinatura não está ativa."
+
+msgid "Live sessions are not included in your plan. Please upgrade."
+msgstr "Sessões ao vivo não estão incluídas no seu plano. Por favor atualize."
+
+msgid "Monthly session limit reached (%(limit)s). Please upgrade your plan."
+msgstr "Limite mensal de sessões atingido (%(limit)s). Por favor atualize seu plano."
+
+msgid "No active subscription required to access templates."
+msgstr "Uma assinatura ativa é necessária para acessar os modelos."
+
+msgid "Templates in '%(category)s' are not included in your plan. Please upgrade."
+msgstr "Modelos em '%(category)s' não estão incluídos no seu plano. Por favor atualize."
+
+msgid "AI features require a Professional, Business, or Anchor subscription."
+msgstr "Os recursos de IA requerem uma assinatura Profissional, Empresarial ou Anchor."
+
+msgid "message is required"
+msgstr "mensagem é obrigatória"

@@ -1,0 +1,44 @@
+# bonUP Blackboard — Swahili translations
+# Copyright (C) 2026 bonUP
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: sw\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "No active subscription. Please subscribe to create contracts."
+msgstr "Hakuna usajili unaotumika. Tafadhali jisajili ili kuunda mikataba."
+
+msgid "Your subscription is not active. Please renew to create contracts."
+msgstr "Usajili wako hauko hai. Tafadhali uifanye upya ili kuunda mikataba."
+
+msgid "Your free trial has been used. Please subscribe to create more contracts."
+msgstr "Kipindi chako cha majaribio bila malipo kimetumika. Tafadhali jisajili ili kuunda mikataba zaidi."
+
+msgid "Contract limit reached (%(limit)s). Please upgrade your plan to create more contracts."
+msgstr "Kiwango cha mikataba kimefikwa (%(limit)s). Tafadhali boresha mpango wako ili kuunda mikataba zaidi."
+
+msgid "No active subscription. Please subscribe to create live sessions."
+msgstr "Hakuna usajili unaotumika. Tafadhali jisajili ili kuunda vikao vya moja kwa moja."
+
+msgid "Your subscription is not active."
+msgstr "Usajili wako hauko hai."
+
+msgid "Live sessions are not included in your plan. Please upgrade."
+msgstr "Vikao vya moja kwa moja havijumuishwa katika mpango wako. Tafadhali boresha."
+
+msgid "Monthly session limit reached (%(limit)s). Please upgrade your plan."
+msgstr "Kiwango cha vikao vya kila mwezi kimefikwa (%(limit)s). Tafadhali boresha mpango wako."
+
+msgid "No active subscription required to access templates."
+msgstr "Usajili unaotumika unahitajika kufikia violezo."
+
+msgid "Templates in '%(category)s' are not included in your plan. Please upgrade."
+msgstr "Violezo katika '%(category)s' havijumuishwa katika mpango wako. Tafadhali boresha."
+
+msgid "AI features require a Professional, Business, or Anchor subscription."
+msgstr "Vipengele vya AI vinahitaji usajili wa Professional, Business, au Anchor."
+
+msgid "message is required"
+msgstr "ujumbe unahitajika"

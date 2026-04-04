@@ -9,6 +9,7 @@ from django.conf import settings
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.translation import gettext as _
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -230,13 +231,13 @@ class AIChatView(APIView):
         ai_tier = get_ai_tier(request.user)
         if ai_tier == "none":
             return Response(
-                {"error": "AI features require a Professional, Business, or Anchor subscription."},
+                {"error": _("AI features require a Professional, Business, or Anchor subscription.")},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
         message = (request.data.get("message") or "").strip()
         if not message:
-            return Response({"error": "message is required"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": _("message is required")}, status=status.HTTP_400_BAD_REQUEST)
 
         conversation_id = request.data.get("conversation_id")
         contract_id = request.data.get("contract_id")

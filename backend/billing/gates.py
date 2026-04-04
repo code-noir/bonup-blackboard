@@ -10,6 +10,7 @@
 
 from django.db import models as django_models
 from django.utils import timezone
+from django.utils.translation import gettext as _
 
 from .models import UserSubscription
 
@@ -31,15 +32,15 @@ def can_create_contract(user):
     """
     sub = get_user_subscription(user)
     if sub is None:
-        return False, "No active subscription. Please subscribe to create contracts."
+        return False, _("No active subscription. Please subscribe to create contracts.")
     if sub.status not in _ACTIVE_STATUSES:
-        return False, "Your subscription is not active. Please renew to create contracts."
+        return False, _("Your subscription is not active. Please renew to create contracts.")
 
     # Trial-specific gate: enforce trial_contracts_remaining regardless of plan limit
     if sub.status == "trialing" and sub.trial_contracts_remaining <= 0:
         return (
             False,
-            "Your free trial has been used. Please subscribe to create more contracts.",
+            _("Your free trial has been used. Please subscribe to create more contracts."),
         )
 
     plan = sub.plan
@@ -48,8 +49,7 @@ def can_create_contract(user):
     if sub.contracts_used_this_period >= plan.max_active_contracts:
         return (
             False,
-            f"Contract limit reached ({plan.max_active_contracts}). "
-            "Please upgrade your plan to create more contracts.",
+            _("Contract limit reached (%(limit)s). Please upgrade your plan to create more contracts.") % {"limit": plan.max_active_contracts},
         )
     return True, ""
 
@@ -62,19 +62,18 @@ def can_create_session(user):
     """
     sub = get_user_subscription(user)
     if sub is None:
-        return False, "No active subscription. Please subscribe to create live sessions."
+        return False, _("No active subscription. Please subscribe to create live sessions.")
     if sub.status not in _ACTIVE_STATUSES:
-        return False, "Your subscription is not active."
+        return False, _("Your subscription is not active.")
     plan = sub.plan
     if plan.max_live_sessions_per_month == 0:
-        return False, "Live sessions are not included in your plan. Please upgrade."
+        return False, _("Live sessions are not included in your plan. Please upgrade.")
     if plan.max_live_sessions_per_month is None:
         return True, ""
     if sub.live_sessions_used_this_month >= plan.max_live_sessions_per_month:
         return (
             False,
-            f"Monthly session limit reached ({plan.max_live_sessions_per_month}). "
-            "Please upgrade your plan.",
+            _("Monthly session limit reached (%(limit)s). Please upgrade your plan.") % {"limit": plan.max_live_sessions_per_month},
         )
     return True, ""
 
@@ -87,16 +86,15 @@ def can_access_template(user, template):
     """
     sub = get_user_subscription(user)
     if sub is None:
-        return False, "No active subscription required to access templates."
+        return False, _("No active subscription required to access templates.")
     if sub.status not in _ACTIVE_STATUSES:
-        return False, "Your subscription is not active."
+        return False, _("Your subscription is not active.")
     plan = sub.plan
     excluded = plan.excluded_categories or []
     if template.category in excluded:
         return (
             False,
-            f"Templates in '{template.category}' are not included in your plan. "
-            "Please upgrade.",
+            _("Templates in '%(category)s' are not included in your plan. Please upgrade.") % {"category": template.category},
         )
     return True, ""
 

@@ -1,0 +1,44 @@
+# bonUP Blackboard — English translations (source language)
+# Copyright (C) 2026 bonUP
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: en\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "No active subscription. Please subscribe to create contracts."
+msgstr "No active subscription. Please subscribe to create contracts."
+
+msgid "Your subscription is not active. Please renew to create contracts."
+msgstr "Your subscription is not active. Please renew to create contracts."
+
+msgid "Your free trial has been used. Please subscribe to create more contracts."
+msgstr "Your free trial has been used. Please subscribe to create more contracts."
+
+msgid "Contract limit reached (%(limit)s). Please upgrade your plan to create more contracts."
+msgstr "Contract limit reached (%(limit)s). Please upgrade your plan to create more contracts."
+
+msgid "No active subscription. Please subscribe to create live sessions."
+msgstr "No active subscription. Please subscribe to create live sessions."
+
+msgid "Your subscription is not active."
+msgstr "Your subscription is not active."
+
+msgid "Live sessions are not included in your plan. Please upgrade."
+msgstr "Live sessions are not included in your plan. Please upgrade."
+
+msgid "Monthly session limit reached (%(limit)s). Please upgrade your plan."
+msgstr "Monthly session limit reached (%(limit)s). Please upgrade your plan."
+
+msgid "No active subscription required to access templates."
+msgstr "No active subscription required to access templates."
+
+msgid "Templates in '%(category)s' are not included in your plan. Please upgrade."
+msgstr "Templates in '%(category)s' are not included in your plan. Please upgrade."
+
+msgid "AI features require a Professional, Business, or Anchor subscription."
+msgstr "AI features require a Professional, Business, or Anchor subscription."
+
+msgid "message is required"
+msgstr "message is required"

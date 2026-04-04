@@ -66,6 +66,10 @@ def _apply_filters(queryset, request):
     if created_before:
         qs = qs.filter(created_at__lte=created_before)
 
+    currency_filter = request.query_params.get("currency")
+    if currency_filter:
+        qs = qs.filter(currency=currency_filter.upper())
+
     return qs
 
 

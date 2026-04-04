@@ -1,0 +1,44 @@
+# bonUP Blackboard — Arabic translations
+# Copyright (C) 2026 bonUP
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: ar\n"
+"Plural-Forms: nplurals=6; plural=(n==0 ? 0 : n==1 ? 1 : n==2 ? 2 : n%100>=3 && n%100<=10 ? 3 : n%100>=11 && n%100<=99 ? 4 : 5);\n"
+
+msgid "No active subscription. Please subscribe to create contracts."
+msgstr "لا يوجد اشتراك نشط. يرجى الاشتراك لإنشاء العقود."
+
+msgid "Your subscription is not active. Please renew to create contracts."
+msgstr "اشتراكك غير نشط. يرجى تجديده لإنشاء العقود."
+
+msgid "Your free trial has been used. Please subscribe to create more contracts."
+msgstr "تم استخدام الإصدار التجريبي المجاني. يرجى الاشتراك لإنشاء المزيد من العقود."
+
+msgid "Contract limit reached (%(limit)s). Please upgrade your plan to create more contracts."
+msgstr "تم الوصول إلى حد العقود (%(limit)s). يرجى ترقية خطتك لإنشاء المزيد من العقود."
+
+msgid "No active subscription. Please subscribe to create live sessions."
+msgstr "لا يوجد اشتراك نشط. يرجى الاشتراك لإنشاء جلسات مباشرة."
+
+msgid "Your subscription is not active."
+msgstr "اشتراكك غير نشط."
+
+msgid "Live sessions are not included in your plan. Please upgrade."
+msgstr "الجلسات المباشرة غير مضمنة في خطتك. يرجى الترقية."
+
+msgid "Monthly session limit reached (%(limit)s). Please upgrade your plan."
+msgstr "تم الوصول إلى حد الجلسات الشهرية (%(limit)s). يرجى ترقية خطتك."
+
+msgid "No active subscription required to access templates."
+msgstr "يلزم وجود اشتراك نشط للوصول إلى القوالب."
+
+msgid "Templates in '%(category)s' are not included in your plan. Please upgrade."
+msgstr "قوالب '%(category)s' غير مضمنة في خطتك. يرجى الترقية."
+
+msgid "AI features require a Professional, Business, or Anchor subscription."
+msgstr "ميزات الذكاء الاصطناعي تتطلب اشتراكاً مهنياً أو تجارياً أو Anchor."
+
+msgid "message is required"
+msgstr "الرسالة مطلوبة"

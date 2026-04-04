@@ -42,6 +42,16 @@ class BonUserProfile(models.Model):
     - bon_id: external 13-digit bonUP ID
     """
 
+    LANGUAGE_CHOICES = [
+        ("en", "English"),
+        ("ht", "Haitian Creole"),
+        ("es", "Spanish"),
+        ("fr", "French"),
+        ("pt", "Portuguese"),
+        ("ar", "Arabic"),
+        ("sw", "Swahili"),
+    ]
+
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -62,6 +72,13 @@ class BonUserProfile(models.Model):
     city = models.CharField(max_length=100, blank=True, null=True)
     state_region = models.CharField(max_length=100, blank=True, null=True)
     country = models.CharField(max_length=100, blank=True, null=True)
+
+    # Language preference
+    language = models.CharField(
+        max_length=5,
+        choices=LANGUAGE_CHOICES,
+        default="en",
+    )
 
     # Email verification
     email_verified = models.BooleanField(default=False)

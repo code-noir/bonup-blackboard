@@ -17,6 +17,7 @@ from .views import (
     RegisterAPIView,
     ResendVerificationAPIView,
     UpdateEmailAPIView,
+    UpdateLanguageAPIView,
     UpdateLocationAPIView,
     UpdatePhoneAPIView,
     UserSearchAPIView,
@@ -49,6 +50,7 @@ urlpatterns = [
     path("me/update-email/", UpdateEmailAPIView.as_view(), name="users-update-email"),
     path("me/update-phone/", UpdatePhoneAPIView.as_view(), name="users-update-phone"),
     path("me/update-location/", UpdateLocationAPIView.as_view(), name="users-update-location"),
+    path("me/language/", UpdateLanguageAPIView.as_view(), name="users-update-language"),
     path("me/billing/", BillingInfoAPIView.as_view(), name="users-billing"),
     path("me/invitations/", InvitationListCreateAPIView.as_view(), name="users-invitations"),
 

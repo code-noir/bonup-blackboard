@@ -1,0 +1,44 @@
+# bonUP Blackboard — Spanish translations
+# Copyright (C) 2026 bonUP
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: es\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "No active subscription. Please subscribe to create contracts."
+msgstr "No tiene una suscripción activa. Por favor suscríbase para crear contratos."
+
+msgid "Your subscription is not active. Please renew to create contracts."
+msgstr "Su suscripción no está activa. Por favor renuévela para crear contratos."
+
+msgid "Your free trial has been used. Please subscribe to create more contracts."
+msgstr "Su período de prueba gratuito ha sido utilizado. Por favor suscríbase para crear más contratos."
+
+msgid "Contract limit reached (%(limit)s). Please upgrade your plan to create more contracts."
+msgstr "Límite de contratos alcanzado (%(limit)s). Por favor actualice su plan para crear más contratos."
+
+msgid "No active subscription. Please subscribe to create live sessions."
+msgstr "No tiene una suscripción activa. Por favor suscríbase para crear sesiones en vivo."
+
+msgid "Your subscription is not active."
+msgstr "Su suscripción no está activa."
+
+msgid "Live sessions are not included in your plan. Please upgrade."
+msgstr "Las sesiones en vivo no están incluidas en su plan. Por favor actualice."
+
+msgid "Monthly session limit reached (%(limit)s). Please upgrade your plan."
+msgstr "Límite mensual de sesiones alcanzado (%(limit)s). Por favor actualice su plan."
+
+msgid "No active subscription required to access templates."
+msgstr "Se requiere una suscripción activa para acceder a las plantillas."
+
+msgid "Templates in '%(category)s' are not included in your plan. Please upgrade."
+msgstr "Las plantillas en '%(category)s' no están incluidas en su plan. Por favor actualice."
+
+msgid "AI features require a Professional, Business, or Anchor subscription."
+msgstr "Las funciones de IA requieren una suscripción Profesional, Empresarial o Anchor."
+
+msgid "message is required"
+msgstr "el mensaje es obligatorio"

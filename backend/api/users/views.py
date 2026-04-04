@@ -325,6 +325,24 @@ class UpdateLocationAPIView(APIView):
         )
 
 
+class UpdateLanguageAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    VALID_LANGUAGES = [code for code, _ in BonUserProfile.LANGUAGE_CHOICES]
+
+    def post(self, request):
+        lang = (request.data.get("language") or "").strip()
+        if lang not in self.VALID_LANGUAGES:
+            return Response(
+                {"error": f"Invalid language. Choices: {', '.join(self.VALID_LANGUAGES)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        profile = request.user.bon_profile
+        profile.language = lang
+        profile.save(update_fields=["language"])
+        return Response({"language": lang})
+
+
 class BillingInfoAPIView(APIView):
     permission_classes = [IsAuthenticated]
 

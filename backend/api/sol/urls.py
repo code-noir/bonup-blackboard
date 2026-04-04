@@ -2,6 +2,7 @@
 
 from django.urls import path
 
+from .pdf_views import SolManagerExportView, SolMemberExportView
 from .views import (
     SolContributionUpdateView,
     SolDashboardView,
@@ -25,6 +26,7 @@ urlpatterns = [
     # --------------------------------------------------
     path("memberships/", SolMembershipListView.as_view(), name="sol-memberships"),
     path("memberships/<uuid:sol_id>/", SolMembershipDetailView.as_view(), name="sol-membership-detail"),
+    path("memberships/<uuid:sol_id>/export/pdf/", SolMemberExportView.as_view(), name="sol-member-export-pdf"),
 
     # --------------------------------------------------
     # Manager: Sol CRUD
@@ -50,6 +52,11 @@ urlpatterns = [
         SolContributionUpdateView.as_view(),
         name="sol-contribution-update",
     ),
+
+    # --------------------------------------------------
+    # Manager: Export
+    # --------------------------------------------------
+    path("<uuid:sol_id>/export/pdf/", SolManagerExportView.as_view(), name="sol-manager-export-pdf"),
 
     # --------------------------------------------------
     # Manager: Dashboard & Notes

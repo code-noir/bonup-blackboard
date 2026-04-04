@@ -99,6 +99,34 @@ def can_access_template(user, template):
     return True, ""
 
 
+def can_create_sol(user):
+    """
+    Returns (allowed: bool, message: str).
+    Sol group management requires a plan with has_sol=True (Business or Anchor tier).
+    """
+    sub = get_user_subscription(user)
+    if sub is None:
+        return False, _("A Business or Anchor subscription is required to manage a Sol group.")
+    if sub.status not in _ACTIVE_STATUSES:
+        return False, _("Your subscription is not active.")
+    if not sub.plan.has_sol:
+        return False, _("Sol group management requires a Business or Anchor subscription.")
+    return True, ""
+
+
+def can_join_sol(user):
+    """
+    Returns (allowed: bool, message: str).
+    Any active bonUP subscription allows joining a Sol group.
+    """
+    sub = get_user_subscription(user)
+    if sub is None:
+        return False, _("An active subscription is required to join a Sol group on bonUP.")
+    if sub.status not in _ACTIVE_STATUSES:
+        return False, _("Your subscription is not active.")
+    return True, ""
+
+
 def get_ai_tier(user):
     """Return the user's AI tier: none / basic / advanced / full."""
     sub = get_user_subscription(user)
@@ -123,6 +151,7 @@ def has_feature(user, feature_name):
         "lifecycle": plan.has_lifecycle,
         "notifications": plan.has_notifications,
         "negotiation_prep": plan.has_negotiation_prep,
+        "sol": plan.has_sol,
         "priority_support": plan.has_priority_support,
         "early_access": plan.has_early_access,
     }

@@ -14,6 +14,7 @@ urlpatterns = [
     path("prep/", include("backend.api.prep.urls")),
     path("search/", include("backend.api.search.urls")),
     path("sessions/", include("backend.api.sessions.urls")),
+    path("sol/", include("backend.api.sol.urls")),
     path("templates/", include("backend.api.templates.urls")),
     path("tools/", include("backend.api.tools.urls")),
     path("uploads/", include("backend.api.uploads.urls")),

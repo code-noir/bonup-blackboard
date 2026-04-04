@@ -34,6 +34,9 @@ class SubscriptionPlan(models.Model):
     excluded_categories = models.JSONField(default=list, blank=True)
     templates_per_category = models.PositiveIntegerField(null=True, blank=True)
 
+    # Sol (rotating savings group)
+    has_sol = models.BooleanField(default=False)
+
     # AI and extras
     ai_tier = models.CharField(max_length=20, choices=AI_TIER_CHOICES, default="none")
     has_priority_support = models.BooleanField(default=False)

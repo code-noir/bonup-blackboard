@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     'backend.uploads',
     'backend.documents',
     'backend.ai',
+    'backend.sol',
     'storages',
     'django_extensions',
 ]

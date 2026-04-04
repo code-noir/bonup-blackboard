@@ -100,11 +100,16 @@ def make_subscription(user):
             "has_negotiation_prep": True,
             "all_templates": True,
             "excluded_categories": [],
+            "has_sol": True,
             "ai_tier": "full",
             "has_priority_support": True,
             "has_early_access": True,
         },
     )
+    # Ensure has_sol is set even if plan already existed before this field was added
+    if not plan.has_sol:
+        plan.has_sol = True
+        plan.save(update_fields=["has_sol"])
     return UserSubscription.objects.create(
         user=user,
         plan=plan,

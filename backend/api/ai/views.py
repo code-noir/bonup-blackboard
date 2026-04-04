@@ -18,7 +18,7 @@ from rest_framework.views import APIView
 from backend.ai.context import build_user_context
 from backend.ai.models import AIConversation
 from backend.ai.prompts import BASIC_PROMPT, ADVANCED_PROMPT, FULL_PROMPT
-from backend.billing.gates import get_ai_tier, has_feature
+from backend.billing.gates import get_ai_tier, get_user_subscription, has_feature
 from backend.contracts.models import Contract, ContractVersion, ContractObligation, ContractServiceObligation
 
 TIER_PROMPTS = {
@@ -506,10 +506,10 @@ class AnalyzeContractView(APIView):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def post(self, request):
-        ai_tier = get_ai_tier(request.user)
-        if ai_tier not in ("advanced", "full"):
+        sub = get_user_subscription(request.user)
+        if sub is None or sub.status not in {"active", "trialing", "per_contract"}:
             return Response(
-                {"error": _("Contract analysis requires a Professional, Business, or Anchor subscription.")},
+                {"error": _("Contract analysis requires an active subscription.")},
                 status=status.HTTP_403_FORBIDDEN,
             )
 

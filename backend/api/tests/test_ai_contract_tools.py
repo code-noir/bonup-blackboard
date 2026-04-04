@@ -152,17 +152,20 @@ class AnalyzeContractTierTests(TestCase):
     def test_no_subscription_returns_403(self):
         r = authed_client(self.user).post(ANALYZE_URL, {"file": _fake_pdf()}, format="multipart")
         self.assertEqual(r.status_code, 403)
-
-    def test_basic_tier_returns_403(self):
-        _make_subscription(self.user, ai_tier="basic")
-        r = authed_client(self.user).post(ANALYZE_URL, {"file": _fake_pdf()}, format="multipart")
-        self.assertEqual(r.status_code, 403)
-        self.assertIn("Professional", r.data["error"])
+        self.assertIn("subscription", r.data["error"].lower())
 
     def test_unauthenticated_returns_401(self):
         from rest_framework.test import APIClient
         r = APIClient().post(ANALYZE_URL, {"file": _fake_pdf()}, format="multipart")
         self.assertEqual(r.status_code, 401)
+
+    @patch("backend.api.ai.views._extract_pdf_text", return_value=_SAMPLE_PDF_TEXT)
+    @patch("backend.api.ai.views.anthropic.Anthropic")
+    def test_starter_tier_returns_200(self, MockClient, _mock_pdf):
+        MockClient.return_value = _mock_anthropic_response(_ANALYZE_JSON).return_value
+        _make_subscription(self.user, ai_tier="basic")
+        r = authed_client(self.user).post(ANALYZE_URL, {"file": _fake_pdf()}, format="multipart")
+        self.assertEqual(r.status_code, 200)
 
     @patch("backend.api.ai.views._extract_pdf_text", return_value=_SAMPLE_PDF_TEXT)
     @patch("backend.api.ai.views.anthropic.Anthropic")

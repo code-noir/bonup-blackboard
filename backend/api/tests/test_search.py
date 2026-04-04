@@ -1,13 +1,14 @@
 # backend/api/tests/test_search.py
 #
 # Tests for the comprehensive Search domain:
-#   GET /api/search/?q=                 global — 9 domains
+#   GET /api/search/?q=                 global — 10 domains
 #   GET /api/search/contracts/?q=       contracts + filters
 #   GET /api/search/obligations/?q=     obligations + filters
 #   GET /api/search/payments/?q=        payments + filters
 #   GET /api/search/sessions/?q=        sessions + filter
 #   GET /api/search/documents/?q=       documents
 #   GET /api/search/templates/?q=       templates + category filter
+#   GET /api/search/sol/?q=             Sol groups + filters
 
 import uuid
 from decimal import Decimal
@@ -26,8 +27,9 @@ from backend.documents.models import ContractDocument
 from backend.notifications.models import Notification
 from backend.payments.models import Payment
 from backend.sessions.models import LiveSession
+from backend.sol.models import Sol, SolMember
 from backend.uploads.models import Upload
-from .helpers import authed_client, make_contract, make_user, make_version
+from .helpers import authed_client, make_contract, make_user, make_subscription, make_version
 
 GLOBAL_URL = "/api/search/"
 CONTRACT_URL = "/api/search/contracts/"
@@ -36,6 +38,7 @@ PAYMENT_URL = "/api/search/payments/"
 SESSION_URL = "/api/search/sessions/"
 DOCUMENT_URL = "/api/search/documents/"
 TEMPLATE_URL = "/api/search/templates/"
+SOL_URL = "/api/search/sol/"
 
 
 # ---------------------------------------------------------------------------
@@ -119,18 +122,18 @@ class GlobalSearchTests(TestCase):
         r = self.client.get(f"{GLOBAL_URL}?q=")
         self.assertEqual(r.status_code, 400)
 
-    def test_response_has_all_nine_sections(self):
+    def test_response_has_all_ten_sections(self):
         r = self.client.get(f"{GLOBAL_URL}?q=anything")
         self.assertEqual(r.status_code, 200)
         for section in ("contracts", "obligations", "payments", "sessions",
-                        "documents", "uploads", "notifications", "templates", "users"):
+                        "documents", "uploads", "notifications", "templates", "sol", "users"):
             self.assertIn(section, r.data, f"Missing section: {section}")
 
     def test_no_results_all_sections_empty(self):
         r = self.client.get(f"{GLOBAL_URL}?q=zzznomatch999")
         self.assertEqual(r.status_code, 200)
         for section in ("contracts", "obligations", "payments", "sessions",
-                        "documents", "uploads", "notifications", "templates", "users"):
+                        "documents", "uploads", "notifications", "templates", "sol", "users"):
             self.assertEqual(r.data[section], [], f"Expected empty list for {section}")
 
     def test_unauthenticated_returns_401(self):
@@ -668,3 +671,194 @@ class TemplateSearchTests(TestCase):
         from rest_framework.test import APIClient
         r = APIClient().get(TEMPLATE_URL)
         self.assertEqual(r.status_code, 401)
+
+
+# ---------------------------------------------------------------------------
+# Sol Search helpers
+# ---------------------------------------------------------------------------
+
+def make_sol(manager, name="Test Sol", status="active", frequency="monthly"):
+    from decimal import Decimal
+    return Sol.objects.create(
+        name=name,
+        description=f"A test Sol group: {name}",
+        frequency=frequency,
+        contribution_amount=Decimal("200.00"),
+        currency="USD",
+        tip_expectation=Decimal("25.00"),
+        start_date=timezone.now().date(),
+        primary_manager=manager,
+        status=status,
+    )
+
+
+def make_sol_member(sol, hand_number, name, email, bonup_user=None):
+    return SolMember.objects.create(
+        sol=sol,
+        bonup_user=bonup_user,
+        name=name,
+        email=email,
+        phone="555-0001",
+        hand_number=hand_number,
+        is_bonup_member=(bonup_user is not None),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Global search — Sol section
+# ---------------------------------------------------------------------------
+
+class GlobalSearchSolTests(TestCase):
+
+    def setUp(self):
+        self.manager = make_user("gs_sol_mgr", "gs_sol_mgr@example.com")
+        make_subscription(self.manager)
+        self.member_user = make_user("gs_sol_mem", "gs_sol_mem@example.com")
+        make_subscription(self.member_user)
+        self.sol = make_sol(self.manager, name="Friday Tontine")
+        make_sol_member(self.sol, 1, "Alice Sol", "alice_sol@example.com",
+                        bonup_user=self.member_user)
+
+    def test_manager_finds_sol_by_name(self):
+        r = authed_client(self.manager).get(f"{GLOBAL_URL}?q=Friday")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("sol", r.data)
+        self.assertEqual(len(r.data["sol"]), 1)
+        self.assertEqual(r.data["sol"][0]["name"], "Friday Tontine")
+
+    def test_member_finds_sol_by_name(self):
+        r = authed_client(self.member_user).get(f"{GLOBAL_URL}?q=Friday")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data["sol"]), 1)
+
+    def test_stranger_cannot_find_sol(self):
+        stranger = make_user("gs_sol_stranger", "gs_sol_stranger@example.com")
+        r = authed_client(stranger).get(f"{GLOBAL_URL}?q=Friday")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["sol"], [])
+
+    def test_sol_result_fields(self):
+        r = authed_client(self.manager).get(f"{GLOBAL_URL}?q=Friday")
+        item = r.data["sol"][0]
+        for field in ("id", "sol_id", "name", "status", "frequency",
+                      "contribution_amount", "currency", "active_member_count"):
+            self.assertIn(field, item, f"Missing field: {field}")
+
+    def test_finds_sol_by_sol_id(self):
+        r = authed_client(self.manager).get(f"{GLOBAL_URL}?q={self.sol.sol_id}")
+        self.assertEqual(len(r.data["sol"]), 1)
+
+
+# ---------------------------------------------------------------------------
+# Sol Search endpoint — GET /api/search/sol/
+# ---------------------------------------------------------------------------
+
+class SolSearchViewTests(TestCase):
+
+    def setUp(self):
+        self.manager = make_user("ss_sol_mgr", "ss_sol_mgr@example.com")
+        make_subscription(self.manager)
+        self.member_user = make_user("ss_sol_mem", "ss_sol_mem@example.com")
+        make_subscription(self.member_user)
+        self.sol_active = make_sol(self.manager, name="Alpha Sol", status="active", frequency="monthly")
+        self.sol_paused = make_sol(self.manager, name="Beta Sol", status="paused", frequency="weekly")
+        make_sol_member(self.sol_active, 1, "Bob Sol", "bob_sol@example.com",
+                        bonup_user=self.member_user)
+
+    def test_no_q_returns_all_managed_sols(self):
+        r = authed_client(self.manager).get(SOL_URL)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data), 2)
+
+    def test_q_matches_name(self):
+        r = authed_client(self.manager).get(f"{SOL_URL}?q=Alpha")
+        self.assertEqual(len(r.data), 1)
+        self.assertEqual(r.data[0]["name"], "Alpha Sol")
+
+    def test_status_filter(self):
+        r = authed_client(self.manager).get(f"{SOL_URL}?status=paused")
+        self.assertEqual(len(r.data), 1)
+        self.assertEqual(r.data[0]["status"], "paused")
+
+    def test_frequency_filter(self):
+        r = authed_client(self.manager).get(f"{SOL_URL}?frequency=weekly")
+        self.assertEqual(len(r.data), 1)
+        self.assertEqual(r.data[0]["frequency"], "weekly")
+
+    def test_member_sees_their_sol(self):
+        r = authed_client(self.member_user).get(SOL_URL)
+        self.assertEqual(r.status_code, 200)
+        names = [s["name"] for s in r.data]
+        self.assertIn("Alpha Sol", names)
+
+    def test_member_cannot_see_sols_they_dont_belong_to(self):
+        r = authed_client(self.member_user).get(SOL_URL)
+        names = [s["name"] for s in r.data]
+        self.assertNotIn("Beta Sol", names)
+
+    def test_stranger_sees_empty(self):
+        stranger = make_user("ss_sol_stranger", "ss_sol_stranger@example.com")
+        r = authed_client(stranger).get(SOL_URL)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data, [])
+
+    def test_combined_q_and_status(self):
+        r = authed_client(self.manager).get(f"{SOL_URL}?q=Beta&status=paused")
+        self.assertEqual(len(r.data), 1)
+        self.assertEqual(r.data[0]["name"], "Beta Sol")
+
+    def test_result_fields(self):
+        r = authed_client(self.manager).get(f"{SOL_URL}?q=Alpha")
+        item = r.data[0]
+        for field in ("id", "sol_id", "name", "description", "status",
+                      "frequency", "contribution_amount", "currency",
+                      "active_member_count", "created_at"):
+            self.assertIn(field, item)
+
+    def test_unauthenticated_returns_401(self):
+        from rest_framework.test import APIClient
+        r = APIClient().get(SOL_URL)
+        self.assertEqual(r.status_code, 401)
+
+
+# ---------------------------------------------------------------------------
+# User search — SolMember lookup
+# ---------------------------------------------------------------------------
+
+class UserSearchSolMemberTests(TestCase):
+
+    def setUp(self):
+        self.manager = make_user("us_sol_mgr", "us_sol_mgr@example.com")
+        make_subscription(self.manager)
+        self.sol = make_sol(self.manager, name="Search Test Sol")
+        make_sol_member(self.sol, 1, "Carla Tontine", "carla_tontine@example.com")
+        make_sol_member(self.sol, 2, "Dave Sol", "dave_sol@example.com")
+
+    def test_search_finds_sol_member_by_name(self):
+        r = authed_client(self.manager).get(f"{GLOBAL_URL}?q=Carla Tontine")
+        users = r.data["users"]
+        sources = [u.get("source") for u in users]
+        self.assertIn("sol_member", sources)
+        names = [u.get("name") for u in users if u.get("source") == "sol_member"]
+        self.assertIn("Carla Tontine", names)
+
+    def test_search_finds_sol_member_by_email(self):
+        r = authed_client(self.manager).get(f"{GLOBAL_URL}?q=carla_tontine")
+        users = r.data["users"]
+        sol_members = [u for u in users if u.get("source") == "sol_member"]
+        self.assertEqual(len(sol_members), 1)
+        self.assertEqual(sol_members[0]["email"], "carla_tontine@example.com")
+
+    def test_sol_member_result_has_expected_fields(self):
+        r = authed_client(self.manager).get(f"{GLOBAL_URL}?q=Carla")
+        sol_members = [u for u in r.data["users"] if u.get("source") == "sol_member"]
+        self.assertGreater(len(sol_members), 0)
+        item = sol_members[0]
+        for field in ("source", "id", "name", "email", "phone", "sol_id", "sol_name", "hand_number"):
+            self.assertIn(field, item)
+
+    def test_stranger_cannot_find_sol_members(self):
+        stranger = make_user("us_sol_stranger", "us_sol_stranger@example.com")
+        r = authed_client(stranger).get(f"{GLOBAL_URL}?q=Carla Tontine")
+        sol_members = [u for u in r.data["users"] if u.get("source") == "sol_member"]
+        self.assertEqual(sol_members, [])

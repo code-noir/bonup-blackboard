@@ -18,6 +18,7 @@ from backend.payments.models import Payment
 from backend.sessions.models import LiveSession
 from backend.uploads.models import Upload
 from backend.users.models import BonUserProfile
+from backend.sol.models import Sol, SolMember
 
 User = get_user_model()
 
@@ -156,11 +157,39 @@ def _serialize_user(profile):
     }
 
 
+def _serialize_sol(sol):
+    return {
+        "id": str(sol.id),
+        "sol_id": sol.sol_id,
+        "name": sol.name,
+        "description": sol.description,
+        "status": sol.status,
+        "frequency": sol.frequency,
+        "contribution_amount": str(sol.contribution_amount),
+        "currency": sol.currency,
+        "active_member_count": sol.active_member_count(),
+        "created_at": sol.created_at,
+    }
+
+
+def _serialize_sol_member(member):
+    return {
+        "source": "sol_member",
+        "id": str(member.id),
+        "name": member.name,
+        "email": member.email,
+        "phone": member.phone,
+        "sol_id": member.sol.sol_id,
+        "sol_name": member.sol.name,
+        "hand_number": member.hand_number,
+    }
+
+
 # ---------------------------------------------------------------------------
 # User search with prioritization
 # ---------------------------------------------------------------------------
 
-def _search_users(q, exclude_user, limit=GLOBAL_RESULT_LIMIT):
+def _search_users(q, exclude_user, limit=GLOBAL_RESULT_LIMIT, include_sol_members=False):
     """
     BonID and email exact matches surface first, then partial matches.
     Phone exact match is also prioritized.
@@ -214,6 +243,28 @@ def _search_users(q, exclude_user, limit=GLOBAL_RESULT_LIMIT):
         .order_by("bon_id")[:remaining]
     )
     results.extend(_serialize_user(p) for p in partial_qs)
+
+    # Sol member lookup across managed Sols
+    if include_sol_members and len(results) < limit:
+        managed_sol_ids = Sol.objects.filter(
+            Q(primary_manager=exclude_user) | Q(co_manager=exclude_user)
+        ).values_list("id", flat=True)
+        sol_members = (
+            SolMember.objects
+            .select_related("sol")
+            .filter(
+                sol_id__in=managed_sol_ids,
+                is_active=True,
+            )
+            .filter(
+                Q(name__icontains=q)
+                | Q(email__icontains=q)
+                | Q(phone__icontains=q)
+            )
+            .order_by("sol__sol_id", "hand_number")[: limit - len(results)]
+        )
+        results.extend(_serialize_sol_member(m) for m in sol_members)
+
     return results
 
 
@@ -340,8 +391,26 @@ class GlobalSearchView(APIView):
             .order_by("name")[:GLOBAL_RESULT_LIMIT]
         )
 
+        # Sol groups (manager or member)
+        member_sol_ids = SolMember.objects.filter(
+            bonup_user=user, is_active=True
+        ).values_list("sol_id", flat=True)
+        sols = (
+            Sol.objects
+            .filter(
+                Q(primary_manager=user) | Q(co_manager=user) | Q(id__in=member_sol_ids)
+            )
+            .filter(
+                Q(name__icontains=q)
+                | Q(sol_id__icontains=q)
+                | Q(description__icontains=q)
+            )
+            .distinct()
+            .order_by("-created_at")[:GLOBAL_RESULT_LIMIT]
+        )
+
         # Users
-        users = _search_users(q, exclude_user=user)
+        users = _search_users(q, exclude_user=user, include_sol_members=True)
 
         return Response({
             "contracts": [_serialize_contract(c) for c in contracts],
@@ -352,6 +421,7 @@ class GlobalSearchView(APIView):
             "uploads": [_serialize_upload(u) for u in uploads],
             "notifications": [_serialize_notification(n) for n in notifications],
             "templates": [_serialize_template(t) for t in templates],
+            "sol": [_serialize_sol(s) for s in sols],
             "users": users,
         })
 
@@ -544,3 +614,39 @@ class TemplateSearchView(APIView):
             qs = qs.filter(category=category)
 
         return Response([_serialize_template(t) for t in qs.order_by("name")])
+
+
+# ---------------------------------------------------------------------------
+# GET /api/search/sol/?q=&status=&frequency=
+# ---------------------------------------------------------------------------
+
+class SolSearchView(APIView):
+
+    def get(self, request):
+        q = request.query_params.get("q", "").strip()
+        user = request.user
+
+        member_sol_ids = SolMember.objects.filter(
+            bonup_user=user, is_active=True
+        ).values_list("sol_id", flat=True)
+
+        qs = Sol.objects.filter(
+            Q(primary_manager=user) | Q(co_manager=user) | Q(id__in=member_sol_ids)
+        ).distinct()
+
+        if q:
+            qs = qs.filter(
+                Q(name__icontains=q)
+                | Q(sol_id__icontains=q)
+                | Q(description__icontains=q)
+            )
+
+        status_filter = request.query_params.get("status")
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+
+        frequency_filter = request.query_params.get("frequency")
+        if frequency_filter:
+            qs = qs.filter(frequency=frequency_filter)
+
+        return Response([_serialize_sol(s) for s in qs.order_by("-created_at")])

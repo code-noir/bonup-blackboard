@@ -10,6 +10,7 @@ from .views import (
     SessionSearchView,
     DocumentSearchView,
     TemplateSearchView,
+    SolSearchView,
 )
 
 urlpatterns = [
@@ -20,4 +21,5 @@ urlpatterns = [
     path("sessions/", SessionSearchView.as_view(), name="search-sessions"),
     path("documents/", DocumentSearchView.as_view(), name="search-documents"),
     path("templates/", TemplateSearchView.as_view(), name="search-templates"),
+    path("sol/", SolSearchView.as_view(), name="search-sol"),
 ]

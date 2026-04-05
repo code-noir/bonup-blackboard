@@ -59,6 +59,24 @@ export default function Header() {
         </p>
       </div>
 
+      {/* Tier badge */}
+      <span
+        style={{
+          flexShrink: 0,
+          marginRight: 16,
+          fontSize: 11,
+          fontWeight: 600,
+          color: '#F5A623',
+          background: 'rgba(245,166,35,0.12)',
+          border: '1px solid rgba(245,166,35,0.3)',
+          padding: '3px 10px',
+          borderRadius: 20,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        Blackboard Business
+      </span>
+
       {/* Center — search */}
       <div className="flex flex-1 justify-center px-6">
         <div className="relative w-full" style={{ maxWidth: 440 }}>

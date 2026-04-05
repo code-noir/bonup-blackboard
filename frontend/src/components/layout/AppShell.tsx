@@ -1,35 +1,25 @@
-import { Outlet, useLocation } from 'react-router-dom'
+import { Outlet } from 'react-router-dom'
+import TopBar from './TopBar'
 import Sidebar from './Sidebar'
 import Header from './Header'
 
-const TITLES: Record<string, string> = {
-  '/dashboard': 'Dashboard',
-  '/contracts': 'Contracts',
-  '/obligations': 'Obligations',
-  '/payments': 'Payments',
-  '/sessions': 'Live Sessions',
-  '/sol': 'Sol Groups',
-  '/templates': 'Templates',
-  '/search': 'Search',
-  '/ai': 'AI Assistant',
-  '/notifications': 'Notifications',
-  '/settings': 'Settings',
-}
-
 export default function AppShell() {
-  const { pathname } = useLocation()
-  const base = '/' + pathname.split('/')[1]
-  const title = TITLES[base] ?? 'bonUP Blackboard'
-
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50">
+    <div className="min-h-screen bg-[#F7F8FA]">
+      {/* Fixed: full-width navy top bar — h-10 (40px) */}
+      <TopBar />
+
+      {/* Fixed: sidebar — starts below top bar */}
       <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <Header title={title} />
-        <main className="flex-1 overflow-y-auto p-6">
-          <Outlet />
-        </main>
-      </div>
+
+      {/* Fixed: header bar — starts below top bar, left of sidebar */}
+      <Header />
+
+      {/* Scrollable main content — offset for both fixed bars + sidebar */}
+      {/* top-10 (40px) + h-16 (64px) = 104px; sidebar w-60 (240px)    */}
+      <main className="ml-60 pt-[104px] min-h-screen px-6 pb-10">
+        <Outlet />
+      </main>
     </div>
   )
 }

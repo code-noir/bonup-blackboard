@@ -59,19 +59,9 @@ function NavItem({
 
 export default function Sidebar() {
   return (
-    <aside className="flex h-screen w-60 shrink-0 flex-col bg-[#0F1F3D]">
-      {/* Logo */}
-      <div className="flex h-16 items-center px-5">
-        <span className="text-lg font-bold tracking-tight text-white">
-          bon<span className="text-[#F5A623]">UP</span>
-          <span className="ml-2 text-xs font-normal text-white/40 uppercase tracking-widest">
-            Blackboard
-          </span>
-        </span>
-      </div>
-
+    <aside className="fixed top-10 left-0 bottom-0 z-40 flex w-60 flex-col bg-[#0F1F3D]">
       {/* Main nav */}
-      <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-0.5">
+      <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
         {nav.map((item) => (
           <NavItem key={item.to} {...item} />
         ))}

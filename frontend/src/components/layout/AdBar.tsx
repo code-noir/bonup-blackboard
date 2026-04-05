@@ -44,11 +44,11 @@ function AdSlot({
 
   return (
     <div
-      className="flex flex-1 items-center justify-center px-6"
+      className="flex h-9 w-[200px] items-center justify-center rounded-lg px-4"
       style={{ backgroundColor: bg }}
     >
       <p
-        className="text-[12px] font-medium tracking-wide transition-opacity duration-300"
+        className="text-[11px] font-medium tracking-wide transition-opacity duration-300 text-center"
         style={{ color, opacity: visible ? 1 : 0 }}
       >
         {ads[index]}
@@ -59,9 +59,18 @@ function AdSlot({
 
 export default function AdBar() {
   return (
-    <div className="fixed top-[104px] left-60 right-0 z-30 flex h-[52px]">
-      <AdSlot ads={BONUP_ADS}    bg="#0F1F3D" color="#ffffff" offsetMs={0}    />
-      <AdSlot ads={PARTNER_ADS} bg="#F5A623" color="#0F1F3D" offsetMs={2000} />
+    // Same grid as the dashboard stat cards: grid-cols-4 gap-4 px-6
+    // col-span-2 + justify-center centers each banner over the
+    // gap between cols 1–2 and cols 3–4 respectively.
+    <div className="fixed top-[104px] left-60 right-0 z-30 h-[52px] border-b border-slate-200 bg-[#F7F8FA]">
+      <div className="grid h-full grid-cols-4 items-center gap-4 px-6">
+        <div className="col-span-2 flex justify-center">
+          <AdSlot ads={BONUP_ADS} bg="#0F1F3D" color="#ffffff" offsetMs={0} />
+        </div>
+        <div className="col-span-2 flex justify-center">
+          <AdSlot ads={PARTNER_ADS} bg="#F5A623" color="#0F1F3D" offsetMs={2000} />
+        </div>
+      </div>
     </div>
   )
 }

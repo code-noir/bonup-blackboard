@@ -59,20 +59,22 @@ export default function Header() {
         </p>
       </div>
 
-      {/* Tier badge */}
-      <span
-        style={{
-          flexShrink: 0,
-          marginRight: 20,
-          fontSize: 13,
-          fontWeight: 700,
-          color: '#E91E8C',
-          letterSpacing: '0.04em',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        Blackboard Business
-      </span>
+      {/* Tier badge — centered between user info and search */}
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <span
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: '#1E3A5F',
+            background: '#BFDBFE',
+            padding: '4px 14px',
+            borderRadius: 20,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Blackboard Business
+        </span>
+      </div>
 
       {/* Center — search */}
       <div className="flex flex-1 justify-center px-6">

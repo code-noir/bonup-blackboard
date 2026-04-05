@@ -11,9 +11,7 @@ export default function Header() {
 
   useEffect(() => {
     function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -35,52 +33,52 @@ export default function Header() {
 
   return (
     <div
-      className="fixed left-60 right-0 z-40 flex h-[50px] items-center px-5"
+      className="fixed right-0 z-40 flex h-[50px] items-center px-5"
       style={{
-        top: 34,
-        background: 'rgba(22,36,56,0.95)',
-        backdropFilter: 'blur(12px)',
-        borderBottom: '1px solid rgba(255,255,255,0.05)',
+        top: 50,
+        left: 216,
+        background: '#0D1B2E',
+        borderBottom: '1px solid rgba(255,255,255,0.04)',
       }}
     >
       {/* Left — welcome + bonID */}
       <div className="shrink-0 min-w-[160px]">
-        <p style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.85)', lineHeight: 1.3 }}>
+        <p style={{ fontSize: 14, fontWeight: 500, color: 'rgba(255,255,255,0.86)', lineHeight: 1.25 }}>
           Welcome back, {firstName}
         </p>
-        <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', lineHeight: 1.3, marginTop: 1 }}>
+        <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.25, marginTop: 2, fontFamily: "'DM Mono', monospace" }}>
           bonID:{' '}
-          <span style={{ color: '#8B5CF6', fontFamily: "'DM Mono', monospace" }}>{bonId}</span>
+          <span style={{ color: '#8B5CF6', fontWeight: 500 }}>{bonId}</span>
         </p>
       </div>
 
       {/* Center — search */}
-      <div className="flex flex-1 justify-center">
-        <div className="relative w-full max-w-[400px]">
+      <div className="flex flex-1 justify-center px-6">
+        <div className="relative w-full" style={{ maxWidth: 440 }}>
           <MagnifyingGlassIcon
-            className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
-            style={{ color: 'rgba(255,255,255,0.25)' }}
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
+            style={{ color: 'rgba(255,255,255,0.22)' }}
           />
           <input
             type="search"
             readOnly
             placeholder="Search contracts, users, obligations..."
-            className="w-full rounded-lg pl-8 pr-4 text-[12px] transition-colors focus:outline-none"
+            className="w-full pl-9 pr-4 transition-all focus:outline-none"
             style={{
-              height: 32,
-              background: 'rgba(255,255,255,0.07)',
+              height: 34,
+              background: 'rgba(255,255,255,0.05)',
               border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: 8,
-              color: 'rgba(255,255,255,0.7)',
-              caretColor: '#8B5CF6',
+              borderRadius: 9,
+              fontSize: 13,
+              color: 'rgba(255,255,255,0.72)',
             }}
             onFocus={(e) => {
-              e.currentTarget.style.background = 'rgba(255,255,255,0.10)'
-              e.currentTarget.style.borderColor = 'rgba(139,92,246,0.4)'
+              e.currentTarget.style.borderColor = 'rgba(139,92,246,0.45)'
+              e.currentTarget.style.boxShadow = '0 0 0 3px rgba(139,92,246,0.07)'
             }}
             onBlur={(e) => {
-              e.currentTarget.style.background = 'rgba(255,255,255,0.07)'
               e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'
+              e.currentTarget.style.boxShadow = 'none'
             }}
           />
         </div>
@@ -91,20 +89,20 @@ export default function Header() {
         <button
           onClick={() => setOpen((o) => !o)}
           className="flex items-center gap-2 rounded-lg px-2 py-1 transition-colors"
-          style={{ color: 'rgba(255,255,255,0.6)' }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+          style={{ color: 'rgba(255,255,255,0.55)' }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
           onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
         >
           <div
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
-            style={{ background: '#8B5CF6' }}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] text-white"
+            style={{ background: '#8B5CF6', fontWeight: 700 }}
           >
             {initials}
           </div>
-          <span style={{ fontSize: 12, maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: 13, maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {displayName}
           </span>
-          <ChevronDownIcon className="h-3 w-3 opacity-50" />
+          <ChevronDownIcon className="h-3 w-3 opacity-40" />
         </button>
 
         {open && (

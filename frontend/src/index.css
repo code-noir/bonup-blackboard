@@ -1,24 +1,24 @@
 @import "tailwindcss";
 
 @keyframes bonup-sub-slide {
-  /* Sub text slides in from just off the right edge of the 300px banner, exits left. */
-  from { transform: translateX(300px) translateY(-50%); }
+  /* Banner is 228px wide. Text starts just off the right edge, exits through the left. */
+  from { transform: translateX(228px) translateY(-50%); }
   to   { transform: translateX(-100%) translateY(-50%); }
 }
 
 @theme {
   /* bonUP brand palette */
-  --color-navy:        #0F1F3D;
+  --color-navy:        #09111F;
   --color-gold:        #F5A623;
-  --color-bg:          #F0F2F5;
+  --color-bg:          #ECEEF2;
   --color-btn:         #000000;
   --color-btn-hover:   #1a1a1a;
   --color-special:     #8B5CF6;
   --color-special-dark:#7C3AED;
 
-  --font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Outfit', ui-sans-serif, system-ui, sans-serif;
 }
 
 body {
-  font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif;
 }

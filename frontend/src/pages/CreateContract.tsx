@@ -601,7 +601,7 @@ export default function CreateContract() {
             flexShrink: 0,
             transition: toolPanelSnapping ? 'width 0.3s ease' : 'none',
             overflow: 'hidden',
-            background: '#1E3A55',
+            background: '#E8EFF5',
             position: 'relative',
           }}>
             <div style={{ width: toolPanelWidth, height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
@@ -610,10 +610,10 @@ export default function CreateContract() {
                   {/* Panel header */}
                   <div style={{
                     padding: '16px 16px 12px',
-                    borderBottom: '1px solid rgba(255,255,255,0.08)',
+                    borderBottom: '1px solid rgba(0,0,0,0.08)',
                     display: 'flex', alignItems: 'center', flexShrink: 0,
                   }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: 'white', flex: 1 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#0F1F3D', flex: 1 }}>
                       {activeTool}
                     </span>
                     <button
@@ -621,11 +621,11 @@ export default function CreateContract() {
                       title={toolPanelWidth >= 560 ? 'Collapse panel' : 'Expand panel'}
                       style={{
                         background: 'transparent', border: 'none',
-                        color: 'rgba(255,255,255,0.5)', fontSize: 14,
+                        color: '#6B7280', fontSize: 14,
                         cursor: 'pointer', padding: '0 4px', lineHeight: 1, marginRight: 4,
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.color = 'white')}
-                      onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.5)')}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = '#0F1F3D')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = '#6B7280')}
                     >
                       ⇔
                     </button>
@@ -633,11 +633,11 @@ export default function CreateContract() {
                       onClick={() => setActiveTool(null)}
                       style={{
                         background: 'transparent', border: 'none',
-                        color: 'rgba(255,255,255,0.4)', fontSize: 16,
+                        color: '#6B7280', fontSize: 16,
                         cursor: 'pointer', padding: 0, lineHeight: 1,
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.color = 'white')}
-                      onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.4)')}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = '#0F1F3D')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = '#6B7280')}
                     >
                       ✕
                     </button>
@@ -669,7 +669,7 @@ export default function CreateContract() {
                       <>
                         {/* Secondary display */}
                         <div style={{
-                          fontSize: 11, color: 'rgba(255,255,255,0.4)',
+                          fontSize: 11, color: '#6B7280',
                           textAlign: 'right', marginBottom: 4, minHeight: 16,
                           fontFamily: "'DM Mono', monospace",
                         }}>
@@ -737,7 +737,7 @@ export default function CreateContract() {
                         ))}
                       </>
                     ) : (
-                      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', textAlign: 'center', marginTop: 40 }}>
+                      <div style={{ fontSize: 12, color: '#6B7280', textAlign: 'center', marginTop: 40 }}>
                         {activeTool} coming soon
                       </div>
                     )}

@@ -106,9 +106,12 @@ export default function CreateContract() {
   const [fontSize, setFontSize] = useState('14')
   const [leftEmpty, setLeftEmpty] = useState(true)
   const [rightEmpty, setRightEmpty] = useState(true)
+  const [splitPercent, setSplitPercent] = useState(50)
+  const [isDragging, setIsDragging] = useState(false)
 
   const leftEditorRef = useRef<HTMLDivElement>(null)
   const rightEditorRef = useRef<HTMLDivElement>(null)
+  const editorsRowRef = useRef<HTMLDivElement>(null)
 
   function getActiveRef() {
     return activeEditor === 'left' ? leftEditorRef : rightEditorRef
@@ -117,6 +120,33 @@ export default function CreateContract() {
   function execCmd(cmd: string, value?: string) {
     getActiveRef().current?.focus()
     document.execCommand(cmd, false, value)
+  }
+
+  function onDividerMouseDown(e: React.MouseEvent) {
+    e.preventDefault()
+    setIsDragging(true)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    function onMouseMove(ev: MouseEvent) {
+      const container = editorsRowRef.current
+      if (!container) return
+      const rect = container.getBoundingClientRect()
+      const x = ev.clientX - rect.left
+      const pct = (x / rect.width) * 100
+      setSplitPercent(Math.min(75, Math.max(25, pct)))
+    }
+
+    function onMouseUp() {
+      setIsDragging(false)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
   }
 
   const TOGGLE_BTN: React.CSSProperties = {
@@ -474,15 +504,18 @@ export default function CreateContract() {
             <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 0 }}>
 
             {/* Editors row — shrinks to make room when AI panel is open */}
-            <div style={{
-              height: aiPanelOpen ? 'calc(100% - 280px)' : '100%',
-              transition: 'height 0.35s ease',
-              display: 'flex', flexDirection: 'row', overflow: 'hidden',
-              minHeight: 200,
-            }}>
+            <div
+              ref={editorsRowRef}
+              style={{
+                height: aiPanelOpen ? 'calc(100% - 280px)' : '100%',
+                transition: 'height 0.35s ease',
+                display: 'flex', flexDirection: 'row', overflow: 'hidden',
+                minHeight: 200,
+              }}
+            >
 
               {/* LEFT EDITOR */}
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+              <div style={{ width: `${splitPercent}%`, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
                 <div style={{
                   height: 36, flexShrink: 0,
                   background: '#F8FAFC',
@@ -524,12 +557,26 @@ export default function CreateContract() {
                 </div>
               </div>
 
-              {/* CENTER DIVIDER */}
+              {/* CENTER DIVIDER — draggable resizer */}
               <div
-                style={{ width: 4, flexShrink: 0, background: '#E5E7EB', cursor: 'col-resize' }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = '#D1D5DB')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = '#E5E7EB')}
-              />
+                onMouseDown={onDividerMouseDown}
+                onMouseEnter={(e) => { if (!isDragging) (e.currentTarget.style.background = '#CBD5E1') }}
+                onMouseLeave={(e) => { if (!isDragging) (e.currentTarget.style.background = '#E5E7EB') }}
+                style={{
+                  width: 6, flexShrink: 0,
+                  background: isDragging ? '#CBD5E1' : '#E5E7EB',
+                  cursor: 'col-resize',
+                  position: 'relative',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                <div style={{
+                  width: 3, height: 32,
+                  background: '#9CA3AF',
+                  borderRadius: 3,
+                  pointerEvents: 'none',
+                }} />
+              </div>
 
               {/* RIGHT EDITOR */}
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>

@@ -1,14 +1,14 @@
 @import "tailwindcss";
 
 @keyframes bonup-sub-slide {
-  /* Banner is 228px wide. Text starts just off the right edge, exits through the left. */
-  from { transform: translateX(228px) translateY(-50%); }
+  /* Banner is 230px wide. Text starts just off the right edge, exits through the left. */
+  from { transform: translateX(230px) translateY(-50%); }
   to   { transform: translateX(-100%) translateY(-50%); }
 }
 
 @theme {
   /* bonUP brand palette */
-  --color-navy:        #09111F;
+  --color-navy:        #1C2B3A;
   --color-gold:        #F5A623;
   --color-bg:          #ECEEF2;
   --color-btn:         #000000;

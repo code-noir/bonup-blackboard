@@ -35,20 +35,20 @@ export default function Header() {
     <div
       className="fixed right-0 z-40 flex h-[50px] items-center px-5"
       style={{
-        top: 50,
+        top: 64,
         left: 216,
-        background: '#0D1B2E',
-        borderBottom: '1px solid rgba(255,255,255,0.04)',
+        background: '#172334',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
       }}
     >
       {/* Left — welcome + bonID */}
       <div className="shrink-0 min-w-[160px]">
-        <p style={{ fontSize: 14, fontWeight: 500, color: 'rgba(255,255,255,0.86)', lineHeight: 1.25 }}>
+        <p style={{ fontSize: 14, fontWeight: 500, color: 'rgba(255,255,255,0.9)', lineHeight: 1.25 }}>
           Welcome back, {firstName}
         </p>
-        <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.25, marginTop: 2, fontFamily: "'DM Mono', monospace" }}>
+        <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.25, marginTop: 2, fontFamily: "'DM Mono', monospace" }}>
           bonID:{' '}
-          <span style={{ color: '#8B5CF6', fontWeight: 500 }}>{bonId}</span>
+          <span style={{ color: '#F5A623', fontWeight: 500 }}>{bonId}</span>
         </p>
       </div>
 
@@ -57,7 +57,7 @@ export default function Header() {
         <div className="relative w-full" style={{ maxWidth: 440 }}>
           <MagnifyingGlassIcon
             className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
-            style={{ color: 'rgba(255,255,255,0.22)' }}
+            style={{ color: 'rgba(255,255,255,0.28)' }}
           />
           <input
             type="search"
@@ -66,19 +66,17 @@ export default function Header() {
             className="w-full pl-9 pr-4 transition-all focus:outline-none"
             style={{
               height: 34,
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.08)',
+              background: 'rgba(255,255,255,0.07)',
+              border: '1px solid rgba(255,255,255,0.1)',
               borderRadius: 9,
               fontSize: 13,
-              color: 'rgba(255,255,255,0.72)',
+              color: 'rgba(255,255,255,0.8)',
             }}
             onFocus={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(139,92,246,0.45)'
-              e.currentTarget.style.boxShadow = '0 0 0 3px rgba(139,92,246,0.07)'
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.25)'
             }}
             onBlur={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'
-              e.currentTarget.style.boxShadow = 'none'
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'
             }}
           />
         </div>
@@ -89,13 +87,17 @@ export default function Header() {
         <button
           onClick={() => setOpen((o) => !o)}
           className="flex items-center gap-2 rounded-lg px-2 py-1 transition-colors"
-          style={{ color: 'rgba(255,255,255,0.55)' }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+          style={{ color: 'rgba(255,255,255,0.6)' }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
           onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
         >
           <div
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] text-white"
-            style={{ background: '#8B5CF6', fontWeight: 700 }}
+            style={{
+              background: '#2E4156',
+              border: '1px solid rgba(255,255,255,0.2)',
+              fontWeight: 700,
+            }}
           >
             {initials}
           </div>

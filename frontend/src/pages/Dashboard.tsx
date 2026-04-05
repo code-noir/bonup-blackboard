@@ -1,7 +1,7 @@
 export default function Dashboard() {
   return (
     <div className="space-y-6">
-      <p style={{ fontSize: 12.5, color: '#9CA3AF', paddingTop: 14, paddingBottom: 14 }}>
+      <p style={{ fontSize: 13, color: '#9CA3AF', paddingTop: 14, paddingBottom: 14 }}>
         Here's what's happening across your contracts and obligations.
       </p>
 
@@ -15,9 +15,9 @@ export default function Dashboard() {
         ].map(({ label, value }) => (
           <div
             key={label}
-            style={{ background: '#fff', borderRadius: 11, padding: '17px 19px', border: '1px solid rgba(0,0,0,0.05)' }}
+            style={{ background: '#fff', borderRadius: 11, padding: '18px 20px', border: '1px solid rgba(0,0,0,0.05)' }}
           >
-            <p style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#9CA3AF' }}>{label}</p>
+            <p style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#9CA3AF' }}>{label}</p>
             <p className="mt-1 text-2xl font-semibold text-slate-900">{value}</p>
           </div>
         ))}

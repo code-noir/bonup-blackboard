@@ -112,14 +112,15 @@ export default function TopBar() {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
+    // Cycle: 10s visible → 3s fade out → swap text → 3s fade in → 10s visible → ...
     timerRef.current = setTimeout(function cycle() {
-      setVisible(false)
+      setVisible(false)                       // start 3s fade out
       setTimeout(() => {
         setSloganIdx((i) => (i + 1) % SLOGANS.length)
-        setVisible(true)
-        timerRef.current = setTimeout(cycle, 8000)
-      }, 400)
-    }, 8000)
+        setVisible(true)                      // start 3s fade in
+        timerRef.current = setTimeout(cycle, 13000) // 3s fade-in + 10s hold
+      }, 3000)                                // wait for fade out to complete
+    }, 10000)                                 // initial 10s hold
     return () => { if (timerRef.current) clearTimeout(timerRef.current) }
   }, [])
 
@@ -160,7 +161,7 @@ export default function TopBar() {
             fontStyle: 'italic',
             color: 'rgba(255,255,255,0.68)',
             opacity: visible ? 1 : 0,
-            transition: 'opacity 0.4s ease',
+            transition: 'opacity 3s ease',
             whiteSpace: 'nowrap',
           }}
         >

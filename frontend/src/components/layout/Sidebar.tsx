@@ -46,8 +46,8 @@ function NavItem({
         [
           'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
           isActive
-            ? 'bg-[#8B5CF6] text-white'
-            : 'text-white/80 hover:bg-white/10 hover:text-white',
+            ? 'border-l-2 border-[#F5A623] bg-white/10 pl-[10px] text-white'
+            : 'border-l-2 border-transparent pl-[10px] text-white/80 hover:bg-white/10 hover:text-white',
         ].join(' ')
       }
     >

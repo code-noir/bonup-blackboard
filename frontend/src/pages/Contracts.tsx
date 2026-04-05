@@ -103,9 +103,8 @@ export default function Contracts() {
         <div
           style={{
             background: '#fff',
-            borderRadius: isHovered ? '11px 11px 0 0' : 11,
+            borderRadius: 11,
             border: '1px solid rgba(0,0,0,0.05)',
-            borderBottom: isHovered ? '1px solid #E5E7EB' : '1px solid rgba(0,0,0,0.05)',
             padding: '0 22px',
             display: 'flex',
             gap: 0,
@@ -132,14 +131,20 @@ export default function Contracts() {
           ))}
         </div>
 
-        {/* Content area — visible only while hovering the wrapper */}
+        {/* Content area — overlays content below, does not push layout */}
         {isHovered && (
           <div
             style={{
+              position: 'absolute',
+              top: '100%',
+              left: 0,
+              right: 0,
+              zIndex: 50,
               background: '#fff',
               borderRadius: '0 0 11px 11px',
-              border: '1px solid rgba(0,0,0,0.05)',
+              border: '1px solid rgba(0,0,0,0.08)',
               borderTop: 'none',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
               padding: '0 22px 20px',
               minHeight: 200,
             }}

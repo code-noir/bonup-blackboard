@@ -844,15 +844,6 @@ export default function CreateContract() {
                 </div>
                 {focusMode === 'left' ? (
                   <div style={{ flex: 1, overflowY: 'auto', background: '#F0F2F5', padding: 24 }}>
-                    {leftEmpty && (
-                      <div style={{
-                        position: 'absolute', pointerEvents: 'none', userSelect: 'none',
-                        fontSize: 16, color: '#9CA3AF', lineHeight: 1.8,
-                        top: 48 + 36, left: 80, right: 80, zIndex: 1,
-                      }}>
-                        Start writing your contract here...
-                      </div>
-                    )}
                     <div
                       ref={leftEditorRef}
                       contentEditable
@@ -872,15 +863,6 @@ export default function CreateContract() {
                   </div>
                 ) : (
                   <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 0 }}>
-                    {leftEmpty && (
-                      <div style={{
-                        position: 'absolute', top: 24, left: 32, right: 32,
-                        fontSize: 14, color: '#9CA3AF', lineHeight: 1.6,
-                        pointerEvents: 'none', userSelect: 'none', zIndex: 1,
-                      }}>
-                        Start writing your contract here, choose a template, or ask AI to help...
-                      </div>
-                    )}
                     <div
                       ref={leftEditorRef}
                       contentEditable
@@ -972,15 +954,6 @@ export default function CreateContract() {
                   </div>
                 ) : (
                   <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 0 }}>
-                    {rightEmpty && (
-                      <div style={{
-                        position: 'absolute', top: 24, left: 32, right: 32,
-                        fontSize: 14, color: '#9CA3AF', lineHeight: 1.6,
-                        pointerEvents: 'none', userSelect: 'none', zIndex: 1,
-                      }}>
-                        Start writing your contract here, choose a template, or ask AI to help...
-                      </div>
-                    )}
                     <div
                       ref={rightEditorRef}
                       contentEditable

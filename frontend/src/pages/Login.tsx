@@ -41,10 +41,10 @@ export default function Login() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="mb-8 text-center">
-          <p className="text-3xl font-bold tracking-tight text-[#0F1F3D]">
+          <p className="text-3xl font-bold tracking-tight text-[#1E3A6E]">
             bon<span className="text-[#F5A623]">UP</span>
           </p>
-          <p className="mt-1 text-sm text-[#0F1F3D] uppercase tracking-widest">
+          <p className="mt-1 text-sm text-[#1E3A6E] uppercase tracking-widest">
             Blackboard
           </p>
         </div>

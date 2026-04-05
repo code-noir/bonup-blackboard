@@ -59,16 +59,13 @@ export default function Header() {
         </p>
       </div>
 
-      {/* Tier badge — centered between user info and search */}
+      {/* Tier label — centered between user info and search */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <span
           style={{
-            fontSize: 13,
+            fontSize: 15,
             fontWeight: 600,
-            color: '#1E3A5F',
-            background: '#BFDBFE',
-            padding: '4px 14px',
-            borderRadius: 20,
+            color: '#BFDBFE',
             whiteSpace: 'nowrap',
           }}
         >
@@ -134,23 +131,6 @@ export default function Header() {
           {TODAY}
         </span>
       </div>
-
-      {/* Tier badge — next to avatar */}
-      <span
-        style={{
-          flexShrink: 0,
-          fontSize: 13,
-          fontWeight: 600,
-          color: '#9D174D',
-          background: '#FFE4E6',
-          padding: '3px 12px',
-          borderRadius: 20,
-          marginRight: 8,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        Business
-      </span>
 
       {/* Right — avatar + dropdown */}
       <div className="relative shrink-0" ref={ref}>

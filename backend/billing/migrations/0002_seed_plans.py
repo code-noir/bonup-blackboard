@@ -8,7 +8,7 @@ from django.db import migrations
 PLANS = [
     {
         "slug": "per_contract",
-        "display_name": "Per Contract",
+        "display_name": "Pay as you go",
         "price_monthly": "15.00",
         "price_yearly": None,
         "max_active_contracts": 1,
@@ -26,7 +26,7 @@ PLANS = [
     },
     {
         "slug": "starter",
-        "display_name": "Starter",
+        "display_name": "Blackboard Starter",
         "price_monthly": "10.00",
         "price_yearly": "100.00",
         "max_active_contracts": 3,
@@ -44,7 +44,7 @@ PLANS = [
     },
     {
         "slug": "professional",
-        "display_name": "Professional",
+        "display_name": "Blackboard Pro",
         "price_monthly": "83.00",
         "price_yearly": None,
         "max_active_contracts": None,
@@ -62,7 +62,7 @@ PLANS = [
     },
     {
         "slug": "business",
-        "display_name": "Business",
+        "display_name": "Blackboard Business",
         "price_monthly": "200.00",
         "price_yearly": None,
         "max_active_contracts": None,
@@ -80,7 +80,7 @@ PLANS = [
     },
     {
         "slug": "anchor",
-        "display_name": "Anchor",
+        "display_name": "Blackboard Premium",
         "price_monthly": "600.00",
         "price_yearly": None,
         "max_active_contracts": None,

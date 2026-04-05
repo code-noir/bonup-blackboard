@@ -1,6 +1,6 @@
 # DONE_AND_NOT_DONE.md — Feature Completion Status
 
-Last updated: 2026-04-01
+Last updated: 2026-04-04
 
 ---
 
@@ -177,8 +177,64 @@ These things are implemented, tested, and have no known critical bugs.
 - [x] WebSocket `ws/sessions/<id>/?token=<jwt>` — JWT auth, party check, active-only; `editor_update` events from initiator broadcast to all; `session_ended` event closes consumer
 - [x] Django Channels 4.3.2 installed; InMemoryChannelLayer configured; ASGI routing wired
 
+### API — Uploads
+- [x] `Upload` model — UUID pk, user FK, file_url, file_name, file_type, file_size, storage_key, related_contract FK, related_session FK, is_prep_material, is_draft_document
+- [x] Digital Ocean Spaces storage via `default_storage`; key path `uploads/{user_id}/{uuid}/{filename}`
+- [x] `GET /api/uploads/` — list user's uploads; `?contract_id=`, `?session_id=`, `?is_draft_document=` filters
+- [x] `POST /api/uploads/` — multipart upload; stores to Spaces, creates Upload record
+- [x] `DELETE /api/uploads/<id>/` — deletes record and removes file from Spaces
+
+### API — Documents
+- [x] `ContractDocument` model — UUID pk, contract FK, uploaded_by FK, title, file_url, file_type, description, created_at
+- [x] Contract-scoped CRUD: list, create, retrieve, update, destroy
+- [x] Ownership enforced — only contract parties can access documents
+
+### API — Search
+- [x] `GET /api/search/?q=` — global search across contracts, obligations, payments, sessions, documents, templates, users, Sol groups; returns 10 results per domain
+- [x] `GET /api/search/contracts/?q=` — contract search; `?state=`, `?structure_type=` filters
+- [x] `GET /api/search/obligations/?q=` — obligation search; `?state=`, `?type=` filters
+- [x] `GET /api/search/payments/?q=` — payment search; `?status=` filter
+- [x] `GET /api/search/sessions/?q=` — live session search; `?status=` filter
+- [x] `GET /api/search/documents/?q=` — document search
+- [x] `GET /api/search/templates/?q=` — template search; `?category=` filter
+- [x] `GET /api/search/sol/?q=` — Sol group search (manager + member scoped); `?status=`, `?frequency=` filters
+- [x] User search in global endpoint includes SolMember name/email/phone lookup across requesting user's managed Sol groups
+- [x] All search results scoped to requesting user's data — no cross-user leakage
+
+### API — AI Assistant
+- [x] `AIConversation` model — UUID pk, user FK, contract FK (nullable), conversation_type, messages JSONField (list of role/content), created_at, updated_at
+- [x] `POST /api/ai/chat/` — multi-turn AI chat; tier-gated (requires any non-none AI tier); builds user context; continues existing conversations; full-tier executes action blocks
+- [x] `GET /api/ai/conversations/` — list user's conversations; paginated (page=20)
+- [x] `GET /api/ai/conversations/<id>/` — detail with full message history
+- [x] `POST /api/ai/analyze-contract/` — upload or reference PDF; returns summary, key_terms, red_flags, questions; requires active subscription
+- [x] `POST /api/ai/counter-contract/` — upload or reference PDF; returns concerning_clauses with counter language, negotiation_strategy, revised_contract; Business/Anchor tier only
+- [x] `POST /api/ai/import-contract/` — upload or reference PDF; extracts structure, parties, obligations; creates Contract + obligations atomically in DB; Anchor tier only
+- [x] User context injection — AI system prompt includes active contracts, obligations due in 7 days, available templates, Sol groups managed, Sol memberships
+- [x] Three AI tier system prompts (basic, advanced, full); full tier can execute `create_contract` and `instantiate_template` action blocks
+- [x] PDF reading via pdfplumber
+
+### API — Sol (Rotating Savings Group / Sou-sou / Tontine)
+- [x] `Sol`, `SolMember`, `SolContract`, `SolPayout`, `SolContribution`, `SolNote`, `SolTip` models
+- [x] Sol CRUD: `GET/POST /api/sol/`, `GET/PATCH /api/sol/<id>/`
+- [x] Member management: `POST /api/sol/<id>/members/`, `DELETE /api/sol/<id>/members/<member_id>/`
+- [x] Member contract: `GET /api/sol/<id>/members/<member_id>/contract/`
+- [x] Payout management: `GET/POST /api/sol/<id>/payouts/`, `PATCH /api/sol/<id>/payouts/<payout_id>/`
+- [x] Payout rearrangement: `POST /api/sol/<id>/payouts/<payout_id>/rearrange/` — records reason, original recipient, rearranged_by
+- [x] Contribution tracking: `POST /api/sol/<id>/payouts/<payout_id>/contributions/<contribution_id>/`
+- [x] Dashboard: `GET /api/sol/<id>/dashboard/`
+- [x] Notes: `GET/POST /api/sol/<id>/notes/`
+- [x] Tips: `POST /api/sol/<id>/tips/`
+- [x] Member self-service: `GET /api/sol/memberships/`, `GET /api/sol/memberships/<sol_id>/`
+- [x] PDF exports: `GET /api/sol/<id>/export/pdf/` (manager — full group ledger); `GET /api/sol/memberships/<sol_id>/export/pdf/` (member — personal record with contract)
+- [x] Sol creation gated to `plan.has_sol` (Business/Anchor); Sol joining open to any active subscriber
+- [x] Sol data injected into AI context (manager view: payout status, contributions paid/pending; member view: hand number, own payout schedule, contribution status)
+
+### API — Users (i18n)
+- [x] `POST /api/users/me/language/` — update preferred language; 7 languages supported (en, fr, es, ht, pt, sw, zh)
+- [x] `Accept-Language` header respected for response messages
+
 ### Tests
-- [x] 201 tests passing (engine + all API domains)
+- [x] 627 tests passing (engine + all API domains)
 - [x] No deprecation warnings
 
 ### Documentation
@@ -216,22 +272,17 @@ These have a foundation but meaningful gaps remain.
 
 These domains and features do not exist yet beyond empty stubs.
 
-### API Domains (all stubs)
+### API Domains (stubs only)
 - [ ] Workspace — team/org management, member roles
-- [ ] Billing — billing records, invoices
-- [ ] Documents — file attachments on contracts
-- [ ] Search — full-text contract/obligation search
-- [ ] Tools — (purpose unclear)
-- [ ] Uploads — file upload handling
+- [ ] Tools — purpose TBD
 
 ### Core Features Not Yet Built
 - [ ] Idempotency key on `Payment` — no duplicate payment protection
 - [ ] Real payment gateway integration (only mock exists)
 - [ ] Recurrence expansion — `Obligation` template → `ContractObligation` instances
-- [ ] Import service — `contracts/services/import_service.py` is empty
+- [ ] Import service — `contracts/services/import_service.py` is empty (AI import endpoint handles this at the API layer but there is no engine-level import service)
 - [ ] Change request workflow — `contracts/change_request.py` is a 4-line stub with no logic
 - [ ] Audit logging — no record of who changed what
-- [ ] API-layer tests — zero test coverage on all HTTP endpoints
 - [ ] DB-level constraint `amount_paid <= amount_due` on `ContractObligation`
 - [ ] Proof of work verification — events are stored but no verification logic exists
 

@@ -62,12 +62,13 @@ All list endpoints are scoped to the authenticated user's contracts.
 | GET | `/api/users/invitations/<token>/` | None | Get invitation detail by token | Working |
 | POST | `/api/users/invitations/<token>/accept/` | None | Accept invitation; marks invited email pre-verified | Working |
 
-### Discovery
+### Discovery & Preferences
 
 | Method | Path | Description | Status |
 |--------|------|-------------|--------|
 | GET | `/api/users/search/?q=` | Search users by name or bonID (icontains) | Working |
 | GET | `/api/users/<bon_id>/` | Public profile by bonID | Working |
+| POST | `/api/users/me/language/` | Update preferred language (en/fr/es/ht/pt/sw/zh) | Working |
 
 ---
 
@@ -319,19 +320,140 @@ All endpoints enforce `is_party`. WebSocket requires JWT via `?token=` query par
 
 ---
 
+## Uploads — `/api/uploads/`
+
+All endpoints scoped to the authenticated user. Files stored in Digital Ocean Spaces.
+
+| Method | Path | Description | Status |
+|--------|------|-------------|--------|
+| GET | `/api/uploads/` | List user's uploads; `?contract_id=`, `?session_id=`, `?is_draft_document=` | Working |
+| POST | `/api/uploads/` | Upload a file (multipart: `file`, `file_type`, `contract_id?`, `session_id?`, `is_prep_material?`) | Working |
+| DELETE | `/api/uploads/<id>/` | Delete upload record and remove from Spaces | Working |
+
+---
+
+## Documents — `/api/documents/`
+
+Contract-document attachments. Ownership enforced — only contract parties can access.
+
+| Method | Path | Description | Status |
+|--------|------|-------------|--------|
+| GET | `/api/documents/` | List documents; `?contract_id=` filter | Working |
+| POST | `/api/documents/` | Attach document to contract | Working |
+| GET | `/api/documents/<id>/` | Document detail | Working |
+| PATCH | `/api/documents/<id>/` | Update title / description | Working |
+| DELETE | `/api/documents/<id>/` | Delete document | Working |
+
+---
+
+## Search — `/api/search/`
+
+All endpoints scoped to the authenticated user's data. No cross-user leakage.
+
+| Method | Path | Description | Status |
+|--------|------|-------------|--------|
+| GET | `/api/search/?q=` | Global search — returns top 10 per domain: contracts, obligations, payments, sessions, documents, templates, users (+ Sol members), sol | Working |
+| GET | `/api/search/contracts/?q=` | Contract search; `?state=`, `?structure_type=` filters | Working |
+| GET | `/api/search/obligations/?q=` | Obligation search; `?state=`, `?type=` filters | Working |
+| GET | `/api/search/payments/?q=` | Payment search; `?status=` filter | Working |
+| GET | `/api/search/sessions/?q=` | Live session search; `?status=` filter | Working |
+| GET | `/api/search/documents/?q=` | Document search | Working |
+| GET | `/api/search/templates/?q=` | Template search; `?category=` filter | Working |
+| GET | `/api/search/sol/?q=` | Sol group search (manager + member scoped); `?status=`, `?frequency=` filters | Working |
+
+**Global search notes:**
+- `users` array may include both `BonUserProfile` results and `SolMember` results (tagged `source: "sol_member"`); Sol member lookup is limited to the requesting user's managed Sol groups.
+- `sol` results are scoped to groups the user manages or is a member of.
+
+---
+
+## AI Assistant — `/api/ai/`
+
+Tier-gated. Requires active subscription for all endpoints. Uses `claude-sonnet-4-6` via Anthropic SDK.
+
+| Method | Path | Tier Required | Description | Status |
+|--------|------|---------------|-------------|--------|
+| POST | `/api/ai/chat/` | Any non-none AI tier | Multi-turn chat; builds user context; continues existing conversations; full tier executes action blocks | Working |
+| GET | `/api/ai/conversations/` | Any | List user's AI conversations; paginated | Working |
+| GET | `/api/ai/conversations/<id>/` | Any | Conversation detail with full message history | Working |
+| POST | `/api/ai/analyze-contract/` | Any active subscription | Upload or reference PDF; returns summary, key_terms, red_flags, questions | Working |
+| POST | `/api/ai/counter-contract/` | Business or Anchor | Upload or reference PDF; returns concerning_clauses with counter language, negotiation_strategy (push_on / concede), revised_contract | Working |
+| POST | `/api/ai/import-contract/` | Anchor only | Upload or reference PDF; extracts parties/obligations/dates; atomically creates Contract + obligations in DB; returns contract_id + obligations_created | Working |
+
+**PDF input**: All three contract tool endpoints accept either `file` (multipart upload) or `upload_id` (reference to an existing Upload record). `counterparty_email` override accepted by import endpoint when AI cannot extract it from the document.
+
+**Action execution** (full/Anchor tier via `/api/ai/chat/`): When assistant response contains a fenced `\`\`\`json` block with an `"action"` key, it is parsed and executed. Supported actions: `create_contract`, `instantiate_template`.
+
+**AI tiers:**
+
+| Plan | AI Tier | Chat | Analyze | Counter | Import |
+|------|---------|------|---------|---------|--------|
+| per_contract / starter | none / none | ✗ | ✓ | ✗ | ✗ |
+| professional | basic | ✓ | ✓ | ✗ | ✗ |
+| business | advanced | ✓ | ✓ | ✓ | ✗ |
+| anchor | full | ✓ | ✓ | ✓ | ✓ |
+
+---
+
+## Sol (Rotating Savings Group) — `/api/sol/`
+
+Sol groups implement the sou-sou / tontine rotating savings model. All manager endpoints enforce `primary_manager or co_manager`. Member self-service endpoints scope to authenticated user's memberships.
+
+### Sol CRUD
+
+| Method | Path | Who | Description | Status |
+|--------|------|-----|-------------|--------|
+| GET | `/api/sol/` | Manager | List Sol groups managed by requesting user | Working |
+| POST | `/api/sol/` | Manager | Create Sol group (requires `plan.has_sol`; Business/Anchor) | Working |
+| GET | `/api/sol/<id>/` | Manager | Sol detail | Working |
+| PATCH | `/api/sol/<id>/` | Manager | Update Sol metadata | Working |
+
+### Members
+
+| Method | Path | Who | Description | Status |
+|--------|------|-----|-------------|--------|
+| POST | `/api/sol/<id>/members/` | Manager | Add member (bonUP user or off-platform by email) | Working |
+| DELETE | `/api/sol/<id>/members/<member_id>/` | Manager | Remove member | Working |
+| GET | `/api/sol/<id>/members/<member_id>/contract/` | Manager | Get or create participation contract for member | Working |
+
+### Payouts & Contributions
+
+| Method | Path | Who | Description | Status |
+|--------|------|-----|-------------|--------|
+| GET | `/api/sol/<id>/payouts/` | Manager | List payouts | Working |
+| POST | `/api/sol/<id>/payouts/` | Manager | Schedule payout | Working |
+| PATCH | `/api/sol/<id>/payouts/<payout_id>/` | Manager | Update payout record | Working |
+| POST | `/api/sol/<id>/payouts/<payout_id>/rearrange/` | Manager | Rearrange payout order; records reason + original recipient + rearranged_by | Working |
+| POST | `/api/sol/<id>/payouts/<payout_id>/contributions/<contribution_id>/` | Manager | Record contribution payment status | Working |
+
+### Manager Utilities
+
+| Method | Path | Description | Status |
+|--------|------|-------------|--------|
+| GET | `/api/sol/<id>/dashboard/` | Group dashboard: members, payouts, contribution summary | Working |
+| GET | `/api/sol/<id>/notes/` | List manager notes | Working |
+| POST | `/api/sol/<id>/notes/` | Add manager note | Working |
+| POST | `/api/sol/<id>/tips/` | Record tip from member to manager | Working |
+| GET | `/api/sol/<id>/export/pdf/` | Full group ledger PDF (manager only) | Working |
+
+### Member Self-Service
+
+| Method | Path | Description | Status |
+|--------|------|-------------|--------|
+| GET | `/api/sol/memberships/` | List Sol groups the authenticated user is a member of | Working |
+| GET | `/api/sol/memberships/<sol_id>/` | Membership detail for a specific Sol | Working |
+| GET | `/api/sol/memberships/<sol_id>/export/pdf/` | Personal record PDF: contract, contribution history, own payout schedule | Working |
+
+---
+
 ## Stub Domains
 
-These domains are registered in the router but contain only empty ViewSets.
-No business logic exists. All routes return `[]` or DRF defaults.
+Route registered, no business logic.
 
-| Domain | Path | Notes |
-|--------|------|-------|
-| workspace | `/api/workspace/` | No workspace endpoints |
-| billing | `/api/billing/` | No billing logic |
-| documents | `/api/documents/` | No document endpoints |
-| search | `/api/search/` | No search endpoints |
-| tools | `/api/tools/` | No tools endpoints |
-| uploads | `/api/uploads/` | No upload handling |
+| Domain | Path |
+|--------|------|
+| workspace | `/api/workspace/` |
+| tools | `/api/tools/` |
 
 ---
 

@@ -108,6 +108,7 @@ export default function CreateContract() {
   const [rightEmpty, setRightEmpty] = useState(true)
   const [splitPercent, setSplitPercent] = useState(50)
   const [isDragging, setIsDragging] = useState(false)
+  const [aiPanelHeight, setAiPanelHeight] = useState(280)
 
   const leftEditorRef = useRef<HTMLDivElement>(null)
   const rightEditorRef = useRef<HTMLDivElement>(null)
@@ -139,6 +140,32 @@ export default function CreateContract() {
 
     function onMouseUp() {
       setIsDragging(false)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  }
+
+  function onAiHandleMouseDown(e: React.MouseEvent) {
+    e.preventDefault()
+    const startY = e.clientY
+    const startHeight = aiPanelHeight
+
+    document.body.style.cursor = 'row-resize'
+    document.body.style.userSelect = 'none'
+
+    function onMouseMove(ev: MouseEvent) {
+      const delta = ev.clientY - startY
+      // dragging down (positive delta) shrinks the panel
+      const newHeight = startHeight - delta
+      setAiPanelHeight(Math.min(280, Math.max(187, newHeight)))
+    }
+
+    function onMouseUp() {
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
       window.removeEventListener('mousemove', onMouseMove)
@@ -507,7 +534,7 @@ export default function CreateContract() {
             <div
               ref={editorsRowRef}
               style={{
-                height: aiPanelOpen ? 'calc(100% - 280px)' : '100%',
+                height: aiPanelOpen ? `calc(100% - ${aiPanelHeight}px)` : '100%',
                 transition: 'height 0.35s ease',
                 display: 'flex', flexDirection: 'row', overflow: 'hidden',
                 minHeight: 200,
@@ -626,7 +653,7 @@ export default function CreateContract() {
               {/* AI PANEL — slides up from bottom of center area */}
               <div style={{
                 position: 'absolute', bottom: 0, left: 0, right: 0,
-                height: 280,
+                height: aiPanelHeight,
                 background: '#ffffff',
                 borderTop: '2px solid #E5E7EB',
                 boxShadow: '0 -4px 20px rgba(0,0,0,0.08)',
@@ -636,6 +663,21 @@ export default function CreateContract() {
                 display: 'flex', flexDirection: 'column',
                 zIndex: 10,
               }}>
+                {/* Drag handle */}
+                <div
+                  onMouseDown={onAiHandleMouseDown}
+                  style={{
+                    height: 6, width: '100%',
+                    cursor: 'row-resize',
+                    background: '#F3F4F6',
+                    borderRadius: '12px 12px 0 0',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <div style={{ width: 32, height: 3, background: '#D1D5DB', borderRadius: 3, pointerEvents: 'none' }} />
+                </div>
+
                 {/* Header */}
                 <div style={{
                   padding: '12px 16px',

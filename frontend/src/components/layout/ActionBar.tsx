@@ -37,7 +37,7 @@ export default function ActionBar() {
   return (
     <div
       className="fixed right-0 z-40 flex h-[44px] items-center gap-2 px-5"
-      style={{ top: 114, left: 216, background: '#132030' }}
+      style={{ top: 114, left: 'var(--sidebar-w, 216px)', background: '#132030' }}
     >
       <GhostBtn label="▶  Start Live Session" />
       <GhostBtn label="+ New Contract" />
@@ -71,6 +71,7 @@ export default function ActionBar() {
       >
         PBVD
       </button>
+      <GhostBtn label="+ Invite a Friend" />
     </div>
   )
 }

@@ -129,7 +129,7 @@ export default function TopBar() {
       className="fixed right-0 z-40 flex h-[64px] items-center px-5"
       style={{
         top: 0,
-        left: 216,
+        left: 'var(--sidebar-w, 216px)',
         background: '#1C2B3A',
         borderBottom: '1px solid rgba(255,255,255,0.07)',
       }}

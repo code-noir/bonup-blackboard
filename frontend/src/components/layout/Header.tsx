@@ -43,7 +43,7 @@ export default function Header() {
       className="fixed right-0 z-40 flex h-[50px] items-center px-5"
       style={{
         top: 64,
-        left: 216,
+        left: 'var(--sidebar-w, 216px)',
         background: '#172334',
         borderBottom: '1px solid rgba(255,255,255,0.06)',
       }}

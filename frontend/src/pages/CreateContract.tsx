@@ -16,12 +16,16 @@ const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72
 const CONTRACT_TOOLS = [
   { icon: '📋', label: 'Contract Details' },
   { icon: '👥', label: 'Parties' },
-  { icon: '📅', label: 'Obligations' },
+  { icon: '✓', label: 'Obligations' },
   { icon: '💰', label: 'Payments' },
   { icon: '📎', label: 'Attachments' },
+  { icon: '📐', label: 'Templates' },
+  { icon: '🔢', label: 'Calculator' },
+  { icon: '📅', label: 'Calendar' },
   { icon: '🔒', label: 'Permissions' },
   { icon: '📊', label: 'Analytics' },
   { icon: '⚙️', label: 'Settings' },
+  { icon: '🎬', label: 'Tutorial' },
 ]
 
 const ACTIVITY = [
@@ -90,11 +94,15 @@ function GhostActionBtn({ label, onClick }: { label: string; onClick?: () => voi
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function CreateContract() {
-  const [leftDrawerOpen, setLeftDrawerOpen] = useState(true)
+  const [activeTool, setActiveTool] = useState<string | null>(null)
   const [rightDrawerOpen, setRightDrawerOpen] = useState(true)
   const [activeEditor, setActiveEditor] = useState<'left' | 'right'>('left')
-  const [videoExpanded, setVideoExpanded] = useState(false)
   const [aiPanelOpen, setAiPanelOpen] = useState(false)
+  const [calcDisplay, setCalcDisplay] = useState('0')
+  const [calcFormula, setCalcFormula] = useState('')
+  const [calcOperator, setCalcOperator] = useState<string | null>(null)
+  const [calcPrevValue, setCalcPrevValue] = useState<string | null>(null)
+  const [calcJustCalc, setCalcJustCalc] = useState(false)
   const [aiPanelMessage, setAiPanelMessage] = useState('')
   const [aiPanelChat, setAiPanelChat] = useState([
     { role: 'ai', text: 'Hi! I can help you draft, review, and improve your contract. What would you like to do?' },
@@ -114,7 +122,6 @@ export default function CreateContract() {
   const leftEditorRef = useRef<HTMLDivElement>(null)
   const rightEditorRef = useRef<HTMLDivElement>(null)
   const editorsRowRef = useRef<HTMLDivElement>(null)
-  const prevLeftDrawer = useRef(true)
   const prevRightDrawer = useRef(true)
 
   function getActiveRef() {
@@ -127,16 +134,14 @@ export default function CreateContract() {
   }
 
   function enterFocus(side: 'left' | 'right') {
-    prevLeftDrawer.current = leftDrawerOpen
     prevRightDrawer.current = rightDrawerOpen
-    setLeftDrawerOpen(false)
+    setActiveTool(null)
     setRightDrawerOpen(false)
     setFocusMode(side)
   }
 
   function exitFocus() {
     setFocusMode('none')
-    setLeftDrawerOpen(prevLeftDrawer.current)
     setRightDrawerOpen(prevRightDrawer.current)
   }
 
@@ -147,6 +152,15 @@ export default function CreateContract() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [focusMode])
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--sidebar-w', '48px')
+    window.dispatchEvent(new CustomEvent('sidebar-mode', { detail: 'icon-only' }))
+    return () => {
+      document.documentElement.style.removeProperty('--sidebar-w')
+      window.dispatchEvent(new CustomEvent('sidebar-mode', { detail: 'normal' }))
+    }
+  }, [])
 
   function onDividerMouseDown(e: React.MouseEvent) {
     e.preventDefault()
@@ -201,6 +215,53 @@ export default function CreateContract() {
     window.addEventListener('mouseup', onMouseUp)
   }
 
+  function calcInput(val: string) {
+    if (calcJustCalc && /[0-9.]/.test(val)) {
+      setCalcDisplay(val === '.' ? '0.' : val)
+      setCalcFormula('')
+      setCalcJustCalc(false)
+      return
+    }
+    if (val === '.') {
+      if (!calcDisplay.includes('.')) setCalcDisplay(calcDisplay + '.')
+      return
+    }
+    setCalcDisplay(calcDisplay === '0' ? val : calcDisplay + val)
+    setCalcJustCalc(false)
+  }
+
+  function calcOp(op: string) {
+    setCalcPrevValue(calcDisplay)
+    setCalcOperator(op)
+    setCalcFormula(`${calcDisplay} ${op}`)
+    setCalcJustCalc(true)
+  }
+
+  function calcEqual() {
+    if (!calcOperator || !calcPrevValue) return
+    const a = parseFloat(calcPrevValue)
+    const b = parseFloat(calcDisplay)
+    let result = 0
+    if (calcOperator === '+') result = a + b
+    else if (calcOperator === '−') result = a - b
+    else if (calcOperator === '×') result = a * b
+    else if (calcOperator === '÷') result = b !== 0 ? a / b : 0
+    const r = String(parseFloat(result.toFixed(10)))
+    setCalcFormula(`${calcPrevValue} ${calcOperator} ${calcDisplay} =`)
+    setCalcDisplay(r)
+    setCalcOperator(null)
+    setCalcPrevValue(null)
+    setCalcJustCalc(true)
+  }
+
+  function calcClear() {
+    setCalcDisplay('0')
+    setCalcFormula('')
+    setCalcOperator(null)
+    setCalcPrevValue(null)
+    setCalcJustCalc(false)
+  }
+
   const TOGGLE_BTN: React.CSSProperties = {
     width: 16, height: 48, border: 'none', background: '#2E4156',
     color: 'rgba(255,255,255,0.5)', fontSize: 10, cursor: 'pointer',
@@ -243,7 +304,7 @@ export default function CreateContract() {
 
       {/* ── WORKSPACE: fixed below top bars, above status bar ── */}
       <div style={{
-        position: 'fixed', top: 159, left: 216, right: 0, bottom: 32,
+        position: 'fixed', top: 159, left: 48, right: 0, bottom: 32,
         display: 'flex', flexDirection: 'column', zIndex: 20, overflow: 'hidden',
         background: '#F8FAFC',
       }}>
@@ -436,108 +497,185 @@ export default function CreateContract() {
         </div>
 
         {/* ── MAIN WORKSPACE ROW ── */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden', minHeight: 0 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'row', minHeight: 0 }}>
 
-          {/* LEFT DRAWER */}
+          {/* TOOL ICON STRIP */}
           <div style={{
-            width: leftDrawerOpen ? 280 : 0,
+            width: 52, flexShrink: 0,
+            background: '#1C2B3A',
+            display: focusMode !== 'none' ? 'none' : 'flex',
+            flexDirection: 'column',
+            alignItems: 'center', paddingTop: 8,
+            gap: 2,
+            zIndex: 10,
+          }}>
+            {CONTRACT_TOOLS.map((tool) => {
+              const isActive = activeTool === tool.label
+              return (
+                <div key={tool.label} style={{ position: 'relative', width: '100%', display: 'flex', justifyContent: 'center' }}>
+                  <button
+                    onClick={() => setActiveTool(isActive ? null : tool.label)}
+                    style={{
+                      width: 40, height: 40,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      borderRadius: 8, border: 'none',
+                      background: isActive ? 'rgba(245,166,35,0.15)' : 'transparent',
+                      color: isActive ? '#F5A623' : 'rgba(255,255,255,0.55)',
+                      fontSize: 16, cursor: 'pointer',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isActive) {
+                        e.currentTarget.style.background = 'rgba(255,255,255,0.08)'
+                        e.currentTarget.style.color = 'white'
+                      }
+                      const tt = e.currentTarget.nextElementSibling as HTMLElement
+                      if (tt) tt.style.display = 'block'
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isActive) {
+                        e.currentTarget.style.background = 'transparent'
+                        e.currentTarget.style.color = 'rgba(255,255,255,0.55)'
+                      }
+                      const tt = e.currentTarget.nextElementSibling as HTMLElement
+                      if (tt) tt.style.display = 'none'
+                    }}
+                  >
+                    {tool.icon}
+                  </button>
+                  <div style={{
+                    display: 'none',
+                    position: 'absolute',
+                    left: 48, top: '50%', transform: 'translateY(-50%)',
+                    background: '#1C2B3A', color: 'white',
+                    fontSize: 11, padding: '4px 10px',
+                    borderRadius: 6, whiteSpace: 'nowrap',
+                    zIndex: 500, pointerEvents: 'none',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                  }}>
+                    {tool.label}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* TOOL PANEL */}
+          <div style={{
+            width: activeTool && focusMode === 'none' ? 280 : 0,
             flexShrink: 0,
             transition: 'width 0.3s ease',
             overflow: 'hidden',
             background: '#1E3A55',
           }}>
-            <div style={{
-              width: 280, height: '100%',
-              display: 'flex', flexDirection: 'column', overflowY: 'auto',
-            }}>
-              {/* Section title */}
-              <div style={{ padding: '16px 16px 8px', flexShrink: 0 }}>
-                <p style={{
-                  fontSize: 12, color: 'rgba(255,255,255,0.5)',
-                  textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0,
-                }}>
-                  Contract Tools
-                </p>
-              </div>
-
-              {/* Tool items */}
-              {CONTRACT_TOOLS.map((tool) => (
-                <button
-                  key={tool.label}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '10px 16px', background: 'transparent',
-                    border: 'none', color: 'rgba(255,255,255,0.75)',
-                    fontSize: 13, cursor: 'pointer',
-                    textAlign: 'left', width: '100%',
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                >
-                  <span style={{ fontSize: 15 }}>{tool.icon}</span>
-                  <span>{tool.label}</span>
-                </button>
-              ))}
-
-              <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '8px 0', flexShrink: 0 }} />
-
-              {/* Video Player */}
-              <div style={{ padding: '0 16px 16px', flexShrink: 0 }}>
-                <button
-                  onClick={() => setVideoExpanded((v) => !v)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    background: 'transparent', border: 'none',
-                    color: 'rgba(255,255,255,0.6)', fontSize: 12,
-                    cursor: 'pointer', padding: '8px 0', width: '100%',
-                  }}
-                >
-                  <span>▶</span>
-                  <span>Tutorial</span>
-                  <span style={{ marginLeft: 'auto', fontSize: 10 }}>
-                    {videoExpanded ? '▲' : '▼'}
-                  </span>
-                </button>
-                {videoExpanded && (
-                  <div style={{ marginTop: 8 }}>
-                    <div style={{
-                      width: '100%', aspectRatio: '16/9',
-                      background: '#0F1F3D', borderRadius: 8,
-                      display: 'flex', flexDirection: 'column',
-                      alignItems: 'center', justifyContent: 'center', gap: 8,
-                    }}>
-                      <div style={{
-                        width: 36, height: 36, borderRadius: '50%',
-                        background: 'rgba(255,255,255,0.15)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}>
-                        <span style={{ color: 'white', fontSize: 14, marginLeft: 2 }}>▶</span>
-                      </div>
-                      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: 0 }}>
-                        Tutorial coming soon
-                      </p>
-                    </div>
+            <div style={{ width: 280, height: '100%', display: 'flex', flexDirection: 'column' }}>
+              {activeTool && (
+                <>
+                  {/* Panel header */}
+                  <div style={{
+                    padding: '16px 16px 12px',
+                    borderBottom: '1px solid rgba(255,255,255,0.08)',
+                    display: 'flex', alignItems: 'center', flexShrink: 0,
+                  }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'white', flex: 1 }}>
+                      {activeTool}
+                    </span>
+                    <button
+                      onClick={() => setActiveTool(null)}
+                      style={{
+                        background: 'transparent', border: 'none',
+                        color: 'rgba(255,255,255,0.4)', fontSize: 16,
+                        cursor: 'pointer', padding: 0, lineHeight: 1,
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = 'white')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.4)')}
+                    >
+                      ✕
+                    </button>
                   </div>
-                )}
-              </div>
+
+                  {/* Panel content */}
+                  <div style={{ flex: 1, overflowY: 'auto', padding: activeTool === 'Calculator' ? 12 : 16 }}>
+                    {activeTool === 'Calculator' ? (
+                      <>
+                        {/* Secondary display */}
+                        <div style={{
+                          fontSize: 11, color: 'rgba(255,255,255,0.4)',
+                          textAlign: 'right', marginBottom: 4, minHeight: 16,
+                          fontFamily: "'DM Mono', monospace",
+                        }}>
+                          {calcFormula}
+                        </div>
+                        {/* Main display */}
+                        <div style={{
+                          background: '#0F1F3D', color: '#F5A623',
+                          fontSize: 28, fontFamily: "'DM Mono', monospace",
+                          textAlign: 'right', padding: '12px 16px',
+                          borderRadius: 8, marginBottom: 10,
+                          minHeight: 60, display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+                          overflowX: 'hidden', wordBreak: 'break-all',
+                        }}>
+                          {calcDisplay}
+                        </div>
+                        {/* Button grid */}
+                        {[
+                          [{ l: 'C', t: 'clear' }, { l: '±', t: 'sign' }, { l: '%', t: 'pct' }, { l: '÷', t: 'op' }],
+                          [{ l: '7', t: 'num' }, { l: '8', t: 'num' }, { l: '9', t: 'num' }, { l: '×', t: 'op' }],
+                          [{ l: '4', t: 'num' }, { l: '5', t: 'num' }, { l: '6', t: 'num' }, { l: '−', t: 'op' }],
+                          [{ l: '1', t: 'num' }, { l: '2', t: 'num' }, { l: '3', t: 'num' }, { l: '+', t: 'op' }],
+                          [{ l: '0', t: 'zero' }, { l: '.', t: 'num' }, { l: '=', t: 'eq' }],
+                        ].map((row, ri) => (
+                          <div key={ri} style={{ display: 'grid', gridTemplateColumns: ri === 4 ? '2fr 1fr 1fr' : 'repeat(4, 1fr)', gap: 6, marginBottom: 6 }}>
+                            {row.map(({ l, t }) => {
+                              let bg = 'rgba(255,255,255,0.08)'
+                              let color = 'white'
+                              if (t === 'op') { bg = 'rgba(245,166,35,0.2)'; color = '#F5A623' }
+                              if (t === 'eq') { bg = '#F5A623'; color = '#0F1F3D' }
+                              if (t === 'clear') { bg = 'rgba(239,68,68,0.2)'; color = '#F87171' }
+                              return (
+                                <button
+                                  key={l}
+                                  onClick={() => {
+                                    if (t === 'num' || t === 'zero') calcInput(l)
+                                    else if (t === 'op') calcOp(l)
+                                    else if (t === 'eq') calcEqual()
+                                    else if (t === 'clear') calcClear()
+                                    else if (t === 'sign') {
+                                      setCalcDisplay(String(parseFloat(calcDisplay) * -1))
+                                    }
+                                    else if (t === 'pct') {
+                                      setCalcDisplay(String(parseFloat(calcDisplay) / 100))
+                                    }
+                                  }}
+                                  style={{
+                                    background: bg, color, border: 'none',
+                                    borderRadius: 8, height: 44, fontSize: 15,
+                                    cursor: 'pointer', fontFamily: "'DM Mono', monospace",
+                                    fontWeight: t === 'eq' ? 700 : 400,
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.opacity = '0.85'
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.opacity = '1'
+                                  }}
+                                >
+                                  {l}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        ))}
+                      </>
+                    ) : (
+                      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', textAlign: 'center', marginTop: 40 }}>
+                        {activeTool} coming soon
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
-
-          {/* LEFT DRAWER TOGGLE */}
-          <button
-            onClick={() => setLeftDrawerOpen((v) => !v)}
-            style={{ ...TOGGLE_BTN, borderRadius: '0 4px 4px 0', display: focusMode !== 'none' ? 'none' : 'flex' }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = '#3D5068'
-              e.currentTarget.style.color = 'white'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = '#2E4156'
-              e.currentTarget.style.color = 'rgba(255,255,255,0.5)'
-            }}
-          >
-            {leftDrawerOpen ? '‹' : '›'}
-          </button>
 
           {/* CENTER AREA */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>

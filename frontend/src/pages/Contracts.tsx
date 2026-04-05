@@ -131,39 +131,41 @@ export default function Contracts() {
           ))}
         </div>
 
-        {/* Content area — overlays content below, does not push layout */}
-        {isHovered && (
+        {/* Content area — max-height transition, normal document flow */}
+        <div
+          style={{
+            maxHeight: isHovered ? '340px' : '0',
+            overflow: 'hidden',
+            opacity: isHovered ? 1 : 0,
+            transition: 'max-height 0.3s ease, opacity 0.2s ease',
+          }}
+        >
           <div
             style={{
-              position: 'absolute',
-              top: '100%',
-              left: 0,
-              right: 0,
-              zIndex: 50,
               background: '#fff',
               borderRadius: '0 0 11px 11px',
-              border: '1px solid rgba(0,0,0,0.08)',
+              border: '1px solid rgba(0,0,0,0.05)',
               borderTop: 'none',
-              boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+              maxHeight: 320,
+              overflowY: 'auto',
               padding: '0 22px 20px',
-              minHeight: 200,
             }}
           >
 
-            {/* Helper: contract-style table */}
+            {/* Tabs 0, 1, 4, 5 — contract-style table */}
             {[0, 1, 4, 5].includes(activeTab) && (() => {
               const rows =
                 activeTab === 0 ? CONTRACTS :
                 activeTab === 1 ? [
-                  { name: 'Vanta Digital Retainer',    party: 'Vanta Digital',  status: 'PENDING', nextDue: '2026-04-18' },
-                  { name: 'Nexus SaaS Agreement',      party: 'Nexus SaaS',     status: 'PENDING', nextDue: '2026-04-25' },
+                  { name: 'Vanta Digital Retainer',         party: 'Vanta Digital', status: 'PENDING',   nextDue: '2026-04-18' },
+                  { name: 'Nexus SaaS Agreement',           party: 'Nexus SaaS',    status: 'PENDING',   nextDue: '2026-04-25' },
                 ] :
                 activeTab === 4 ? [
-                  { name: 'Vanta Digital Retainer',    party: 'Vanta Digital',  status: 'ACTIVE',  nextDue: '2026-04-18' },
-                  { name: 'Orin Staffing Agreement',   party: 'Orin Staffing',  status: 'OVERDUE', nextDue: '2026-04-03' },
+                  { name: 'Vanta Digital Retainer',         party: 'Vanta Digital', status: 'ACTIVE',    nextDue: '2026-04-18' },
+                  { name: 'Orin Staffing Agreement',        party: 'Orin Staffing', status: 'OVERDUE',   nextDue: '2026-04-03' },
                 ] : [
-                  { name: 'Clearpath Inc — Delivery SLA',  party: 'Clearpath Inc',  status: 'COMPLETED', nextDue: '—' },
-                  { name: 'Atlas Corp Q1 Contract',         party: 'Atlas Corp',     status: 'COMPLETED', nextDue: '—' },
+                  { name: 'Clearpath Inc — Delivery SLA',  party: 'Clearpath Inc', status: 'COMPLETED', nextDue: '—' },
+                  { name: 'Atlas Corp Q1 Contract',         party: 'Atlas Corp',    status: 'COMPLETED', nextDue: '—' },
                 ]
               return (
                 <div style={{ overflowX: 'auto' }}>
@@ -224,9 +226,9 @@ export default function Contracts() {
                   </thead>
                   <tbody>
                     {[
-                      { obligation: 'Monthly Payment — Apr', contract: 'Meridian Labs Q2',       status: 'ACTIVE', dueDate: '2026-04-10' },
-                      { obligation: 'Delivery Milestone 2',  contract: 'Orin Staffing Agreement', status: 'ACTIVE', dueDate: '2026-04-14' },
-                      { obligation: 'Quarterly Review',      contract: 'Fenix Creative Studio',   status: 'ACTIVE', dueDate: '2026-04-20' },
+                      { obligation: 'Monthly Payment — Apr', contract: 'Meridian Labs Q2',        status: 'ACTIVE', dueDate: '2026-04-10' },
+                      { obligation: 'Delivery Milestone 2',  contract: 'Orin Staffing Agreement',  status: 'ACTIVE', dueDate: '2026-04-14' },
+                      { obligation: 'Quarterly Review',      contract: 'Fenix Creative Studio',    status: 'ACTIVE', dueDate: '2026-04-20' },
                     ].map((row, i, arr) => (
                       <tr
                         key={i}
@@ -267,8 +269,8 @@ export default function Contracts() {
                   </thead>
                   <tbody>
                     {[
-                      { contract: 'Clearpath Partnership',   version: 'v0.3', parties: 'bonUP, Clearpath Inc',   status: 'PENDING' },
-                      { contract: 'Vantage Consulting MSA',  version: 'v0.1', parties: 'bonUP, Vantage Group',   status: 'PENDING' },
+                      { contract: 'Clearpath Partnership',  version: 'v0.3', parties: 'bonUP, Clearpath Inc',  status: 'PENDING' },
+                      { contract: 'Vantage Consulting MSA', version: 'v0.1', parties: 'bonUP, Vantage Group',  status: 'PENDING' },
                     ].map((row, i, arr) => (
                       <tr
                         key={i}
@@ -296,7 +298,7 @@ export default function Contracts() {
             )}
 
           </div>
-        )}
+        </div>
       </div>
 
       {/* ── SECTIONS 2 & 3: bottom half grid ── */}

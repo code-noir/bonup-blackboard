@@ -20,7 +20,7 @@ const TH_DARK: React.CSSProperties = {
   letterSpacing: '0.08em',
   color: 'rgba(255,255,255,0.5)',
   fontWeight: 500,
-  padding: '0 12px 12px 0',
+  padding: '0 12px 8px 0',
   textAlign: 'left',
   whiteSpace: 'nowrap',
 }
@@ -28,15 +28,20 @@ const TH_DARK: React.CSSProperties = {
 const TD_DARK: React.CSSProperties = {
   fontSize: 13,
   color: 'rgba(255,255,255,0.85)',
-  padding: '13px 12px 13px 0',
+  padding: '8px 12px 8px 0',
 }
 
 const CONTRACTS = [
-  { name: 'Meridian Labs — Q2 Services',    party: 'Meridian Labs',   status: 'ACTIVE',    nextDue: '2026-05-01' },
-  { name: 'Vanta Digital Retainer',          party: 'Vanta Digital',   status: 'PENDING',   nextDue: '2026-04-18' },
-  { name: 'Orin Staffing Agreement',         party: 'Orin Staffing',   status: 'OVERDUE',   nextDue: '2026-04-03' },
-  { name: 'Clearpath Inc — Delivery SLA',   party: 'Clearpath Inc',   status: 'COMPLETED', nextDue: '—'          },
-  { name: 'Fenix Creative Studio Contract', party: 'Fenix Creative',  status: 'ACTIVE',    nextDue: '2026-07-01' },
+  { name: 'Meridian Labs Q2 Services',        party: 'Meridian Labs',   status: 'ACTIVE',    nextDue: '2026-05-01' },
+  { name: 'Vanta Digital Retainer',            party: 'Vanta Digital',   status: 'PENDING',   nextDue: '2026-04-18' },
+  { name: 'Orin Staffing Agreement',           party: 'Orin Staffing',   status: 'OVERDUE',   nextDue: '2026-04-03' },
+  { name: 'Clearpath Inc Delivery SLA',        party: 'Clearpath Inc',   status: 'COMPLETED', nextDue: '—'          },
+  { name: 'Fenix Creative Studio Contract',    party: 'Fenix Creative',  status: 'ACTIVE',    nextDue: '2026-07-01' },
+  { name: 'BluePrint Agency Retainer',         party: 'BluePrint Agency',status: 'ACTIVE',    nextDue: '2026-06-15' },
+  { name: 'Nova Tech Support Agreement',       party: 'Nova Tech',       status: 'PENDING',   nextDue: '2026-04-22' },
+  { name: 'Crestwood Consulting SLA',          party: 'Crestwood',       status: 'OVERDUE',   nextDue: '2026-04-01' },
+  { name: 'Apex Media Partnership',            party: 'Apex Media',      status: 'ACTIVE',    nextDue: '2026-08-01' },
+  { name: 'Groundwork Labs Contract',          party: 'Groundwork Labs', status: 'ACTIVE',    nextDue: '2026-05-20' },
 ]
 
 const CARD: React.CSSProperties = {
@@ -179,15 +184,39 @@ export default function Contracts() {
               const rows =
                 activeTab === 0 ? CONTRACTS :
                 activeTab === 1 ? [
-                  { name: 'Vanta Digital Retainer',         party: 'Vanta Digital', status: 'PENDING',   nextDue: '2026-04-18' },
-                  { name: 'Nexus SaaS Agreement',           party: 'Nexus SaaS',    status: 'PENDING',   nextDue: '2026-04-25' },
+                  { name: 'Vanta Digital Retainer',          party: 'Vanta Digital',   status: 'PENDING', nextDue: '2026-04-18' },
+                  { name: 'Nova Tech Support Agreement',      party: 'Nova Tech',        status: 'PENDING', nextDue: '2026-04-22' },
+                  { name: 'Clearpath Inc Amendment',          party: 'Clearpath Inc',    status: 'PENDING', nextDue: '2026-04-25' },
+                  { name: 'Fenix Creative Renewal',           party: 'Fenix Creative',   status: 'PENDING', nextDue: '2026-04-30' },
+                  { name: 'BluePrint Agency Update',          party: 'BluePrint Agency', status: 'PENDING', nextDue: '2026-05-02' },
+                  { name: 'Meridian Labs Addendum',           party: 'Meridian Labs',    status: 'PENDING', nextDue: '2026-05-08' },
+                  { name: 'Apex Media Review',                party: 'Apex Media',       status: 'PENDING', nextDue: '2026-05-10' },
+                  { name: 'Groundwork Labs Pending',          party: 'Groundwork Labs',  status: 'PENDING', nextDue: '2026-05-15' },
+                  { name: 'Orin Staffing Revision',           party: 'Orin Staffing',    status: 'PENDING', nextDue: '2026-05-18' },
+                  { name: 'Crestwood Consulting Review',      party: 'Crestwood',        status: 'PENDING', nextDue: '2026-05-22' },
                 ] :
                 activeTab === 4 ? [
-                  { name: 'Vanta Digital Retainer',         party: 'Vanta Digital', status: 'ACTIVE',    nextDue: '2026-04-18' },
-                  { name: 'Orin Staffing Agreement',        party: 'Orin Staffing', status: 'OVERDUE',   nextDue: '2026-04-03' },
+                  { name: 'Meridian Labs Q2 Services',        party: 'Meridian Labs',    status: 'ACTIVE',  nextDue: '2026-04-15' },
+                  { name: 'Orin Staffing Agreement',          party: 'Orin Staffing',    status: 'ACTIVE',  nextDue: '2026-04-18' },
+                  { name: 'Clearpath Inc Delivery',           party: 'Clearpath Inc',    status: 'ACTIVE',  nextDue: '2026-04-20' },
+                  { name: 'Nova Tech Support',                party: 'Nova Tech',        status: 'ACTIVE',  nextDue: '2026-04-22' },
+                  { name: 'Fenix Creative Studio',            party: 'Fenix Creative',   status: 'ACTIVE',  nextDue: '2026-04-24' },
+                  { name: 'BluePrint Agency',                 party: 'BluePrint Agency', status: 'ACTIVE',  nextDue: '2026-04-26' },
+                  { name: 'Apex Media Partnership',           party: 'Apex Media',       status: 'ACTIVE',  nextDue: '2026-04-28' },
+                  { name: 'Groundwork Labs',                  party: 'Groundwork Labs',  status: 'ACTIVE',  nextDue: '2026-04-30' },
+                  { name: 'Vanta Digital Retainer',           party: 'Vanta Digital',    status: 'ACTIVE',  nextDue: '2026-05-01' },
+                  { name: 'Crestwood Consulting',             party: 'Crestwood',        status: 'ACTIVE',  nextDue: '2026-05-03' },
                 ] : [
-                  { name: 'Clearpath Inc — Delivery SLA',  party: 'Clearpath Inc', status: 'COMPLETED', nextDue: '—' },
-                  { name: 'Atlas Corp Q1 Contract',         party: 'Atlas Corp',    status: 'COMPLETED', nextDue: '—' },
+                  { name: 'Clearpath Inc Delivery SLA',       party: 'Clearpath Inc',    status: 'COMPLETED', nextDue: '—' },
+                  { name: 'Orin Staffing Q1',                 party: 'Orin Staffing',    status: 'COMPLETED', nextDue: '—' },
+                  { name: 'Nova Tech Phase 1',                party: 'Nova Tech',        status: 'COMPLETED', nextDue: '—' },
+                  { name: 'Fenix Creative Q4',                party: 'Fenix Creative',   status: 'COMPLETED', nextDue: '—' },
+                  { name: 'BluePrint Agency 2025',            party: 'BluePrint Agency', status: 'COMPLETED', nextDue: '—' },
+                  { name: 'Apex Media 2025 Deal',             party: 'Apex Media',       status: 'COMPLETED', nextDue: '—' },
+                  { name: 'Groundwork Labs Phase 1',          party: 'Groundwork Labs',  status: 'COMPLETED', nextDue: '—' },
+                  { name: 'Meridian Labs Q1',                 party: 'Meridian Labs',    status: 'COMPLETED', nextDue: '—' },
+                  { name: 'Vanta Digital 2025',               party: 'Vanta Digital',    status: 'COMPLETED', nextDue: '—' },
+                  { name: 'Crestwood Q4 2025',                party: 'Crestwood',        status: 'COMPLETED', nextDue: '—' },
                 ]
               return (
                 <div style={{ overflowX: 'auto' }}>
@@ -252,9 +281,16 @@ export default function Contracts() {
                   </thead>
                   <tbody>
                     {[
-                      { obligation: 'Monthly Payment — Apr', contract: 'Meridian Labs Q2',        status: 'ACTIVE', dueDate: '2026-04-10' },
-                      { obligation: 'Delivery Milestone 2',  contract: 'Orin Staffing Agreement',  status: 'ACTIVE', dueDate: '2026-04-14' },
-                      { obligation: 'Quarterly Review',      contract: 'Fenix Creative Studio',    status: 'ACTIVE', dueDate: '2026-04-20' },
+                      { obligation: 'Monthly Payment — Apr',    contract: 'Meridian Labs Q2',        status: 'ACTIVE', dueDate: '2026-04-10' },
+                      { obligation: 'Delivery Milestone 2',     contract: 'Orin Staffing Agreement', status: 'ACTIVE', dueDate: '2026-04-14' },
+                      { obligation: 'Quarterly Review',         contract: 'Fenix Creative Studio',   status: 'ACTIVE', dueDate: '2026-04-20' },
+                      { obligation: 'Service Delivery Phase 1', contract: 'BluePrint Agency',        status: 'ACTIVE', dueDate: '2026-04-25' },
+                      { obligation: 'Payment Installment 3',    contract: 'Nova Tech Support',       status: 'ACTIVE', dueDate: '2026-04-28' },
+                      { obligation: 'Milestone Review',         contract: 'Apex Media Partnership',  status: 'ACTIVE', dueDate: '2026-05-01' },
+                      { obligation: 'Monthly Retainer Fee',     contract: 'Vanta Digital',           status: 'ACTIVE', dueDate: '2026-05-05' },
+                      { obligation: 'Delivery Sign-off',        contract: 'Groundwork Labs',         status: 'ACTIVE', dueDate: '2026-05-08' },
+                      { obligation: 'Phase 2 Payment',          contract: 'Clearpath Inc',           status: 'ACTIVE', dueDate: '2026-05-12' },
+                      { obligation: 'Final Review',             contract: 'Crestwood Consulting',    status: 'ACTIVE', dueDate: '2026-05-15' },
                     ].map((row, i) => (
                       <tr
                         key={i}
@@ -295,8 +331,16 @@ export default function Contracts() {
                   </thead>
                   <tbody>
                     {[
-                      { contract: 'Clearpath Partnership',  version: 'v0.3', parties: 'bonUP, Clearpath Inc',  status: 'PENDING' },
-                      { contract: 'Vantage Consulting MSA', version: 'v0.1', parties: 'bonUP, Vantage Group',  status: 'PENDING' },
+                      { contract: 'Meridian Labs Q2',        version: 'v2', parties: 'bonup ↔ Meridian Labs',    status: 'PENDING' },
+                      { contract: 'Vanta Digital Retainer',  version: 'v1', parties: 'bonup ↔ Vanta Digital',    status: 'PENDING' },
+                      { contract: 'Clearpath Inc SLA',       version: 'v3', parties: 'bonup ↔ Clearpath Inc',    status: 'PENDING' },
+                      { contract: 'Nova Tech Agreement',     version: 'v1', parties: 'bonup ↔ Nova Tech',        status: 'PENDING' },
+                      { contract: 'Fenix Creative Renewal',  version: 'v2', parties: 'bonup ↔ Fenix Creative',   status: 'PENDING' },
+                      { contract: 'BluePrint Agency Update', version: 'v1', parties: 'bonup ↔ BluePrint Agency', status: 'PENDING' },
+                      { contract: 'Apex Media Deal',         version: 'v2', parties: 'bonup ↔ Apex Media',       status: 'PENDING' },
+                      { contract: 'Groundwork Labs Rev',     version: 'v1', parties: 'bonup ↔ Groundwork Labs',  status: 'PENDING' },
+                      { contract: 'Orin Staffing Rev',       version: 'v3', parties: 'bonup ↔ Orin Staffing',    status: 'PENDING' },
+                      { contract: 'Crestwood Amendment',     version: 'v1', parties: 'bonup ↔ Crestwood',        status: 'PENDING' },
                     ].map((row, i) => (
                       <tr
                         key={i}

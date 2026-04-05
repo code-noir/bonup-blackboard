@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 const STATUS_STYLES: Record<string, { background: string; color: string }> = {
   ACTIVE:    { background: '#0F1F3D', color: '#FFFFFF' },
@@ -68,6 +69,7 @@ const TD: React.CSSProperties = {
 }
 
 export default function Contracts() {
+  const navigate = useNavigate()
   const [hoveredRow, setHoveredRow] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState(0)
   const [isHovered, setIsHovered] = useState(false)
@@ -111,6 +113,7 @@ export default function Contracts() {
         {/* Create a Contract button — absolute top right */}
         <div style={{ position: 'absolute', top: 9, right: 22, zIndex: 1 }}>
           <button
+            onClick={() => navigate('/contracts/create')}
             style={{
               background: '#000000',
               color: '#fff',
@@ -508,6 +511,7 @@ export default function Contracts() {
                 {/* Create a Contract */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
                   <button
+                    onClick={() => navigate('/contracts/create')}
                     style={{
                       background: '#F5A623',
                       color: '#0F1F3D',

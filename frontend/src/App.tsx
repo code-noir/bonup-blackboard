@@ -4,6 +4,8 @@ import RequireAuth from '@/components/RequireAuth'
 import AppShell from '@/components/layout/AppShell'
 import Login from '@/pages/Login'
 import Dashboard from '@/pages/Dashboard'
+import Contracts from '@/pages/Contracts'
+import CreateContract from '@/pages/CreateContract'
 import NotFound from '@/pages/NotFound'
 
 // Placeholder page used for routes not yet built
@@ -34,7 +36,8 @@ export default function App() {
             }
           >
             <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/contracts/*" element={<Placeholder name="Contracts" />} />
+            <Route path="/contracts" element={<Contracts />} />
+            <Route path="/contracts/create" element={<CreateContract />} />
             <Route path="/obligations/*" element={<Placeholder name="Obligations" />} />
             <Route path="/payments/*" element={<Placeholder name="Payments" />} />
             <Route path="/sessions/*" element={<Placeholder name="Live Sessions" />} />

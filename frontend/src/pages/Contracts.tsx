@@ -166,12 +166,13 @@ export default function Contracts() {
             maxHeight: isHovered ? '320px' : '0',
             overflow: 'hidden',
             opacity: isHovered ? 1 : 0,
-            transition: 'max-height 0.3s ease, opacity 0.2s ease',
+            transition: 'max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s ease',
+            transitionDelay: isHovered ? '0s' : '0.1s',
           }}
         >
           <div
             style={{
-              background: '#2A3F55',
+              background: '#3D5068',
               borderRadius: '0 0 11px 11px',
               height: 320,
               overflowY: 'auto',

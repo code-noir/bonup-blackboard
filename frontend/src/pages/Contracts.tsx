@@ -116,9 +116,9 @@ export default function Contracts() {
               key={i}
               onMouseEnter={() => setActiveTab(i)}
               style={{
-                padding: '14px 20px',
-                fontSize: 13,
-                fontWeight: 500,
+                padding: '18px 24px',
+                fontSize: 15,
+                fontWeight: 600,
                 color: activeTab === i ? '#0F1F3D' : '#9CA3AF',
                 borderBottom: activeTab === i ? '2px solid #F5A623' : '2px solid transparent',
                 cursor: 'pointer',
@@ -317,7 +317,7 @@ export default function Contracts() {
               {/* Playlist — hidden when expanded */}
               {!isExpanded && (
                 <div style={{ width: 220, flexShrink: 0 }}>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: '#0F1F3D', margin: '0 0 12px 0' }}>
+                  <p style={{ fontSize: 16, fontWeight: 700, color: '#0F1F3D', margin: '0 0 16px 0' }}>
                     Contract Tutorials
                   </p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -441,7 +441,7 @@ export default function Contracts() {
             flexDirection: 'column',
           }}
         >
-          <p style={{ fontSize: 14, fontWeight: 600, color: '#0F1F3D', margin: '0 0 12px 0' }}>
+          <p style={{ fontSize: 16, fontWeight: 700, color: '#0F1F3D', margin: '0 0 16px 0' }}>
             Ask AI about contracts
           </p>
 

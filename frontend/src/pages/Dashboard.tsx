@@ -1,19 +1,9 @@
-import { useAuth } from '@/context/AuthContext'
-
 export default function Dashboard() {
-  const { user } = useAuth()
-  const firstName = user?.first_name || user?.username || 'there'
-
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900">
-          Welcome back, {firstName}
-        </h2>
-        <p className="mt-1 text-sm text-slate-500">
-          Here's what's happening across your contracts and obligations.
-        </p>
-      </div>
+      <p className="text-sm text-slate-500">
+        Here's what's happening across your contracts and obligations.
+      </p>
 
       {/* Placeholder stat cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

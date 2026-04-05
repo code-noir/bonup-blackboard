@@ -210,21 +210,35 @@ export default function CreateContract() {
 
   return (
     <>
-      {/* ── FOCUS MODE EXIT BUTTON ── */}
+      {/* ── FOCUS MODE FLOATING BUTTONS ── */}
       {focusMode !== 'none' && (
-        <button
-          onClick={exitFocus}
-          style={{
-            position: 'fixed', top: 16, right: 16, zIndex: 201,
-            background: 'rgba(0,0,0,0.6)', color: 'white',
-            border: 'none', borderRadius: 8,
-            padding: '8px 14px', fontSize: 12, cursor: 'pointer',
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.8)')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.6)')}
-        >
-          ⛶ Exit Focus Mode
-        </button>
+        <div style={{
+          position: 'fixed', right: 24, bottom: 48, zIndex: 300,
+          display: 'flex', gap: 8,
+        }}>
+          <button
+            onClick={() => setAiPanelOpen((v) => !v)}
+            style={{
+              background: '#000000', color: 'white', border: 'none',
+              borderRadius: 8, height: 34, padding: '0 16px',
+              fontSize: 12, fontWeight: 500, cursor: 'pointer',
+            }}
+          >
+            ✦ Ask AI
+          </button>
+          <button
+            onClick={exitFocus}
+            style={{
+              background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none',
+              borderRadius: 8, height: 34, padding: '0 16px',
+              fontSize: 12, cursor: 'pointer',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.8)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.6)')}
+          >
+            ⛶ Exit Focus
+          </button>
+        </div>
       )}
 
       {/* ── WORKSPACE: fixed below top bars, above status bar ── */}
@@ -512,7 +526,7 @@ export default function CreateContract() {
           {/* LEFT DRAWER TOGGLE */}
           <button
             onClick={() => setLeftDrawerOpen((v) => !v)}
-            style={{ ...TOGGLE_BTN, borderRadius: '0 4px 4px 0' }}
+            style={{ ...TOGGLE_BTN, borderRadius: '0 4px 4px 0', display: focusMode !== 'none' ? 'none' : 'flex' }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = '#3D5068'
               e.currentTarget.style.color = 'white'
@@ -532,7 +546,8 @@ export default function CreateContract() {
             <div style={{
               padding: 16, background: '#F8FAFC',
               borderBottom: '1px solid #E5E7EB',
-              display: 'flex', justifyContent: 'center', gap: 16, flexShrink: 0,
+              display: focusMode !== 'none' ? 'none' : 'flex',
+              justifyContent: 'center', gap: 16, flexShrink: 0,
             }}>
               {['⊟ Choose a Template', '✎ Start from Scratch'].map((label) => (
                 <button
@@ -584,11 +599,10 @@ export default function CreateContract() {
             >
 
               {/* LEFT EDITOR */}
-              <div style={focusMode === 'left' ? {
-                position: 'fixed', top: 0, left: 0, right: 0, bottom: 32,
-                zIndex: 200, display: 'flex', flexDirection: 'column', background: 'white',
-              } : {
-                width: `${splitPercent}%`, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0,
+              <div style={focusMode === 'right' ? { display: 'none' } : {
+                width: focusMode === 'left' ? '100%' : `${splitPercent}%`,
+                flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0,
+                transition: 'width 0.3s ease',
               }}>
                 <div style={{
                   height: 36, flexShrink: 0,
@@ -617,38 +631,60 @@ export default function CreateContract() {
                     </button>
                   </div>
                 </div>
-                <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 0 }}>
-                  {leftEmpty && (
-                    <div style={{
-                      position: 'absolute',
-                      top: focusMode === 'left' ? 48 : 24,
-                      left: focusMode === 'left' ? 80 : 32,
-                      right: focusMode === 'left' ? 80 : 32,
-                      fontSize: focusMode === 'left' ? 16 : 14,
-                      color: '#9CA3AF', lineHeight: focusMode === 'left' ? 1.8 : 1.6,
-                      pointerEvents: 'none', userSelect: 'none', zIndex: 1,
-                    }}>
-                      Start writing your contract here, choose a template, or ask AI to help...
-                    </div>
-                  )}
-                  <div
-                    ref={leftEditorRef}
-                    contentEditable
-                    suppressContentEditableWarning
-                    onFocus={() => setActiveEditor('left')}
-                    onInput={(e) => setLeftEmpty((e.currentTarget.textContent ?? '') === '')}
-                    style={{
-                      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                      background: 'white',
-                      borderRight: focusMode === 'left' ? 'none' : '1px solid #E5E7EB',
-                      padding: focusMode === 'left' ? '48px 80px' : '24px 32px',
-                      fontSize: focusMode === 'left' ? 16 : 14,
-                      color: '#374151',
-                      lineHeight: focusMode === 'left' ? 1.8 : 1.6,
-                      outline: 'none', overflowY: 'auto',
-                    }}
-                  />
-                </div>
+                {focusMode === 'left' ? (
+                  <div style={{ flex: 1, overflowY: 'auto', background: '#F0F2F5', padding: 24 }}>
+                    {leftEmpty && (
+                      <div style={{
+                        position: 'absolute', pointerEvents: 'none', userSelect: 'none',
+                        fontSize: 16, color: '#9CA3AF', lineHeight: 1.8,
+                        top: 48 + 36, left: 80, right: 80, zIndex: 1,
+                      }}>
+                        Start writing your contract here...
+                      </div>
+                    )}
+                    <div
+                      ref={leftEditorRef}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onFocus={() => setActiveEditor('left')}
+                      onInput={(e) => setLeftEmpty((e.currentTarget.textContent ?? '') === '')}
+                      style={{
+                        maxWidth: 760, margin: '0 auto', display: 'block',
+                        background: 'white',
+                        boxShadow: '0 0 0 1px rgba(0,0,0,0.06), 0 4px 24px rgba(0,0,0,0.08)',
+                        borderRadius: 4, padding: '48px 64px',
+                        minHeight: 'calc(100vh - 300px)',
+                        fontSize: 16, color: '#374151', lineHeight: 1.8,
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 0 }}>
+                    {leftEmpty && (
+                      <div style={{
+                        position: 'absolute', top: 24, left: 32, right: 32,
+                        fontSize: 14, color: '#9CA3AF', lineHeight: 1.6,
+                        pointerEvents: 'none', userSelect: 'none', zIndex: 1,
+                      }}>
+                        Start writing your contract here, choose a template, or ask AI to help...
+                      </div>
+                    )}
+                    <div
+                      ref={leftEditorRef}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onFocus={() => setActiveEditor('left')}
+                      onInput={(e) => setLeftEmpty((e.currentTarget.textContent ?? '') === '')}
+                      style={{
+                        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'white', borderRight: '1px solid #E5E7EB',
+                        padding: '24px 32px', fontSize: 14, color: '#374151',
+                        lineHeight: 1.6, outline: 'none', overflowY: 'auto',
+                      }}
+                    />
+                  </div>
+                )}
               </div>
 
               {/* CENTER DIVIDER — draggable resizer */}
@@ -661,7 +697,8 @@ export default function CreateContract() {
                   background: isDragging ? '#CBD5E1' : '#E5E7EB',
                   cursor: 'col-resize',
                   position: 'relative',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  display: focusMode !== 'none' ? 'none' : 'flex',
+                  alignItems: 'center', justifyContent: 'center',
                 }}
               >
                 <div style={{
@@ -673,10 +710,7 @@ export default function CreateContract() {
               </div>
 
               {/* RIGHT EDITOR */}
-              <div style={focusMode === 'right' ? {
-                position: 'fixed', top: 0, left: 0, right: 0, bottom: 32,
-                zIndex: 200, display: 'flex', flexDirection: 'column', background: 'white',
-              } : {
+              <div style={focusMode === 'left' ? { display: 'none' } : {
                 flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0,
               }}>
                 <div style={{
@@ -706,38 +740,51 @@ export default function CreateContract() {
                     </button>
                   </div>
                 </div>
-                <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 0 }}>
-                  {rightEmpty && (
-                    <div style={{
-                      position: 'absolute',
-                      top: focusMode === 'right' ? 48 : 24,
-                      left: focusMode === 'right' ? 80 : 32,
-                      right: focusMode === 'right' ? 80 : 32,
-                      fontSize: focusMode === 'right' ? 16 : 14,
-                      color: '#9CA3AF', lineHeight: focusMode === 'right' ? 1.8 : 1.6,
-                      pointerEvents: 'none', userSelect: 'none', zIndex: 1,
-                    }}>
-                      Start writing your contract here, choose a template, or ask AI to help...
-                    </div>
-                  )}
-                  <div
-                    ref={rightEditorRef}
-                    contentEditable
-                    suppressContentEditableWarning
-                    onFocus={() => setActiveEditor('right')}
-                    onInput={(e) => setRightEmpty((e.currentTarget.textContent ?? '') === '')}
-                    style={{
-                      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                      background: 'white',
-                      borderLeft: focusMode === 'right' ? 'none' : '1px solid #E5E7EB',
-                      padding: focusMode === 'right' ? '48px 80px' : '24px 32px',
-                      fontSize: focusMode === 'right' ? 16 : 14,
-                      color: '#374151',
-                      lineHeight: focusMode === 'right' ? 1.8 : 1.6,
-                      outline: 'none', overflowY: 'auto',
-                    }}
-                  />
-                </div>
+                {focusMode === 'right' ? (
+                  <div style={{ flex: 1, overflowY: 'auto', background: '#F0F2F5', padding: 24 }}>
+                    <div
+                      ref={rightEditorRef}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onFocus={() => setActiveEditor('right')}
+                      onInput={(e) => setRightEmpty((e.currentTarget.textContent ?? '') === '')}
+                      style={{
+                        maxWidth: 760, margin: '0 auto', display: 'block',
+                        background: 'white',
+                        boxShadow: '0 0 0 1px rgba(0,0,0,0.06), 0 4px 24px rgba(0,0,0,0.08)',
+                        borderRadius: 4, padding: '48px 64px',
+                        minHeight: 'calc(100vh - 300px)',
+                        fontSize: 16, color: '#374151', lineHeight: 1.8,
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 0 }}>
+                    {rightEmpty && (
+                      <div style={{
+                        position: 'absolute', top: 24, left: 32, right: 32,
+                        fontSize: 14, color: '#9CA3AF', lineHeight: 1.6,
+                        pointerEvents: 'none', userSelect: 'none', zIndex: 1,
+                      }}>
+                        Start writing your contract here, choose a template, or ask AI to help...
+                      </div>
+                    )}
+                    <div
+                      ref={rightEditorRef}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onFocus={() => setActiveEditor('right')}
+                      onInput={(e) => setRightEmpty((e.currentTarget.textContent ?? '') === '')}
+                      style={{
+                        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'white', borderLeft: '1px solid #E5E7EB',
+                        padding: '24px 32px', fontSize: 14, color: '#374151',
+                        lineHeight: 1.6, outline: 'none', overflowY: 'auto',
+                      }}
+                    />
+                  </div>
+                )}
               </div>
 
             </div>
@@ -868,7 +915,7 @@ export default function CreateContract() {
           {/* RIGHT DRAWER TOGGLE */}
           <button
             onClick={() => setRightDrawerOpen((v) => !v)}
-            style={{ ...TOGGLE_BTN, borderRadius: '4px 0 0 4px' }}
+            style={{ ...TOGGLE_BTN, borderRadius: '4px 0 0 4px', display: focusMode !== 'none' ? 'none' : 'flex' }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = '#3D5068'
               e.currentTarget.style.color = 'white'

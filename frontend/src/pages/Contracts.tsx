@@ -18,7 +18,7 @@ const TH_DARK: React.CSSProperties = {
   fontSize: 11,
   textTransform: 'uppercase',
   letterSpacing: '0.08em',
-  color: 'rgba(255,255,255,0.5)',
+  color: '#9CA3AF',
   fontWeight: 500,
   padding: '0 12px 8px 0',
   textAlign: 'left',
@@ -27,7 +27,7 @@ const TH_DARK: React.CSSProperties = {
 
 const TD_DARK: React.CSSProperties = {
   fontSize: 13,
-  color: 'rgba(255,255,255,0.85)',
+  color: '#374151',
   padding: '8px 12px 8px 0',
 }
 
@@ -172,7 +172,7 @@ export default function Contracts() {
         >
           <div
             style={{
-              background: '#3D5068',
+              background: '#F0F4F8',
               borderRadius: '0 0 11px 11px',
               height: 320,
               overflowY: 'auto',
@@ -223,7 +223,7 @@ export default function Contracts() {
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
                     <thead>
-                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                      <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
                         <th style={TH_DARK}>Contract Name</th>
                         <th style={TH_DARK}>Party</th>
                         <th style={TH_DARK}>Status</th>
@@ -236,8 +236,8 @@ export default function Contracts() {
                         <tr
                           key={i}
                           style={{
-                            borderBottom: '1px solid rgba(255,255,255,0.06)',
-                            background: hoveredRow === i ? 'rgba(255,255,255,0.05)' : 'transparent',
+                            borderBottom: '1px solid #E5E7EB',
+                            background: hoveredRow === i ? '#E8EDF2' : 'transparent',
                             transition: 'background 0.1s',
                           }}
                           onMouseEnter={() => setHoveredRow(i)}
@@ -250,11 +250,11 @@ export default function Contracts() {
                               {row.status}
                             </span>
                           </td>
-                          <td style={{ ...TD_DARK, color: 'rgba(255,255,255,0.5)' }}>{row.nextDue}</td>
+                          <td style={{ ...TD_DARK, color: '#9CA3AF' }}>{row.nextDue}</td>
                           <td style={{ ...TD_DARK, paddingRight: 0 }}>
                             <button
-                              style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.7)', background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.1)' }}
+                              style={{ fontSize: 12, fontWeight: 500, color: '#374151', background: 'transparent', border: '1px solid #D1D5DB', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#E5E7EB' }}
                               onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
                             >
                               View →
@@ -273,7 +273,7 @@ export default function Contracts() {
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
                   <thead>
-                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                    <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
                       <th style={TH_DARK}>Obligation</th>
                       <th style={TH_DARK}>Contract</th>
                       <th style={TH_DARK}>Status</th>
@@ -310,7 +310,7 @@ export default function Contracts() {
                             {row.status}
                           </span>
                         </td>
-                        <td style={{ ...TD_DARK, paddingRight: 0, color: 'rgba(255,255,255,0.5)' }}>{row.dueDate}</td>
+                        <td style={{ ...TD_DARK, paddingRight: 0, color: '#9CA3AF' }}>{row.dueDate}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -323,7 +323,7 @@ export default function Contracts() {
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
                   <thead>
-                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                    <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
                       <th style={TH_DARK}>Contract</th>
                       <th style={TH_DARK}>Version</th>
                       <th style={TH_DARK}>Parties</th>
@@ -354,7 +354,7 @@ export default function Contracts() {
                         onMouseLeave={() => setHoveredRow(null)}
                       >
                         <td style={{ ...TD_DARK, fontWeight: 500 }}>{row.contract}</td>
-                        <td style={{ ...TD_DARK, color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>{row.version}</td>
+                        <td style={{ ...TD_DARK, color: '#9CA3AF', fontFamily: 'monospace' }}>{row.version}</td>
                         <td style={TD_DARK}>{row.parties}</td>
                         <td style={{ ...TD_DARK, paddingRight: 0 }}>
                           <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', ...STATUS_DARK[row.status] }}>

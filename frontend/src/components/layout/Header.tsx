@@ -3,6 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { MagnifyingGlassIcon, ChevronDownIcon } from '@heroicons/react/24/outline'
 import { useAuth } from '@/context/AuthContext'
 
+const TODAY = new Date().toLocaleDateString('en-US', {
+  weekday: 'long',
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+})
+
 export default function Header() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
@@ -46,9 +53,9 @@ export default function Header() {
         <p style={{ fontSize: 14, fontWeight: 500, color: 'rgba(255,255,255,0.9)', lineHeight: 1.25 }}>
           Welcome back, {firstName}
         </p>
-        <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.25, marginTop: 2, fontFamily: "'DM Mono', monospace" }}>
+        <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.25, marginTop: 6, fontFamily: "'DM Mono', monospace" }}>
           bonID:{' '}
-          <span style={{ color: '#F5A623', fontWeight: 500 }}>{bonId}</span>
+          <span style={{ color: '#D4900A', fontWeight: 500, letterSpacing: '0.15em' }}>{bonId}</span>
         </p>
       </div>
 
@@ -57,7 +64,7 @@ export default function Header() {
         <div className="relative w-full" style={{ maxWidth: 440 }}>
           <MagnifyingGlassIcon
             className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
-            style={{ color: 'rgba(255,255,255,0.28)' }}
+            style={{ color: '#9CA3AF' }}
           />
           <input
             type="search"
@@ -66,11 +73,11 @@ export default function Header() {
             className="w-full pl-9 pr-4 transition-all focus:outline-none"
             style={{
               height: 34,
-              background: 'rgba(255,255,255,0.07)',
+              background: '#ECEEF2',
               border: '1px solid rgba(255,255,255,0.1)',
               borderRadius: 9,
               fontSize: 13,
-              color: 'rgba(255,255,255,0.8)',
+              color: '#1C2B3A',
             }}
             onFocus={(e) => {
               e.currentTarget.style.borderColor = 'rgba(255,255,255,0.25)'
@@ -80,6 +87,14 @@ export default function Header() {
             }}
           />
         </div>
+      </div>
+
+      {/* Date */}
+      <div
+        className="shrink-0 mr-4"
+        style={{ fontSize: 12, fontWeight: 400, color: 'rgba(255,255,255,0.45)', fontFamily: "'Outfit', sans-serif", whiteSpace: 'nowrap' }}
+      >
+        {TODAY}
       </div>
 
       {/* Right — avatar + dropdown */}

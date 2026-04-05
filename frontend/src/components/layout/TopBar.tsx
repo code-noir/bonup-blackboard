@@ -1,4 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+
+const SLOGANS = [
+  'Keeping the world together through clear contracting',
+  'The #1 peer-to-peer contract platform',
+]
 
 type Ad = { title: string; sub: string }
 
@@ -102,6 +107,22 @@ function AdBanner({
 }
 
 export default function TopBar() {
+  const [sloganIdx, setSloganIdx] = useState(0)
+  const [visible, setVisible] = useState(true)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    timerRef.current = setTimeout(function cycle() {
+      setVisible(false)
+      setTimeout(() => {
+        setSloganIdx((i) => (i + 1) % SLOGANS.length)
+        setVisible(true)
+        timerRef.current = setTimeout(cycle, 8000)
+      }, 400)
+    }, 8000)
+    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
+  }, [])
+
   return (
     <div
       className="fixed right-0 z-40 flex h-[64px] items-center px-5"
@@ -122,37 +143,29 @@ export default function TopBar() {
         startDelayMs={0}
       />
 
-      {/* Center — brand */}
-      <div className="flex flex-1 flex-col items-center justify-center">
-        <div style={{
-          fontSize: 10,
-          fontWeight: 600,
-          letterSpacing: '0.22em',
-          textTransform: 'uppercase',
-          marginBottom: 2,
-        }}>
-          <span style={{ color: 'rgba(255,255,255,0.42)' }}>bon</span>
+      {/* Center — brand, single horizontal line */}
+      <div className="flex flex-1 items-center justify-center gap-2" style={{ whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: 14, fontWeight: 600 }}>
+          <span style={{ color: 'rgba(255,255,255,0.5)' }}>bon</span>
           <span style={{ color: '#F5A623' }}>UP</span>
-        </div>
-        <div style={{
-          fontSize: 22,
-          fontWeight: 800,
-          letterSpacing: '-0.02em',
-          color: '#ffffff',
-          lineHeight: 1,
-          marginBottom: 3,
-        }}>
-          Blackboard
-        </div>
-        <div style={{
-          fontSize: 11,
-          fontWeight: 400,
-          fontStyle: 'italic',
-          color: 'rgba(255,255,255,0.68)',
-          whiteSpace: 'nowrap',
-        }}>
-          Keeping the world together through clear contracting
-        </div>
+        </span>
+        <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 14 }}>·</span>
+        <span style={{ fontSize: 18, fontWeight: 800, color: '#ffffff' }}>Blackboard</span>
+        {/* Teal dot */}
+        <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#2DD4BF', flexShrink: 0, margin: '0 10px' }} />
+        <span
+          style={{
+            fontSize: 13,
+            fontWeight: 400,
+            fontStyle: 'italic',
+            color: 'rgba(255,255,255,0.68)',
+            opacity: visible ? 1 : 0,
+            transition: 'opacity 0.4s ease',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {SLOGANS[sloganIdx]}
+        </span>
       </div>
 
       {/* Right — Internal ad banner */}

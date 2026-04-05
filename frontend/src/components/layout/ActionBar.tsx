@@ -2,9 +2,9 @@ const BTN: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   height: 28,
-  padding: '0 14px',
+  padding: '0 10px',
   borderRadius: 7,
-  fontSize: 12,
+  fontSize: 11,
   fontWeight: 500,
   fontFamily: "'Outfit', sans-serif",
   color: 'rgba(255,255,255,0.58)',
@@ -43,6 +43,10 @@ export default function ActionBar() {
       <GhostBtn label="+ New Contract" />
       <GhostBtn label="⊟ Browse Templates" />
       <GhostBtn label="⌕ Find a User" />
+      <GhostBtn label="⚡ Negotiation Prep" />
+      <GhostBtn label="✓ My Obligations" />
+      <GhostBtn label="◎ Sol Balance" />
+      <GhostBtn label="✦ Ask AI" />
     </div>
   )
 }

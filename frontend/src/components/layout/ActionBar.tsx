@@ -49,10 +49,6 @@ export default function ActionBar() {
       <GhostBtn label="✦ Ask AI" />
       <GhostBtn label="🌐 Language" />
       <GhostBtn label="+ Contact" />
-
-      {/* Spacer pushes PBVD to far right */}
-      <div style={{ flex: 1 }} />
-
       <button
         style={{
           display: 'inline-flex',
@@ -63,18 +59,17 @@ export default function ActionBar() {
           fontSize: 11,
           fontWeight: 600,
           fontFamily: "'Outfit', sans-serif",
-          color: '#0F2830',
-          background: '#2DD4BF',
+          color: '#000000',
+          background: '#ffffff',
           border: 'none',
           cursor: 'pointer',
           whiteSpace: 'nowrap',
-          transition: 'opacity 0.15s',
-          flexShrink: 0,
+          transition: 'background 0.15s',
         }}
-        onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
-        onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+        onMouseEnter={(e) => (e.currentTarget.style.background = '#F0F0F0')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = '#ffffff')}
       >
-        PBVD
+        My Account
       </button>
     </div>
   )

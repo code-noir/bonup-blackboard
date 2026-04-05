@@ -89,12 +89,33 @@ export default function Header() {
         </div>
       </div>
 
-      {/* Date */}
-      <div
-        className="shrink-0 mr-4"
-        style={{ fontSize: 12, fontWeight: 400, color: 'rgba(255,255,255,0.45)', fontFamily: "'Outfit', sans-serif", whiteSpace: 'nowrap' }}
-      >
-        {TODAY}
+      {/* PBVD + Date */}
+      <div className="shrink-0 mr-4 flex items-center" style={{ gap: 12 }}>
+        <button
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            height: 26,
+            padding: '0 12px',
+            borderRadius: 7,
+            fontSize: 11,
+            fontWeight: 600,
+            fontFamily: "'Outfit', sans-serif",
+            color: '#0F2830',
+            background: '#2DD4BF',
+            border: 'none',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            transition: 'opacity 0.15s',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
+          onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+        >
+          PBVD
+        </button>
+        <span style={{ fontSize: 12, fontWeight: 400, color: 'rgba(255,255,255,0.45)', fontFamily: "'Outfit', sans-serif", whiteSpace: 'nowrap' }}>
+          {TODAY}
+        </span>
       </div>
 
       {/* Right — avatar + dropdown */}

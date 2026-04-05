@@ -602,6 +602,7 @@ export default function CreateContract() {
             transition: toolPanelSnapping ? 'width 0.3s ease' : 'none',
             overflow: 'hidden',
             background: '#E8EFF5',
+            boxShadow: '4px 0 12px rgba(0,0,0,0.08)',
             position: 'relative',
           }}>
             <div style={{ width: toolPanelWidth, height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>

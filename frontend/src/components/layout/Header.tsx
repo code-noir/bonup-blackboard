@@ -133,6 +133,23 @@ export default function Header() {
         </span>
       </div>
 
+      {/* Tier badge — next to avatar */}
+      <span
+        style={{
+          flexShrink: 0,
+          fontSize: 13,
+          fontWeight: 600,
+          color: '#9D174D',
+          background: '#FFE4E6',
+          padding: '3px 12px',
+          borderRadius: 20,
+          marginRight: 8,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        Business
+      </span>
+
       {/* Right — avatar + dropdown */}
       <div className="relative shrink-0" ref={ref}>
         <button

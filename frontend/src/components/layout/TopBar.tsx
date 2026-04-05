@@ -156,6 +156,8 @@ export default function TopBar() {
         <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#2DD4BF', flexShrink: 0, margin: '0 10px' }} />
         <span
           style={{
+            display: 'inline-block',
+            minWidth: 390,
             fontSize: 13,
             fontWeight: 400,
             fontStyle: 'italic',

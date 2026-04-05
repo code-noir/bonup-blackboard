@@ -117,7 +117,7 @@ export default function CreateContract() {
   const [splitPercent, setSplitPercent] = useState(50)
   const [isDragging, setIsDragging] = useState(false)
   const [aiPanelHeight, setAiPanelHeight] = useState(280)
-  const [focusMode, setFocusMode] = useState<'none' | 'left' | 'right'>('none')
+  const [focusMode, setFocusMode] = useState<'none' | 'left' | 'right'>('left')
   const [toolPanelWidth, setToolPanelWidth] = useState(280)
   const [toolPanelSnapping, setToolPanelSnapping] = useState(false)
 

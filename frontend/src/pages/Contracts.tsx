@@ -7,6 +7,30 @@ const STATUS_STYLES: Record<string, { background: string; color: string }> = {
   COMPLETED: { background: '#9CA3AF', color: '#FFFFFF' },
 }
 
+const STATUS_DARK: Record<string, { background: string; color: string }> = {
+  ACTIVE:    { background: 'rgba(255,255,255,0.15)', color: '#ffffff' },
+  PENDING:   { background: '#F5A623',                color: '#0F1F3D' },
+  OVERDUE:   { background: '#DC2626',                color: '#ffffff' },
+  COMPLETED: { background: 'rgba(255,255,255,0.1)',  color: 'rgba(255,255,255,0.6)' },
+}
+
+const TH_DARK: React.CSSProperties = {
+  fontSize: 11,
+  textTransform: 'uppercase',
+  letterSpacing: '0.08em',
+  color: 'rgba(255,255,255,0.5)',
+  fontWeight: 500,
+  padding: '0 12px 12px 0',
+  textAlign: 'left',
+  whiteSpace: 'nowrap',
+}
+
+const TD_DARK: React.CSSProperties = {
+  fontSize: 13,
+  color: 'rgba(255,255,255,0.85)',
+  padding: '13px 12px 13px 0',
+}
+
 const CONTRACTS = [
   { name: 'Meridian Labs — Q2 Services',    party: 'Meridian Labs',   status: 'ACTIVE',    nextDue: '2026-05-01' },
   { name: 'Vanta Digital Retainer',          party: 'Vanta Digital',   status: 'PENDING',   nextDue: '2026-04-18' },
@@ -134,7 +158,7 @@ export default function Contracts() {
         {/* Content area — max-height transition, normal document flow */}
         <div
           style={{
-            maxHeight: isHovered ? '340px' : '0',
+            maxHeight: isHovered ? '320px' : '0',
             overflow: 'hidden',
             opacity: isHovered ? 1 : 0,
             transition: 'max-height 0.3s ease, opacity 0.2s ease',
@@ -142,11 +166,9 @@ export default function Contracts() {
         >
           <div
             style={{
-              background: '#fff',
+              background: '#2A3F55',
               borderRadius: '0 0 11px 11px',
-              border: '1px solid rgba(0,0,0,0.05)',
-              borderTop: 'none',
-              maxHeight: 320,
+              height: 320,
               overflowY: 'auto',
               padding: '0 22px 20px',
             }}
@@ -171,12 +193,12 @@ export default function Contracts() {
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
                     <thead>
-                      <tr style={{ borderBottom: '1px solid #F3F4F6' }}>
-                        <th style={TH}>Contract Name</th>
-                        <th style={TH}>Party</th>
-                        <th style={TH}>Status</th>
-                        <th style={TH}>Next Due Date</th>
-                        <th style={{ ...TH, paddingRight: 0 }}></th>
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                        <th style={TH_DARK}>Contract Name</th>
+                        <th style={TH_DARK}>Party</th>
+                        <th style={TH_DARK}>Status</th>
+                        <th style={TH_DARK}>Next Due Date</th>
+                        <th style={{ ...TH_DARK, paddingRight: 0 }}></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -184,23 +206,27 @@ export default function Contracts() {
                         <tr
                           key={i}
                           style={{
-                            borderBottom: i < rows.length - 1 ? '1px solid #F3F4F6' : 'none',
-                            background: hoveredRow === i ? '#F9FAFB' : 'transparent',
+                            borderBottom: '1px solid rgba(255,255,255,0.06)',
+                            background: hoveredRow === i ? 'rgba(255,255,255,0.05)' : 'transparent',
                             transition: 'background 0.1s',
                           }}
                           onMouseEnter={() => setHoveredRow(i)}
                           onMouseLeave={() => setHoveredRow(null)}
                         >
-                          <td style={{ ...TD, fontWeight: 500 }}>{row.name}</td>
-                          <td style={TD}>{row.party}</td>
-                          <td style={TD}>
-                            <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', ...STATUS_STYLES[row.status] }}>
+                          <td style={{ ...TD_DARK, fontWeight: 500 }}>{row.name}</td>
+                          <td style={TD_DARK}>{row.party}</td>
+                          <td style={TD_DARK}>
+                            <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', ...STATUS_DARK[row.status] }}>
                               {row.status}
                             </span>
                           </td>
-                          <td style={{ ...TD, color: '#6B7280' }}>{row.nextDue}</td>
-                          <td style={{ ...TD, paddingRight: 0 }}>
-                            <button style={{ fontSize: 12, fontWeight: 500, color: '#0F1F3D', background: 'transparent', border: '1px solid #000', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                          <td style={{ ...TD_DARK, color: 'rgba(255,255,255,0.5)' }}>{row.nextDue}</td>
+                          <td style={{ ...TD_DARK, paddingRight: 0 }}>
+                            <button
+                              style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.7)', background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.1)' }}
+                              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
+                            >
                               View →
                             </button>
                           </td>
@@ -217,11 +243,11 @@ export default function Contracts() {
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
                   <thead>
-                    <tr style={{ borderBottom: '1px solid #F3F4F6' }}>
-                      <th style={TH}>Obligation</th>
-                      <th style={TH}>Contract</th>
-                      <th style={TH}>Status</th>
-                      <th style={{ ...TH, paddingRight: 0 }}>Due Date</th>
+                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                      <th style={TH_DARK}>Obligation</th>
+                      <th style={TH_DARK}>Contract</th>
+                      <th style={TH_DARK}>Status</th>
+                      <th style={{ ...TH_DARK, paddingRight: 0 }}>Due Date</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -229,25 +255,25 @@ export default function Contracts() {
                       { obligation: 'Monthly Payment — Apr', contract: 'Meridian Labs Q2',        status: 'ACTIVE', dueDate: '2026-04-10' },
                       { obligation: 'Delivery Milestone 2',  contract: 'Orin Staffing Agreement',  status: 'ACTIVE', dueDate: '2026-04-14' },
                       { obligation: 'Quarterly Review',      contract: 'Fenix Creative Studio',    status: 'ACTIVE', dueDate: '2026-04-20' },
-                    ].map((row, i, arr) => (
+                    ].map((row, i) => (
                       <tr
                         key={i}
                         style={{
-                          borderBottom: i < arr.length - 1 ? '1px solid #F3F4F6' : 'none',
-                          background: hoveredRow === i ? '#F9FAFB' : 'transparent',
+                          borderBottom: '1px solid rgba(255,255,255,0.06)',
+                          background: hoveredRow === i ? 'rgba(255,255,255,0.05)' : 'transparent',
                           transition: 'background 0.1s',
                         }}
                         onMouseEnter={() => setHoveredRow(i)}
                         onMouseLeave={() => setHoveredRow(null)}
                       >
-                        <td style={{ ...TD, fontWeight: 500 }}>{row.obligation}</td>
-                        <td style={TD}>{row.contract}</td>
-                        <td style={TD}>
-                          <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', ...STATUS_STYLES[row.status] }}>
+                        <td style={{ ...TD_DARK, fontWeight: 500 }}>{row.obligation}</td>
+                        <td style={TD_DARK}>{row.contract}</td>
+                        <td style={TD_DARK}>
+                          <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', ...STATUS_DARK[row.status] }}>
                             {row.status}
                           </span>
                         </td>
-                        <td style={{ ...TD, paddingRight: 0, color: '#6B7280' }}>{row.dueDate}</td>
+                        <td style={{ ...TD_DARK, paddingRight: 0, color: 'rgba(255,255,255,0.5)' }}>{row.dueDate}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -260,33 +286,33 @@ export default function Contracts() {
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
                   <thead>
-                    <tr style={{ borderBottom: '1px solid #F3F4F6' }}>
-                      <th style={TH}>Contract</th>
-                      <th style={TH}>Version</th>
-                      <th style={TH}>Parties</th>
-                      <th style={{ ...TH, paddingRight: 0 }}>Status</th>
+                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                      <th style={TH_DARK}>Contract</th>
+                      <th style={TH_DARK}>Version</th>
+                      <th style={TH_DARK}>Parties</th>
+                      <th style={{ ...TH_DARK, paddingRight: 0 }}>Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {[
                       { contract: 'Clearpath Partnership',  version: 'v0.3', parties: 'bonUP, Clearpath Inc',  status: 'PENDING' },
                       { contract: 'Vantage Consulting MSA', version: 'v0.1', parties: 'bonUP, Vantage Group',  status: 'PENDING' },
-                    ].map((row, i, arr) => (
+                    ].map((row, i) => (
                       <tr
                         key={i}
                         style={{
-                          borderBottom: i < arr.length - 1 ? '1px solid #F3F4F6' : 'none',
-                          background: hoveredRow === i ? '#F9FAFB' : 'transparent',
+                          borderBottom: '1px solid rgba(255,255,255,0.06)',
+                          background: hoveredRow === i ? 'rgba(255,255,255,0.05)' : 'transparent',
                           transition: 'background 0.1s',
                         }}
                         onMouseEnter={() => setHoveredRow(i)}
                         onMouseLeave={() => setHoveredRow(null)}
                       >
-                        <td style={{ ...TD, fontWeight: 500 }}>{row.contract}</td>
-                        <td style={{ ...TD, color: '#6B7280', fontFamily: 'monospace' }}>{row.version}</td>
-                        <td style={TD}>{row.parties}</td>
-                        <td style={{ ...TD, paddingRight: 0 }}>
-                          <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', ...STATUS_STYLES[row.status] }}>
+                        <td style={{ ...TD_DARK, fontWeight: 500 }}>{row.contract}</td>
+                        <td style={{ ...TD_DARK, color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>{row.version}</td>
+                        <td style={TD_DARK}>{row.parties}</td>
+                        <td style={{ ...TD_DARK, paddingRight: 0 }}>
+                          <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', ...STATUS_DARK[row.status] }}>
                             {row.status}
                           </span>
                         </td>

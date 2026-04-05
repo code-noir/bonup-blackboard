@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+@keyframes bonup-marquee {
+  from { transform: translateX(200px) translateY(-50%); }
+  to   { transform: translateX(-100%) translateY(-50%); }
+}
+
 @theme {
   /* bonUP brand palette */
   --color-navy:        #0F1F3D;   /* primary */

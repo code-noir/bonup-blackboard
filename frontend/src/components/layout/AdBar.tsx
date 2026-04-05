@@ -26,49 +26,53 @@ function AdSlot({
   offsetMs?: number
 }) {
   const [index, setIndex] = useState(0)
-  const [visible, setVisible] = useState(true)
+  const [active, setActive] = useState(offsetMs === 0)
 
+  // For the gold banner, wait for the offset before showing the first ad
   useEffect(() => {
-    const boot = setTimeout(() => {
-      const id = setInterval(() => {
-        setVisible(false)
-        setTimeout(() => {
-          setIndex((i) => (i + 1) % ads.length)
-          setVisible(true)
-        }, 350)
-      }, 4000)
-      return () => clearInterval(id)
-    }, offsetMs)
-    return () => clearTimeout(boot)
-  }, [ads.length, offsetMs])
+    if (offsetMs === 0) return
+    const t = setTimeout(() => setActive(true), offsetMs)
+    return () => clearTimeout(t)
+  }, [offsetMs])
 
   return (
     <div
-      className="flex h-9 w-[200px] items-center justify-center rounded-lg px-4"
+      className="relative h-9 w-[200px] overflow-hidden rounded-lg"
       style={{ backgroundColor: bg }}
     >
-      <p
-        className="text-[11px] font-medium tracking-wide transition-opacity duration-300 text-center"
-        style={{ color, opacity: visible ? 1 : 0 }}
-      >
-        {ads[index]}
-      </p>
+      {active && (
+        // key={index} unmounts+remounts the span each cycle, restarting the animation
+        <span
+          key={index}
+          onAnimationEnd={() => setIndex((i) => (i + 1) % ads.length)}
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: 0,
+            color,
+            whiteSpace: 'nowrap',
+            fontSize: '11px',
+            fontWeight: 500,
+            letterSpacing: '0.025em',
+            animation: 'bonup-marquee 4s linear forwards',
+          }}
+        >
+          {ads[index]}
+        </span>
+      )}
     </div>
   )
 }
 
 export default function AdBar() {
   return (
-    // Same grid as the dashboard stat cards: grid-cols-4 gap-4 px-6
-    // col-span-2 + justify-center centers each banner over the
-    // gap between cols 1–2 and cols 3–4 respectively.
     <div className="fixed top-[104px] left-60 right-0 z-30 h-[52px] border-b border-slate-200 bg-[#F7F8FA]">
       <div className="grid h-full grid-cols-4 items-center gap-4 px-6">
         <div className="col-span-2 flex justify-center">
-          <AdSlot ads={BONUP_ADS} bg="#0F1F3D" color="#ffffff" offsetMs={0} />
+          <AdSlot ads={BONUP_ADS}   bg="#0F1F3D" color="#ffffff" offsetMs={0}    />
         </div>
         <div className="col-span-2 flex justify-center">
-          <AdSlot ads={PARTNER_ADS} bg="#F5A623" color="#0F1F3D" offsetMs={2000} />
+          <AdSlot ads={PARTNER_ADS} bg="#F5A623" color="#0F1F3D" offsetMs={6000} />
         </div>
       </div>
     </div>

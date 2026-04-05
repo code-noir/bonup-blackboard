@@ -84,7 +84,7 @@ export default function Login() {
                 </label>
                 <Link
                   to="/forgot-password"
-                  className="text-xs text-[#F5A623] hover:text-[#d4891a]"
+                  className="text-xs text-[#0F1F3D] hover:text-[#1E3A6E]"
                 >
                   Forgot password?
                 </Link>
@@ -120,7 +120,7 @@ export default function Login() {
             Don't have an account?{' '}
             <Link
               to="/register"
-              className="font-medium text-[#F5A623] hover:text-[#d4891a]"
+              className="font-medium text-[#0F1F3D] hover:text-[#1E3A6E]"
             >
               Sign up
             </Link>

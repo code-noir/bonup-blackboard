@@ -94,7 +94,6 @@ export default function CreateContract() {
   const [rightDrawerOpen, setRightDrawerOpen] = useState(true)
   const [activeEditor, setActiveEditor] = useState<'left' | 'right'>('left')
   const [videoExpanded, setVideoExpanded] = useState(false)
-  const [aiExpanded, setAiExpanded] = useState(false)
   const [aiPanelOpen, setAiPanelOpen] = useState(false)
   const [aiPanelMessage, setAiPanelMessage] = useState('')
   const [aiPanelChat, setAiPanelChat] = useState([
@@ -103,10 +102,6 @@ export default function CreateContract() {
   const [contractTitle, setContractTitle] = useState('')
   const [contractStatus, setContractStatus] = useState('Draft')
   const [hoverDescription] = useState('')
-  const [aiMessage, setAiMessage] = useState('')
-  const [aiChat, setAiChat] = useState([
-    { role: 'ai', text: "I can help you draft, review, and improve your contract. What do you need?" },
-  ])
   const [fontFamily, setFontFamily] = useState('Arial')
   const [fontSize, setFontSize] = useState('14')
   const [leftEmpty, setLeftEmpty] = useState(true)
@@ -122,16 +117,6 @@ export default function CreateContract() {
   function execCmd(cmd: string, value?: string) {
     getActiveRef().current?.focus()
     document.execCommand(cmd, false, value)
-  }
-
-  function sendAiMessage() {
-    const trimmed = aiMessage.trim()
-    if (!trimmed) return
-    setAiChat((prev) => [...prev, { role: 'user', text: trimmed }])
-    setAiMessage('')
-    setTimeout(() => {
-      setAiChat((prev) => [...prev, { role: 'ai', text: 'AI assistant coming soon. Stay tuned!' }])
-    }, 600)
   }
 
   const TOGGLE_BTN: React.CSSProperties = {
@@ -728,13 +713,12 @@ export default function CreateContract() {
 
               {/* Activity Feed */}
               <div style={{
-                height: aiExpanded ? 0 : '50%',
+                height: '50%',
                 overflow: 'hidden',
                 flexShrink: 0,
                 borderBottom: '1px solid #E5E7EB',
                 display: 'flex', flexDirection: 'column',
-                transition: 'height 0.3s ease',
-                padding: aiExpanded ? 0 : 16,
+                padding: 16,
               }}>
                 <p style={{
                   fontSize: 12, fontWeight: 600, color: '#374151',
@@ -758,84 +742,50 @@ export default function CreateContract() {
                 </div>
               </div>
 
-              {/* AI Assistant */}
-              <div style={{
-                flex: 1, display: 'flex', flexDirection: 'column',
-                padding: 16, overflow: 'hidden', minHeight: 0,
-              }}>
+              {/* Party Info */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
                 <div style={{
-                  display: 'flex', alignItems: 'center',
-                  marginBottom: 8, flexShrink: 0,
+                  padding: '16px 16px 8px',
+                  borderBottom: '1px solid #E5E7EB',
+                  flexShrink: 0,
                 }}>
                   <p style={{
                     fontSize: 12, fontWeight: 600, color: '#374151',
                     textTransform: 'uppercase', letterSpacing: '0.08em',
-                    margin: 0, flex: 1,
+                    margin: 0,
                   }}>
-                    AI Assistant
+                    Party Info
                   </p>
-                  <button
-                    onClick={() => setAiExpanded((v) => !v)}
-                    title={aiExpanded ? 'Collapse' : 'Expand'}
-                    style={{
-                      background: 'transparent', border: 'none',
-                      color: '#9CA3AF', fontSize: 13,
-                      cursor: 'pointer', padding: '2px 4px', borderRadius: 4,
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
-                    onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
-                  >
-                    {aiExpanded ? '⊟' : '⊞'}
-                  </button>
                 </div>
 
-                {/* Chat messages */}
-                <div style={{
-                  flex: 1, overflowY: 'auto',
-                  background: 'white', borderRadius: 8,
-                  padding: 12, marginBottom: 8,
-                  minHeight: 120, display: 'flex', flexDirection: 'column', gap: 8,
-                }}>
-                  {aiChat.map((msg, i) => (
-                    <div key={i} style={{
-                      display: 'flex',
-                      justifyContent: msg.role === 'ai' ? 'flex-start' : 'flex-end',
-                    }}>
-                      <span style={{
-                        background: msg.role === 'ai' ? '#EFF6FF' : '#0F1F3D',
-                        color: msg.role === 'ai' ? '#1E40AF' : '#fff',
-                        borderRadius: 8, padding: '8px 12px',
-                        fontSize: 12, maxWidth: '85%', lineHeight: 1.5,
-                      }}>
-                        {msg.text}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                <div style={{ padding: 16 }}>
+                  {/* Avatar */}
+                  <div style={{
+                    width: 44, height: 44, borderRadius: '50%',
+                    background: '#E5E7EB',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 16, color: '#6B7280',
+                    marginBottom: 10,
+                  }}>
+                    ?
+                  </div>
 
-                {/* Input */}
-                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                  <input
-                    type="text"
-                    value={aiMessage}
-                    onChange={(e) => setAiMessage(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && sendAiMessage()}
-                    placeholder="Ask AI..."
-                    style={{
-                      flex: 1, border: '1px solid #E5E7EB',
-                      borderRadius: 8, padding: '8px 12px',
-                      fontSize: 12, outline: 'none',
-                    }}
-                  />
+                  <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 16px 0' }}>
+                    No party selected yet
+                  </p>
+
                   <button
-                    onClick={sendAiMessage}
                     style={{
-                      background: '#000000', color: 'white',
-                      border: 'none', borderRadius: 8,
-                      padding: '8px 14px', fontSize: 12, cursor: 'pointer',
+                      width: '100%', height: 32,
+                      background: 'transparent',
+                      border: '1px solid #D1D5DB',
+                      borderRadius: 8, fontSize: 12,
+                      color: '#374151', cursor: 'pointer',
                     }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = '#F9FAFB')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                   >
-                    Send
+                    + Add Party
                   </button>
                 </div>
               </div>

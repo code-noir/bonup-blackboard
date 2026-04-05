@@ -137,7 +137,6 @@ export default function CreateContract() {
 
   function enterFocus(side: 'left' | 'right') {
     prevRightDrawer.current = rightDrawerOpen
-    setActiveTool(null)
     setRightDrawerOpen(false)
     setFocusMode(side)
   }
@@ -217,18 +216,25 @@ export default function CreateContract() {
     window.addEventListener('mouseup', onMouseUp)
   }
 
+  function toolPanelMax() {
+    // In focus mode, cap so the document sheet never goes below 400px (+ 48px padding)
+    const docMin = focusMode !== 'none' ? 400 + 48 : 0
+    return Math.max(280, Math.min(560, window.innerWidth - 48 - 52 - docMin))
+  }
+
   function onToolPanelHandleMouseDown(e: React.MouseEvent) {
     e.preventDefault()
     setToolPanelSnapping(false)
     const startX = e.clientX
     const startWidth = toolPanelWidth
+    const maxW = toolPanelMax()
 
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
 
     function onMouseMove(ev: MouseEvent) {
       const delta = ev.clientX - startX
-      setToolPanelWidth(Math.min(560, Math.max(280, startWidth + delta)))
+      setToolPanelWidth(Math.min(maxW, Math.max(280, startWidth + delta)))
     }
 
     function onMouseUp() {
@@ -244,7 +250,8 @@ export default function CreateContract() {
 
   function snapToolPanel() {
     setToolPanelSnapping(true)
-    setToolPanelWidth((w) => (w >= 560 ? 280 : 560))
+    const maxW = toolPanelMax()
+    setToolPanelWidth((w) => (w >= maxW ? 280 : maxW))
   }
 
   function calcInput(val: string) {
@@ -535,7 +542,7 @@ export default function CreateContract() {
           <div style={{
             width: 52, flexShrink: 0,
             background: '#1C2B3A',
-            display: focusMode !== 'none' ? 'none' : 'flex',
+            display: 'flex',
             flexDirection: 'column',
             alignItems: 'center', paddingTop: 8,
             gap: 2,
@@ -593,7 +600,7 @@ export default function CreateContract() {
 
           {/* TOOL PANEL */}
           <div style={{
-            width: activeTool && focusMode === 'none' ? toolPanelWidth : 0,
+            width: activeTool ? toolPanelWidth : 0,
             flexShrink: 0,
             transition: toolPanelSnapping ? 'width 0.3s ease' : 'none',
             overflow: 'hidden',

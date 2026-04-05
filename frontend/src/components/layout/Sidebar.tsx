@@ -46,8 +46,8 @@ function NavItem({
         [
           'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
           isActive
-            ? 'bg-indigo-700 text-white'
-            : 'text-slate-300 hover:bg-slate-700 hover:text-white',
+            ? 'bg-[#8B5CF6] text-white'
+            : 'text-white/80 hover:bg-white/10 hover:text-white',
         ].join(' ')
       }
     >
@@ -59,12 +59,12 @@ function NavItem({
 
 export default function Sidebar() {
   return (
-    <aside className="flex h-screen w-60 shrink-0 flex-col bg-slate-900">
+    <aside className="flex h-screen w-60 shrink-0 flex-col bg-[#0F1F3D]">
       {/* Logo */}
       <div className="flex h-16 items-center px-5">
         <span className="text-lg font-bold tracking-tight text-white">
-          bon<span className="text-indigo-400">UP</span>
-          <span className="ml-2 text-xs font-normal text-slate-400 uppercase tracking-widest">
+          bon<span className="text-[#F5A623]">UP</span>
+          <span className="ml-2 text-xs font-normal text-white/40 uppercase tracking-widest">
             Blackboard
           </span>
         </span>
@@ -78,7 +78,7 @@ export default function Sidebar() {
       </nav>
 
       {/* Bottom nav */}
-      <div className="border-t border-slate-700 px-3 py-3 space-y-0.5">
+      <div className="border-t border-white/10 px-3 py-3 space-y-0.5">
         {bottomNav.map((item) => (
           <NavItem key={item.to} {...item} />
         ))}

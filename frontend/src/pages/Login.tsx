@@ -37,14 +37,14 @@ export default function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+    <div className="flex min-h-screen items-center justify-center bg-[#F7F8FA] px-4">
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="mb-8 text-center">
-          <p className="text-3xl font-bold tracking-tight text-slate-900">
-            bon<span className="text-indigo-600">UP</span>
+          <p className="text-3xl font-bold tracking-tight text-[#0F1F3D]">
+            bon<span className="text-[#F5A623]">UP</span>
           </p>
-          <p className="mt-1 text-sm text-slate-500 uppercase tracking-widest">
+          <p className="mt-1 text-sm text-[#0F1F3D] uppercase tracking-widest">
             Blackboard
           </p>
         </div>
@@ -84,7 +84,7 @@ export default function Login() {
                 </label>
                 <Link
                   to="/forgot-password"
-                  className="text-xs text-indigo-600 hover:text-indigo-700"
+                  className="text-xs text-[#F5A623] hover:text-[#d4891a]"
                 >
                   Forgot password?
                 </Link>
@@ -110,7 +110,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-60 transition-colors"
+              className="w-full rounded-lg bg-[#8B5CF6] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#7C3AED] focus:outline-none focus:ring-2 focus:ring-[#8B5CF6] focus:ring-offset-2 disabled:opacity-60 transition-colors"
             >
               {loading ? 'Signing in…' : 'Sign in'}
             </button>
@@ -120,7 +120,7 @@ export default function Login() {
             Don't have an account?{' '}
             <Link
               to="/register"
-              className="font-medium text-indigo-600 hover:text-indigo-700"
+              className="font-medium text-[#F5A623] hover:text-[#d4891a]"
             >
               Sign up
             </Link>

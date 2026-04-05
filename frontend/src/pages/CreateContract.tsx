@@ -124,7 +124,7 @@ export default function CreateContract() {
   const leftEditorRef = useRef<HTMLDivElement>(null)
   const rightEditorRef = useRef<HTMLDivElement>(null)
   const editorsRowRef = useRef<HTMLDivElement>(null)
-  const prevRightDrawer = useRef(true)
+
 
   function getActiveRef() {
     return activeEditor === 'left' ? leftEditorRef : rightEditorRef
@@ -136,14 +136,11 @@ export default function CreateContract() {
   }
 
   function enterFocus(side: 'left' | 'right') {
-    prevRightDrawer.current = rightDrawerOpen
-    setRightDrawerOpen(false)
     setFocusMode(side)
   }
 
   function exitFocus() {
     setFocusMode('none')
-    setRightDrawerOpen(prevRightDrawer.current)
   }
 
   useEffect(() => {
@@ -1099,7 +1096,7 @@ export default function CreateContract() {
           {/* RIGHT DRAWER TOGGLE */}
           <button
             onClick={() => setRightDrawerOpen((v) => !v)}
-            style={{ ...TOGGLE_BTN, borderRadius: '4px 0 0 4px', display: focusMode !== 'none' ? 'none' : 'flex' }}
+            style={{ ...TOGGLE_BTN, borderRadius: '4px 0 0 4px' }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = '#3D5068'
               e.currentTarget.style.color = 'white'

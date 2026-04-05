@@ -118,6 +118,8 @@ export default function CreateContract() {
   const [isDragging, setIsDragging] = useState(false)
   const [aiPanelHeight, setAiPanelHeight] = useState(280)
   const [focusMode, setFocusMode] = useState<'none' | 'left' | 'right'>('none')
+  const [toolPanelWidth, setToolPanelWidth] = useState(280)
+  const [toolPanelSnapping, setToolPanelSnapping] = useState(false)
 
   const leftEditorRef = useRef<HTMLDivElement>(null)
   const rightEditorRef = useRef<HTMLDivElement>(null)
@@ -213,6 +215,36 @@ export default function CreateContract() {
 
     window.addEventListener('mousemove', onMouseMove)
     window.addEventListener('mouseup', onMouseUp)
+  }
+
+  function onToolPanelHandleMouseDown(e: React.MouseEvent) {
+    e.preventDefault()
+    setToolPanelSnapping(false)
+    const startX = e.clientX
+    const startWidth = toolPanelWidth
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    function onMouseMove(ev: MouseEvent) {
+      const delta = ev.clientX - startX
+      setToolPanelWidth(Math.min(560, Math.max(280, startWidth + delta)))
+    }
+
+    function onMouseUp() {
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  }
+
+  function snapToolPanel() {
+    setToolPanelSnapping(true)
+    setToolPanelWidth((w) => (w >= 560 ? 280 : 560))
   }
 
   function calcInput(val: string) {
@@ -561,13 +593,14 @@ export default function CreateContract() {
 
           {/* TOOL PANEL */}
           <div style={{
-            width: activeTool && focusMode === 'none' ? 280 : 0,
+            width: activeTool && focusMode === 'none' ? toolPanelWidth : 0,
             flexShrink: 0,
-            transition: 'width 0.3s ease',
+            transition: toolPanelSnapping ? 'width 0.3s ease' : 'none',
             overflow: 'hidden',
             background: '#1E3A55',
+            position: 'relative',
           }}>
-            <div style={{ width: 280, height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ width: toolPanelWidth, height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
               {activeTool && (
                 <>
                   {/* Panel header */}
@@ -580,6 +613,19 @@ export default function CreateContract() {
                       {activeTool}
                     </span>
                     <button
+                      onClick={snapToolPanel}
+                      title={toolPanelWidth >= 560 ? 'Collapse panel' : 'Expand panel'}
+                      style={{
+                        background: 'transparent', border: 'none',
+                        color: 'rgba(255,255,255,0.5)', fontSize: 14,
+                        cursor: 'pointer', padding: '0 4px', lineHeight: 1, marginRight: 4,
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = 'white')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.5)')}
+                    >
+                      ⇔
+                    </button>
+                    <button
                       onClick={() => setActiveTool(null)}
                       style={{
                         background: 'transparent', border: 'none',
@@ -591,6 +637,26 @@ export default function CreateContract() {
                     >
                       ✕
                     </button>
+                  </div>
+
+                  {/* Drag handle on right edge */}
+                  <div
+                    onMouseDown={onToolPanelHandleMouseDown}
+                    style={{
+                      position: 'absolute', right: 0, top: 0, bottom: 0,
+                      width: 6, cursor: 'col-resize',
+                      background: 'rgba(255,255,255,0.05)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      zIndex: 5,
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.15)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+                  >
+                    <div style={{
+                      width: 3, height: 40,
+                      background: 'rgba(255,255,255,0.2)',
+                      borderRadius: 3, pointerEvents: 'none',
+                    }} />
                   </div>
 
                   {/* Panel content */}

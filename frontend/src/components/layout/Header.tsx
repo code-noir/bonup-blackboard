@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { UserCircleIcon, ChevronDownIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline'
+import { MagnifyingGlassIcon, ChevronDownIcon } from '@heroicons/react/24/outline'
 import { useAuth } from '@/context/AuthContext'
 
 export default function Header() {
@@ -28,42 +28,83 @@ export default function Header() {
   const bonId = user?.bon_id ?? '—'
   const displayName =
     user?.first_name ? `${user.first_name} ${user.last_name}`.trim() : user?.username ?? ''
+  const initials =
+    [user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join('').toUpperCase() ||
+    user?.username?.[0]?.toUpperCase() ||
+    '?'
 
   return (
-    <div className="fixed top-10 left-60 right-0 z-40 flex h-16 items-center border-b border-slate-200 bg-white px-5">
-
+    <div
+      className="fixed left-60 right-0 z-40 flex h-[50px] items-center px-5"
+      style={{
+        top: 34,
+        background: 'rgba(22,36,56,0.95)',
+        backdropFilter: 'blur(12px)',
+        borderBottom: '1px solid rgba(255,255,255,0.05)',
+      }}
+    >
       {/* Left — welcome + bonID */}
-      <div className="shrink-0 min-w-[150px]">
-        <p className="text-[13px] font-semibold leading-tight text-[#0F1F3D]">
+      <div className="shrink-0 min-w-[160px]">
+        <p style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.85)', lineHeight: 1.3 }}>
           Welcome back, {firstName}
         </p>
-        <p className="mt-0.5 text-[11px] leading-tight text-slate-400">
-          bonID: {bonId}
+        <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', lineHeight: 1.3, marginTop: 1 }}>
+          bonID:{' '}
+          <span style={{ color: '#8B5CF6', fontFamily: "'DM Mono', monospace" }}>{bonId}</span>
         </p>
       </div>
 
-      {/* Center — search bar */}
+      {/* Center — search */}
       <div className="flex flex-1 justify-center">
-        <div className="relative w-[300px]">
-          <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <div className="relative w-full max-w-[400px]">
+          <MagnifyingGlassIcon
+            className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
+            style={{ color: 'rgba(255,255,255,0.25)' }}
+          />
           <input
             type="search"
             readOnly
             placeholder="Search contracts, users, obligations..."
-            className="w-full cursor-pointer rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-4 text-[13px] text-slate-500 placeholder:text-slate-400 focus:outline-none"
+            className="w-full rounded-lg pl-8 pr-4 text-[12px] transition-colors focus:outline-none"
+            style={{
+              height: 32,
+              background: 'rgba(255,255,255,0.07)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 8,
+              color: 'rgba(255,255,255,0.7)',
+              caretColor: '#8B5CF6',
+            }}
+            onFocus={(e) => {
+              e.currentTarget.style.background = 'rgba(255,255,255,0.10)'
+              e.currentTarget.style.borderColor = 'rgba(139,92,246,0.4)'
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.background = 'rgba(255,255,255,0.07)'
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'
+            }}
           />
         </div>
       </div>
 
-      {/* Right — user menu */}
+      {/* Right — avatar + dropdown */}
       <div className="relative shrink-0" ref={ref}>
         <button
           onClick={() => setOpen((o) => !o)}
-          className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100 transition-colors"
+          className="flex items-center gap-2 rounded-lg px-2 py-1 transition-colors"
+          style={{ color: 'rgba(255,255,255,0.6)' }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
         >
-          <UserCircleIcon className="h-5 w-5 text-slate-400" />
-          <span className="max-w-[140px] truncate text-[13px] font-medium">{displayName}</span>
-          <ChevronDownIcon className="h-3.5 w-3.5 text-slate-400" />
+          <div
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
+            style={{ background: '#8B5CF6' }}
+          >
+            {initials}
+          </div>
+          <span style={{ fontSize: 12, maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {displayName}
+          </span>
+          <ChevronDownIcon className="h-3 w-3 opacity-50" />
         </button>
 
         {open && (

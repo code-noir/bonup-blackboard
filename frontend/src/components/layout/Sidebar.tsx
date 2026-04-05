@@ -42,14 +42,31 @@ function NavItem({
   return (
     <NavLink
       to={to}
-      className={({ isActive }) =>
-        [
-          'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-          isActive
-            ? 'border-l-2 border-[#F5A623] bg-white/10 pl-[10px] text-white'
-            : 'border-l-2 border-transparent pl-[10px] text-white/80 hover:bg-white/10 hover:text-white',
-        ].join(' ')
+      className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors border-l-2 pl-[10px]"
+      style={({ isActive }) =>
+        isActive
+          ? {
+              background: 'rgba(139,92,246,0.15)',
+              borderLeftColor: '#8B5CF6',
+              color: '#ffffff',
+            }
+          : {
+              borderLeftColor: 'transparent',
+              color: 'rgba(255,255,255,0.5)',
+            }
       }
+      onMouseEnter={(e) => {
+        if (!e.currentTarget.getAttribute('aria-current')) {
+          e.currentTarget.style.background = 'rgba(255,255,255,0.06)'
+          e.currentTarget.style.color = 'rgba(255,255,255,0.85)'
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!e.currentTarget.getAttribute('aria-current')) {
+          e.currentTarget.style.background = 'transparent'
+          e.currentTarget.style.color = 'rgba(255,255,255,0.5)'
+        }
+      }}
     >
       <Icon className="h-5 w-5 shrink-0" />
       {label}
@@ -59,7 +76,10 @@ function NavItem({
 
 export default function Sidebar() {
   return (
-    <aside className="fixed top-10 left-0 bottom-0 z-40 flex w-60 flex-col bg-[#0F1F3D]">
+    <aside
+      className="fixed left-0 bottom-0 z-40 flex w-60 flex-col bg-[#0F1F3D]"
+      style={{ top: 34 }}
+    >
       {/* Main nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
         {nav.map((item) => (

@@ -1,47 +1,95 @@
 import { useState, useEffect } from 'react'
 
-const BONUP_ADS = [
-  'bonUP Pro — Upgrade your experience',
-  'bonUP Templates — Start any contract in seconds',
-  'bonUP Sessions — Go live with your partner',
-  'bonUP Sol — Manage your payments seamlessly',
+type Ad = { title: string; sub: string }
+
+const BONUP_ADS: Ad[] = [
+  { title: 'bonUP Pro',        sub: 'Upgrade your experience today'  },
+  { title: 'bonUP Templates',  sub: 'Start any contract in seconds'  },
+  { title: 'bonUP Sessions',   sub: 'Go live with your partner'      },
+  { title: 'bonUP Sol',        sub: 'Manage payments seamlessly'     },
 ]
 
-const PARTNER_ADS = [
-  'Advertise with bonUP — Reach your audience',
-  'Partner Spotlight — Coming soon',
-  'Your brand here — Contact us',
-  'bonUP Partners — Growing network',
+const PARTNER_ADS: Ad[] = [
+  { title: 'Advertise Here',    sub: 'Reach the bonUP network'      },
+  { title: 'Partner Spotlight', sub: 'Coming soon'                  },
+  { title: 'Your Brand',        sub: 'Contact us to get started'    },
+  { title: 'bonUP Partners',    sub: 'Growing every day'            },
 ]
+
+// Total cycle per ad = 12s slide. Right banner offset by 6s.
 
 function AdSlot({
   ads,
-  bg,
-  color,
-  offsetMs = 0,
+  dotColor,
+  accentBorder,
+  borderColor,
+  startDelayMs = 0,
 }: {
-  ads: string[]
-  bg: string
-  color: string
-  offsetMs?: number
+  ads: Ad[]
+  dotColor: string
+  accentBorder: string
+  borderColor: string
+  startDelayMs?: number
 }) {
   const [index, setIndex] = useState(0)
-  const [active, setActive] = useState(offsetMs === 0)
+  const [started, setStarted] = useState(startDelayMs === 0)
 
-  // For the gold banner, wait for the offset before showing the first ad
   useEffect(() => {
-    if (offsetMs === 0) return
-    const t = setTimeout(() => setActive(true), offsetMs)
+    if (startDelayMs === 0) return
+    const t = setTimeout(() => setStarted(true), startDelayMs)
     return () => clearTimeout(t)
-  }, [offsetMs])
+  }, [startDelayMs])
+
+  const ad = ads[index]
 
   return (
     <div
-      className="relative h-9 w-[200px] overflow-hidden rounded-lg"
-      style={{ backgroundColor: bg }}
+      style={{
+        position: 'relative',
+        width: 300,
+        height: 34,
+        overflow: 'hidden',
+        borderRadius: 8,
+        background: 'rgba(15,31,61,0.9)',
+        border: `1px solid ${borderColor}`,
+        borderLeft: `2px solid ${accentBorder}`,
+        flexShrink: 0,
+      }}
     >
-      {active && (
-        // key={index} unmounts+remounts the span each cycle, restarting the animation
+      {/* Fixed: dot + title + divider — overlays sliding sub text */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '50%',
+          left: 10,
+          transform: 'translateY(-50%)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          whiteSpace: 'nowrap',
+          zIndex: 2,
+          // Background mask so sub text disappears under the title
+          background: 'rgba(15,31,61,0.9)',
+          paddingRight: 8,
+        }}
+      >
+        <div
+          style={{
+            width: 5,
+            height: 5,
+            borderRadius: '50%',
+            backgroundColor: dotColor,
+            flexShrink: 0,
+          }}
+        />
+        <span style={{ fontSize: 11, fontWeight: 600, color: '#ffffff', letterSpacing: '0.01em' }}>
+          {ad.title}
+        </span>
+        <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>·</span>
+      </div>
+
+      {/* Sliding sub text */}
+      {started && (
         <span
           key={index}
           onAnimationEnd={() => setIndex((i) => (i + 1) % ads.length)}
@@ -49,15 +97,15 @@ function AdSlot({
             position: 'absolute',
             top: '50%',
             left: 0,
-            color,
             whiteSpace: 'nowrap',
-            fontSize: '11px',
-            fontWeight: 500,
-            letterSpacing: '0.025em',
-            animation: 'bonup-marquee 4s linear forwards',
+            fontSize: 10,
+            fontWeight: 300,
+            color: 'rgba(255,255,255,0.4)',
+            zIndex: 1,
+            animation: 'bonup-sub-slide 12s linear forwards',
           }}
         >
-          {ads[index]}
+          {ad.sub}
         </span>
       )}
     </div>
@@ -66,15 +114,28 @@ function AdSlot({
 
 export default function AdBar() {
   return (
-    <div className="fixed top-[104px] left-60 right-0 z-30 h-[52px] border-b border-slate-200 bg-[#F7F8FA]">
-      <div className="grid h-full grid-cols-4 items-center gap-4 px-6">
-        <div className="col-span-2 flex justify-center">
-          <AdSlot ads={BONUP_ADS}   bg="#0F1F3D" color="#ffffff" offsetMs={0}    />
-        </div>
-        <div className="col-span-2 flex justify-center">
-          <AdSlot ads={PARTNER_ADS} bg="#F5A623" color="#0F1F3D" offsetMs={6000} />
-        </div>
-      </div>
+    <div
+      className="fixed left-60 right-0 z-30 flex h-[48px] items-center justify-center gap-4"
+      style={{
+        top: 84,
+        background: 'rgba(18,30,48,0.97)',
+        backdropFilter: 'blur(12px)',
+      }}
+    >
+      <AdSlot
+        ads={BONUP_ADS}
+        dotColor="#F5A623"
+        accentBorder="#F5A623"
+        borderColor="rgba(245,166,35,0.2)"
+        startDelayMs={0}
+      />
+      <AdSlot
+        ads={PARTNER_ADS}
+        dotColor="#8B5CF6"
+        accentBorder="#8B5CF6"
+        borderColor="rgba(139,92,246,0.2)"
+        startDelayMs={6000}
+      />
     </div>
   )
 }

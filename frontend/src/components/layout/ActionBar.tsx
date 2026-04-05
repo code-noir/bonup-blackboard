@@ -59,17 +59,17 @@ export default function ActionBar() {
           fontSize: 11,
           fontWeight: 600,
           fontFamily: "'Outfit', sans-serif",
-          color: '#000000',
-          background: '#ffffff',
+          color: '#0F2830',
+          background: '#2DD4BF',
           border: 'none',
           cursor: 'pointer',
           whiteSpace: 'nowrap',
-          transition: 'background 0.15s',
+          transition: 'opacity 0.15s',
         }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = '#F0F0F0')}
-        onMouseLeave={(e) => (e.currentTarget.style.background = '#ffffff')}
+        onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
+        onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
       >
-        My Account
+        PBVD
       </button>
     </div>
   )

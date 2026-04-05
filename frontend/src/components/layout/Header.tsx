@@ -101,17 +101,17 @@ export default function Header() {
             fontSize: 11,
             fontWeight: 600,
             fontFamily: "'Outfit', sans-serif",
-            color: '#0F2830',
-            background: '#2DD4BF',
+            color: '#000000',
+            background: '#ffffff',
             border: 'none',
             cursor: 'pointer',
             whiteSpace: 'nowrap',
-            transition: 'opacity 0.15s',
+            transition: 'background 0.15s',
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+          onMouseEnter={(e) => (e.currentTarget.style.background = '#F0F0F0')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = '#ffffff')}
         >
-          PBVD
+          My Account
         </button>
         <span style={{ fontSize: 12, fontWeight: 400, color: 'rgba(255,255,255,0.45)', fontFamily: "'Outfit', sans-serif", whiteSpace: 'nowrap' }}>
           {TODAY}

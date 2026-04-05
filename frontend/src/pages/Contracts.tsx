@@ -426,6 +426,27 @@ export default function Contracts() {
                     {isExpanded ? '⤡ Collapse' : '⤢ Expand'}
                   </button>
                 </div>
+
+                {/* Create a Contract */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+                  <button
+                    style={{
+                      background: '#F5A623',
+                      color: '#0F1F3D',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      height: 34,
+                      padding: '0 18px',
+                      borderRadius: 8,
+                      border: 'none',
+                      cursor: 'pointer',
+                    }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#D4900A' }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#F5A623' }}
+                  >
+                    Create a Contract
+                  </button>
+                </div>
               </div>
 
             </div>

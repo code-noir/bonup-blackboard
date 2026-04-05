@@ -95,6 +95,11 @@ export default function CreateContract() {
   const [activeEditor, setActiveEditor] = useState<'left' | 'right'>('left')
   const [videoExpanded, setVideoExpanded] = useState(false)
   const [aiExpanded, setAiExpanded] = useState(false)
+  const [aiPanelOpen, setAiPanelOpen] = useState(false)
+  const [aiPanelMessage, setAiPanelMessage] = useState('')
+  const [aiPanelChat, setAiPanelChat] = useState([
+    { role: 'ai', text: 'Hi! I can help you draft, review, and improve your contract. What would you like to do?' },
+  ])
   const [contractTitle, setContractTitle] = useState('')
   const [contractStatus, setContractStatus] = useState('Draft')
   const [hoverDescription] = useState('')
@@ -445,7 +450,7 @@ export default function CreateContract() {
               borderBottom: '1px solid #E5E7EB',
               display: 'flex', justifyContent: 'center', gap: 16, flexShrink: 0,
             }}>
-              {['⊟ Choose a Template', '✦ Ask AI', '✎ Start from Scratch'].map((label) => (
+              {['⊟ Choose a Template', '✎ Start from Scratch'].map((label) => (
                 <button
                   key={label}
                   style={{
@@ -465,10 +470,31 @@ export default function CreateContract() {
                   {label}
                 </button>
               ))}
+              {/* Ask AI — toggles the slide-up panel */}
+              <button
+                onClick={() => setAiPanelOpen((v) => !v)}
+                style={{
+                  height: 36, padding: '0 20px', borderRadius: 8,
+                  fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                  border: aiPanelOpen ? '1px solid #BFDBFE' : '1px solid #D1D5DB',
+                  background: aiPanelOpen ? '#EFF6FF' : 'white',
+                  color: aiPanelOpen ? '#1E40AF' : '#374151',
+                }}
+              >
+                ✦ Ask AI
+              </button>
             </div>
 
-            {/* Editors row */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden', minHeight: 0 }}>
+            {/* Editors + AI panel wrapper */}
+            <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 0 }}>
+
+            {/* Editors row — shrinks to make room when AI panel is open */}
+            <div style={{
+              height: aiPanelOpen ? 'calc(100% - 280px)' : '100%',
+              transition: 'height 0.35s ease',
+              display: 'flex', flexDirection: 'row', overflow: 'hidden',
+              minHeight: 200,
+            }}>
 
               {/* LEFT EDITOR */}
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
@@ -564,6 +590,113 @@ export default function CreateContract() {
               </div>
 
             </div>
+
+              {/* AI PANEL — slides up from bottom of center area */}
+              <div style={{
+                position: 'absolute', bottom: 0, left: 0, right: 0,
+                height: 280,
+                background: '#ffffff',
+                borderTop: '2px solid #E5E7EB',
+                boxShadow: '0 -4px 20px rgba(0,0,0,0.08)',
+                borderRadius: '12px 12px 0 0',
+                transform: aiPanelOpen ? 'translateY(0)' : 'translateY(100%)',
+                transition: 'transform 0.35s ease',
+                display: 'flex', flexDirection: 'column',
+                zIndex: 10,
+              }}>
+                {/* Header */}
+                <div style={{
+                  padding: '12px 16px',
+                  borderBottom: '1px solid #F3F4F6',
+                  display: 'flex', alignItems: 'center', flexShrink: 0,
+                }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#0F1F3D', flex: 1 }}>
+                    AI Assistant
+                  </span>
+                  <button
+                    onClick={() => setAiPanelOpen(false)}
+                    style={{
+                      background: 'transparent', border: 'none',
+                      color: '#9CA3AF', fontSize: 16, cursor: 'pointer',
+                      lineHeight: 1, padding: '0 2px',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Chat area */}
+                <div style={{
+                  flex: 1, overflowY: 'auto',
+                  padding: '12px 16px',
+                  display: 'flex', flexDirection: 'column', gap: 8,
+                }}>
+                  {aiPanelChat.map((msg, i) => (
+                    <div key={i} style={{
+                      display: 'flex',
+                      justifyContent: msg.role === 'ai' ? 'flex-start' : 'flex-end',
+                    }}>
+                      <span style={{
+                        background: msg.role === 'ai' ? '#EFF6FF' : '#0F1F3D',
+                        color: msg.role === 'ai' ? '#1E40AF' : '#fff',
+                        borderRadius: 8, padding: '8px 12px',
+                        fontSize: 13, maxWidth: '80%', lineHeight: 1.5,
+                      }}>
+                        {msg.text}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Input row */}
+                <div style={{
+                  padding: '12px 16px',
+                  borderTop: '1px solid #F3F4F6',
+                  display: 'flex', gap: 8, flexShrink: 0,
+                }}>
+                  <input
+                    type="text"
+                    value={aiPanelMessage}
+                    onChange={(e) => setAiPanelMessage(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const t = aiPanelMessage.trim()
+                        if (!t) return
+                        setAiPanelChat((prev) => [...prev, { role: 'user', text: t }])
+                        setAiPanelMessage('')
+                        setTimeout(() => setAiPanelChat((prev) => [...prev, { role: 'ai', text: 'AI assistant coming soon. Stay tuned!' }]), 600)
+                      }
+                    }}
+                    placeholder="Ask AI anything about this contract..."
+                    style={{
+                      flex: 1, border: '1px solid #E5E7EB',
+                      borderRadius: 8, padding: '8px 12px',
+                      fontSize: 13, outline: 'none',
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      const t = aiPanelMessage.trim()
+                      if (!t) return
+                      setAiPanelChat((prev) => [...prev, { role: 'user', text: t }])
+                      setAiPanelMessage('')
+                      setTimeout(() => setAiPanelChat((prev) => [...prev, { role: 'ai', text: 'AI assistant coming soon. Stay tuned!' }]), 600)
+                    }}
+                    style={{
+                      background: '#000000', color: 'white',
+                      border: 'none', borderRadius: 8,
+                      padding: '8px 16px', fontSize: 12,
+                      fontWeight: 500, cursor: 'pointer', flexShrink: 0,
+                    }}
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+
+            </div>{/* end editors+panel wrapper */}
           </div>
 
           {/* RIGHT DRAWER TOGGLE */}

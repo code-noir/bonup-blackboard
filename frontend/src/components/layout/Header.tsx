@@ -63,14 +63,11 @@ export default function Header() {
       <span
         style={{
           flexShrink: 0,
-          marginRight: 16,
-          fontSize: 11,
-          fontWeight: 600,
-          color: '#F5A623',
-          background: 'rgba(245,166,35,0.12)',
-          border: '1px solid rgba(245,166,35,0.3)',
-          padding: '3px 10px',
-          borderRadius: 20,
+          marginRight: 20,
+          fontSize: 13,
+          fontWeight: 700,
+          color: '#E91E8C',
+          letterSpacing: '0.04em',
           whiteSpace: 'nowrap',
         }}
       >

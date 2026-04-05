@@ -47,6 +47,35 @@ export default function ActionBar() {
       <GhostBtn label="✓ My Obligations" />
       <GhostBtn label="◎ Sol Balance" />
       <GhostBtn label="✦ Ask AI" />
+      <GhostBtn label="🌐 Language" />
+      <GhostBtn label="+ Contact" />
+
+      {/* Spacer pushes PBVD to far right */}
+      <div style={{ flex: 1 }} />
+
+      <button
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          height: 26,
+          padding: '0 12px',
+          borderRadius: 7,
+          fontSize: 11,
+          fontWeight: 600,
+          fontFamily: "'Outfit', sans-serif",
+          color: '#0F2830',
+          background: '#2DD4BF',
+          border: 'none',
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+          transition: 'opacity 0.15s',
+          flexShrink: 0,
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
+        onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+      >
+        PBVD
+      </button>
     </div>
   )
 }

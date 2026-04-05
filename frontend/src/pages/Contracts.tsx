@@ -40,6 +40,8 @@ const TD: React.CSSProperties = {
 
 export default function Contracts() {
   const [hoveredRow, setHoveredRow] = useState<number | null>(null)
+  const [activeTab, setActiveTab] = useState(0)
+  const [isHovered, setIsHovered] = useState(false)
   const [selectedVideo, setSelectedVideo] = useState(0)
   const [isExpanded, setIsExpanded] = useState(false)
   const [message, setMessage] = useState('')
@@ -71,27 +73,14 @@ export default function Contracts() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-      {/* ── SECTION 1: MY CONTRACTS ── */}
-      <div style={{ ...CARD }}>
-        {/* Section header */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '20px 22px 0 22px',
-          }}
-        >
-          <p
-            style={{
-              fontSize: 14,
-              fontWeight: 600,
-              color: '#0F1F3D',
-              margin: 0,
-            }}
-          >
-            My Contracts
-          </p>
+      {/* ── SECTION 1: HOVER TAB SYSTEM ── */}
+      <div
+        style={{ position: 'relative' }}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        {/* Create a Contract button — absolute top right */}
+        <div style={{ position: 'absolute', top: 9, right: 22, zIndex: 1 }}>
           <button
             style={{
               background: '#000000',
@@ -110,70 +99,199 @@ export default function Contracts() {
           </button>
         </div>
 
-        {/* Table */}
-        <div style={{ overflowX: 'auto', padding: '0 22px 20px 22px' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #F3F4F6' }}>
-                <th style={TH}>Contract Name</th>
-                <th style={TH}>Party</th>
-                <th style={TH}>Status</th>
-                <th style={TH}>Next Due Date</th>
-                <th style={{ ...TH, paddingRight: 0 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {CONTRACTS.map((row, i) => (
-                <tr
-                  key={i}
-                  style={{
-                    borderBottom: i < CONTRACTS.length - 1 ? '1px solid #F3F4F6' : 'none',
-                    background: hoveredRow === i ? '#F9FAFB' : 'transparent',
-                    transition: 'background 0.1s',
-                  }}
-                  onMouseEnter={() => setHoveredRow(i)}
-                  onMouseLeave={() => setHoveredRow(null)}
-                >
-                  <td style={{ ...TD, fontWeight: 500 }}>{row.name}</td>
-                  <td style={TD}>{row.party}</td>
-                  <td style={TD}>
-                    <span
-                      style={{
-                        display: 'inline-block',
-                        padding: '2px 10px',
-                        borderRadius: 20,
-                        fontSize: 11,
-                        fontWeight: 600,
-                        letterSpacing: '0.04em',
-                        ...STATUS_STYLES[row.status],
-                      }}
-                    >
-                      {row.status}
-                    </span>
-                  </td>
-                  <td style={{ ...TD, color: '#6B7280' }}>{row.nextDue}</td>
-                  <td style={{ ...TD, paddingRight: 0 }}>
-                    <button
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 500,
-                        color: '#0F1F3D',
-                        background: 'transparent',
-                        border: '1px solid #000',
-                        borderRadius: 6,
-                        padding: '4px 10px',
-                        cursor: 'pointer',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      View →
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {/* Tab row */}
+        <div
+          style={{
+            background: '#fff',
+            borderRadius: isHovered ? '11px 11px 0 0' : 11,
+            border: '1px solid rgba(0,0,0,0.05)',
+            borderBottom: isHovered ? '1px solid #E5E7EB' : '1px solid rgba(0,0,0,0.05)',
+            padding: '0 22px',
+            display: 'flex',
+            gap: 0,
+          }}
+        >
+          {['My Contracts', 'Pending Review', 'Active Obligations', 'Negotiations', 'Expiring Soon', 'Archived'].map((tab, i) => (
+            <div
+              key={i}
+              onMouseEnter={() => setActiveTab(i)}
+              style={{
+                padding: '14px 20px',
+                fontSize: 13,
+                fontWeight: 500,
+                color: activeTab === i ? '#0F1F3D' : '#9CA3AF',
+                borderBottom: activeTab === i ? '2px solid #F5A623' : '2px solid transparent',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                marginBottom: -1,
+                userSelect: 'none' as const,
+              }}
+            >
+              {tab}
+            </div>
+          ))}
         </div>
+
+        {/* Content area — visible only while hovering the wrapper */}
+        {isHovered && (
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '0 0 11px 11px',
+              border: '1px solid rgba(0,0,0,0.05)',
+              borderTop: 'none',
+              padding: '0 22px 20px',
+              minHeight: 200,
+            }}
+          >
+
+            {/* Helper: contract-style table */}
+            {[0, 1, 4, 5].includes(activeTab) && (() => {
+              const rows =
+                activeTab === 0 ? CONTRACTS :
+                activeTab === 1 ? [
+                  { name: 'Vanta Digital Retainer',    party: 'Vanta Digital',  status: 'PENDING', nextDue: '2026-04-18' },
+                  { name: 'Nexus SaaS Agreement',      party: 'Nexus SaaS',     status: 'PENDING', nextDue: '2026-04-25' },
+                ] :
+                activeTab === 4 ? [
+                  { name: 'Vanta Digital Retainer',    party: 'Vanta Digital',  status: 'ACTIVE',  nextDue: '2026-04-18' },
+                  { name: 'Orin Staffing Agreement',   party: 'Orin Staffing',  status: 'OVERDUE', nextDue: '2026-04-03' },
+                ] : [
+                  { name: 'Clearpath Inc — Delivery SLA',  party: 'Clearpath Inc',  status: 'COMPLETED', nextDue: '—' },
+                  { name: 'Atlas Corp Q1 Contract',         party: 'Atlas Corp',     status: 'COMPLETED', nextDue: '—' },
+                ]
+              return (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid #F3F4F6' }}>
+                        <th style={TH}>Contract Name</th>
+                        <th style={TH}>Party</th>
+                        <th style={TH}>Status</th>
+                        <th style={TH}>Next Due Date</th>
+                        <th style={{ ...TH, paddingRight: 0 }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row, i) => (
+                        <tr
+                          key={i}
+                          style={{
+                            borderBottom: i < rows.length - 1 ? '1px solid #F3F4F6' : 'none',
+                            background: hoveredRow === i ? '#F9FAFB' : 'transparent',
+                            transition: 'background 0.1s',
+                          }}
+                          onMouseEnter={() => setHoveredRow(i)}
+                          onMouseLeave={() => setHoveredRow(null)}
+                        >
+                          <td style={{ ...TD, fontWeight: 500 }}>{row.name}</td>
+                          <td style={TD}>{row.party}</td>
+                          <td style={TD}>
+                            <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', ...STATUS_STYLES[row.status] }}>
+                              {row.status}
+                            </span>
+                          </td>
+                          <td style={{ ...TD, color: '#6B7280' }}>{row.nextDue}</td>
+                          <td style={{ ...TD, paddingRight: 0 }}>
+                            <button style={{ fontSize: 12, fontWeight: 500, color: '#0F1F3D', background: 'transparent', border: '1px solid #000', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                              View →
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            })()}
+
+            {/* Tab 2: Active Obligations */}
+            {activeTab === 2 && (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #F3F4F6' }}>
+                      <th style={TH}>Obligation</th>
+                      <th style={TH}>Contract</th>
+                      <th style={TH}>Status</th>
+                      <th style={{ ...TH, paddingRight: 0 }}>Due Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      { obligation: 'Monthly Payment — Apr', contract: 'Meridian Labs Q2',       status: 'ACTIVE', dueDate: '2026-04-10' },
+                      { obligation: 'Delivery Milestone 2',  contract: 'Orin Staffing Agreement', status: 'ACTIVE', dueDate: '2026-04-14' },
+                      { obligation: 'Quarterly Review',      contract: 'Fenix Creative Studio',   status: 'ACTIVE', dueDate: '2026-04-20' },
+                    ].map((row, i, arr) => (
+                      <tr
+                        key={i}
+                        style={{
+                          borderBottom: i < arr.length - 1 ? '1px solid #F3F4F6' : 'none',
+                          background: hoveredRow === i ? '#F9FAFB' : 'transparent',
+                          transition: 'background 0.1s',
+                        }}
+                        onMouseEnter={() => setHoveredRow(i)}
+                        onMouseLeave={() => setHoveredRow(null)}
+                      >
+                        <td style={{ ...TD, fontWeight: 500 }}>{row.obligation}</td>
+                        <td style={TD}>{row.contract}</td>
+                        <td style={TD}>
+                          <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', ...STATUS_STYLES[row.status] }}>
+                            {row.status}
+                          </span>
+                        </td>
+                        <td style={{ ...TD, paddingRight: 0, color: '#6B7280' }}>{row.dueDate}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Tab 3: Negotiations */}
+            {activeTab === 3 && (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #F3F4F6' }}>
+                      <th style={TH}>Contract</th>
+                      <th style={TH}>Version</th>
+                      <th style={TH}>Parties</th>
+                      <th style={{ ...TH, paddingRight: 0 }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      { contract: 'Clearpath Partnership',   version: 'v0.3', parties: 'bonUP, Clearpath Inc',   status: 'PENDING' },
+                      { contract: 'Vantage Consulting MSA',  version: 'v0.1', parties: 'bonUP, Vantage Group',   status: 'PENDING' },
+                    ].map((row, i, arr) => (
+                      <tr
+                        key={i}
+                        style={{
+                          borderBottom: i < arr.length - 1 ? '1px solid #F3F4F6' : 'none',
+                          background: hoveredRow === i ? '#F9FAFB' : 'transparent',
+                          transition: 'background 0.1s',
+                        }}
+                        onMouseEnter={() => setHoveredRow(i)}
+                        onMouseLeave={() => setHoveredRow(null)}
+                      >
+                        <td style={{ ...TD, fontWeight: 500 }}>{row.contract}</td>
+                        <td style={{ ...TD, color: '#6B7280', fontFamily: 'monospace' }}>{row.version}</td>
+                        <td style={TD}>{row.parties}</td>
+                        <td style={{ ...TD, paddingRight: 0 }}>
+                          <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', ...STATUS_STYLES[row.status] }}>
+                            {row.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+          </div>
+        )}
       </div>
 
       {/* ── SECTIONS 2 & 3: bottom half grid ── */}

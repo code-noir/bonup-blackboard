@@ -2453,19 +2453,21 @@ export default function CreateContract() {
                 {activeEditor === 'left' && (
                   <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#2DD4BF' }} />
                 )}
-                <button
-                  onClick={() => focusMode === 'left' ? exitFocus() : enterFocus('left')}
-                  title="Focus mode"
-                  style={{
-                    background: 'transparent', border: 'none',
-                    color: '#9CA3AF', fontSize: 14, cursor: 'pointer', padding: 4,
-                    marginLeft: 'auto',
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
-                  onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
-                >
-                  ⛶
-                </button>
+                {focusMode !== 'right' && (
+                  <button
+                    onClick={() => focusMode === 'left' ? exitFocus() : enterFocus('left')}
+                    title={focusMode === 'left' ? 'Exit focus mode' : 'Focus mode'}
+                    style={{
+                      background: 'transparent', border: 'none',
+                      color: '#9CA3AF', fontSize: 14, cursor: 'pointer', padding: 4,
+                      marginLeft: 'auto',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
+                  >
+                    ⛶
+                  </button>
+                )}
               </div>
               {/* Final Editor header */}
               <div style={{
@@ -2477,19 +2479,21 @@ export default function CreateContract() {
                 {activeEditor === 'right' && (
                   <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#2DD4BF' }} />
                 )}
-                <button
-                  onClick={() => focusMode === 'right' ? exitFocus() : enterFocus('right')}
-                  title="Focus mode"
-                  style={{
-                    background: 'transparent', border: 'none',
-                    color: '#9CA3AF', fontSize: 14, cursor: 'pointer', padding: 4,
-                    marginLeft: 'auto',
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
-                  onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
-                >
-                  ⛶
-                </button>
+                {focusMode !== 'left' && (
+                  <button
+                    onClick={() => focusMode === 'right' ? exitFocus() : enterFocus('right')}
+                    title={focusMode === 'right' ? 'Exit focus mode' : 'Focus mode'}
+                    style={{
+                      background: 'transparent', border: 'none',
+                      color: '#9CA3AF', fontSize: 14, cursor: 'pointer', padding: 4,
+                      marginLeft: 'auto',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
+                  >
+                    ⛶
+                  </button>
+                )}
               </div>
             </div>
 

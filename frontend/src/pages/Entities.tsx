@@ -356,10 +356,10 @@ export default function Entities() {
           onClick={(e) => { if (e.target === e.currentTarget) closePanel() }}
         >
           <div style={{
-            position: 'fixed', right: 0, top: 0,
+            position: 'fixed', left: 0, top: 0,
             height: '100vh', width: 400,
             background: 'white',
-            boxShadow: '-4px 0 24px rgba(0,0,0,0.1)',
+            boxShadow: '4px 0 24px rgba(0,0,0,0.1)',
             zIndex: 401,
             display: 'flex', flexDirection: 'column',
             transform: 'translateX(0)',

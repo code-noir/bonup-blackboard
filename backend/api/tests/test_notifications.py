@@ -15,7 +15,7 @@ from backend.activity.log import log_activity
 from backend.notifications.models import Notification
 from backend.notifications.notify import notify
 
-from .helpers import authed_client, make_contract, make_user
+from .helpers import authed_client, make_contract, make_subscription, make_user
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +175,8 @@ class NotificationListTests(TestCase):
     def setUp(self):
         self.alice = make_user("alice_nl", "alice_nl@example.com")
         self.bob = make_user("bob_nl", "bob_nl@example.com")
+        make_subscription(self.alice)
+        make_subscription(self.bob)
         self.contract = make_contract(self.alice, counterparty_email="bob_nl@example.com")
         _make_notification(self.alice, self.contract)
         _make_notification(self.alice, self.contract, is_read=True)
@@ -229,6 +231,8 @@ class NotificationUnreadCountTests(TestCase):
     def setUp(self):
         self.alice = make_user("alice_uc", "alice_uc@example.com")
         self.bob = make_user("bob_uc", "bob_uc@example.com")
+        make_subscription(self.alice)
+        make_subscription(self.bob)
         _make_notification(self.alice, is_read=False)
         _make_notification(self.alice, is_read=False)
         _make_notification(self.alice, is_read=True)
@@ -258,6 +262,8 @@ class NotificationMarkReadTests(TestCase):
     def setUp(self):
         self.alice = make_user("alice_mr", "alice_mr@example.com")
         self.bob = make_user("bob_mr", "bob_mr@example.com")
+        make_subscription(self.alice)
+        make_subscription(self.bob)
         self.notification = _make_notification(self.alice, is_read=False)
 
     def test_mark_own_notification_read(self):
@@ -296,6 +302,8 @@ class NotificationReadAllTests(TestCase):
     def setUp(self):
         self.alice = make_user("alice_ra", "alice_ra@example.com")
         self.bob = make_user("bob_ra", "bob_ra@example.com")
+        make_subscription(self.alice)
+        make_subscription(self.bob)
         _make_notification(self.alice, is_read=False)
         _make_notification(self.alice, is_read=False)
         _make_notification(self.alice, is_read=True)

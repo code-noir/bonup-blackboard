@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 
@@ -8,9 +8,16 @@ const USER_TIER = 'Blackboard Business'
 // Mock business entities — replace with API data when connected
 const MOCK_ENTITIES: { id: string; name: string }[] = []
 
+const PAYG_LOCK_STYLE: React.CSSProperties = {
+  display: 'flex', flexDirection: 'column', alignItems: 'center',
+  justifyContent: 'center', padding: '24px 16px', textAlign: 'center',
+  gap: 4,
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const { user, isOnTrial, trialDaysRemaining, hasTrialExpired } = useAuth()
+  const isPayg = user?.subscription_tier === 'per_contract'
   const [viewingAs, setViewingAs] = useState<string>('personal')
 
   const firstName = user?.first_name || user?.username || 'You'
@@ -172,14 +179,14 @@ export default function Dashboard() {
             <p style={{ fontSize: 12, color: '#6B7280', margin: '8px 0 16px' }}>
               Get a full AI-powered breakdown of any contract before you sign.
             </p>
-            {USER_TIER === 'As You Go' && (
+            {isPayg && (
               <div style={{ marginBottom: 12 }}>
                 <span style={{
-                  display: 'inline-block', fontSize: 11, color: '#D97706',
-                  background: '#FEF3C7', borderRadius: 4, padding: '2px 8px',
+                  display: 'inline-block', fontSize: 11, color: '#065F46',
+                  background: '#ECFDF5', borderRadius: 4, padding: '2px 8px',
                   marginBottom: 4,
                 }}>
-                  $25 per contract · $25 per analysis · $25 per counter
+                  ✓ $25 per contract · analysis & counter included
                 </span>
               </div>
             )}
@@ -208,14 +215,14 @@ export default function Dashboard() {
             <p style={{ fontSize: 12, color: '#6B7280', margin: '8px 0 16px' }}>
               Respond to any contract with a professional AI-powered counter.
             </p>
-            {USER_TIER === 'As You Go' && (
+            {isPayg && (
               <div style={{ marginBottom: 12 }}>
                 <span style={{
-                  display: 'inline-block', fontSize: 11, color: '#D97706',
-                  background: '#FEF3C7', borderRadius: 4, padding: '2px 8px',
+                  display: 'inline-block', fontSize: 11, color: '#065F46',
+                  background: '#ECFDF5', borderRadius: 4, padding: '2px 8px',
                   marginBottom: 4,
                 }}>
-                  $25 per contract · $25 per analysis · $25 per counter
+                  ✓ $25 per contract · analysis & counter included
                 </span>
               </div>
             )}
@@ -258,7 +265,15 @@ export default function Dashboard() {
       {/* Recent Activity */}
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <h3 className="mb-4 text-base font-semibold text-slate-800">Recent Activity</h3>
-        <p className="text-sm text-slate-500">Activity feed coming soon.</p>
+        {isPayg ? (
+          <div style={PAYG_LOCK_STYLE}>
+            <span style={{ fontSize: 24 }}>🔒</span>
+            <p style={{ fontSize: 13, fontWeight: 600, color: '#374151', margin: 0 }}>Requires a monthly plan</p>
+            <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>Upgrade to Blackboard Basic — $19/month</p>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">Activity feed coming soon.</p>
+        )}
       </div>
 
       {/* Contracts Overview */}
@@ -307,66 +322,90 @@ export default function Dashboard() {
       {/* Upcoming Obligations */}
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <h3 className="mb-4 text-base font-semibold text-slate-800">Upcoming Obligations</h3>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            { type: 'Payment',  status: 'ACTIVE', due: '2026-04-10' },
-            { type: 'Delivery', status: 'ACTIVE', due: '2026-04-14' },
-            { type: 'Review',   status: 'ACTIVE', due: '2026-04-20' },
-            { type: 'Sign-off', status: 'ACTIVE', due: '2026-04-28' },
-          ].map((ob, i) => (
-            <div key={i} className="rounded-lg border border-slate-200 p-4">
-              <p className="text-sm font-semibold text-slate-800">{ob.type}</p>
-              <span className="mt-1 inline-flex rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
-                {ob.status}
-              </span>
-              <p className="mt-2 text-xs text-slate-400">Due {ob.due}</p>
-            </div>
-          ))}
-        </div>
+        {isPayg ? (
+          <div style={PAYG_LOCK_STYLE}>
+            <span style={{ fontSize: 24 }}>🔒</span>
+            <p style={{ fontSize: 13, fontWeight: 600, color: '#374151', margin: 0 }}>Requires a monthly plan</p>
+            <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>Upgrade to Blackboard Basic — $19/month</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              { type: 'Payment',  status: 'ACTIVE', due: '2026-04-10' },
+              { type: 'Delivery', status: 'ACTIVE', due: '2026-04-14' },
+              { type: 'Review',   status: 'ACTIVE', due: '2026-04-20' },
+              { type: 'Sign-off', status: 'ACTIVE', due: '2026-04-28' },
+            ].map((ob, i) => (
+              <div key={i} className="rounded-lg border border-slate-200 p-4">
+                <p className="text-sm font-semibold text-slate-800">{ob.type}</p>
+                <span className="mt-1 inline-flex rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
+                  {ob.status}
+                </span>
+                <p className="mt-2 text-xs text-slate-400">Due {ob.due}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Recent Payments */}
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <h3 className="mb-4 text-base font-semibold text-slate-800">Recent Payments</h3>
-        <div className="divide-y divide-slate-100">
-          {[
-            { amount: '$4,200',  from: 'Vanta Digital',  to: 'bonUP Sol',     date: '2026-04-01', status: 'Settled'  },
-            { amount: '$1,500',  from: 'Orin Staffing',  to: 'Clearpath Inc', date: '2026-03-28', status: 'Settled'  },
-            { amount: '$12,500', from: 'Meridian Labs',  to: 'bonUP Sol',     date: '2026-03-22', status: 'Pending'  },
-          ].map((pmt, i) => (
-            <div key={i} className="flex items-center justify-between py-3 text-sm">
-              <div>
-                <p className="font-semibold text-slate-800">{pmt.amount}</p>
-                <p className="text-xs text-slate-400">{pmt.from} → {pmt.to}</p>
+        {isPayg ? (
+          <div style={PAYG_LOCK_STYLE}>
+            <span style={{ fontSize: 24 }}>🔒</span>
+            <p style={{ fontSize: 13, fontWeight: 600, color: '#374151', margin: 0 }}>Requires a monthly plan</p>
+            <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>Upgrade to Blackboard Basic — $19/month</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {[
+              { amount: '$4,200',  from: 'Vanta Digital',  to: 'bonUP Sol',     date: '2026-04-01', status: 'Settled'  },
+              { amount: '$1,500',  from: 'Orin Staffing',  to: 'Clearpath Inc', date: '2026-03-28', status: 'Settled'  },
+              { amount: '$12,500', from: 'Meridian Labs',  to: 'bonUP Sol',     date: '2026-03-22', status: 'Pending'  },
+            ].map((pmt, i) => (
+              <div key={i} className="flex items-center justify-between py-3 text-sm">
+                <div>
+                  <p className="font-semibold text-slate-800">{pmt.amount}</p>
+                  <p className="text-xs text-slate-400">{pmt.from} → {pmt.to}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-slate-500">{pmt.date}</p>
+                  <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                    pmt.status === 'Settled' ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'
+                  }`}>
+                    {pmt.status}
+                  </span>
+                </div>
               </div>
-              <div className="text-right">
-                <p className="text-xs text-slate-500">{pmt.date}</p>
-                <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                  pmt.status === 'Settled' ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'
-                }`}>
-                  {pmt.status}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Upcoming Live Sessions */}
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <h3 className="mb-4 text-base font-semibold text-slate-800">Upcoming Live Sessions</h3>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {[
-            { name: 'Q2 Contract Review',    date: '2026-04-12', time: '2:00 PM', participants: 'You, Meridian Labs' },
-            { name: 'Onboarding — Fenix Co', date: '2026-04-17', time: '10:30 AM', participants: 'You, Fenix Creative' },
-          ].map((session, i) => (
-            <div key={i} className="rounded-lg border border-slate-200 p-4">
-              <p className="font-semibold text-slate-800">{session.name}</p>
-              <p className="mt-1 text-xs text-slate-500">{session.date} at {session.time}</p>
-              <p className="mt-1 text-xs text-slate-400">{session.participants}</p>
-            </div>
-          ))}
-        </div>
+        {isPayg ? (
+          <div style={PAYG_LOCK_STYLE}>
+            <span style={{ fontSize: 24 }}>🔒</span>
+            <p style={{ fontSize: 13, fontWeight: 600, color: '#374151', margin: 0 }}>Requires a monthly plan</p>
+            <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>Upgrade to Blackboard Basic — $19/month</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {[
+              { name: 'Q2 Contract Review',    date: '2026-04-12', time: '2:00 PM', participants: 'You, Meridian Labs' },
+              { name: 'Onboarding — Fenix Co', date: '2026-04-17', time: '10:30 AM', participants: 'You, Fenix Creative' },
+            ].map((session, i) => (
+              <div key={i} className="rounded-lg border border-slate-200 p-4">
+                <p className="font-semibold text-slate-800">{session.name}</p>
+                <p className="mt-1 text-xs text-slate-500">{session.date} at {session.time}</p>
+                <p className="mt-1 text-xs text-slate-400">{session.participants}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

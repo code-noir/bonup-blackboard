@@ -43,6 +43,9 @@ class ActivityListEndpointTests(TestCase):
         self.alice = make_user("alice", "alice@example.com")
         self.bob = make_user("bob", "bob@example.com")
         self.charlie = make_user("charlie", "charlie@example.com")
+        make_subscription(self.alice)
+        make_subscription(self.bob)
+        make_subscription(self.charlie)
 
         self.contract = make_contract(self.alice, counterparty_email="bob@example.com")
         self.other_contract = make_contract(self.charlie, counterparty_email="other@example.com")
@@ -138,6 +141,9 @@ class ContractActivityEndpointTests(TestCase):
         self.alice = make_user("alice_ca", "alice_ca@example.com")
         self.bob = make_user("bob_ca", "bob_ca@example.com")
         self.charlie = make_user("charlie_ca", "charlie_ca@example.com")
+        make_subscription(self.alice)
+        make_subscription(self.bob)
+        make_subscription(self.charlie)
 
         self.contract = make_contract(self.alice, counterparty_email="bob_ca@example.com")
         ContractActivity.objects.create(

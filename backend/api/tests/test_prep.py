@@ -18,7 +18,7 @@ from django.test import TestCase
 
 from backend.negotiation_prep.models import PrepDocument, PrepNote, PrepSession
 
-from .helpers import authed_client, make_contract, make_user
+from .helpers import authed_client, make_contract, make_subscription, make_user
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +58,8 @@ class PrepCreateTests(TestCase):
     def setUp(self):
         self.alice = make_user("alice_pc", "alice_pc@example.com")
         self.bob = make_user("bob_pc", "bob_pc@example.com")
+        make_subscription(self.alice)
+        make_subscription(self.bob)
 
     def test_create_minimal(self):
         r = _make_prep(self.alice, title="Contract review")
@@ -104,6 +106,8 @@ class PrepListTests(TestCase):
     def setUp(self):
         self.alice = make_user("alice_pl", "alice_pl@example.com")
         self.bob = make_user("bob_pl", "bob_pl@example.com")
+        make_subscription(self.alice)
+        make_subscription(self.bob)
         _make_prep(self.alice, title="Alice prep 1")
         _make_prep(self.alice, title="Alice prep 2")
         _make_prep(self.bob, title="Bob prep")
@@ -120,6 +124,7 @@ class PrepListTests(TestCase):
 
     def test_empty_list_when_no_preps(self):
         charlie = make_user("charlie_pl", "charlie_pl@example.com")
+        make_subscription(charlie)
         r = authed_client(charlie).get("/api/prep/")
         self.assertEqual(len(r.data), 0)
 
@@ -133,6 +138,8 @@ class PrepDetailTests(TestCase):
     def setUp(self):
         self.alice = make_user("alice_pd", "alice_pd@example.com")
         self.bob = make_user("bob_pd", "bob_pd@example.com")
+        make_subscription(self.alice)
+        make_subscription(self.bob)
         r = _make_prep(self.alice, title="Detail test")
         self.prep_id = r.data["id"]
 
@@ -179,6 +186,8 @@ class PrepUpdateTests(TestCase):
     def setUp(self):
         self.alice = make_user("alice_pu", "alice_pu@example.com")
         self.bob = make_user("bob_pu", "bob_pu@example.com")
+        make_subscription(self.alice)
+        make_subscription(self.bob)
         r = _make_prep(self.alice, title="Original")
         self.prep_id = r.data["id"]
 
@@ -218,6 +227,8 @@ class PrepDeleteTests(TestCase):
     def setUp(self):
         self.alice = make_user("alice_pdel", "alice_pdel@example.com")
         self.bob = make_user("bob_pdel", "bob_pdel@example.com")
+        make_subscription(self.alice)
+        make_subscription(self.bob)
         r = _make_prep(self.alice, title="To delete")
         self.prep_id = r.data["id"]
 
@@ -256,6 +267,8 @@ class PrepDocumentTests(TestCase):
     def setUp(self):
         self.alice = make_user("alice_doc", "alice_doc@example.com")
         self.bob = make_user("bob_doc", "bob_doc@example.com")
+        make_subscription(self.alice)
+        make_subscription(self.bob)
         r = _make_prep(self.alice, title="Doc test")
         self.prep_id = r.data["id"]
 
@@ -332,6 +345,8 @@ class PrepNoteTests(TestCase):
     def setUp(self):
         self.alice = make_user("alice_note", "alice_note@example.com")
         self.bob = make_user("bob_note", "bob_note@example.com")
+        make_subscription(self.alice)
+        make_subscription(self.bob)
         r = _make_prep(self.alice, title="Note test")
         self.prep_id = r.data["id"]
 
@@ -437,6 +452,8 @@ class PrepPrivacyTests(TestCase):
     def setUp(self):
         self.alice = make_user("alice_priv", "alice_priv@example.com")
         self.bob = make_user("bob_priv", "bob_priv@example.com")
+        make_subscription(self.alice)
+        make_subscription(self.bob)
         self.contract = make_contract(self.alice, counterparty_email="bob_priv@example.com")
         self.live_session = _make_live_session(self.alice, self.contract)
 

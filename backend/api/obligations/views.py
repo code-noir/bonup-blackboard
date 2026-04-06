@@ -51,8 +51,11 @@ from backend.infrastructure.repositories.contract_value_adjustment_repository im
     ContractValueAdjustmentRepository,
 )
 from backend.activity.log import log_activity
+from backend.billing.gates import has_feature
 
 User = get_user_model()
+
+_PAYG_BLOCKED = {"error": "This feature requires a monthly plan. Upgrade to Blackboard Basic ($19/month) to unlock contract management."}
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +114,8 @@ class ObligationListAPIView(APIView):
     """
 
     def get(self, request):
+        if not has_feature(request.user, "lifecycle"):
+            return Response(_PAYG_BLOCKED, status=status.HTTP_403_FORBIDDEN)
         obligation_type = request.query_params.get("type")
         state = request.query_params.get("state")
         role = request.query_params.get("role")

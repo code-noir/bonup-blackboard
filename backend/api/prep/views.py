@@ -11,8 +11,11 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from backend.billing.gates import has_feature
 from backend.negotiation_prep.models import PrepDocument, PrepNote, PrepSession
 from backend.sessions.models import LiveSession
+
+_PAYG_BLOCKED = {"error": "This feature requires a monthly plan. Upgrade to Blackboard Basic ($19/month) to unlock contract management."}
 
 
 # ---------------------------------------------------------------------------
@@ -75,10 +78,14 @@ class PrepSessionListCreateAPIView(APIView):
     """
 
     def get(self, request):
+        if not has_feature(request.user, "negotiation_prep"):
+            return Response(_PAYG_BLOCKED, status=status.HTTP_403_FORBIDDEN)
         qs = PrepSession.objects.filter(owner=request.user)
         return Response([_serialize_prep(p) for p in qs])
 
     def post(self, request):
+        if not has_feature(request.user, "negotiation_prep"):
+            return Response(_PAYG_BLOCKED, status=status.HTTP_403_FORBIDDEN)
         title = request.data.get("title", "").strip()
         if not title:
             return Response(

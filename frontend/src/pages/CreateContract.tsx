@@ -748,7 +748,7 @@ export default function CreateContract() {
               borderRadius: 8, padding: '10px 14px', marginBottom: 20,
               fontSize: 12, color: '#D97706',
             }}>
-              $25 per contract · $25 per analysis · $25 per counter
+              $25 per contract (includes AI assistant, all templates, analysis, counter & export)
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <button
@@ -1264,8 +1264,8 @@ export default function CreateContract() {
                           Write or paste your contract in the editor, then click Analyze for a full AI breakdown.
                         </p>
                         {USER_TIER === 'As You Go' && (
-                          <p style={{ fontSize: 11, color: '#D97706', marginBottom: 12 }}>
-                            ⚠️ $25 per analysis
+                          <p style={{ fontSize: 11, color: '#065F46', marginBottom: 12 }}>
+                            ✓ Included with your $25 contract
                           </p>
                         )}
                         <button
@@ -1336,8 +1336,8 @@ export default function CreateContract() {
                               Review the contract and propose your counter terms.
                             </p>
                             {USER_TIER === 'As You Go' && (
-                              <p style={{ fontSize: 11, color: '#D97706', marginBottom: 12 }}>
-                                ⚠️ $25 per counter
+                              <p style={{ fontSize: 11, color: '#065F46', marginBottom: 12 }}>
+                                ✓ Included with your $25 contract
                               </p>
                             )}
                             <textarea

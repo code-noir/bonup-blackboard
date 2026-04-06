@@ -16,7 +16,10 @@ from backend.contracts.models import Contract, ContractObligation
 from backend.engine.contracts.obligations.lifecycle import process_obligation_lifecycle
 from backend.payments.models import Payment
 from backend.activity.log import log_activity
+from backend.billing.gates import has_feature
 from .serializers import PaymentSerializer
+
+_PAYG_BLOCKED = {"error": "This feature requires a monthly plan. Upgrade to Blackboard Basic ($19/month) to unlock contract management."}
 
 # Valid source states for each status transition endpoint.
 ALLOWED_FROM = {
@@ -104,6 +107,8 @@ class PaymentListCreateAPIView(APIView):
     """
 
     def get(self, request):
+        if not has_feature(request.user, "lifecycle"):
+            return Response(_PAYG_BLOCKED, status=status.HTTP_403_FORBIDDEN)
         qs = _apply_filters(
             Payment.objects.filter(_party_q(request.user)),
             request,
@@ -111,6 +116,8 @@ class PaymentListCreateAPIView(APIView):
         return _paginated_response(qs, request)
 
     def post(self, request):
+        if not has_feature(request.user, "lifecycle"):
+            return Response(_PAYG_BLOCKED, status=status.HTTP_403_FORBIDDEN)
         idem_key = request.data.get("idempotency_key")
         if idem_key:
             existing = _idempotency_response(idem_key)

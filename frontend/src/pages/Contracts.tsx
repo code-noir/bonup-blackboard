@@ -106,7 +106,14 @@ export default function Contracts() {
   }, [])
 
   function openCreateModal() {
-    setShowEntityModal(true)
+    if (entityFilter === 'Personal') {
+      navigate('/contracts/create?entity=personal')
+    } else if (entityFilter !== 'All' && entityFilter !== 'Business') {
+      // A specific business entity is selected
+      navigate(`/contracts/create?entity=business&name=${encodeURIComponent(entityFilter)}`)
+    } else {
+      setShowEntityModal(true)
+    }
   }
 
   function handleSelectPersonal() {
@@ -122,8 +129,24 @@ export default function Contracts() {
   const displayName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.username || 'You'
   const initials = ([user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join('') || user?.username?.[0] || '?').toUpperCase()
 
+  // Fetch entities once on mount
   useEffect(() => {
-    api.get<{ id: string; counterparty_email: string; structure_type: string; state: string }[]>('/contracts/')
+    api.get<{ results: BusinessEntity[] }>('/entities/')
+      .then(({ data }) => setEntities(data.results))
+      .catch(() => {})
+  }, [])
+
+  // Refetch contracts whenever entity filter changes
+  useEffect(() => {
+    const params: Record<string, string> = {}
+    if (entityFilter === 'Personal') params.entity = 'personal'
+    else if (entityFilter !== 'All') {
+      const match = entities.find(e => e.name === entityFilter)
+      if (match) params.entity = match.id
+    }
+    api.get<{ id: string; counterparty_email: string; structure_type: string; state: string }[]>(
+      '/contracts/', { params }
+    )
       .then(({ data }) => {
         setContracts(data.map((c) => ({
           id: c.id,
@@ -134,11 +157,7 @@ export default function Contracts() {
         })))
       })
       .catch(() => {})
-
-    api.get<{ results: BusinessEntity[] }>('/entities/')
-      .then(({ data }) => setEntities(data.results))
-      .catch(() => {})
-  }, [])
+  }, [entityFilter, entities])
 
   const [isHovered, setIsHovered] = useState(false)
   const [selectedVideo, setSelectedVideo] = useState(0)
@@ -278,6 +297,19 @@ export default function Contracts() {
           </div>
         )}
       </div>
+
+      {/* ── ENTITY INDICATOR BAR ── */}
+      {entityFilter !== 'All' && entityFilter !== 'Business' && (
+        <div style={{
+          background: '#EFF6FF', color: '#1E40AF',
+          fontSize: 12, padding: '6px 16px',
+          borderRadius: 6, marginBottom: 12, alignSelf: 'flex-start',
+        }}>
+          Viewing as: {entityFilter === 'Personal'
+            ? `${displayName} (Personal)`
+            : entityFilter}
+        </div>
+      )}
 
       {/* ── ENTITY SELECTION MODAL ── */}
       {showEntityModal && (
@@ -500,11 +532,11 @@ export default function Contracts() {
             }}
           >
 
-            {/* Tabs 0, 1, 4, 5 — contract-style table */}
+            {/* Tab 0: My Contracts — real data */}
             {activeTab === 0 && contracts.length === 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 220, gap: 12 }}>
-                <p style={{ fontSize: 14, color: '#9CA3AF', margin: 0 }}>
-                  No contracts yet. Create your first contract.
+                <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0, textAlign: 'center' }}>
+                  No My Contracts yet
                 </p>
                 <button
                   onClick={openCreateModal}
@@ -514,136 +546,48 @@ export default function Contracts() {
                 </button>
               </div>
             )}
-            {[0, 1, 4, 5].includes(activeTab) && (activeTab !== 0 || contracts.length > 0) && (() => {
-              const rows =
-                activeTab === 0 ? contracts :
-                activeTab === 1 ? [
-                  { name: 'Vanta Digital Retainer',          party: 'Vanta Digital',   status: 'PENDING', nextDue: '2026-04-18' },
-                  { name: 'Nova Tech Support Agreement',      party: 'Nova Tech',        status: 'PENDING', nextDue: '2026-04-22' },
-                  { name: 'Clearpath Inc Amendment',          party: 'Clearpath Inc',    status: 'PENDING', nextDue: '2026-04-25' },
-                  { name: 'Fenix Creative Renewal',           party: 'Fenix Creative',   status: 'PENDING', nextDue: '2026-04-30' },
-                  { name: 'BluePrint Agency Update',          party: 'BluePrint Agency', status: 'PENDING', nextDue: '2026-05-02' },
-                  { name: 'Meridian Labs Addendum',           party: 'Meridian Labs',    status: 'PENDING', nextDue: '2026-05-08' },
-                  { name: 'Apex Media Review',                party: 'Apex Media',       status: 'PENDING', nextDue: '2026-05-10' },
-                  { name: 'Groundwork Labs Pending',          party: 'Groundwork Labs',  status: 'PENDING', nextDue: '2026-05-15' },
-                  { name: 'Orin Staffing Revision',           party: 'Orin Staffing',    status: 'PENDING', nextDue: '2026-05-18' },
-                  { name: 'Crestwood Consulting Review',      party: 'Crestwood',        status: 'PENDING', nextDue: '2026-05-22' },
-                ] :
-                activeTab === 4 ? [
-                  { name: 'Meridian Labs Q2 Services',        party: 'Meridian Labs',    status: 'ACTIVE',  nextDue: '2026-04-15' },
-                  { name: 'Orin Staffing Agreement',          party: 'Orin Staffing',    status: 'ACTIVE',  nextDue: '2026-04-18' },
-                  { name: 'Clearpath Inc Delivery',           party: 'Clearpath Inc',    status: 'ACTIVE',  nextDue: '2026-04-20' },
-                  { name: 'Nova Tech Support',                party: 'Nova Tech',        status: 'ACTIVE',  nextDue: '2026-04-22' },
-                  { name: 'Fenix Creative Studio',            party: 'Fenix Creative',   status: 'ACTIVE',  nextDue: '2026-04-24' },
-                  { name: 'BluePrint Agency',                 party: 'BluePrint Agency', status: 'ACTIVE',  nextDue: '2026-04-26' },
-                  { name: 'Apex Media Partnership',           party: 'Apex Media',       status: 'ACTIVE',  nextDue: '2026-04-28' },
-                  { name: 'Groundwork Labs',                  party: 'Groundwork Labs',  status: 'ACTIVE',  nextDue: '2026-04-30' },
-                  { name: 'Vanta Digital Retainer',           party: 'Vanta Digital',    status: 'ACTIVE',  nextDue: '2026-05-01' },
-                  { name: 'Crestwood Consulting',             party: 'Crestwood',        status: 'ACTIVE',  nextDue: '2026-05-03' },
-                ] : [
-                  { name: 'Clearpath Inc Delivery SLA',       party: 'Clearpath Inc',    status: 'COMPLETED', nextDue: '—' },
-                  { name: 'Orin Staffing Q1',                 party: 'Orin Staffing',    status: 'COMPLETED', nextDue: '—' },
-                  { name: 'Nova Tech Phase 1',                party: 'Nova Tech',        status: 'COMPLETED', nextDue: '—' },
-                  { name: 'Fenix Creative Q4',                party: 'Fenix Creative',   status: 'COMPLETED', nextDue: '—' },
-                  { name: 'BluePrint Agency 2025',            party: 'BluePrint Agency', status: 'COMPLETED', nextDue: '—' },
-                  { name: 'Apex Media 2025 Deal',             party: 'Apex Media',       status: 'COMPLETED', nextDue: '—' },
-                  { name: 'Groundwork Labs Phase 1',          party: 'Groundwork Labs',  status: 'COMPLETED', nextDue: '—' },
-                  { name: 'Meridian Labs Q1',                 party: 'Meridian Labs',    status: 'COMPLETED', nextDue: '—' },
-                  { name: 'Vanta Digital 2025',               party: 'Vanta Digital',    status: 'COMPLETED', nextDue: '—' },
-                  { name: 'Crestwood Q4 2025',                party: 'Crestwood',        status: 'COMPLETED', nextDue: '—' },
-                ]
-              return (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                        <th style={TH_DARK}>Contract Name</th>
-                        <th style={TH_DARK}>Party</th>
-                        <th style={TH_DARK}>Status</th>
-                        <th style={TH_DARK}>Next Due Date</th>
-                        <th style={{ ...TH_DARK, paddingRight: 0 }}></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map((row, i) => (
-                        <tr
-                          key={i}
-                          style={{
-                            borderBottom: '1px solid #E5E7EB',
-                            background: hoveredRow === i ? '#E8EDF2' : 'transparent',
-                            transition: 'background 0.1s',
-                          }}
-                          onMouseEnter={() => setHoveredRow(i)}
-                          onMouseLeave={() => setHoveredRow(null)}
-                        >
-                          <td style={{ ...TD_DARK, fontWeight: 500 }}>{row.name}</td>
-                          <td style={TD_DARK}>{row.party}</td>
-                          <td style={TD_DARK}>
-                            <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', ...STATUS_DARK[row.status] }}>
-                              {row.status}
-                            </span>
-                          </td>
-                          <td style={{ ...TD_DARK, color: '#9CA3AF' }}>{row.nextDue}</td>
-                          <td style={{ ...TD_DARK, paddingRight: 0 }}>
-                            <button
-                              style={{ fontSize: 12, fontWeight: 500, color: '#374151', background: 'transparent', border: '1px solid #D1D5DB', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#E5E7EB' }}
-                              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
-                            >
-                              View →
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )
-            })()}
-
-            {/* Tab 2: Active Obligations */}
-            {activeTab === 2 && (
+            {activeTab === 0 && contracts.length > 0 && (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                      <th style={TH_DARK}>Obligation</th>
-                      <th style={TH_DARK}>Contract</th>
+                      <th style={TH_DARK}>Contract Name</th>
+                      <th style={TH_DARK}>Party</th>
                       <th style={TH_DARK}>Status</th>
-                      <th style={{ ...TH_DARK, paddingRight: 0 }}>Due Date</th>
+                      <th style={TH_DARK}>Next Due Date</th>
+                      <th style={{ ...TH_DARK, paddingRight: 0 }}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {[
-                      { obligation: 'Monthly Payment — Apr',    contract: 'Meridian Labs Q2',        status: 'ACTIVE', dueDate: '2026-04-10' },
-                      { obligation: 'Delivery Milestone 2',     contract: 'Orin Staffing Agreement', status: 'ACTIVE', dueDate: '2026-04-14' },
-                      { obligation: 'Quarterly Review',         contract: 'Fenix Creative Studio',   status: 'ACTIVE', dueDate: '2026-04-20' },
-                      { obligation: 'Service Delivery Phase 1', contract: 'BluePrint Agency',        status: 'ACTIVE', dueDate: '2026-04-25' },
-                      { obligation: 'Payment Installment 3',    contract: 'Nova Tech Support',       status: 'ACTIVE', dueDate: '2026-04-28' },
-                      { obligation: 'Milestone Review',         contract: 'Apex Media Partnership',  status: 'ACTIVE', dueDate: '2026-05-01' },
-                      { obligation: 'Monthly Retainer Fee',     contract: 'Vanta Digital',           status: 'ACTIVE', dueDate: '2026-05-05' },
-                      { obligation: 'Delivery Sign-off',        contract: 'Groundwork Labs',         status: 'ACTIVE', dueDate: '2026-05-08' },
-                      { obligation: 'Phase 2 Payment',          contract: 'Clearpath Inc',           status: 'ACTIVE', dueDate: '2026-05-12' },
-                      { obligation: 'Final Review',             contract: 'Crestwood Consulting',    status: 'ACTIVE', dueDate: '2026-05-15' },
-                    ].map((row, i) => (
+                    {contracts.map((row, i) => (
                       <tr
-                        key={i}
+                        key={row.id}
                         style={{
-                          borderBottom: '1px solid rgba(255,255,255,0.06)',
-                          background: hoveredRow === i ? 'rgba(255,255,255,0.05)' : 'transparent',
+                          borderBottom: '1px solid #E5E7EB',
+                          background: hoveredRow === i ? '#E8EDF2' : 'transparent',
                           transition: 'background 0.1s',
                         }}
                         onMouseEnter={() => setHoveredRow(i)}
                         onMouseLeave={() => setHoveredRow(null)}
                       >
-                        <td style={{ ...TD_DARK, fontWeight: 500 }}>{row.obligation}</td>
-                        <td style={TD_DARK}>{row.contract}</td>
+                        <td style={{ ...TD_DARK, fontWeight: 500 }}>{row.name}</td>
+                        <td style={TD_DARK}>{row.party}</td>
                         <td style={TD_DARK}>
                           <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', ...STATUS_DARK[row.status] }}>
                             {row.status}
                           </span>
                         </td>
-                        <td style={{ ...TD_DARK, paddingRight: 0, color: '#9CA3AF' }}>{row.dueDate}</td>
+                        <td style={{ ...TD_DARK, color: '#9CA3AF' }}>{row.nextDue}</td>
+                        <td style={{ ...TD_DARK, paddingRight: 0 }}>
+                          <button
+                            onClick={() => navigate(`/contracts/${row.id}`)}
+                            style={{ fontSize: 12, fontWeight: 500, color: '#374151', background: 'transparent', border: '1px solid #D1D5DB', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = '#E5E7EB' }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                          >
+                            View →
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -651,53 +595,38 @@ export default function Contracts() {
               </div>
             )}
 
-            {/* Tab 3: Negotiations */}
+            {/* Tab 1: Pending Review — empty state */}
+            {activeTab === 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 220 }}>
+                <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0, textAlign: 'center' }}>No Pending Review yet</p>
+              </div>
+            )}
+
+            {/* Tab 2: Active Obligations — empty state */}
+            {activeTab === 2 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 220 }}>
+                <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0, textAlign: 'center' }}>No Active Obligations yet</p>
+              </div>
+            )}
+
+            {/* Tab 3: Negotiations — empty state */}
             {activeTab === 3 && (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                      <th style={TH_DARK}>Contract</th>
-                      <th style={TH_DARK}>Version</th>
-                      <th style={TH_DARK}>Parties</th>
-                      <th style={{ ...TH_DARK, paddingRight: 0 }}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[
-                      { contract: 'Meridian Labs Q2',        version: 'v2', parties: 'bonup ↔ Meridian Labs',    status: 'PENDING' },
-                      { contract: 'Vanta Digital Retainer',  version: 'v1', parties: 'bonup ↔ Vanta Digital',    status: 'PENDING' },
-                      { contract: 'Clearpath Inc SLA',       version: 'v3', parties: 'bonup ↔ Clearpath Inc',    status: 'PENDING' },
-                      { contract: 'Nova Tech Agreement',     version: 'v1', parties: 'bonup ↔ Nova Tech',        status: 'PENDING' },
-                      { contract: 'Fenix Creative Renewal',  version: 'v2', parties: 'bonup ↔ Fenix Creative',   status: 'PENDING' },
-                      { contract: 'BluePrint Agency Update', version: 'v1', parties: 'bonup ↔ BluePrint Agency', status: 'PENDING' },
-                      { contract: 'Apex Media Deal',         version: 'v2', parties: 'bonup ↔ Apex Media',       status: 'PENDING' },
-                      { contract: 'Groundwork Labs Rev',     version: 'v1', parties: 'bonup ↔ Groundwork Labs',  status: 'PENDING' },
-                      { contract: 'Orin Staffing Rev',       version: 'v3', parties: 'bonup ↔ Orin Staffing',    status: 'PENDING' },
-                      { contract: 'Crestwood Amendment',     version: 'v1', parties: 'bonup ↔ Crestwood',        status: 'PENDING' },
-                    ].map((row, i) => (
-                      <tr
-                        key={i}
-                        style={{
-                          borderBottom: '1px solid rgba(255,255,255,0.06)',
-                          background: hoveredRow === i ? 'rgba(255,255,255,0.05)' : 'transparent',
-                          transition: 'background 0.1s',
-                        }}
-                        onMouseEnter={() => setHoveredRow(i)}
-                        onMouseLeave={() => setHoveredRow(null)}
-                      >
-                        <td style={{ ...TD_DARK, fontWeight: 500 }}>{row.contract}</td>
-                        <td style={{ ...TD_DARK, color: '#9CA3AF', fontFamily: 'monospace' }}>{row.version}</td>
-                        <td style={TD_DARK}>{row.parties}</td>
-                        <td style={{ ...TD_DARK, paddingRight: 0 }}>
-                          <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', ...STATUS_DARK[row.status] }}>
-                            {row.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 220 }}>
+                <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0, textAlign: 'center' }}>No Negotiations yet</p>
+              </div>
+            )}
+
+            {/* Tab 4: Expiring Soon — empty state */}
+            {activeTab === 4 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 220 }}>
+                <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0, textAlign: 'center' }}>No Expiring Soon yet</p>
+              </div>
+            )}
+
+            {/* Tab 5: Archived — empty state */}
+            {activeTab === 5 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 220 }}>
+                <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0, textAlign: 'center' }}>No Archived yet</p>
               </div>
             )}
 

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 
 // ── Data ──────────────────────────────────────────────────────────────────────
@@ -439,6 +439,12 @@ export default function CreateContract() {
   // Parties panel state
   const { user, hasTrialExpired, canCreateContract } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const entityParam = searchParams.get('entity')
+  const entityNameParam = searchParams.get('name')
+  const entityLabel = entityParam === 'personal'
+    ? 'Personal'
+    : entityNameParam ?? null
   const [party1Role, setParty1Role] = useState('')
   const [party1CustomRole, setParty1CustomRole] = useState('')
   const [party2SearchQuery, setParty2SearchQuery] = useState('')
@@ -835,6 +841,14 @@ export default function CreateContract() {
           <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 500 }}>
             Create Contract
           </span>
+          {entityLabel && (
+            <>
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>›</span>
+              <span style={{ fontSize: 11, color: '#F5A623', fontWeight: 500 }}>
+                {entityLabel}
+              </span>
+            </>
+          )}
         </div>
 
         {/* ── TOOLBAR 1: Contract Actions ── */}

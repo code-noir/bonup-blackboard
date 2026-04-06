@@ -37,8 +37,26 @@ const CURRENCIES = [
   ['VND', 'Vietnamese Dong'],
 ] as const
 
+interface ContractSection { id: string; number: number; name: string }
+
+const DEFAULT_SECTIONS: ContractSection[] = [
+  { id: 's1',  number: 1,  name: 'Introduction' },
+  { id: 's2',  number: 2,  name: 'Parties' },
+  { id: 's3',  number: 3,  name: 'Recitals / Background' },
+  { id: 's4',  number: 4,  name: 'Terms and Conditions' },
+  { id: 's5',  number: 5,  name: 'Obligations' },
+  { id: 's6',  number: 6,  name: 'Payment Terms' },
+  { id: 's7',  number: 7,  name: 'Confidentiality' },
+  { id: 's8',  number: 8,  name: 'Intellectual Property' },
+  { id: 's9',  number: 9,  name: 'Termination' },
+  { id: 's10', number: 10, name: 'Dispute Resolution' },
+  { id: 's11', number: 11, name: 'Governing Law' },
+  { id: 's12', number: 12, name: 'Signatures' },
+]
+
 const CONTRACT_TOOLS = [
   { icon: '📋', label: 'Contract Details' },
+  { icon: '📑', label: 'Contract Sections' },
   { icon: '👥', label: 'Parties' },
   { icon: '✓', label: 'Obligations' },
   { icon: '💰', label: 'Payments' },
@@ -430,6 +448,17 @@ export default function CreateContract() {
     customRole: string
   }>>([])
 
+  // Contract Sections panel state
+  const [sections, setSections] = useState<ContractSection[]>(DEFAULT_SECTIONS)
+  const [activeSection, setActiveSection] = useState<string | null>(null)
+  const [editingSection, setEditingSection] = useState<string | null>(null)
+  const [editingSectionName, setEditingSectionName] = useState('')
+  const [addingSection, setAddingSection] = useState(false)
+  const [newSectionInput, setNewSectionInput] = useState('')
+  const [sectDragId, setSectDragId] = useState<string | null>(null)
+  const [sectDragOverId, setSectDragOverId] = useState<string | null>(null)
+  const [hoveredSection, setHoveredSection] = useState<string | null>(null)
+
   // Attachments panel state
   const [attachFiles, setAttachFiles] = useState<AttachmentFile[]>(ATTACH_PLACEHOLDER)
   const [attachFilter, setAttachFilter] = useState<AttachFilter>('all')
@@ -483,6 +512,17 @@ export default function CreateContract() {
     return () => {
       document.documentElement.style.removeProperty('--sidebar-w')
       window.dispatchEvent(new CustomEvent('sidebar-mode', { detail: 'normal' }))
+    }
+  }, [])
+
+  // Pre-populate the left editor with section headings on mount
+  useEffect(() => {
+    if (leftEditorRef.current && leftEditorRef.current.innerHTML.trim() === '') {
+      leftEditorRef.current.innerHTML = DEFAULT_SECTIONS.map((s) =>
+        `<h2 id="section-${s.id}" style="margin:0 0 6px;font-size:16px;font-weight:600;color:#0F1F3D;">${s.name}</h2>` +
+        `<p style="margin:0 0 28px;color:#9CA3AF;font-size:14px;">[ Content for ${s.name} ]</p>`
+      ).join('')
+      setLeftEmpty(false)
     }
   }, [])
 
@@ -1573,6 +1613,238 @@ export default function CreateContract() {
                           >
                             Save Details
                           </button>
+                        </>
+                      )
+                    })() : activeTool === 'Contract Sections' ? (() => {
+                      function scrollToSection(id: string) {
+                        document.getElementById(`section-${id}`)?.scrollIntoView({ behavior: 'smooth' })
+                        setActiveSection(id)
+                      }
+
+                      function startRename(s: ContractSection) {
+                        setEditingSection(s.id)
+                        setEditingSectionName(s.name)
+                      }
+
+                      function commitRename() {
+                        if (editingSection && editingSectionName.trim()) {
+                          setSections((prev) => prev.map((s) =>
+                            s.id === editingSection ? { ...s, name: editingSectionName.trim() } : s
+                          ))
+                          // Update the heading in the editor
+                          const el = document.getElementById(`section-${editingSection}`)
+                          if (el) el.textContent = editingSectionName.trim()
+                        }
+                        setEditingSection(null)
+                        setEditingSectionName('')
+                      }
+
+                      function cancelRename() {
+                        setEditingSection(null)
+                        setEditingSectionName('')
+                      }
+
+                      function commitAdd() {
+                        const name = newSectionInput.trim()
+                        if (!name) { setAddingSection(false); return }
+                        const newNum = sections.length + 1
+                        const newId = `s${Date.now()}`
+                        const newSec: ContractSection = { id: newId, number: newNum, name }
+                        setSections((prev) => [...prev, newSec])
+                        // Append heading to editor
+                        if (leftEditorRef.current) {
+                          leftEditorRef.current.innerHTML +=
+                            `<h2 id="section-${newId}" style="margin:0 0 6px;font-size:16px;font-weight:600;color:#0F1F3D;">${name}</h2>` +
+                            `<p style="margin:0 0 28px;color:#9CA3AF;font-size:14px;">[ Content for ${name} ]</p>`
+                          setLeftEmpty(false)
+                        }
+                        setNewSectionInput('')
+                        setAddingSection(false)
+                      }
+
+                      function reorder(fromId: string, toId: string) {
+                        if (fromId === toId) return
+                        setSections((prev) => {
+                          const arr = [...prev]
+                          const fi = arr.findIndex((s) => s.id === fromId)
+                          const ti = arr.findIndex((s) => s.id === toId)
+                          if (fi < 0 || ti < 0) return prev
+                          const [item] = arr.splice(fi, 1)
+                          arr.splice(ti, 0, item)
+                          return arr.map((s, i) => ({ ...s, number: i + 1 }))
+                        })
+                      }
+
+                      function deleteSection(id: string) {
+                        setSections((prev) => prev.filter((s) => s.id !== id).map((s, i) => ({ ...s, number: i + 1 })))
+                        if (activeSection === id) setActiveSection(null)
+                      }
+
+                      return (
+                        <>
+                          {/* Header row */}
+                          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+                            <span style={{
+                              fontSize: 12, fontWeight: 600, color: '#374151',
+                              textTransform: 'uppercase', letterSpacing: '0.08em',
+                              flex: 1,
+                            }}>
+                              Contract Sections
+                            </span>
+                            <button
+                              onClick={() => { setAddingSection(true); setNewSectionInput('') }}
+                              style={{
+                                fontSize: 11, color: '#0F1F3D', background: 'transparent',
+                                border: 'none', cursor: 'pointer', fontWeight: 500, padding: 0,
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
+                              onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
+                            >
+                              + Add Section
+                            </button>
+                          </div>
+
+                          {/* Section count */}
+                          <p style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 10 }}>
+                            {sections.length} {sections.length === 1 ? 'section' : 'sections'}
+                          </p>
+
+                          {/* Sections list */}
+                          {sections.map((s) => {
+                            const isActive = activeSection === s.id
+                            const isEditing = editingSection === s.id
+                            const isHovered = hoveredSection === s.id
+                            const isDragTarget = sectDragOverId === s.id && sectDragId !== s.id
+                            return (
+                              <div
+                                key={s.id}
+                                draggable
+                                onDragStart={() => setSectDragId(s.id)}
+                                onDragOver={(e) => { e.preventDefault(); setSectDragOverId(s.id) }}
+                                onDrop={() => {
+                                  if (sectDragId) reorder(sectDragId, s.id)
+                                  setSectDragId(null); setSectDragOverId(null)
+                                }}
+                                onDragEnd={() => { setSectDragId(null); setSectDragOverId(null) }}
+                                onClick={() => { if (!isEditing) scrollToSection(s.id) }}
+                                onMouseEnter={() => setHoveredSection(s.id)}
+                                onMouseLeave={() => setHoveredSection(null)}
+                                style={{
+                                  background: isActive ? '#EFF6FF' : isHovered ? '#F8FAFC' : 'white',
+                                  borderRadius: 8,
+                                  padding: '10px 12px',
+                                  marginBottom: 6,
+                                  border: isActive ? '1px solid #BFDBFE' : isDragTarget ? '1px dashed #0F1F3D' : '1px solid #E5E7EB',
+                                  borderLeft: isActive ? '3px solid #0F1F3D' : isDragTarget ? '3px solid #9CA3AF' : '3px solid transparent',
+                                  display: 'flex', alignItems: 'center', gap: 8,
+                                  cursor: isEditing ? 'default' : 'pointer',
+                                  transition: 'all 0.15s',
+                                  opacity: sectDragId === s.id ? 0.4 : 1,
+                                }}
+                              >
+                                {/* Drag handle */}
+                                <span style={{ fontSize: 14, color: '#D1D5DB', cursor: 'grab', flexShrink: 0, lineHeight: 1 }}>
+                                  ⠿
+                                </span>
+
+                                {/* Number */}
+                                <span style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 500, minWidth: 18, flexShrink: 0 }}>
+                                  {s.number}
+                                </span>
+
+                                {/* Name / rename input */}
+                                {isEditing ? (
+                                  <input
+                                    autoFocus
+                                    value={editingSectionName}
+                                    onChange={(e) => setEditingSectionName(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') { e.preventDefault(); commitRename() }
+                                      if (e.key === 'Escape') cancelRename()
+                                    }}
+                                    onBlur={commitRename}
+                                    style={{
+                                      flex: 1, fontSize: 13, border: 'none', outline: 'none',
+                                      background: 'transparent', color: '#374151',
+                                      fontFamily: 'inherit',
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                ) : (
+                                  <span style={{
+                                    flex: 1, fontSize: 13,
+                                    color: isActive ? '#0F1F3D' : '#374151',
+                                    fontWeight: isActive ? 500 : 400,
+                                  }}>
+                                    {s.name}
+                                  </span>
+                                )}
+
+                                {/* Action buttons — show on hover */}
+                                {isHovered && !isEditing && (
+                                  <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                                    <button
+                                      title="Rename"
+                                      onClick={(e) => { e.stopPropagation(); startRename(s) }}
+                                      style={{
+                                        background: 'transparent', border: 'none',
+                                        cursor: 'pointer', fontSize: 12, padding: '2px 3px',
+                                        color: '#9CA3AF', lineHeight: 1,
+                                      }}
+                                      onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
+                                      onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
+                                    >
+                                      ✏️
+                                    </button>
+                                    <button
+                                      title="Delete"
+                                      onClick={(e) => { e.stopPropagation(); deleteSection(s.id) }}
+                                      style={{
+                                        background: 'transparent', border: 'none',
+                                        cursor: 'pointer', fontSize: 12, padding: '2px 3px',
+                                        color: '#9CA3AF', lineHeight: 1,
+                                      }}
+                                      onMouseEnter={(e) => (e.currentTarget.style.color = '#DC2626')}
+                                      onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
+                                    >
+                                      🗑
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+
+                          {/* Add section input row */}
+                          {addingSection && (
+                            <div style={{
+                              background: 'white', borderRadius: 8, padding: '10px 12px',
+                              marginBottom: 6, border: '1px dashed #0F1F3D',
+                              borderLeft: '3px solid #0F1F3D',
+                              display: 'flex', alignItems: 'center', gap: 8,
+                            }}>
+                              <span style={{ fontSize: 14, color: '#E5E7EB', flexShrink: 0 }}>⠿</span>
+                              <span style={{ fontSize: 10, color: '#9CA3AF', minWidth: 18, flexShrink: 0 }}>
+                                {sections.length + 1}
+                              </span>
+                              <input
+                                autoFocus
+                                value={newSectionInput}
+                                onChange={(e) => setNewSectionInput(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') { e.preventDefault(); commitAdd() }
+                                  if (e.key === 'Escape') { setAddingSection(false); setNewSectionInput('') }
+                                }}
+                                onBlur={commitAdd}
+                                placeholder="Section name..."
+                                style={{
+                                  flex: 1, fontSize: 13, border: 'none', outline: 'none',
+                                  background: 'transparent', color: '#374151',
+                                  fontFamily: 'inherit',
+                                }}
+                              />
+                            </div>
+                          )}
                         </>
                       )
                     })() : activeTool === 'Attachments' ? (() => {

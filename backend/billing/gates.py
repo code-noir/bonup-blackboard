@@ -16,6 +16,15 @@ from .models import UserSubscription
 
 _ACTIVE_STATUSES = {"active", "trialing", "per_contract"}
 
+# Standard error message returned when a PAYG user tries to access a monthly-only feature.
+_PAYG_BLOCKED_MSG = "This feature requires a monthly plan. Upgrade to Blackboard Basic ($19/month) to unlock contract management."
+
+
+def is_payg(user):
+    """Returns True if the user is on the Pay As You Go (per_contract) plan."""
+    sub = get_user_subscription(user)
+    return sub is not None and sub.plan.slug == "per_contract"
+
 
 def get_user_subscription(user):
     """Return UserSubscription (with plan selected) or None."""
@@ -117,13 +126,16 @@ def can_create_sol(user):
 def can_join_sol(user):
     """
     Returns (allowed: bool, message: str).
-    Any active bonUP subscription allows joining a Sol group.
+    Active monthly subscriptions allow joining a Sol group.
+    Pay As You Go (per_contract) does not include Sol groups.
     """
     sub = get_user_subscription(user)
     if sub is None:
         return False, _("An active subscription is required to join a Sol group on bonUP.")
     if sub.status not in _ACTIVE_STATUSES:
         return False, _("Your subscription is not active.")
+    if sub.plan.slug == "per_contract":
+        return False, _(_PAYG_BLOCKED_MSG)
     return True, ""
 
 
@@ -236,6 +248,7 @@ def consume_trial_contract(user):
 # ---------------------------------------------------------------------------
 
 _MAX_BUSINESSES = {
+    # Legacy slugs
     "trial": 1,
     "sol_member": 0,
     "per_contract": 1,
@@ -243,14 +256,23 @@ _MAX_BUSINESSES = {
     "professional": 1,
     "business": 4,
     "anchor": 35,
+    # Current slugs
+    "blackboard_basic": 0,
+    "blackboard_pro": 1,
+    "blackboard_business": 4,
+    "blackboard_enterprise": 35,
 }
+
+# Enterprise limit used when no subscription exists (billing not yet wired)
+_DEV_MAX_BUSINESSES = 35
 
 
 def max_businesses(user):
     """Return the maximum number of business entities allowed for this user's plan."""
     sub = get_user_subscription(user)
     if sub is None:
-        return 0
+        from django.conf import settings
+        return _DEV_MAX_BUSINESSES if settings.DEBUG else 0
     return _MAX_BUSINESSES.get(sub.plan.slug, 0)
 
 
@@ -263,7 +285,14 @@ def can_create_business_entity(user):
 
     sub = get_user_subscription(user)
     if sub is None:
-        return False, _("No active subscription.")
+        from django.conf import settings
+        if not settings.DEBUG:
+            return False, _("No active subscription.")
+        # In DEBUG: treat as enterprise — enforce only the dev limit
+        current = BusinessEntity.objects.filter(owner=user, is_active=True).count()
+        if current >= _DEV_MAX_BUSINESSES:
+            return False, _("Business entity limit reached (%(limit)s).") % {"limit": _DEV_MAX_BUSINESSES}
+        return True, ""
     if sub.status not in _ACTIVE_STATUSES:
         return False, _("Your subscription is not active.")
 
@@ -287,8 +316,9 @@ def can_create_business_entity(user):
 # Sol Member auto-upgrade / auto-downgrade helpers
 # ---------------------------------------------------------------------------
 
-# Plans below sol_member that trigger an auto-upgrade on Sol group join
-_LOWER_THAN_SOL_MEMBER = {"trial", "per_contract"}
+# Plans below sol_member that trigger an auto-upgrade on Sol group join.
+# per_contract (PAYG) is excluded: PAYG users cannot join Sol groups.
+_LOWER_THAN_SOL_MEMBER = {"trial"}
 
 
 def auto_upgrade_to_sol_member(user):

@@ -11,7 +11,7 @@ const TODAY = new Date().toLocaleDateString('en-US', {
 })
 
 export default function Header() {
-  const { user, logout } = useAuth()
+  const { user, logout, isOnTrial, trialDaysRemaining } = useAuth()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -60,7 +60,7 @@ export default function Header() {
       </div>
 
       {/* Tier label — centered between user info and search */}
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
         <span
           style={{
             fontSize: 15,
@@ -71,6 +71,20 @@ export default function Header() {
         >
           Blackboard Business
         </span>
+        {isOnTrial() && (() => {
+          const days = trialDaysRemaining()
+          const color = days > 7 ? '#2DD4BF' : days >= 3 ? '#F5A623' : '#DC2626'
+          return (
+            <span style={{
+              fontSize: 12, fontWeight: 500, color,
+              background: 'rgba(255,255,255,0.08)',
+              borderRadius: 6, padding: '2px 8px',
+              whiteSpace: 'nowrap',
+            }}>
+              Trial — {days} days left
+            </span>
+          )
+        })()}
       </div>
 
       {/* Center — search */}

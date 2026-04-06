@@ -1,11 +1,29 @@
 # backend/billing/migrations/0002_seed_plans.py
 #
-# Data migration: seed the five canonical subscription plans.
+# Data migration: seed the six canonical subscription plans.
 
 from django.db import migrations
 
 
 PLANS = [
+    {
+        "slug": "trial",
+        "display_name": "Free Trial",
+        "price_monthly": "0.00",
+        "price_yearly": None,
+        "max_active_contracts": None,
+        "max_live_sessions_per_month": 20,
+        "has_lifecycle": True,
+        "has_notifications": True,
+        "has_negotiation_prep": True,
+        "all_templates": True,
+        "excluded_categories": [],
+        "templates_per_category": None,
+        "ai_tier": "advanced",
+        "has_priority_support": False,
+        "has_early_access": False,
+        "is_active": True,
+    },
     {
         "slug": "per_contract",
         "display_name": "Pay as you go",

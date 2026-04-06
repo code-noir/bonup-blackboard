@@ -1,10 +1,12 @@
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '@/context/AuthContext'
 
 // Tier: 'As You Go' | 'Blackboard Basic' | 'Blackboard Pro' | 'Blackboard Business' | 'Blackboard Premium'
 const USER_TIER = 'Blackboard Business'
 
 export default function Dashboard() {
   const navigate = useNavigate()
+  const { isOnTrial, trialDaysRemaining, hasTrialExpired } = useAuth()
   return (
     <div className="space-y-6">
       <p style={{ fontSize: 13, color: '#9CA3AF', paddingTop: 14, paddingBottom: 14 }}>
@@ -28,6 +30,84 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      {/* Trial banner — active */}
+      {isOnTrial() && (() => {
+        const days = trialDaysRemaining()
+        const pct = Math.min(100, ((30 - days) / 30) * 100)
+        return (
+          <div style={{
+            background: 'linear-gradient(to right, #0F1F3D, #1a3460)',
+            borderRadius: 11, padding: '20px 24px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          }}>
+            <div>
+              <p style={{ fontSize: 14, fontWeight: 600, color: 'white', margin: 0 }}>
+                🎉 Your free trial
+              </p>
+              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 4 }}>
+                {days} days remaining — Full Blackboard Pro access included
+              </p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <div>
+                <div style={{ width: 200, height: 4, background: 'rgba(255,255,255,0.2)', borderRadius: 2 }}>
+                  <div style={{ width: `${pct}%`, height: '100%', background: '#2DD4BF', borderRadius: 2 }} />
+                </div>
+                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 4, textAlign: 'right' }}>
+                  {days} days left
+                </p>
+              </div>
+              <button
+                onClick={() => navigate('/settings')}
+                style={{
+                  background: '#F5A623', color: '#0F1F3D',
+                  border: 'none', borderRadius: 8,
+                  padding: '8px 16px', fontSize: 12,
+                  fontWeight: 600, cursor: 'pointer',
+                  marginLeft: 16,
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
+                onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+              >
+                Choose a Plan
+              </button>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Trial banner — expired */}
+      {hasTrialExpired() && (
+        <div style={{
+          background: 'rgba(220,38,38,0.08)',
+          border: '1px solid rgba(220,38,38,0.2)',
+          borderRadius: 11, padding: '16px 24px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <div>
+            <p style={{ fontSize: 14, fontWeight: 600, color: '#DC2626', margin: 0 }}>
+              ⚠️ Your trial has ended
+            </p>
+            <p style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>
+              Subscribe to create new contracts. Your existing contracts are safe for 1 year.
+            </p>
+          </div>
+          <button
+            onClick={() => navigate('/settings')}
+            style={{
+              background: '#0F1F3D', color: 'white',
+              border: 'none', borderRadius: 8,
+              padding: '8px 16px', fontSize: 12,
+              fontWeight: 600, cursor: 'pointer',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+          >
+            Choose a Plan
+          </button>
+        </div>
+      )}
 
       {/* Power Tools */}
       <div>

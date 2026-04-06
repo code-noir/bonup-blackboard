@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 
 // ── Data ──────────────────────────────────────────────────────────────────────
@@ -430,7 +431,8 @@ export default function CreateContract() {
   const [detailsDescription, setDetailsDescription] = useState('')
 
   // Parties panel state
-  const { user } = useAuth()
+  const { user, hasTrialExpired, canCreateContract } = useAuth()
+  const navigate = useNavigate()
   const [party1Role, setParty1Role] = useState('')
   const [party1CustomRole, setParty1CustomRole] = useState('')
   const [party2SearchQuery, setParty2SearchQuery] = useState('')
@@ -673,6 +675,50 @@ export default function CreateContract() {
 
   return (
     <>
+      {/* ── TRIAL EXPIRED MODAL ── */}
+      {hasTrialExpired() && !canCreateContract() && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 1000,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{
+            background: 'white', borderRadius: 12, padding: 32,
+            textAlign: 'center', maxWidth: 400, width: '90%',
+          }}>
+            <div style={{ fontSize: 48 }}>⚠️</div>
+            <p style={{ fontSize: 18, fontWeight: 600, color: '#0F1F3D', margin: '12px 0 8px' }}>
+              Your trial has ended
+            </p>
+            <p style={{ fontSize: 13, color: '#6B7280', marginBottom: 24 }}>
+              Subscribe to Blackboard Basic or higher to create new contracts.
+            </p>
+            <button
+              onClick={() => navigate('/settings')}
+              style={{
+                background: '#0F1F3D', color: 'white',
+                width: '100%', height: 40,
+                borderRadius: 8, fontSize: 14, fontWeight: 600, border: 'none',
+                cursor: 'pointer',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
+              onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+            >
+              Choose a Plan
+            </button>
+            <p
+              onClick={() => navigate('/dashboard')}
+              style={{
+                fontSize: 12, color: '#9CA3AF', cursor: 'pointer',
+                textDecoration: 'underline', marginTop: 12,
+              }}
+            >
+              Back to Dashboard
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ── FOCUS MODE FLOATING BUTTONS ── */}
       {focusMode !== 'none' && (
         <div style={{

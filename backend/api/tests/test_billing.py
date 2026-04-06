@@ -66,8 +66,24 @@ def make_template(category="health_wellness", name="Test Template"):
 
 class PlanSeedingTests(TestCase):
 
-    def test_five_plans_seeded(self):
-        self.assertEqual(SubscriptionPlan.objects.filter(is_active=True).count(), 5)
+    def test_six_plans_seeded(self):
+        self.assertEqual(SubscriptionPlan.objects.filter(is_active=True).count(), 6)
+
+    def test_trial_plan(self):
+        plan = SubscriptionPlan.objects.get(slug="trial")
+        self.assertEqual(plan.display_name, "Free Trial")
+        self.assertEqual(plan.price_monthly, Decimal("0.00"))
+        self.assertIsNone(plan.price_yearly)
+        self.assertIsNone(plan.max_active_contracts)
+        self.assertEqual(plan.max_live_sessions_per_month, 20)
+        self.assertTrue(plan.has_lifecycle)
+        self.assertTrue(plan.has_notifications)
+        self.assertTrue(plan.has_negotiation_prep)
+        self.assertTrue(plan.all_templates)
+        self.assertTrue(plan.has_sol)
+        self.assertEqual(plan.ai_tier, "advanced")
+        self.assertFalse(plan.has_priority_support)
+        self.assertFalse(plan.has_early_access)
 
     def test_per_contract_plan(self):
         plan = SubscriptionPlan.objects.get(slug="per_contract")
@@ -312,10 +328,10 @@ class PlanListAPITests(TestCase):
         self.user = make_user("u_pl", "u_pl@example.com")
         self.client = authed_client(self.user)
 
-    def test_returns_five_plans(self):
+    def test_returns_six_plans(self):
         r = self.client.get("/api/billing/plans/")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(len(r.data), 5)
+        self.assertEqual(len(r.data), 6)
 
     def test_plan_has_expected_fields(self):
         r = self.client.get("/api/billing/plans/")

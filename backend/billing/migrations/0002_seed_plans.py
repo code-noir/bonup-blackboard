@@ -7,6 +7,24 @@ from django.db import migrations
 
 PLANS = [
     {
+        "slug": "sol_member",
+        "display_name": "Sol Member",
+        "price_monthly": "10.00",
+        "price_yearly": None,
+        "max_active_contracts": 3,
+        "max_live_sessions_per_month": 1,
+        "has_lifecycle": True,
+        "has_notifications": True,
+        "has_negotiation_prep": True,
+        "all_templates": False,
+        "excluded_categories": [],
+        "templates_per_category": 1,
+        "ai_tier": "none",
+        "has_priority_support": False,
+        "has_early_access": False,
+        "is_active": True,
+    },
+    {
         "slug": "trial",
         "display_name": "Free Trial",
         "price_monthly": "0.00",

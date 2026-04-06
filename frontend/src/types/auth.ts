@@ -1,5 +1,6 @@
 export type SubscriptionTier =
   | 'trial'
+  | 'sol_member'
   | 'pay_as_you_go'
   | 'blackboard_basic'
   | 'blackboard_pro'

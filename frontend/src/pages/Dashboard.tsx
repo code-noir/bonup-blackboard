@@ -1,12 +1,12 @@
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 
-// Tier: 'As You Go' | 'Blackboard Basic' | 'Blackboard Pro' | 'Blackboard Business' | 'Blackboard Premium'
+// Tier: 'Free Trial' | 'Sol Member' | 'As You Go' | 'Blackboard Basic' | 'Blackboard Pro' | 'Blackboard Business' | 'Blackboard Premium'
 const USER_TIER = 'Blackboard Business'
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { isOnTrial, trialDaysRemaining, hasTrialExpired } = useAuth()
+  const { user, isOnTrial, trialDaysRemaining, hasTrialExpired } = useAuth()
   return (
     <div className="space-y-6">
       <p style={{ fontSize: 13, color: '#9CA3AF', paddingTop: 14, paddingBottom: 14 }}>
@@ -109,6 +109,21 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Sol Member banner */}
+      {user?.subscription_tier === 'sol_member' && (
+        <div style={{
+          background: '#E0F2FE',
+          border: '1px solid #BAE6FD',
+          borderRadius: 8,
+          padding: '12px 16px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <p style={{ fontSize: 13, color: '#075985', margin: 0, fontWeight: 500 }}>
+            ◎ Sol Member — Saving with your community. $10/month
+          </p>
+        </div>
+      )}
+
       {/* Power Tools */}
       <div>
         <p style={{ fontSize: 14, fontWeight: 600, color: '#0F1F3D', marginBottom: 14 }}>Power Tools</p>
@@ -124,13 +139,15 @@ export default function Dashboard() {
               Get a full AI-powered breakdown of any contract before you sign.
             </p>
             {USER_TIER === 'As You Go' && (
-              <span style={{
-                display: 'inline-block', fontSize: 11, color: '#D97706',
-                background: '#FEF3C7', borderRadius: 4, padding: '2px 8px',
-                marginBottom: 12,
-              }}>
-                $25 per analysis
-              </span>
+              <div style={{ marginBottom: 12 }}>
+                <span style={{
+                  display: 'inline-block', fontSize: 11, color: '#D97706',
+                  background: '#FEF3C7', borderRadius: 4, padding: '2px 8px',
+                  marginBottom: 4,
+                }}>
+                  $25 per contract · $25 per analysis · $25 per counter
+                </span>
+              </div>
             )}
             <button
               onClick={() => navigate('/analysis')}
@@ -158,15 +175,17 @@ export default function Dashboard() {
               Respond to any contract with a professional AI-powered counter.
             </p>
             {USER_TIER === 'As You Go' && (
-              <span style={{
-                display: 'inline-block', fontSize: 11, color: '#D97706',
-                background: '#FEF3C7', borderRadius: 4, padding: '2px 8px',
-                marginBottom: 12,
-              }}>
-                $25 per counter
-              </span>
+              <div style={{ marginBottom: 12 }}>
+                <span style={{
+                  display: 'inline-block', fontSize: 11, color: '#D97706',
+                  background: '#FEF3C7', borderRadius: 4, padding: '2px 8px',
+                  marginBottom: 4,
+                }}>
+                  $25 per contract · $25 per analysis · $25 per counter
+                </span>
+              </div>
             )}
-            {USER_TIER === 'Blackboard Basic' ? (
+            {(USER_TIER === 'Blackboard Basic' || USER_TIER === 'Sol Member') ? (
               <>
                 <div style={{ fontSize: 20, marginBottom: 8 }}>🔒</div>
                 <button

@@ -12,7 +12,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from backend.billing.gates import can_create_sol, can_join_sol
+from backend.billing.gates import can_create_sol, can_join_sol, auto_upgrade_to_sol_member, auto_downgrade_from_sol_member
 from backend.sol.models import (
     Sol, SolMember, SolContract, SolPayout, SolContribution, SolTip, SolNote,
 )
@@ -322,6 +322,7 @@ class SolMemberListCreateView(APIView):
             if not allowed:
                 return Response({"error": f"Cannot link bonUP account: {msg}"}, status=status.HTTP_403_FORBIDDEN)
             is_bonup_member = True
+            auto_upgrade_to_sol_member(bonup_user)
         except User.DoesNotExist:
             pass
 
@@ -381,6 +382,8 @@ class SolMemberDeleteView(APIView):
         member = get_object_or_404(SolMember, pk=member_id, sol=sol)
         member.is_active = False
         member.save(update_fields=["is_active"])
+        if member.bonup_user:
+            auto_downgrade_from_sol_member(member.bonup_user)
         return Response({"status": "deactivated"})
 
 

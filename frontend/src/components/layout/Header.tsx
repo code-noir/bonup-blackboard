@@ -65,11 +65,18 @@ export default function Header() {
           style={{
             fontSize: 15,
             fontWeight: 600,
-            color: '#BFDBFE',
+            color: user?.subscription_tier === 'sol_member' ? '#BAE6FD' : '#BFDBFE',
             whiteSpace: 'nowrap',
           }}
         >
-          Blackboard Business
+          {user?.subscription_tier === 'trial' ? 'Free Trial'
+            : user?.subscription_tier === 'sol_member' ? 'Sol Member'
+            : user?.subscription_tier === 'pay_as_you_go' ? 'Pay As You Go'
+            : user?.subscription_tier === 'blackboard_basic' ? 'Blackboard Basic'
+            : user?.subscription_tier === 'blackboard_pro' ? 'Blackboard Pro'
+            : user?.subscription_tier === 'blackboard_business' ? 'Blackboard Business'
+            : user?.subscription_tier === 'blackboard_premium' ? 'Blackboard Premium'
+            : 'No Plan'}
         </span>
         {isOnTrial() && (() => {
           const days = trialDaysRemaining()

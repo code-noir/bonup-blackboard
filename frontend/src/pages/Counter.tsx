@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-// Tier: 'As You Go' | 'Blackboard Basic' | 'Blackboard Pro' | 'Blackboard Business' | 'Blackboard Premium'
+// Tier: 'Free Trial' | 'Sol Member' | 'As You Go' | 'Blackboard Basic' | 'Blackboard Pro' | 'Blackboard Business' | 'Blackboard Premium'
 const USER_TIER = 'Blackboard Business'
 
 const PRO_TIERS = ['Blackboard Pro', 'Blackboard Business', 'Blackboard Premium']
@@ -10,11 +10,11 @@ export default function Counter() {
   const [counterTerms, setCounterTerms] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [showPaygConfirm, setShowPaygConfirm] = useState(false)
 
   const hasAccess = USER_TIER === 'As You Go' || PRO_TIERS.includes(USER_TIER)
 
-  async function handleSubmit() {
-    if (!contractText.trim() || !counterTerms.trim()) return
+  async function runSubmit() {
     setIsSubmitting(true)
     try {
       await fetch('/api/contracts/counter/', {
@@ -28,8 +28,63 @@ export default function Counter() {
     }
   }
 
+  function handleSubmit() {
+    if (!contractText.trim() || !counterTerms.trim()) return
+    if (USER_TIER === 'As You Go') {
+      setShowPaygConfirm(true)
+    } else {
+      runSubmit()
+    }
+  }
+
   return (
     <div style={{ maxWidth: 800, margin: '0 auto' }}>
+      {/* PAYG confirmation modal */}
+      {showPaygConfirm && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+          zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{
+            background: 'white', borderRadius: 12, padding: 32, maxWidth: 400, width: '90%',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+          }}>
+            <p style={{ fontSize: 16, fontWeight: 700, color: '#0F1F3D', marginBottom: 8 }}>
+              Confirm Counter Charge
+            </p>
+            <p style={{ fontSize: 13, color: '#6B7280', marginBottom: 16, lineHeight: 1.5 }}>
+              You're on the Pay As You Go plan. This counter will be charged to your account.
+            </p>
+            <div style={{
+              background: '#FEF3C7', border: '1px solid #F59E0B',
+              borderRadius: 8, padding: '10px 14px', marginBottom: 20, fontSize: 12, color: '#D97706',
+            }}>
+              $25 per contract · $25 per analysis · $25 per counter
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => { setShowPaygConfirm(false); runSubmit() }}
+                style={{
+                  flex: 1, height: 38, background: '#0F1F3D', color: 'white',
+                  border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                Confirm — $25
+              </button>
+              <button
+                onClick={() => setShowPaygConfirm(false)}
+                style={{
+                  flex: 1, height: 38, background: '#F3F4F6', color: '#374151',
+                  border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0F1F3D', marginBottom: 6 }}>
         ⚡ Contract Counter
       </h1>
@@ -46,6 +101,9 @@ export default function Counter() {
           <div style={{ fontSize: 40, marginBottom: 16 }}>🔒</div>
           <p style={{ fontSize: 15, fontWeight: 600, color: '#0F1F3D', marginBottom: 8 }}>
             Contract Counter requires Blackboard Pro or above
+          </p>
+          <p style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 8 }}>
+            {USER_TIER === 'Sol Member' ? 'Sol Member has Basic-level access. ' : ''}Upgrade to unlock professional AI-powered contract countering.
           </p>
           <p style={{ fontSize: 13, color: '#6B7280', marginBottom: 24 }}>
             Upgrade your plan to unlock professional AI-powered contract countering.
@@ -71,7 +129,7 @@ export default function Counter() {
               borderRadius: 8, padding: '10px 14px',
               fontSize: 12, color: '#D97706', marginBottom: 16,
             }}>
-              ⚠️ $25 per counter will be charged to your account.
+              ⚠️ Pay As You Go: $25 per contract · $25 per analysis · $25 per counter
             </div>
           )}
 

@@ -229,3 +229,68 @@ def consume_trial_contract(user):
             status="trialing",
             trial_contracts_remaining=0,
         ).update(status="no_subscription")
+
+
+# ---------------------------------------------------------------------------
+# Sol Member auto-upgrade / auto-downgrade helpers
+# ---------------------------------------------------------------------------
+
+# Plans below sol_member that trigger an auto-upgrade on Sol group join
+_LOWER_THAN_SOL_MEMBER = {"trial", "per_contract"}
+
+
+def auto_upgrade_to_sol_member(user):
+    """
+    Called when a bonUP user joins a Sol group.
+    Upgrades to sol_member plan if user has no subscription or a lower-tier plan.
+    No-op for users already on sol_member or any higher plan.
+    """
+    from .models import SubscriptionPlan
+
+    try:
+        sol_plan = SubscriptionPlan.objects.get(slug="sol_member")
+    except SubscriptionPlan.DoesNotExist:
+        return
+
+    sub = get_user_subscription(user)
+    if sub is None:
+        UserSubscription.objects.create(
+            user=user,
+            plan=sol_plan,
+            status="active",
+            billing_period="monthly",
+            current_period_start=timezone.now(),
+        )
+        return
+
+    if sub.plan.slug in _LOWER_THAN_SOL_MEMBER:
+        sub.plan = sol_plan
+        sub.status = "active"
+        sub.save(update_fields=["plan", "status"])
+
+
+def auto_downgrade_from_sol_member(user):
+    """
+    Called when a bonUP user leaves a Sol group.
+    If the user is on sol_member and has no remaining active Sol memberships,
+    downgrades to the starter (Blackboard Basic) plan.
+    """
+    from .models import SubscriptionPlan
+
+    sub = get_user_subscription(user)
+    if sub is None or sub.plan.slug != "sol_member":
+        return
+
+    # Check remaining active Sol memberships
+    from backend.sol.models import SolMember
+    still_in_sol = SolMember.objects.filter(bonup_user=user, is_active=True).exists()
+    if still_in_sol:
+        return
+
+    try:
+        starter_plan = SubscriptionPlan.objects.get(slug="starter")
+    except SubscriptionPlan.DoesNotExist:
+        return
+
+    sub.plan = starter_plan
+    sub.save(update_fields=["plan"])

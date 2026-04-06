@@ -1,15 +1,15 @@
 import { useState } from 'react'
 
-// Tier: 'As You Go' | 'Blackboard Basic' | 'Blackboard Pro' | 'Blackboard Business' | 'Blackboard Premium'
+// Tier: 'Free Trial' | 'Sol Member' | 'As You Go' | 'Blackboard Basic' | 'Blackboard Pro' | 'Blackboard Business' | 'Blackboard Premium'
 const USER_TIER = 'Blackboard Business'
 
 export default function Analysis() {
   const [contractText, setContractText] = useState('')
   const [analysisResult, setAnalysisResult] = useState('')
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [showPaygConfirm, setShowPaygConfirm] = useState(false)
 
-  async function handleAnalyze() {
-    if (!contractText.trim()) return
+  async function runAnalyze() {
     setIsAnalyzing(true)
     setAnalysisResult('')
     try {
@@ -27,8 +27,63 @@ export default function Analysis() {
     }
   }
 
+  function handleAnalyze() {
+    if (!contractText.trim()) return
+    if (USER_TIER === 'As You Go') {
+      setShowPaygConfirm(true)
+    } else {
+      runAnalyze()
+    }
+  }
+
   return (
     <div style={{ maxWidth: 800, margin: '0 auto' }}>
+      {/* PAYG confirmation modal */}
+      {showPaygConfirm && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+          zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{
+            background: 'white', borderRadius: 12, padding: 32, maxWidth: 400, width: '90%',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+          }}>
+            <p style={{ fontSize: 16, fontWeight: 700, color: '#0F1F3D', marginBottom: 8 }}>
+              Confirm Analysis Charge
+            </p>
+            <p style={{ fontSize: 13, color: '#6B7280', marginBottom: 16, lineHeight: 1.5 }}>
+              You're on the Pay As You Go plan. This analysis will be charged to your account.
+            </p>
+            <div style={{
+              background: '#FEF3C7', border: '1px solid #F59E0B',
+              borderRadius: 8, padding: '10px 14px', marginBottom: 20, fontSize: 12, color: '#D97706',
+            }}>
+              $25 per contract · $25 per analysis · $25 per counter
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => { setShowPaygConfirm(false); runAnalyze() }}
+                style={{
+                  flex: 1, height: 38, background: '#0F1F3D', color: 'white',
+                  border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                Confirm — $25
+              </button>
+              <button
+                onClick={() => setShowPaygConfirm(false)}
+                style={{
+                  flex: 1, height: 38, background: '#F3F4F6', color: '#374151',
+                  border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0F1F3D', marginBottom: 6 }}>
         🔍 Contract Analysis
       </h1>
@@ -42,7 +97,7 @@ export default function Analysis() {
           borderRadius: 8, padding: '10px 14px',
           fontSize: 12, color: '#D97706', marginBottom: 16,
         }}>
-          ⚠️ $25 per analysis will be charged to your account.
+          ⚠️ Pay As You Go: $25 per contract · $25 per analysis · $25 per counter
         </div>
       )}
 

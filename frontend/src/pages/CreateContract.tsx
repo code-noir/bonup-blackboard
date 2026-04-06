@@ -15,7 +15,7 @@ const FONTS = [
 
 const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72]
 
-// Tier: 'As You Go' | 'Blackboard Basic' | 'Blackboard Pro' | 'Blackboard Business' | 'Blackboard Premium'
+// Tier: 'Free Trial' | 'Sol Member' | 'As You Go' | 'Blackboard Basic' | 'Blackboard Pro' | 'Blackboard Business' | 'Blackboard Premium'
 const USER_TIER = 'Blackboard Business'
 
 const CURRENCIES = [
@@ -416,6 +416,7 @@ export default function CreateContract() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [counterText, setCounterText] = useState('')
   const [isSubmittingCounter, setIsSubmittingCounter] = useState(false)
+  const [paygConfirmDismissed, setPaygConfirmDismissed] = useState(false)
 
   // Contract Details panel fields
   const [detailsType, setDetailsType] = useState('')
@@ -715,6 +716,55 @@ export default function CreateContract() {
             >
               Back to Dashboard
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── PAYG CHARGE NOTICE MODAL ── */}
+      {USER_TIER === 'As You Go' && !paygConfirmDismissed && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 1000,
+          background: 'rgba(0,0,0,0.45)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{
+            background: 'white', borderRadius: 12, padding: 32,
+            maxWidth: 400, width: '90%',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+          }}>
+            <p style={{ fontSize: 16, fontWeight: 700, color: '#0F1F3D', marginBottom: 8 }}>
+              Pay As You Go Charge
+            </p>
+            <p style={{ fontSize: 13, color: '#6B7280', marginBottom: 16, lineHeight: 1.5 }}>
+              Creating this contract will be charged to your account.
+            </p>
+            <div style={{
+              background: '#FEF3C7', border: '1px solid #F59E0B',
+              borderRadius: 8, padding: '10px 14px', marginBottom: 20,
+              fontSize: 12, color: '#D97706',
+            }}>
+              $25 per contract · $25 per analysis · $25 per counter
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setPaygConfirmDismissed(true)}
+                style={{
+                  flex: 1, height: 38, background: '#0F1F3D', color: 'white',
+                  border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                Continue — $25
+              </button>
+              <button
+                onClick={() => navigate('/dashboard')}
+                style={{
+                  flex: 1, height: 38, background: '#F3F4F6', color: '#374151',
+                  border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

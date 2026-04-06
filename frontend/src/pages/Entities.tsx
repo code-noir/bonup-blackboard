@@ -48,7 +48,8 @@ export default function Entities() {
     api.get<{ count: number; max_allowed: number; results: BusinessEntity[] }>('/entities/')
       .then(({ data }) => {
         setEntities(data.results)
-        setMaxAllowed(data.max_allowed)
+        // TODO: remove fallback once billing system is complete
+        setMaxAllowed(data.max_allowed || 35)
       })
       .catch(() => {})
   }, [])

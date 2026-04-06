@@ -812,6 +812,31 @@ export default function CreateContract() {
         background: '#F8FAFC',
       }}>
 
+        {/* ── BREADCRUMB BAR ── */}
+        <div style={{
+          height: 28, flexShrink: 0,
+          background: '#132030',
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          display: 'flex', alignItems: 'center',
+          padding: '0 16px', gap: 6,
+        }}>
+          <span
+            onClick={() => navigate('/contracts')}
+            style={{
+              fontSize: 11, color: 'rgba(255,255,255,0.45)',
+              cursor: 'pointer', textDecoration: 'none',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.8)')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.45)')}
+          >
+            Contracts
+          </span>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>›</span>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 500 }}>
+            Create Contract
+          </span>
+        </div>
+
         {/* ── TOOLBAR 1: Contract Actions ── */}
         <div style={{
           height: 44, flexShrink: 0,

@@ -5,7 +5,7 @@ export type SubscriptionTier =
   | 'blackboard_basic'
   | 'blackboard_pro'
   | 'blackboard_business'
-  | 'blackboard_premium'
+  | 'blackboard_enterprise'
 
 export interface TokenPair {
   access: string

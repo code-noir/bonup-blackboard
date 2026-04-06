@@ -116,7 +116,7 @@ PLANS = [
     },
     {
         "slug": "anchor",
-        "display_name": "Blackboard Premium",
+        "display_name": "Blackboard Enterprise",
         "price_monthly": "999.00",
         "price_yearly": None,
         "max_active_contracts": None,

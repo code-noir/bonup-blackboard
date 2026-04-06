@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import type { BusinessEntity, BusinessType } from '@/types/entities'
 
-// Tier: 'Free Trial' | 'Sol Member' | 'As You Go' | 'Blackboard Basic' | 'Blackboard Pro' | 'Blackboard Business' | 'Blackboard Premium'
+// Tier: 'Free Trial' | 'Sol Member' | 'As You Go' | 'Blackboard Basic' | 'Blackboard Pro' | 'Blackboard Business' | 'Blackboard Enterprise'
 const USER_TIER = 'Blackboard Business'
 
 const MAX_BY_TIER: Record<string, number> = {
@@ -12,7 +12,7 @@ const MAX_BY_TIER: Record<string, number> = {
   'Blackboard Basic': 0,
   'Blackboard Pro': 1,
   'Blackboard Business': 4,
-  'Blackboard Premium': 35,
+  'Blackboard Enterprise': 35,
 }
 
 const BUSINESS_TYPES: BusinessType[] = [

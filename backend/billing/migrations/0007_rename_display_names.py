@@ -9,7 +9,7 @@ RENAMES = {
     "starter":      "Blackboard Starter",
     "professional": "Blackboard Pro",
     "business":     "Blackboard Business",
-    "anchor":       "Blackboard Premium",
+    "anchor":       "Blackboard Enterprise",
 }
 
 

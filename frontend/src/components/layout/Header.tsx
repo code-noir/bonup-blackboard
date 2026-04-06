@@ -75,7 +75,7 @@ export default function Header() {
             : user?.subscription_tier === 'blackboard_basic' ? 'Blackboard Basic'
             : user?.subscription_tier === 'blackboard_pro' ? 'Blackboard Pro'
             : user?.subscription_tier === 'blackboard_business' ? 'Blackboard Business'
-            : user?.subscription_tier === 'blackboard_premium' ? 'Blackboard Premium'
+            : user?.subscription_tier === 'blackboard_enterprise' ? 'Blackboard Enterprise'
             : 'No Plan'}
         </span>
         {isOnTrial() && (() => {

@@ -15,7 +15,7 @@ const FONTS = [
 
 const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72]
 
-// Tier: 'Free Trial' | 'Sol Member' | 'As You Go' | 'Blackboard Basic' | 'Blackboard Pro' | 'Blackboard Business' | 'Blackboard Premium'
+// Tier: 'Free Trial' | 'Sol Member' | 'As You Go' | 'Blackboard Basic' | 'Blackboard Pro' | 'Blackboard Business' | 'Blackboard Enterprise'
 const USER_TIER = 'Blackboard Business'
 
 const CURRENCIES = [
@@ -1577,7 +1577,7 @@ export default function CreateContract() {
                         fontFamily: "'Outfit', sans-serif", outline: 'none',
                         marginBottom: 12, boxSizing: 'border-box',
                       }
-                      const TIER_ALLOWS_BUSINESS = ['Free Trial', 'As You Go', 'Blackboard Pro', 'Blackboard Business', 'Blackboard Premium'].includes(USER_TIER)
+                      const TIER_ALLOWS_BUSINESS = ['Free Trial', 'As You Go', 'Blackboard Pro', 'Blackboard Business', 'Blackboard Enterprise'].includes(USER_TIER)
 
                       const userInitials =
                         [user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join('').toUpperCase() ||

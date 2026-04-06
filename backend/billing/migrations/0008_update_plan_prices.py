@@ -9,7 +9,7 @@ NEW_PRICES = {
     "starter":      "19.00",   # Blackboard Basic
     "professional": "149.00",  # Blackboard Pro
     "business":     "399.00",  # Blackboard Business
-    "anchor":       "999.00",  # Blackboard Premium
+    "anchor":       "999.00",  # Blackboard Enterprise
 }
 
 OLD_PRICES = {

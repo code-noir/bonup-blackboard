@@ -47,6 +47,8 @@ export default function ActionBar() {
       <GhostBtn label="✓ My Obligations" />
       <GhostBtn label="◎ Sol Balance" />
       <GhostBtn label="✦ Ask AI" />
+      <GhostBtn label="🔍 Analyze Contract" />
+      <GhostBtn label="⚡ Contract Counter" />
       <GhostBtn label="🌐 Language" />
       <GhostBtn label="+ Contact" />
       <button

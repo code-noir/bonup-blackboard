@@ -14,16 +14,24 @@ import {
   Cog6ToothIcon,
 } from '@heroicons/react/24/outline'
 
+function emojiIcon(emoji: string): React.ElementType {
+  return function EmojiIcon(_: { className?: string; style?: React.CSSProperties }) {
+    return <span style={{ fontSize: 15, lineHeight: 1 }}>{emoji}</span>
+  }
+}
+
 const nav = [
-  { to: '/dashboard',   label: 'Dashboard',    Icon: HomeIcon },
-  { to: '/contracts',   label: 'Contracts',     Icon: DocumentTextIcon },
-  { to: '/obligations', label: 'Obligations',   Icon: ClipboardDocumentListIcon },
-  { to: '/payments',    label: 'Payments',      Icon: CreditCardIcon },
-  { to: '/sessions',    label: 'Live Sessions', Icon: VideoCameraIcon },
-  { to: '/sol',         label: 'Sol Groups',    Icon: UserGroupIcon },
-  { to: '/templates',   label: 'Templates',     Icon: RectangleStackIcon },
-  { to: '/search',      label: 'Search',        Icon: MagnifyingGlassIcon },
-  { to: '/ai',          label: 'AI Assistant',  Icon: SparklesIcon },
+  { to: '/dashboard',   label: 'Dashboard',           Icon: HomeIcon },
+  { to: '/contracts',   label: 'Contracts',            Icon: DocumentTextIcon },
+  { to: '/obligations', label: 'Obligations',          Icon: ClipboardDocumentListIcon },
+  { to: '/payments',    label: 'Payments',             Icon: CreditCardIcon },
+  { to: '/sessions',    label: 'Live Sessions',        Icon: VideoCameraIcon },
+  { to: '/sol',         label: 'Sol Groups',           Icon: UserGroupIcon },
+  { to: '/templates',   label: 'Templates',            Icon: RectangleStackIcon },
+  { to: '/search',      label: 'Search',               Icon: MagnifyingGlassIcon },
+  { to: '/ai',          label: 'AI Assistant',         Icon: SparklesIcon },
+  { to: '/analysis',    label: 'Contract Analysis',    Icon: emojiIcon('🔍') },
+  { to: '/counter',     label: 'Contract Counter',     Icon: emojiIcon('⚡') },
 ]
 
 const bottomNav = [

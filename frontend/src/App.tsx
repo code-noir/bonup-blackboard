@@ -6,6 +6,8 @@ import Login from '@/pages/Login'
 import Dashboard from '@/pages/Dashboard'
 import Contracts from '@/pages/Contracts'
 import CreateContract from '@/pages/CreateContract'
+import Analysis from '@/pages/Analysis'
+import Counter from '@/pages/Counter'
 import NotFound from '@/pages/NotFound'
 
 // Placeholder page used for routes not yet built
@@ -45,6 +47,8 @@ export default function App() {
             <Route path="/templates/*" element={<Placeholder name="Templates" />} />
             <Route path="/search" element={<Placeholder name="Search" />} />
             <Route path="/ai" element={<Placeholder name="AI Assistant" />} />
+            <Route path="/analysis" element={<Analysis />} />
+            <Route path="/counter" element={<Counter />} />
             <Route path="/notifications" element={<Placeholder name="Notifications" />} />
             <Route path="/settings" element={<Placeholder name="Settings" />} />
           </Route>

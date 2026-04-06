@@ -13,6 +13,9 @@ const FONTS = [
 
 const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72]
 
+// Tier: 'As You Go' | 'Blackboard Basic' | 'Blackboard Pro' | 'Blackboard Business' | 'Blackboard Premium'
+const USER_TIER = 'Blackboard Business'
+
 const CONTRACT_TOOLS = [
   { icon: '📋', label: 'Contract Details' },
   { icon: '👥', label: 'Parties' },
@@ -24,6 +27,8 @@ const CONTRACT_TOOLS = [
   { icon: '📅', label: 'Calendar' },
   { icon: '🔒', label: 'Permissions' },
   { icon: '📊', label: 'Analytics' },
+  { icon: '🔍', label: 'Contract Analysis' },
+  { icon: '⚡', label: 'Contract Counter' },
   { icon: '⚙️', label: 'Settings' },
   { icon: '🎬', label: 'Tutorial' },
 ]
@@ -120,6 +125,10 @@ export default function CreateContract() {
   const [focusMode, setFocusMode] = useState<'none' | 'left' | 'right'>('left')
   const [toolPanelWidth, setToolPanelWidth] = useState(280)
   const [toolPanelSnapping, setToolPanelSnapping] = useState(false)
+  const [analysisResult, setAnalysisResult] = useState('')
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [counterText, setCounterText] = useState('')
+  const [isSubmittingCounter, setIsSubmittingCounter] = useState(false)
 
   const leftEditorRef = useRef<HTMLDivElement>(null)
   const rightEditorRef = useRef<HTMLDivElement>(null)
@@ -398,6 +407,8 @@ export default function CreateContract() {
 
           {/* Right buttons */}
           <GhostActionBtn label="Share / Invite" />
+          <GhostActionBtn label="🔍 Analyze" onClick={() => setActiveTool('Contract Analysis')} />
+          <GhostActionBtn label="⚡ Counter" onClick={() => setActiveTool('Contract Counter')} />
           <button style={{
             background: '#F5A623', color: '#0F1F3D',
             fontSize: 12, fontWeight: 600, height: 28, padding: '0 14px',
@@ -736,6 +747,132 @@ export default function CreateContract() {
                             })}
                           </div>
                         ))}
+                      </>
+                    ) : activeTool === 'Contract Analysis' ? (
+                      <>
+                        <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 16 }}>
+                          Write or paste your contract in the editor, then click Analyze for a full AI breakdown.
+                        </p>
+                        {USER_TIER === 'As You Go' && (
+                          <p style={{ fontSize: 11, color: '#D97706', marginBottom: 12 }}>
+                            ⚠️ $15 per analysis
+                          </p>
+                        )}
+                        <button
+                          onClick={async () => {
+                            setIsAnalyzing(true)
+                            setAnalysisResult('')
+                            try {
+                              const text = leftEditorRef.current?.innerText ?? ''
+                              const res = await fetch('/api/contracts/analyze/', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ contract_text: text }),
+                              })
+                              const data = await res.json()
+                              setAnalysisResult(data.result ?? JSON.stringify(data))
+                            } catch {
+                              setAnalysisResult('Analysis failed. Please try again.')
+                            } finally {
+                              setIsAnalyzing(false)
+                            }
+                          }}
+                          disabled={isAnalyzing}
+                          style={{
+                            width: '100%', height: 36,
+                            background: isAnalyzing ? '#6B7280' : '#0F1F3D',
+                            color: 'white', border: 'none',
+                            borderRadius: 8, fontSize: 13, fontWeight: 600,
+                            cursor: isAnalyzing ? 'default' : 'pointer',
+                            marginBottom: 12,
+                          }}
+                          onMouseEnter={(e) => { if (!isAnalyzing) e.currentTarget.style.background = '#1a3460' }}
+                          onMouseLeave={(e) => { if (!isAnalyzing) e.currentTarget.style.background = '#0F1F3D' }}
+                        >
+                          {isAnalyzing ? 'Analyzing…' : 'Analyze Contract'}
+                        </button>
+                        <div style={{
+                          background: 'white', borderRadius: 8, padding: 12,
+                          minHeight: 120, border: '1px solid #E5E7EB',
+                          fontSize: 12, color: analysisResult ? '#374151' : '#9CA3AF',
+                        }}>
+                          {analysisResult || 'Analysis results will appear here…'}
+                        </div>
+                      </>
+                    ) : activeTool === 'Contract Counter' ? (
+                      <>
+                        {USER_TIER === 'Blackboard Basic' ? (
+                          <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: 32, marginBottom: 12 }}>🔒</div>
+                            <p style={{ fontSize: 13, color: '#374151', marginBottom: 16 }}>
+                              Contract Counter is available on Blackboard Pro and above.
+                            </p>
+                            <button
+                              style={{
+                                width: '100%', height: 36,
+                                background: '#F5A623', color: '#0F1F3D',
+                                border: 'none', borderRadius: 8,
+                                fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
+                              onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+                            >
+                              Upgrade to Blackboard Pro
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 12 }}>
+                              Review the contract and propose your counter terms.
+                            </p>
+                            {USER_TIER === 'As You Go' && (
+                              <p style={{ fontSize: 11, color: '#D97706', marginBottom: 12 }}>
+                                ⚠️ $15 per counter
+                              </p>
+                            )}
+                            <textarea
+                              value={counterText}
+                              onChange={(e) => setCounterText(e.target.value)}
+                              placeholder="Enter your counter terms…"
+                              style={{
+                                width: '100%', minHeight: 100,
+                                border: '1px solid #E5E7EB',
+                                borderRadius: 8, padding: 10,
+                                fontSize: 12, resize: 'vertical',
+                                outline: 'none', fontFamily: 'inherit',
+                                boxSizing: 'border-box',
+                                marginBottom: 12,
+                              }}
+                            />
+                            <button
+                              onClick={async () => {
+                                setIsSubmittingCounter(true)
+                                try {
+                                  const text = leftEditorRef.current?.innerText ?? ''
+                                  await fetch('/api/contracts/counter/', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ contract_text: text, counter_terms: counterText }),
+                                  })
+                                } finally {
+                                  setIsSubmittingCounter(false)
+                                }
+                              }}
+                              disabled={isSubmittingCounter}
+                              style={{
+                                width: '100%', height: 36,
+                                background: isSubmittingCounter ? '#6B7280' : '#0F1F3D',
+                                color: 'white', border: 'none',
+                                borderRadius: 8, fontSize: 13, fontWeight: 600,
+                                cursor: isSubmittingCounter ? 'default' : 'pointer',
+                              }}
+                              onMouseEnter={(e) => { if (!isSubmittingCounter) e.currentTarget.style.background = '#1a3460' }}
+                              onMouseLeave={(e) => { if (!isSubmittingCounter) e.currentTarget.style.background = '#0F1F3D' }}
+                            >
+                              {isSubmittingCounter ? 'Submitting…' : 'Submit Counter'}
+                            </button>
+                          </>
+                        )}
                       </>
                     ) : (
                       <div style={{ fontSize: 12, color: '#6B7280', textAlign: 'center', marginTop: 40 }}>

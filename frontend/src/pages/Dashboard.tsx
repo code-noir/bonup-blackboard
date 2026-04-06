@@ -1,4 +1,10 @@
+import { useNavigate } from 'react-router-dom'
+
+// Tier: 'As You Go' | 'Blackboard Basic' | 'Blackboard Pro' | 'Blackboard Business' | 'Blackboard Premium'
+const USER_TIER = 'Blackboard Business'
+
 export default function Dashboard() {
+  const navigate = useNavigate()
   return (
     <div className="space-y-6">
       <p style={{ fontSize: 13, color: '#9CA3AF', paddingTop: 14, paddingBottom: 14 }}>
@@ -21,6 +27,99 @@ export default function Dashboard() {
             <p className="mt-1 text-2xl font-semibold text-slate-900">{value}</p>
           </div>
         ))}
+      </div>
+
+      {/* Power Tools */}
+      <div>
+        <p style={{ fontSize: 14, fontWeight: 600, color: '#0F1F3D', marginBottom: 14 }}>Power Tools</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          {/* Contract Analysis card */}
+          <div style={{
+            background: 'white', borderRadius: 11, padding: 20,
+            border: '1px solid rgba(0,0,0,0.05)',
+          }}>
+            <div style={{ fontSize: 24, marginBottom: 8 }}>🔍</div>
+            <p style={{ fontSize: 14, fontWeight: 600, color: '#0F1F3D', margin: 0 }}>Contract Analysis</p>
+            <p style={{ fontSize: 12, color: '#6B7280', margin: '8px 0 16px' }}>
+              Get a full AI-powered breakdown of any contract before you sign.
+            </p>
+            {USER_TIER === 'As You Go' && (
+              <span style={{
+                display: 'inline-block', fontSize: 11, color: '#D97706',
+                background: '#FEF3C7', borderRadius: 4, padding: '2px 8px',
+                marginBottom: 12,
+              }}>
+                $15 per analysis
+              </span>
+            )}
+            <button
+              onClick={() => navigate('/analysis')}
+              style={{
+                display: 'block', height: 32, padding: '0 16px',
+                background: '#0F1F3D', color: 'white',
+                border: 'none', borderRadius: 8,
+                fontSize: 12, fontWeight: 500, cursor: 'pointer',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
+              onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+            >
+              Analyze a Contract
+            </button>
+          </div>
+
+          {/* Contract Counter card */}
+          <div style={{
+            background: 'white', borderRadius: 11, padding: 20,
+            border: '1px solid rgba(0,0,0,0.05)',
+          }}>
+            <div style={{ fontSize: 24, marginBottom: 8 }}>⚡</div>
+            <p style={{ fontSize: 14, fontWeight: 600, color: '#0F1F3D', margin: 0 }}>Contract Counter</p>
+            <p style={{ fontSize: 12, color: '#6B7280', margin: '8px 0 16px' }}>
+              Respond to any contract with a professional AI-powered counter.
+            </p>
+            {USER_TIER === 'As You Go' && (
+              <span style={{
+                display: 'inline-block', fontSize: 11, color: '#D97706',
+                background: '#FEF3C7', borderRadius: 4, padding: '2px 8px',
+                marginBottom: 12,
+              }}>
+                $15 per counter
+              </span>
+            )}
+            {USER_TIER === 'Blackboard Basic' ? (
+              <>
+                <div style={{ fontSize: 20, marginBottom: 8 }}>🔒</div>
+                <button
+                  onClick={() => navigate('/counter')}
+                  style={{
+                    display: 'block', height: 32, padding: '0 16px',
+                    background: '#F5A623', color: '#0F1F3D',
+                    border: 'none', borderRadius: 8,
+                    fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
+                  onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+                >
+                  Upgrade to Blackboard Pro
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => navigate('/counter')}
+                style={{
+                  display: 'block', height: 32, padding: '0 16px',
+                  background: '#0F1F3D', color: 'white',
+                  border: 'none', borderRadius: 8,
+                  fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
+                onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+              >
+                Counter a Contract
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Recent Activity */}

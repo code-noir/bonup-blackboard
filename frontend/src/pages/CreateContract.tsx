@@ -117,6 +117,54 @@ function GhostActionBtn({ label, onClick }: { label: string; onClick?: () => voi
   )
 }
 
+// ── Attachments panel helpers ────────────────────────────────────────────────
+
+type AttachFileType = 'pdf' | 'docx' | 'xlsx' | 'image' | 'video' | 'other'
+
+interface AttachmentFile {
+  id: string
+  name: string
+  sizeStr: string
+  sizeBytes: number
+  date: string
+  type: AttachFileType
+  uploading?: boolean
+  progress?: number
+}
+
+function getFileType(name: string): AttachFileType {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  if (ext === 'pdf') return 'pdf'
+  if (ext === 'docx' || ext === 'doc') return 'docx'
+  if (['xlsx', 'xls', 'csv'].includes(ext)) return 'xlsx'
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) return 'image'
+  if (['mp4', 'mov', 'avi', 'webm'].includes(ext)) return 'video'
+  return 'other'
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+const FILE_TYPE_META: Record<AttachFileType, { bg: string; icon: string }> = {
+  pdf:   { bg: '#FEE2E2', icon: '📄' },
+  docx:  { bg: '#DBEAFE', icon: '📝' },
+  xlsx:  { bg: '#D1FAE5', icon: '📊' },
+  image: { bg: '#FEF3C7', icon: '🖼' },
+  video: { bg: '#EDE9FE', icon: '🎬' },
+  other: { bg: '#F3F4F6', icon: '📎' },
+}
+
+const ATTACH_PLACEHOLDER: AttachmentFile[] = [
+  { id: 'p1', name: 'Service_Agreement_Draft.pdf', sizeStr: '2.4 MB', sizeBytes: 2516582, date: 'Apr 5, 2026', type: 'pdf' },
+  { id: 'p2', name: 'Company_Profile.docx',        sizeStr: '1.1 MB', sizeBytes: 1153434, date: 'Apr 4, 2026', type: 'docx' },
+  { id: 'p3', name: 'Payment_Schedule.xlsx',       sizeStr: '0.8 MB', sizeBytes: 838861,  date: 'Apr 3, 2026', type: 'xlsx' },
+]
+
+type AttachFilter = 'all' | 'documents' | 'images' | 'videos' | 'other'
+
 // ── Parties panel helpers ─────────────────────────────────────────────────────
 
 const PARTY_ROLES = [
@@ -381,6 +429,12 @@ export default function CreateContract() {
     role: string
     customRole: string
   }>>([])
+
+  // Attachments panel state
+  const [attachFiles, setAttachFiles] = useState<AttachmentFile[]>(ATTACH_PLACEHOLDER)
+  const [attachFilter, setAttachFilter] = useState<AttachFilter>('all')
+  const [attachDragOver, setAttachDragOver] = useState(false)
+  const attachInputRef = useRef<HTMLInputElement>(null)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function onFieldFocus(e: React.FocusEvent<any>) {
@@ -1519,6 +1573,219 @@ export default function CreateContract() {
                           >
                             Save Details
                           </button>
+                        </>
+                      )
+                    })() : activeTool === 'Attachments' ? (() => {
+                      function processFiles(rawFiles: FileList | File[]) {
+                        const arr = Array.from(rawFiles)
+                        arr.forEach((raw) => {
+                          const id = `${Date.now()}-${Math.random()}`
+                          const newFile: AttachmentFile = {
+                            id,
+                            name: raw.name,
+                            sizeStr: formatBytes(raw.size),
+                            sizeBytes: raw.size,
+                            date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                            type: getFileType(raw.name),
+                            uploading: true,
+                            progress: 0,
+                          }
+                          setAttachFiles((prev) => [newFile, ...prev])
+                          let pct = 0
+                          const iv = setInterval(() => {
+                            pct = Math.min(100, pct + 15 + Math.random() * 20)
+                            if (pct >= 100) {
+                              clearInterval(iv)
+                              setAttachFiles((prev) => prev.map((f) => f.id === id ? { ...f, uploading: false, progress: 100 } : f))
+                            } else {
+                              setAttachFiles((prev) => prev.map((f) => f.id === id ? { ...f, progress: pct } : f))
+                            }
+                          }, 140)
+                        })
+                      }
+
+                      const FILTER_TYPES: Record<AttachFilter, AttachFileType[]> = {
+                        all: ['pdf', 'docx', 'xlsx', 'image', 'video', 'other'],
+                        documents: ['pdf', 'docx', 'xlsx'],
+                        images: ['image'],
+                        videos: ['video'],
+                        other: ['other'],
+                      }
+                      const filtered = attachFiles.filter((f) => FILTER_TYPES[attachFilter].includes(f.type))
+                      const totalBytes = filtered.filter((f) => !f.uploading).reduce((s, f) => s + f.sizeBytes, 0)
+
+                      const FILTER_TABS: { key: AttachFilter; label: string }[] = [
+                        { key: 'all', label: 'All' },
+                        { key: 'documents', label: 'Documents' },
+                        { key: 'images', label: 'Images' },
+                        { key: 'videos', label: 'Videos' },
+                        { key: 'other', label: 'Other' },
+                      ]
+
+                      return (
+                        <>
+                          {/* Hidden file input */}
+                          <input
+                            ref={attachInputRef}
+                            type="file"
+                            multiple
+                            style={{ display: 'none' }}
+                            onChange={(e) => {
+                              if (e.target.files) processFiles(e.target.files)
+                              e.target.value = ''
+                            }}
+                          />
+
+                          {/* Drop zone */}
+                          <div
+                            onClick={() => attachInputRef.current?.click()}
+                            onDragOver={(e) => { e.preventDefault(); setAttachDragOver(true) }}
+                            onDragLeave={() => setAttachDragOver(false)}
+                            onDrop={(e) => {
+                              e.preventDefault()
+                              setAttachDragOver(false)
+                              processFiles(e.dataTransfer.files)
+                            }}
+                            style={{
+                              background: attachDragOver ? '#F8FAFC' : 'white',
+                              borderRadius: 10,
+                              border: `2px dashed ${attachDragOver ? '#0F1F3D' : '#D1D5DB'}`,
+                              padding: '28px 16px',
+                              textAlign: 'center',
+                              cursor: 'pointer',
+                              marginBottom: 16,
+                              transition: 'border-color 0.2s, background 0.2s',
+                            }}
+                          >
+                            <span style={{ fontSize: 28, display: 'block', marginBottom: 8 }}>📎</span>
+                            <p style={{ fontSize: 13, fontWeight: 500, color: '#374151', margin: 0 }}>
+                              Drop files here
+                            </p>
+                            <p style={{ fontSize: 12, color: '#9CA3AF', margin: '4px 0 0' }}>
+                              or click to browse
+                            </p>
+                            <p style={{ fontSize: 11, color: '#9CA3AF', margin: '8px 0 0' }}>
+                              PDF, DOCX, XLSX, JPG, PNG, MP4
+                            </p>
+                            <p style={{ fontSize: 11, color: '#9CA3AF', margin: '2px 0 0' }}>
+                              Max 50MB per file
+                            </p>
+                          </div>
+
+                          {/* Filter tabs */}
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 12 }}>
+                            {FILTER_TABS.map(({ key, label }) => (
+                              <button
+                                key={key}
+                                onClick={() => setAttachFilter(key)}
+                                style={{
+                                  fontSize: 11, padding: '4px 10px',
+                                  borderRadius: 20, cursor: 'pointer',
+                                  border: 'none',
+                                  background: attachFilter === key ? '#0F1F3D' : 'transparent',
+                                  color: attachFilter === key ? 'white' : '#6B7280',
+                                }}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* File count + total */}
+                          {filtered.length > 0 && (
+                            <p style={{ fontSize: 11, color: '#6B7280', marginBottom: 8 }}>
+                              {filtered.length} {filtered.length === 1 ? 'file' : 'files'}
+                              {totalBytes > 0 && ` · ${formatBytes(totalBytes)} total`}
+                            </p>
+                          )}
+
+                          {/* Empty state */}
+                          {filtered.length === 0 && (
+                            <p style={{ fontSize: 12, color: '#9CA3AF', textAlign: 'center', padding: 16 }}>
+                              No files attached yet
+                            </p>
+                          )}
+
+                          {/* File list */}
+                          {filtered.map((file) => (
+                            <div key={file.id} style={{
+                              background: 'white', borderRadius: 8,
+                              padding: '10px 12px', marginBottom: 8,
+                              border: '1px solid #E5E7EB',
+                            }}>
+                              {file.uploading ? (
+                                <>
+                                  <p style={{ fontSize: 12, color: '#374151', margin: '0 0 6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {file.name}
+                                  </p>
+                                  <div style={{ height: 4, background: '#E5E7EB', borderRadius: 2 }}>
+                                    <div style={{
+                                      height: '100%', borderRadius: 2,
+                                      background: '#0F1F3D',
+                                      width: `${file.progress ?? 0}%`,
+                                      transition: 'width 0.14s linear',
+                                    }} />
+                                  </div>
+                                  <p style={{ fontSize: 11, color: '#6B7280', textAlign: 'right', margin: '4px 0 0' }}>
+                                    {Math.round(file.progress ?? 0)}%
+                                  </p>
+                                </>
+                              ) : (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                  {/* Type icon */}
+                                  <div style={{
+                                    width: 36, height: 36, borderRadius: 6, flexShrink: 0,
+                                    background: FILE_TYPE_META[file.type].bg,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    fontSize: 18,
+                                  }}>
+                                    {FILE_TYPE_META[file.type].icon}
+                                  </div>
+                                  {/* Info */}
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <p style={{
+                                      fontSize: 12, fontWeight: 500, color: '#374151',
+                                      margin: 0, maxWidth: 140,
+                                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                    }}>
+                                      {file.name}
+                                    </p>
+                                    <p style={{ fontSize: 11, color: '#9CA3AF', margin: '2px 0 0' }}>
+                                      {file.sizeStr} · {file.date}
+                                    </p>
+                                  </div>
+                                  {/* Actions */}
+                                  <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                                    <button
+                                      title="View / Download"
+                                      style={{
+                                        background: 'transparent', border: 'none',
+                                        cursor: 'pointer', fontSize: 14, padding: 4,
+                                        color: '#6B7280',
+                                      }}
+                                      onMouseEnter={(e) => (e.currentTarget.style.color = '#0F1F3D')}
+                                      onMouseLeave={(e) => (e.currentTarget.style.color = '#6B7280')}
+                                    >
+                                      👁
+                                    </button>
+                                    <button
+                                      title="Delete"
+                                      onClick={() => setAttachFiles((prev) => prev.filter((f) => f.id !== file.id))}
+                                      style={{
+                                        background: 'transparent', border: 'none',
+                                        cursor: 'pointer', fontSize: 14, padding: 4,
+                                        color: '#6B7280',
+                                      }}
+                                      onMouseEnter={(e) => (e.currentTarget.style.color = '#DC2626')}
+                                      onMouseLeave={(e) => (e.currentTarget.style.color = '#6B7280')}
+                                    >
+                                      🗑
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
                         </>
                       )
                     })() : (

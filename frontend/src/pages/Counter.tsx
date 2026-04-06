@@ -60,7 +60,7 @@ export default function Counter() {
             onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
             onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
           >
-            Upgrade to Blackboard Pro
+            Upgrade to Blackboard Pro — $149/month
           </button>
         </div>
       ) : (
@@ -71,7 +71,7 @@ export default function Counter() {
               borderRadius: 8, padding: '10px 14px',
               fontSize: 12, color: '#D97706', marginBottom: 16,
             }}>
-              ⚠️ $15 per counter will be charged to your account.
+              ⚠️ $25 per counter will be charged to your account.
             </div>
           )}
 

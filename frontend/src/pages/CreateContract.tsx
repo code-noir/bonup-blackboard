@@ -1164,7 +1164,7 @@ export default function CreateContract() {
                         </p>
                         {USER_TIER === 'As You Go' && (
                           <p style={{ fontSize: 11, color: '#D97706', marginBottom: 12 }}>
-                            ⚠️ $15 per analysis
+                            ⚠️ $25 per analysis
                           </p>
                         )}
                         <button
@@ -1226,7 +1226,7 @@ export default function CreateContract() {
                               onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
                               onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
                             >
-                              Upgrade to Blackboard Pro
+                              Upgrade to Blackboard Pro — $149/month
                             </button>
                           </div>
                         ) : (
@@ -1236,7 +1236,7 @@ export default function CreateContract() {
                             </p>
                             {USER_TIER === 'As You Go' && (
                               <p style={{ fontSize: 11, color: '#D97706', marginBottom: 12 }}>
-                                ⚠️ $15 per counter
+                                ⚠️ $25 per counter
                               </p>
                             )}
                             <textarea
@@ -2168,6 +2168,65 @@ export default function CreateContract() {
               </button>
             </div>
 
+            {/* EDITOR HEADER ROW — always visible, never inside a display:none container */}
+            <div style={{
+              display: 'flex', height: 36, flexShrink: 0,
+              background: '#F8FAFC',
+              borderBottom: '1px solid #E5E7EB',
+            }}>
+              {/* Draft Editor header */}
+              <div style={{
+                width: focusMode === 'none' ? `${splitPercent}%` : '50%',
+                flexShrink: 0, padding: '0 12px',
+                display: 'flex', alignItems: 'center', gap: 8,
+                overflow: 'hidden', minWidth: 0,
+                borderRight: '1px solid #E5E7EB',
+                transition: 'width 0.3s ease',
+              }}>
+                <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Draft Editor</span>
+                {activeEditor === 'left' && (
+                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#2DD4BF' }} />
+                )}
+                <button
+                  onClick={() => focusMode === 'left' ? exitFocus() : enterFocus('left')}
+                  title="Focus mode"
+                  style={{
+                    background: 'transparent', border: 'none',
+                    color: '#9CA3AF', fontSize: 14, cursor: 'pointer', padding: 4,
+                    marginLeft: 'auto',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
+                >
+                  ⛶
+                </button>
+              </div>
+              {/* Final Editor header */}
+              <div style={{
+                flex: 1, padding: '0 12px',
+                display: 'flex', alignItems: 'center', gap: 8,
+                overflow: 'hidden', minWidth: 0,
+              }}>
+                <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Final Editor</span>
+                {activeEditor === 'right' && (
+                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#2DD4BF' }} />
+                )}
+                <button
+                  onClick={() => focusMode === 'right' ? exitFocus() : enterFocus('right')}
+                  title="Focus mode"
+                  style={{
+                    background: 'transparent', border: 'none',
+                    color: '#9CA3AF', fontSize: 14, cursor: 'pointer', padding: 4,
+                    marginLeft: 'auto',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
+                >
+                  ⛶
+                </button>
+              </div>
+            </div>
+
             {/* Editors + AI panel wrapper */}
             <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 0 }}>
 
@@ -2188,32 +2247,6 @@ export default function CreateContract() {
                 flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0,
                 transition: 'width 0.3s ease',
               }}>
-                <div style={{
-                  height: 36, flexShrink: 0,
-                  background: '#F8FAFC',
-                  borderBottom: '1px solid #E5E7EB',
-                  borderRight: focusMode === 'left' ? 'none' : '1px solid #E5E7EB',
-                  padding: '0 12px',
-                  display: 'flex', alignItems: 'center', gap: 8,
-                }}>
-                  <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Draft Editor</span>
-                  {activeEditor === 'left' && (
-                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#2DD4BF' }} />
-                  )}
-                  <button
-                    onClick={() => focusMode === 'left' ? exitFocus() : enterFocus('left')}
-                    title="Focus mode"
-                    style={{
-                      background: 'transparent', border: 'none',
-                      color: '#9CA3AF', fontSize: 14, cursor: 'pointer', padding: 4,
-                      marginLeft: 'auto',
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
-                    onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
-                  >
-                    ⛶
-                  </button>
-                </div>
                 {focusMode === 'left' ? (
                   <div style={{ flex: 1, overflowY: 'auto', background: '#F0F2F5', padding: 24 }}>
                     <div
@@ -2278,32 +2311,6 @@ export default function CreateContract() {
               <div style={focusMode === 'left' ? { display: 'none' } : {
                 flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0,
               }}>
-                <div style={{
-                  height: 36, flexShrink: 0,
-                  background: '#F8FAFC',
-                  borderBottom: '1px solid #E5E7EB',
-                  borderLeft: focusMode === 'right' ? 'none' : '1px solid #E5E7EB',
-                  padding: '0 12px',
-                  display: 'flex', alignItems: 'center', gap: 8,
-                }}>
-                  <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Final Editor</span>
-                  {activeEditor === 'right' && (
-                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#2DD4BF' }} />
-                  )}
-                  <button
-                    onClick={() => focusMode === 'right' ? exitFocus() : enterFocus('right')}
-                    title="Focus mode"
-                    style={{
-                      background: 'transparent', border: 'none',
-                      color: '#9CA3AF', fontSize: 14, cursor: 'pointer', padding: 4,
-                      marginLeft: 'auto',
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
-                    onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
-                  >
-                    ⛶
-                  </button>
-                </div>
                 {focusMode === 'right' ? (
                   <div style={{ flex: 1, overflowY: 'auto', background: '#F0F2F5', padding: 24 }}>
                     <div

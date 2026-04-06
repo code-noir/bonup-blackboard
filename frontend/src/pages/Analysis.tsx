@@ -42,7 +42,7 @@ export default function Analysis() {
           borderRadius: 8, padding: '10px 14px',
           fontSize: 12, color: '#D97706', marginBottom: 16,
         }}>
-          ⚠️ $15 per analysis will be charged to your account.
+          ⚠️ $25 per analysis will be charged to your account.
         </div>
       )}
 

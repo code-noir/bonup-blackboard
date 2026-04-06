@@ -9,7 +9,7 @@ PLANS = [
     {
         "slug": "per_contract",
         "display_name": "Pay as you go",
-        "price_monthly": "15.00",
+        "price_monthly": "25.00",
         "price_yearly": None,
         "max_active_contracts": 1,
         "max_live_sessions_per_month": 0,
@@ -27,7 +27,7 @@ PLANS = [
     {
         "slug": "starter",
         "display_name": "Blackboard Starter",
-        "price_monthly": "10.00",
+        "price_monthly": "19.00",
         "price_yearly": "100.00",
         "max_active_contracts": 3,
         "max_live_sessions_per_month": 1,
@@ -45,7 +45,7 @@ PLANS = [
     {
         "slug": "professional",
         "display_name": "Blackboard Pro",
-        "price_monthly": "83.00",
+        "price_monthly": "149.00",
         "price_yearly": None,
         "max_active_contracts": None,
         "max_live_sessions_per_month": 20,
@@ -63,7 +63,7 @@ PLANS = [
     {
         "slug": "business",
         "display_name": "Blackboard Business",
-        "price_monthly": "200.00",
+        "price_monthly": "399.00",
         "price_yearly": None,
         "max_active_contracts": None,
         "max_live_sessions_per_month": 60,
@@ -81,7 +81,7 @@ PLANS = [
     {
         "slug": "anchor",
         "display_name": "Blackboard Premium",
-        "price_monthly": "600.00",
+        "price_monthly": "999.00",
         "price_yearly": None,
         "max_active_contracts": None,
         "max_live_sessions_per_month": None,

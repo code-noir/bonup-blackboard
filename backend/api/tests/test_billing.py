@@ -71,7 +71,7 @@ class PlanSeedingTests(TestCase):
 
     def test_per_contract_plan(self):
         plan = SubscriptionPlan.objects.get(slug="per_contract")
-        self.assertEqual(plan.price_monthly, Decimal("15.00"))
+        self.assertEqual(plan.price_monthly, Decimal("25.00"))
         self.assertIsNone(plan.price_yearly)
         self.assertEqual(plan.max_active_contracts, 1)
         self.assertEqual(plan.max_live_sessions_per_month, 0)
@@ -85,7 +85,7 @@ class PlanSeedingTests(TestCase):
 
     def test_starter_plan(self):
         plan = SubscriptionPlan.objects.get(slug="starter")
-        self.assertEqual(plan.price_monthly, Decimal("10.00"))
+        self.assertEqual(plan.price_monthly, Decimal("19.00"))
         self.assertEqual(plan.price_yearly, Decimal("100.00"))
         self.assertFalse(plan.all_templates)
         self.assertEqual(plan.templates_per_category, 1)
@@ -98,7 +98,7 @@ class PlanSeedingTests(TestCase):
 
     def test_professional_plan(self):
         plan = SubscriptionPlan.objects.get(slug="professional")
-        self.assertEqual(plan.price_monthly, Decimal("83.00"))
+        self.assertEqual(plan.price_monthly, Decimal("149.00"))
         self.assertTrue(plan.all_templates)
         self.assertEqual(plan.excluded_categories, [])
         self.assertIsNone(plan.max_active_contracts)
@@ -107,7 +107,7 @@ class PlanSeedingTests(TestCase):
 
     def test_business_plan(self):
         plan = SubscriptionPlan.objects.get(slug="business")
-        self.assertEqual(plan.price_monthly, Decimal("200.00"))
+        self.assertEqual(plan.price_monthly, Decimal("399.00"))
         self.assertTrue(plan.all_templates)
         self.assertIsNone(plan.max_active_contracts)
         self.assertEqual(plan.max_live_sessions_per_month, 60)
@@ -115,7 +115,7 @@ class PlanSeedingTests(TestCase):
 
     def test_anchor_plan(self):
         plan = SubscriptionPlan.objects.get(slug="anchor")
-        self.assertEqual(plan.price_monthly, Decimal("600.00"))
+        self.assertEqual(plan.price_monthly, Decimal("999.00"))
         self.assertTrue(plan.all_templates)
         self.assertIsNone(plan.max_active_contracts)
         self.assertIsNone(plan.max_live_sessions_per_month)

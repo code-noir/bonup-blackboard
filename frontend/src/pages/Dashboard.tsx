@@ -49,7 +49,7 @@ export default function Dashboard() {
                 background: '#FEF3C7', borderRadius: 4, padding: '2px 8px',
                 marginBottom: 12,
               }}>
-                $15 per analysis
+                $25 per analysis
               </span>
             )}
             <button
@@ -83,7 +83,7 @@ export default function Dashboard() {
                 background: '#FEF3C7', borderRadius: 4, padding: '2px 8px',
                 marginBottom: 12,
               }}>
-                $15 per counter
+                $25 per counter
               </span>
             )}
             {USER_TIER === 'Blackboard Basic' ? (
@@ -100,7 +100,7 @@ export default function Dashboard() {
                   onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
                   onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
                 >
-                  Upgrade to Blackboard Pro
+                  Upgrade to Blackboard Pro — $149/month
                 </button>
               </>
             ) : (

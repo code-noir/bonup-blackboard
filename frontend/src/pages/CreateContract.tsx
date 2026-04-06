@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useAuth } from '@/context/AuthContext'
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
@@ -116,6 +117,205 @@ function GhostActionBtn({ label, onClick }: { label: string; onClick?: () => voi
   )
 }
 
+// ── Parties panel helpers ─────────────────────────────────────────────────────
+
+const PARTY_ROLES = [
+  'Provider', 'Client', 'Employer', 'Employee',
+  'Buyer', 'Seller', 'Landlord', 'Tenant', 'Lender',
+  'Borrower', 'Contractor', 'Subcontractor',
+  'Licensor', 'Licensee', 'Partner', 'Other (type below)',
+]
+
+function getInitials(name: string) {
+  const parts = name.trim().split(/\s+/)
+  return parts.length >= 2
+    ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    : name.substring(0, 2).toUpperCase()
+}
+
+interface SearchParty { name: string; bonId: string; initials: string }
+
+interface PartySearchBlockProps {
+  searchQuery: string
+  onSearchQueryChange: (v: string) => void
+  searchResult: SearchParty | null
+  onSearchResultChange: (v: SearchParty | null) => void
+  searchDone: boolean
+  onSearchDoneChange: (v: boolean) => void
+  added: boolean
+  onAddedChange: (v: boolean) => void
+  role: string
+  onRoleChange: (v: string) => void
+  customRole: string
+  onCustomRoleChange: (v: string) => void
+}
+
+function PartySearchBlock({
+  searchQuery, onSearchQueryChange,
+  searchResult, onSearchResultChange,
+  searchDone, onSearchDoneChange,
+  added, onAddedChange,
+  role, onRoleChange,
+  customRole, onCustomRoleChange,
+}: PartySearchBlockProps) {
+  function doSearch() {
+    if (!searchQuery.trim()) return
+    // Mock — backend will replace
+    const name = searchQuery.startsWith('#')
+      ? `User ${searchQuery}`
+      : searchQuery.charAt(0).toUpperCase() + searchQuery.slice(1)
+    const bonId = searchQuery.startsWith('#')
+      ? searchQuery
+      : `#${searchQuery.toUpperCase().replace(/\s+/g, '').slice(0, 8)}`
+    onSearchResultChange({ name, bonId, initials: getInitials(name) })
+    onSearchDoneChange(true)
+  }
+
+  function siFocus(e: React.FocusEvent<HTMLInputElement>) {
+    e.currentTarget.style.borderColor = '#0F1F3D'
+    e.currentTarget.style.boxShadow = '0 0 0 2px rgba(15,31,61,0.08)'
+  }
+  function siBlur(e: React.FocusEvent<HTMLInputElement>) {
+    e.currentTarget.style.borderColor = '#D1D5DB'
+    e.currentTarget.style.boxShadow = 'none'
+  }
+
+  const AVATAR_S: React.CSSProperties = {
+    width: 36, height: 36, borderRadius: '50%',
+    background: '#0F1F3D', color: 'white', fontSize: 13, fontWeight: 600,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  }
+
+  return (
+    <div style={{
+      background: 'white', borderRadius: 8, padding: 12,
+      marginBottom: 12, border: '1px solid #D1D5DB',
+    }}>
+      <p style={{ fontSize: 11, color: '#6B7280', margin: '0 0 6px' }}>
+        Find by bonID or name
+      </p>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => onSearchQueryChange(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') doSearch() }}
+          placeholder="bonID or name"
+          style={{
+            flex: 1, border: '1px solid #D1D5DB', borderRadius: 6,
+            padding: '8px 10px', fontSize: 12, outline: 'none',
+            fontFamily: "'Outfit', sans-serif",
+          }}
+          onFocus={siFocus}
+          onBlur={siBlur}
+        />
+        <button
+          onClick={doSearch}
+          style={{
+            background: '#0F1F3D', color: 'white', border: 'none',
+            borderRadius: 6, padding: '8px 12px', fontSize: 12,
+            cursor: 'pointer', flexShrink: 0,
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+        >
+          Search
+        </button>
+      </div>
+
+      {searchDone && !searchResult && (
+        <p style={{ fontSize: 12, color: '#9CA3AF', textAlign: 'center', padding: 8, margin: '8px 0 0' }}>
+          No user found. Check the bonID or name.
+        </p>
+      )}
+
+      {searchDone && searchResult && (
+        <>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            marginTop: 12, paddingTop: 12, borderTop: '1px solid #F3F4F6',
+          }}>
+            <div style={AVATAR_S}>{searchResult.initials}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{
+                fontSize: 13, fontWeight: 500, color: '#0F1F3D',
+                margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {searchResult.name}
+              </p>
+              <p style={{ fontSize: 11, color: '#8B5CF6', fontFamily: "'DM Mono', monospace", margin: 0 }}>
+                {searchResult.bonId}
+              </p>
+            </div>
+            {added ? (
+              <button
+                onClick={() => onAddedChange(false)}
+                style={{
+                  background: 'transparent', border: '1px solid #DC2626',
+                  color: '#DC2626', borderRadius: 6,
+                  padding: '4px 10px', fontSize: 11, fontWeight: 600,
+                  cursor: 'pointer', flexShrink: 0,
+                }}
+              >
+                Remove
+              </button>
+            ) : (
+              <button
+                onClick={() => onAddedChange(true)}
+                style={{
+                  background: '#F5A623', color: '#0F1F3D', border: 'none',
+                  borderRadius: 6, padding: '4px 10px', fontSize: 11,
+                  fontWeight: 600, cursor: 'pointer', flexShrink: 0,
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
+                onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+              >
+                Add Party
+              </button>
+            )}
+          </div>
+
+          {added && (
+            <div style={{ marginTop: 10 }}>
+              <select
+                value={role}
+                onChange={(e) => onRoleChange(e.target.value)}
+                style={{
+                  width: '100%', fontSize: 12,
+                  border: '1px solid #D1D5DB', borderRadius: 6,
+                  padding: '6px 8px', background: 'white',
+                  color: '#374151', outline: 'none', cursor: 'pointer',
+                }}
+              >
+                <option value="">Select role...</option>
+                {PARTY_ROLES.map((r) => <option key={r}>{r}</option>)}
+              </select>
+              {role === 'Other (type below)' && (
+                <input
+                  type="text"
+                  value={customRole}
+                  onChange={(e) => onCustomRoleChange(e.target.value)}
+                  placeholder="Enter custom role"
+                  style={{
+                    width: '100%', background: 'white',
+                    border: '1px solid #D1D5DB', borderRadius: 6,
+                    padding: '6px 10px', fontSize: 12, color: '#374151',
+                    fontFamily: "'Outfit', sans-serif", outline: 'none',
+                    marginTop: 8, boxSizing: 'border-box',
+                  }}
+                  onFocus={siFocus}
+                  onBlur={siBlur}
+                />
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function CreateContract() {
@@ -162,6 +362,25 @@ export default function CreateContract() {
   const [detailsConfidentiality, setDetailsConfidentiality] = useState('Not confidential')
   const [detailsDispute, setDetailsDispute] = useState('Negotiation')
   const [detailsDescription, setDetailsDescription] = useState('')
+
+  // Parties panel state
+  const { user } = useAuth()
+  const [party1Role, setParty1Role] = useState('')
+  const [party1CustomRole, setParty1CustomRole] = useState('')
+  const [party2SearchQuery, setParty2SearchQuery] = useState('')
+  const [party2SearchResult, setParty2SearchResult] = useState<{ name: string; bonId: string; initials: string } | null>(null)
+  const [party2SearchDone, setParty2SearchDone] = useState(false)
+  const [party2Added, setParty2Added] = useState(false)
+  const [party2Role, setParty2Role] = useState('')
+  const [party2CustomRole, setParty2CustomRole] = useState('')
+  const [additionalParties, setAdditionalParties] = useState<Array<{
+    searchQuery: string
+    searchResult: { name: string; bonId: string; initials: string } | null
+    searchDone: boolean
+    added: boolean
+    role: string
+    customRole: string
+  }>>([])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function onFieldFocus(e: React.FocusEvent<any>) {
@@ -918,7 +1137,187 @@ export default function CreateContract() {
                           </>
                         )}
                       </>
-                    ) : activeTool === 'Contract Details' ? (() => {
+                    ) : activeTool === 'Parties' ? (() => {
+                      const SECTION_HDR: React.CSSProperties = {
+                        fontSize: 11, fontWeight: 600, color: '#4B5563',
+                        textTransform: 'uppercase', letterSpacing: '0.06em',
+                        margin: '0 0 10px',
+                      }
+                      const ROLE_SELECT: React.CSSProperties = {
+                        width: 120, fontSize: 12,
+                        border: '1px solid #D1D5DB', borderRadius: 6,
+                        padding: '4px 8px', background: 'white',
+                        color: '#374151', outline: 'none', flexShrink: 0,
+                        cursor: 'pointer',
+                      }
+                      const AVATAR: React.CSSProperties = {
+                        width: 36, height: 36, borderRadius: '50%',
+                        background: '#0F1F3D', color: 'white', fontSize: 13,
+                        fontWeight: 600, display: 'flex', alignItems: 'center',
+                        justifyContent: 'center', flexShrink: 0,
+                      }
+                      const CUSTOM_ROLE_INPUT: React.CSSProperties = {
+                        width: '100%', background: 'white',
+                        border: '1px solid #D1D5DB', borderRadius: 8,
+                        padding: '8px 12px', fontSize: 13, color: '#374151',
+                        fontFamily: "'Outfit', sans-serif", outline: 'none',
+                        marginBottom: 12, boxSizing: 'border-box',
+                      }
+
+                      const p1Name = user
+                        ? [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username
+                        : 'You'
+                      const p1BonId = user?.bon_id ?? '—'
+                      const partyCount = 1
+                        + (party2Added ? 1 : 0)
+                        + additionalParties.filter((p) => p.added).length
+
+                      return (
+                        <>
+                          {/* Party count indicator */}
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+                            <span style={{ fontSize: 11, color: '#6B7280' }}>
+                              {partyCount} of 6 parties added
+                            </span>
+                          </div>
+
+                          {/* Party 1 — logged-in user */}
+                          <p style={SECTION_HDR}>Party 1 (You)</p>
+                          <div style={{
+                            background: 'white', borderRadius: 8, padding: 12,
+                            marginBottom: party1Role === 'Other (type below)' ? 8 : 16,
+                            border: '1px solid #D1D5DB',
+                            display: 'flex', alignItems: 'center', gap: 10,
+                          }}>
+                            <div style={AVATAR}>{getInitials(p1Name)}</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <p style={{
+                                fontSize: 13, fontWeight: 500, color: '#0F1F3D',
+                                margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                              }}>
+                                {p1Name}
+                              </p>
+                              <p style={{ fontSize: 11, color: '#8B5CF6', fontFamily: "'DM Mono', monospace", margin: 0 }}>
+                                {p1BonId}
+                              </p>
+                            </div>
+                            <select
+                              value={party1Role}
+                              onChange={(e) => setParty1Role(e.target.value)}
+                              style={ROLE_SELECT}
+                            >
+                              <option value="">Select role...</option>
+                              {PARTY_ROLES.map((r) => <option key={r}>{r}</option>)}
+                            </select>
+                          </div>
+                          {party1Role === 'Other (type below)' && (
+                            <input
+                              type="text"
+                              value={party1CustomRole}
+                              onChange={(e) => setParty1CustomRole(e.target.value)}
+                              placeholder="Enter custom role"
+                              style={CUSTOM_ROLE_INPUT}
+                              onFocus={onFieldFocus}
+                              onBlur={onFieldBlur}
+                            />
+                          )}
+
+                          {/* Party 2 — search */}
+                          <p style={{ ...SECTION_HDR, marginTop: 4 }}>Party 2</p>
+                          <PartySearchBlock
+                            searchQuery={party2SearchQuery}
+                            onSearchQueryChange={setParty2SearchQuery}
+                            searchResult={party2SearchResult}
+                            onSearchResultChange={setParty2SearchResult}
+                            searchDone={party2SearchDone}
+                            onSearchDoneChange={setParty2SearchDone}
+                            added={party2Added}
+                            onAddedChange={setParty2Added}
+                            role={party2Role}
+                            onRoleChange={setParty2Role}
+                            customRole={party2CustomRole}
+                            onCustomRoleChange={setParty2CustomRole}
+                          />
+
+                          {/* Additional parties */}
+                          {additionalParties.map((p, idx) => (
+                            <div key={idx}>
+                              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10, marginTop: 4 }}>
+                                <p style={{ ...SECTION_HDR, margin: 0 }}>Party {idx + 3}</p>
+                                <button
+                                  onClick={() => setAdditionalParties((prev) => prev.filter((_, i) => i !== idx))}
+                                  style={{
+                                    marginLeft: 'auto', background: 'transparent', border: 'none',
+                                    color: '#9CA3AF', fontSize: 14, cursor: 'pointer',
+                                    lineHeight: 1, padding: 0,
+                                  }}
+                                  onMouseEnter={(e) => (e.currentTarget.style.color = '#DC2626')}
+                                  onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
+                                  title="Remove party slot"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                              <PartySearchBlock
+                                searchQuery={p.searchQuery}
+                                onSearchQueryChange={(v) => setAdditionalParties((prev) => prev.map((ap, i) => i === idx ? { ...ap, searchQuery: v } : ap))}
+                                searchResult={p.searchResult}
+                                onSearchResultChange={(v) => setAdditionalParties((prev) => prev.map((ap, i) => i === idx ? { ...ap, searchResult: v } : ap))}
+                                searchDone={p.searchDone}
+                                onSearchDoneChange={(v) => setAdditionalParties((prev) => prev.map((ap, i) => i === idx ? { ...ap, searchDone: v } : ap))}
+                                added={p.added}
+                                onAddedChange={(v) => setAdditionalParties((prev) => prev.map((ap, i) => i === idx ? { ...ap, added: v } : ap))}
+                                role={p.role}
+                                onRoleChange={(v) => setAdditionalParties((prev) => prev.map((ap, i) => i === idx ? { ...ap, role: v } : ap))}
+                                customRole={p.customRole}
+                                onCustomRoleChange={(v) => setAdditionalParties((prev) => prev.map((ap, i) => i === idx ? { ...ap, customRole: v } : ap))}
+                              />
+                            </div>
+                          ))}
+
+                          {/* Add Another Party */}
+                          {party2Added && partyCount < 6 && (
+                            <button
+                              onClick={() => setAdditionalParties((prev) => [...prev, {
+                                searchQuery: '', searchResult: null, searchDone: false,
+                                added: false, role: '', customRole: '',
+                              }])}
+                              style={{
+                                width: '100%', height: 32, background: 'transparent',
+                                border: '1px dashed #D1D5DB', borderRadius: 8,
+                                fontSize: 12, color: '#6B7280', cursor: 'pointer',
+                                marginBottom: 12,
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.borderColor = '#0F1F3D'
+                                e.currentTarget.style.color = '#0F1F3D'
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.borderColor = '#D1D5DB'
+                                e.currentTarget.style.color = '#6B7280'
+                              }}
+                            >
+                              + Add Another Party
+                            </button>
+                          )}
+
+                          {/* Save */}
+                          <button
+                            style={{
+                              width: '100%', height: 36,
+                              background: '#0F1F3D', color: 'white',
+                              border: 'none', borderRadius: 8,
+                              fontSize: 13, fontWeight: 600,
+                              cursor: 'pointer', marginTop: 8,
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+                          >
+                            Save Parties
+                          </button>
+                        </>
+                      )
+                    })() : activeTool === 'Contract Details' ? (() => {
                       const LABEL: React.CSSProperties = {
                         fontSize: 11, fontWeight: 500, color: '#4B5563',
                         marginBottom: 4, display: 'block',

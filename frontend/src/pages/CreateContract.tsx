@@ -16,6 +16,26 @@ const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72
 // Tier: 'As You Go' | 'Blackboard Basic' | 'Blackboard Pro' | 'Blackboard Business' | 'Blackboard Premium'
 const USER_TIER = 'Blackboard Business'
 
+const CURRENCIES = [
+  ['USD', 'US Dollar'], ['CAD', 'Canadian Dollar'], ['MXN', 'Mexican Peso'],
+  ['BRL', 'Brazilian Real'], ['ARS', 'Argentine Peso'], ['COP', 'Colombian Peso'],
+  ['CLP', 'Chilean Peso'], ['PEN', 'Peruvian Sol'], ['HTG', 'Haitian Gourde'],
+  ['EUR', 'Euro'], ['GBP', 'British Pound'], ['CHF', 'Swiss Franc'],
+  ['SEK', 'Swedish Krona'], ['NOK', 'Norwegian Krone'], ['DKK', 'Danish Krone'],
+  ['AED', 'UAE Dirham'], ['SAR', 'Saudi Riyal'], ['EGP', 'Egyptian Pound'],
+  ['MAD', 'Moroccan Dirham'], ['QAR', 'Qatari Riyal'], ['KWD', 'Kuwaiti Dinar'],
+  ['ZAR', 'South African Rand'], ['NGN', 'Nigerian Naira'], ['GHS', 'Ghanaian Cedi'],
+  ['KES', 'Kenyan Shilling'], ['UGX', 'Ugandan Shilling'], ['TZS', 'Tanzanian Shilling'],
+  ['ETB', 'Ethiopian Birr'], ['XOF', 'West African CFA Franc'], ['XAF', 'Central African CFA Franc'],
+  ['RWF', 'Rwandan Franc'], ['MZN', 'Mozambican Metical'], ['ZMW', 'Zambian Kwacha'],
+  ['JPY', 'Japanese Yen'], ['CNY', 'Chinese Yuan'], ['INR', 'Indian Rupee'],
+  ['KRW', 'South Korean Won'], ['SGD', 'Singapore Dollar'], ['HKD', 'Hong Kong Dollar'],
+  ['AUD', 'Australian Dollar'], ['NZD', 'New Zealand Dollar'], ['TWD', 'Taiwan Dollar'],
+  ['THB', 'Thai Baht'], ['IDR', 'Indonesian Rupiah'], ['MYR', 'Malaysian Ringgit'],
+  ['PHP', 'Philippine Peso'], ['PKR', 'Pakistani Rupee'], ['BDT', 'Bangladeshi Taka'],
+  ['VND', 'Vietnamese Dong'],
+] as const
+
 const CONTRACT_TOOLS = [
   { icon: '📋', label: 'Contract Details' },
   { icon: '👥', label: 'Parties' },
@@ -129,6 +149,30 @@ export default function CreateContract() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [counterText, setCounterText] = useState('')
   const [isSubmittingCounter, setIsSubmittingCounter] = useState(false)
+
+  // Contract Details panel fields
+  const [detailsType, setDetailsType] = useState('')
+  const [detailsLanguage, setDetailsLanguage] = useState('English')
+  const [detailsStartDate, setDetailsStartDate] = useState('')
+  const [detailsEndDate, setDetailsEndDate] = useState('')
+  const [detailsValue, setDetailsValue] = useState('')
+  const [detailsCurrency, setDetailsCurrency] = useState('USD')
+  const [detailsJurisdiction, setDetailsJurisdiction] = useState('')
+  const [detailsGoverningLaw, setDetailsGoverningLaw] = useState('')
+  const [detailsConfidentiality, setDetailsConfidentiality] = useState('Not confidential')
+  const [detailsDispute, setDetailsDispute] = useState('Negotiation')
+  const [detailsDescription, setDetailsDescription] = useState('')
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function onFieldFocus(e: React.FocusEvent<any>) {
+    e.currentTarget.style.borderColor = '#0F1F3D'
+    e.currentTarget.style.boxShadow = '0 0 0 2px rgba(15,31,61,0.08)'
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function onFieldBlur(e: React.FocusEvent<any>) {
+    e.currentTarget.style.borderColor = '#D1D5DB'
+    e.currentTarget.style.boxShadow = 'none'
+  }
 
   const leftEditorRef = useRef<HTMLDivElement>(null)
   const rightEditorRef = useRef<HTMLDivElement>(null)
@@ -874,7 +918,211 @@ export default function CreateContract() {
                           </>
                         )}
                       </>
-                    ) : (
+                    ) : activeTool === 'Contract Details' ? (() => {
+                      const LABEL: React.CSSProperties = {
+                        fontSize: 11, fontWeight: 500, color: '#4B5563',
+                        marginBottom: 4, display: 'block',
+                        textTransform: 'uppercase', letterSpacing: '0.06em',
+                      }
+                      const FIELD: React.CSSProperties = {
+                        width: '100%', background: 'white',
+                        border: '1px solid #D1D5DB', borderRadius: 8,
+                        padding: '8px 12px', fontSize: 13, color: '#374151',
+                        fontFamily: "'Outfit', sans-serif", outline: 'none',
+                        marginBottom: 12, boxSizing: 'border-box',
+                      }
+                      return (
+                        <>
+                          {/* 1. Contract Title */}
+                          <label style={LABEL}>Contract Title</label>
+                          <input
+                            type="text"
+                            value={contractTitle}
+                            onChange={(e) => setContractTitle(e.target.value)}
+                            placeholder="Enter contract title"
+                            style={FIELD}
+                            onFocus={onFieldFocus}
+                            onBlur={onFieldBlur}
+                          />
+
+                          {/* 2. Contract Type */}
+                          <label style={LABEL}>Contract Type</label>
+                          <select
+                            value={detailsType}
+                            onChange={(e) => setDetailsType(e.target.value)}
+                            style={FIELD}
+                            onFocus={onFieldFocus}
+                            onBlur={onFieldBlur}
+                          >
+                            <option value="">Select type...</option>
+                            <option>Service Agreement</option>
+                            <option>Employment Contract</option>
+                            <option>Freelance Contract</option>
+                            <option>NDA / Confidentiality</option>
+                            <option>Partnership Agreement</option>
+                            <option>Sales Contract</option>
+                            <option>Lease Agreement</option>
+                            <option>Loan Agreement</option>
+                            <option>Settlement Agreement</option>
+                            <option>Consulting Agreement</option>
+                            <option>Licensing Agreement</option>
+                            <option>Distribution Agreement</option>
+                            <option>Joint Venture</option>
+                            <option>Purchase Agreement</option>
+                            <option>Other</option>
+                          </select>
+
+                          {/* 3. Language */}
+                          <label style={LABEL}>Language</label>
+                          <select
+                            value={detailsLanguage}
+                            onChange={(e) => setDetailsLanguage(e.target.value)}
+                            style={FIELD}
+                            onFocus={onFieldFocus}
+                            onBlur={onFieldBlur}
+                          >
+                            <option>English</option>
+                            <option>Haitian Creole</option>
+                            <option>Spanish</option>
+                            <option>French</option>
+                            <option>Portuguese</option>
+                            <option>Arabic</option>
+                            <option>Swahili</option>
+                          </select>
+
+                          {/* 4. Start Date */}
+                          <label style={LABEL}>Start Date</label>
+                          <input
+                            type="date"
+                            value={detailsStartDate}
+                            onChange={(e) => setDetailsStartDate(e.target.value)}
+                            style={FIELD}
+                            onFocus={onFieldFocus}
+                            onBlur={onFieldBlur}
+                          />
+
+                          {/* 5. End Date */}
+                          <label style={LABEL}>End Date</label>
+                          <input
+                            type="date"
+                            value={detailsEndDate}
+                            onChange={(e) => setDetailsEndDate(e.target.value)}
+                            style={FIELD}
+                            onFocus={onFieldFocus}
+                            onBlur={onFieldBlur}
+                          />
+
+                          {/* 6. Contract Value */}
+                          <label style={LABEL}>Contract Value</label>
+                          <input
+                            type="number"
+                            value={detailsValue}
+                            onChange={(e) => setDetailsValue(e.target.value)}
+                            placeholder="0.00"
+                            step={0.01}
+                            min={0}
+                            style={FIELD}
+                            onFocus={onFieldFocus}
+                            onBlur={onFieldBlur}
+                          />
+
+                          {/* 7. Currency */}
+                          <label style={LABEL}>Currency</label>
+                          <select
+                            value={detailsCurrency}
+                            onChange={(e) => setDetailsCurrency(e.target.value)}
+                            style={FIELD}
+                            onFocus={onFieldFocus}
+                            onBlur={onFieldBlur}
+                          >
+                            {CURRENCIES.map(([code, name]) => (
+                              <option key={code} value={code}>{code} — {name}</option>
+                            ))}
+                          </select>
+
+                          {/* 8. Jurisdiction */}
+                          <label style={LABEL}>Jurisdiction</label>
+                          <input
+                            type="text"
+                            value={detailsJurisdiction}
+                            onChange={(e) => setDetailsJurisdiction(e.target.value)}
+                            placeholder="e.g. New York, USA"
+                            style={FIELD}
+                            onFocus={onFieldFocus}
+                            onBlur={onFieldBlur}
+                          />
+
+                          {/* 9. Governing Law */}
+                          <label style={LABEL}>Governing Law</label>
+                          <input
+                            type="text"
+                            value={detailsGoverningLaw}
+                            onChange={(e) => setDetailsGoverningLaw(e.target.value)}
+                            placeholder="e.g. Laws of New York State"
+                            style={FIELD}
+                            onFocus={onFieldFocus}
+                            onBlur={onFieldBlur}
+                          />
+
+                          {/* 10. Confidentiality */}
+                          <label style={LABEL}>Confidentiality</label>
+                          <select
+                            value={detailsConfidentiality}
+                            onChange={(e) => setDetailsConfidentiality(e.target.value)}
+                            style={FIELD}
+                            onFocus={onFieldFocus}
+                            onBlur={onFieldBlur}
+                          >
+                            <option>Not confidential</option>
+                            <option>Confidential</option>
+                            <option>Strictly confidential</option>
+                          </select>
+
+                          {/* 11. Dispute Resolution */}
+                          <label style={LABEL}>Dispute Resolution</label>
+                          <select
+                            value={detailsDispute}
+                            onChange={(e) => setDetailsDispute(e.target.value)}
+                            style={FIELD}
+                            onFocus={onFieldFocus}
+                            onBlur={onFieldBlur}
+                          >
+                            <option>Negotiation</option>
+                            <option>Mediation</option>
+                            <option>Arbitration</option>
+                            <option>Litigation</option>
+                            <option>Arbitration then Litigation</option>
+                          </select>
+
+                          {/* 12. Description / Notes */}
+                          <label style={LABEL}>Description</label>
+                          <textarea
+                            value={detailsDescription}
+                            onChange={(e) => setDetailsDescription(e.target.value)}
+                            placeholder="Brief description of this contract..."
+                            rows={3}
+                            style={{ ...FIELD, resize: 'vertical' }}
+                            onFocus={onFieldFocus}
+                            onBlur={onFieldBlur}
+                          />
+
+                          {/* Save button */}
+                          <button
+                            style={{
+                              width: '100%', height: 36,
+                              background: '#0F1F3D', color: 'white',
+                              border: 'none', borderRadius: 8,
+                              fontSize: 13, fontWeight: 600,
+                              cursor: 'pointer', marginTop: 4,
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+                          >
+                            Save Details
+                          </button>
+                        </>
+                      )
+                    })() : (
                       <div style={{ fontSize: 12, color: '#6B7280', textAlign: 'center', marginTop: 40 }}>
                         {activeTool} coming soon
                       </div>

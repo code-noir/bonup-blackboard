@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '@/api/client'
 import type { BusinessEntity } from '@/types/entities'
+import { useAuth } from '@/context/AuthContext'
 
 const STATUS_STYLES: Record<string, { background: string; color: string }> = {
   ACTIVE:    { background: '#0F1F3D', color: '#FFFFFF' },
@@ -77,11 +78,49 @@ const TD: React.CSSProperties = {
 
 export default function Contracts() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [hoveredRow, setHoveredRow] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState(0)
   const [entityFilter, setEntityFilter] = useState('All')
   const [contracts, setContracts] = useState<ContractRow[]>([])
   const [entities, setEntities] = useState<BusinessEntity[]>([])
+  const [showEntityModal, setShowEntityModal] = useState(false)
+  const [bizDropdownOpen, setBizDropdownOpen] = useState(false)
+  const bizDropdownRef = useRef<HTMLDivElement>(null)
+
+  const tier = user?.subscription_tier ?? ''
+  const isEnterprise = tier === 'blackboard_enterprise'
+  const isBusiness = tier === 'blackboard_business'
+  const isPro = tier === 'blackboard_pro'
+  const bizDropdownTier = isEnterprise || isBusiness
+
+  // Close biz dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (bizDropdownRef.current && !bizDropdownRef.current.contains(e.target as Node)) {
+        setBizDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  function openCreateModal() {
+    setShowEntityModal(true)
+  }
+
+  function handleSelectPersonal() {
+    setShowEntityModal(false)
+    navigate('/contracts/create?entity=personal')
+  }
+
+  function handleSelectBusiness(name: string) {
+    setShowEntityModal(false)
+    navigate(`/contracts/create?entity=business&name=${encodeURIComponent(name)}`)
+  }
+
+  const displayName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.username || 'You'
+  const initials = ([user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join('') || user?.username?.[0] || '?').toUpperCase()
 
   useEffect(() => {
     api.get<{ id: string; counterparty_email: string; structure_type: string; state: string }[]>('/contracts/')
@@ -101,7 +140,6 @@ export default function Contracts() {
       .catch(() => {})
   }, [])
 
-  const entityTabs = ['All', 'Personal', ...entities.map((e) => e.name)]
   const [isHovered, setIsHovered] = useState(false)
   const [selectedVideo, setSelectedVideo] = useState(0)
   const [isExpanded, setIsExpanded] = useState(false)
@@ -135,8 +173,9 @@ export default function Contracts() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
       {/* ── ENTITY FILTER TABS ── */}
-      <div style={{ display: 'flex', gap: 6 }}>
-        {entityTabs.map((tab) => (
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        {/* All */}
+        {['All', 'Personal'].map((tab) => (
           <button
             key={tab}
             onClick={() => setEntityFilter(tab)}
@@ -164,7 +203,223 @@ export default function Contracts() {
             {tab}
           </button>
         ))}
+
+        {/* Business tab — dropdown for Enterprise/Business, direct for Pro */}
+        {(bizDropdownTier || isPro) && (
+          <div ref={bizDropdownRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => {
+                if (isPro && entities.length === 1) {
+                  setEntityFilter(entities[0].name)
+                } else {
+                  setBizDropdownOpen((v) => !v)
+                  setEntityFilter('Business')
+                }
+              }}
+              style={{
+                height: 30, padding: '0 12px',
+                background: entityFilter === 'Business' || entities.some(e => e.name === entityFilter) ? '#0F1F3D' : 'white',
+                color: entityFilter === 'Business' || entities.some(e => e.name === entityFilter) ? 'white' : '#6B7280',
+                border: `1px solid ${entityFilter === 'Business' || entities.some(e => e.name === entityFilter) ? '#0F1F3D' : '#E5E7EB'}`,
+                borderRadius: 6, fontSize: 12, fontWeight: 500,
+                cursor: 'pointer', transition: 'all 0.15s',
+                display: 'flex', alignItems: 'center', gap: 4,
+              }}
+            >
+              Business
+              {bizDropdownTier && <span style={{ fontSize: 10, opacity: 0.7 }}>▾</span>}
+            </button>
+
+            {bizDropdownOpen && bizDropdownTier && (
+              <div style={{
+                position: 'absolute', top: 34, left: 0,
+                background: 'white', borderRadius: 8,
+                border: '1px solid #E5E7EB',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
+                minWidth: 180, zIndex: 100, overflow: 'hidden',
+              }}>
+                {entities.length === 0 ? (
+                  <div style={{ padding: '10px 14px' }}>
+                    <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 8px' }}>No businesses yet</p>
+                    <span
+                      onClick={() => { setBizDropdownOpen(false); navigate('/entities') }}
+                      style={{ fontSize: 12, color: '#0F1F3D', fontWeight: 500, cursor: 'pointer' }}
+                    >
+                      + Add a Business
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    {entities.map((e) => (
+                      <div
+                        key={e.id}
+                        onClick={() => { setEntityFilter(e.name); setBizDropdownOpen(false) }}
+                        style={{ padding: '9px 14px', fontSize: 13, color: '#374151', cursor: 'pointer' }}
+                        onMouseEnter={(ev) => (ev.currentTarget.style.background = '#F3F4F6')}
+                        onMouseLeave={(ev) => (ev.currentTarget.style.background = 'transparent')}
+                      >
+                        {e.name}
+                      </div>
+                    ))}
+                    <div style={{ borderTop: '1px solid #E5E7EB', padding: '9px 14px' }}>
+                      <span
+                        onClick={() => { setBizDropdownOpen(false); navigate('/entities') }}
+                        style={{ fontSize: 12, color: '#6B7280', cursor: 'pointer' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = '#0F1F3D')}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = '#6B7280')}
+                      >
+                        + Add a Business
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* ── ENTITY SELECTION MODAL ── */}
+      {showEntityModal && (
+        <>
+          <div
+            onClick={() => setShowEntityModal(false)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 499 }}
+          />
+          <div style={{
+            position: 'fixed', top: '50%', left: '50%',
+            transform: 'translate(-50%, -50%)',
+            background: 'white', borderRadius: 12,
+            padding: 24, width: 320,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+            zIndex: 500,
+          }}>
+            {/* Close */}
+            <button
+              onClick={() => setShowEntityModal(false)}
+              style={{
+                position: 'absolute', top: 12, right: 14,
+                background: 'transparent', border: 'none',
+                fontSize: 18, color: '#9CA3AF', cursor: 'pointer', lineHeight: 1,
+              }}
+            >
+              ×
+            </button>
+
+            <p style={{ fontSize: 16, fontWeight: 600, color: '#0F1F3D', margin: '0 0 6px' }}>
+              Who are you contracting as?
+            </p>
+            <p style={{ fontSize: 13, color: '#6B7280', margin: '0 0 20px' }}>
+              Choose the identity for this contract
+            </p>
+
+            {/* Personal card */}
+            <div
+              onClick={handleSelectPersonal}
+              style={{
+                background: 'white', borderRadius: 10,
+                border: '1px solid #E5E7EB',
+                padding: '14px 16px', marginBottom: 10,
+                cursor: 'pointer', display: 'flex',
+                alignItems: 'center', gap: 12,
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = '#0F1F3D'
+                e.currentTarget.style.background = '#F8FAFC'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = '#E5E7EB'
+                e.currentTarget.style.background = 'white'
+              }}
+            >
+              <div style={{
+                width: 36, height: 36, borderRadius: '50%',
+                background: '#0F1F3D', color: 'white',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 13, fontWeight: 600, flexShrink: 0,
+              }}>
+                {initials}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                  <span style={{ fontSize: 14, fontWeight: 500, color: '#0F1F3D' }}>{displayName}</span>
+                  <span style={{
+                    background: '#E5E7EB', color: '#374151',
+                    fontSize: 11, padding: '2px 8px', borderRadius: 4,
+                  }}>Personal</span>
+                </div>
+                {user?.bon_id && (
+                  <span style={{ fontSize: 11, color: '#8B5CF6', fontFamily: 'DM Mono, monospace' }}>
+                    {user.bon_id}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Business section */}
+            <div style={{
+              background: 'white', borderRadius: 10,
+              border: '1px solid #E5E7EB',
+              overflow: 'hidden',
+            }}>
+              {entities.length === 0 ? (
+                <div style={{ padding: '14px 16px' }}>
+                  <p style={{ fontSize: 13, color: '#9CA3AF', margin: '0 0 10px' }}>
+                    No businesses added yet
+                  </p>
+                  <span
+                    onClick={() => { setShowEntityModal(false); navigate('/entities') }}
+                    style={{ fontSize: 13, color: '#0F1F3D', fontWeight: 500, cursor: 'pointer' }}
+                  >
+                    + Add a Business
+                  </span>
+                </div>
+              ) : (
+                <>
+                  {entities.map((e) => (
+                    <div
+                      key={e.id}
+                      onClick={() => handleSelectBusiness(e.name)}
+                      style={{
+                        padding: '14px 16px', display: 'flex',
+                        alignItems: 'center', gap: 12,
+                        cursor: 'pointer', borderBottom: '1px solid #F3F4F6',
+                        transition: 'background 0.1s',
+                      }}
+                      onMouseEnter={(ev) => (ev.currentTarget.style.background = '#F8FAFC')}
+                      onMouseLeave={(ev) => (ev.currentTarget.style.background = 'transparent')}
+                    >
+                      <div style={{
+                        width: 36, height: 36, borderRadius: '50%',
+                        background: '#F3F4F6', color: '#374151',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 13, fontWeight: 600, flexShrink: 0,
+                      }}>
+                        {e.name.substring(0, 2).toUpperCase()}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 500, color: '#0F1F3D' }}>{e.name}</div>
+                        <div style={{ fontSize: 11, color: '#9CA3AF' }}>{e.business_type}</div>
+                      </div>
+                    </div>
+                  ))}
+                  <div style={{ padding: '10px 16px' }}>
+                    <span
+                      onClick={() => { setShowEntityModal(false); navigate('/entities') }}
+                      style={{ fontSize: 12, color: '#6B7280', cursor: 'pointer' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = '#0F1F3D')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = '#6B7280')}
+                    >
+                      + Add a Business
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       {/* ── SECTION 1: HOVER TAB SYSTEM ── */}
       <div
@@ -175,7 +430,7 @@ export default function Contracts() {
         {/* Create a Contract button — absolute top right */}
         <div style={{ position: 'absolute', top: 9, right: 22, zIndex: 1 }}>
           <button
-            onClick={() => navigate('/contracts/create')}
+            onClick={openCreateModal}
             style={{
               background: '#000000',
               color: '#fff',
@@ -252,7 +507,7 @@ export default function Contracts() {
                   No contracts yet. Create your first contract.
                 </p>
                 <button
-                  onClick={() => navigate('/contracts/create')}
+                  onClick={openCreateModal}
                   style={{ background: '#000000', color: '#fff', fontSize: 13, fontWeight: 500, height: 34, padding: '0 18px', borderRadius: 8, border: 'none', cursor: 'pointer' }}
                 >
                   Create a Contract
@@ -586,7 +841,7 @@ export default function Contracts() {
                 {/* Create a Contract */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
                   <button
-                    onClick={() => navigate('/contracts/create')}
+                    onClick={openCreateModal}
                     style={{
                       background: '#F5A623',
                       color: '#0F1F3D',

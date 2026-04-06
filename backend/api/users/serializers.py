@@ -64,6 +64,9 @@ class UserProfileSerializer(serializers.Serializer):
     business_count = serializers.SerializerMethodField()
     max_businesses = serializers.SerializerMethodField()
 
+    # From billing
+    subscription_tier = serializers.SerializerMethodField()
+
     def _profile(self, obj):
         try:
             return obj.bon_profile
@@ -100,6 +103,12 @@ class UserProfileSerializer(serializers.Serializer):
     def get_max_businesses(self, obj):
         from backend.billing.gates import max_businesses as _max_businesses
         return _max_businesses(obj)
+
+    def get_subscription_tier(self, obj):
+        try:
+            return obj.subscription.plan.slug
+        except Exception:
+            return None
 
 
 class PublicUserSerializer(serializers.Serializer):

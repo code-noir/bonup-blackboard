@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import api from '@/api/client'
+import type { BusinessEntity } from '@/types/entities'
 
 const STATUS_STYLES: Record<string, { background: string; color: string }> = {
   ACTIVE:    { background: '#0F1F3D', color: '#FFFFFF' },
@@ -32,18 +34,23 @@ const TD_DARK: React.CSSProperties = {
   padding: '8px 12px 8px 0',
 }
 
-const CONTRACTS = [
-  { name: 'Meridian Labs Q2 Services',        party: 'Meridian Labs',   status: 'ACTIVE',    nextDue: '2026-05-01' },
-  { name: 'Vanta Digital Retainer',            party: 'Vanta Digital',   status: 'PENDING',   nextDue: '2026-04-18' },
-  { name: 'Orin Staffing Agreement',           party: 'Orin Staffing',   status: 'OVERDUE',   nextDue: '2026-04-03' },
-  { name: 'Clearpath Inc Delivery SLA',        party: 'Clearpath Inc',   status: 'COMPLETED', nextDue: '—'          },
-  { name: 'Fenix Creative Studio Contract',    party: 'Fenix Creative',  status: 'ACTIVE',    nextDue: '2026-07-01' },
-  { name: 'BluePrint Agency Retainer',         party: 'BluePrint Agency',status: 'ACTIVE',    nextDue: '2026-06-15' },
-  { name: 'Nova Tech Support Agreement',       party: 'Nova Tech',       status: 'PENDING',   nextDue: '2026-04-22' },
-  { name: 'Crestwood Consulting SLA',          party: 'Crestwood',       status: 'OVERDUE',   nextDue: '2026-04-01' },
-  { name: 'Apex Media Partnership',            party: 'Apex Media',      status: 'ACTIVE',    nextDue: '2026-08-01' },
-  { name: 'Groundwork Labs Contract',          party: 'Groundwork Labs', status: 'ACTIVE',    nextDue: '2026-05-20' },
-]
+interface ContractRow { id: string; name: string; party: string; status: string; nextDue: string }
+
+function stateToStatus(state: string): string {
+  if (state === 'fulfilled') return 'COMPLETED'
+  if (state === 'at_risk') return 'OVERDUE'
+  return 'ACTIVE'
+}
+
+function structureLabel(type: string): string {
+  const map: Record<string, string> = {
+    ONE_TIME: 'One-Time',
+    ONGOING: 'Ongoing',
+    COLLABORATIVE: 'Collaborative',
+    RESOLUTION: 'Resolution',
+  }
+  return map[type] ?? type
+}
 
 const CARD: React.CSSProperties = {
   background: '#fff',
@@ -68,14 +75,33 @@ const TD: React.CSSProperties = {
   padding: '13px 12px 13px 0',
 }
 
-// Mock business entities — replace with API data when connected
-const ENTITY_TABS = ['All', 'Personal']
-
 export default function Contracts() {
   const navigate = useNavigate()
   const [hoveredRow, setHoveredRow] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState(0)
   const [entityFilter, setEntityFilter] = useState('All')
+  const [contracts, setContracts] = useState<ContractRow[]>([])
+  const [entities, setEntities] = useState<BusinessEntity[]>([])
+
+  useEffect(() => {
+    api.get<{ id: string; counterparty_email: string; structure_type: string; state: string }[]>('/contracts/')
+      .then(({ data }) => {
+        setContracts(data.map((c) => ({
+          id: c.id,
+          name: `${structureLabel(c.structure_type)} #${c.id.slice(-6).toUpperCase()}`,
+          party: c.counterparty_email,
+          status: stateToStatus(c.state),
+          nextDue: '—',
+        })))
+      })
+      .catch(() => {})
+
+    api.get<{ results: BusinessEntity[] }>('/entities/')
+      .then(({ data }) => setEntities(data.results))
+      .catch(() => {})
+  }, [])
+
+  const entityTabs = ['All', 'Personal', ...entities.map((e) => e.name)]
   const [isHovered, setIsHovered] = useState(false)
   const [selectedVideo, setSelectedVideo] = useState(0)
   const [isExpanded, setIsExpanded] = useState(false)
@@ -110,7 +136,7 @@ export default function Contracts() {
 
       {/* ── ENTITY FILTER TABS ── */}
       <div style={{ display: 'flex', gap: 6 }}>
-        {ENTITY_TABS.map((tab) => (
+        {entityTabs.map((tab) => (
           <button
             key={tab}
             onClick={() => setEntityFilter(tab)}
@@ -220,9 +246,22 @@ export default function Contracts() {
           >
 
             {/* Tabs 0, 1, 4, 5 — contract-style table */}
-            {[0, 1, 4, 5].includes(activeTab) && (() => {
+            {activeTab === 0 && contracts.length === 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 220, gap: 12 }}>
+                <p style={{ fontSize: 14, color: '#9CA3AF', margin: 0 }}>
+                  No contracts yet. Create your first contract.
+                </p>
+                <button
+                  onClick={() => navigate('/contracts/create')}
+                  style={{ background: '#000000', color: '#fff', fontSize: 13, fontWeight: 500, height: 34, padding: '0 18px', borderRadius: 8, border: 'none', cursor: 'pointer' }}
+                >
+                  Create a Contract
+                </button>
+              </div>
+            )}
+            {[0, 1, 4, 5].includes(activeTab) && (activeTab !== 0 || contracts.length > 0) && (() => {
               const rows =
-                activeTab === 0 ? CONTRACTS :
+                activeTab === 0 ? contracts :
                 activeTab === 1 ? [
                   { name: 'Vanta Digital Retainer',          party: 'Vanta Digital',   status: 'PENDING', nextDue: '2026-04-18' },
                   { name: 'Nova Tech Support Agreement',      party: 'Nova Tech',        status: 'PENDING', nextDue: '2026-04-22' },

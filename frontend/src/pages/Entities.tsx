@@ -1,19 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '@/context/AuthContext'
+import api from '@/api/client'
 import type { BusinessEntity, BusinessType } from '@/types/entities'
-
-// Tier: 'Free Trial' | 'Sol Member' | 'As You Go' | 'Blackboard Basic' | 'Blackboard Pro' | 'Blackboard Business' | 'Blackboard Enterprise'
-const USER_TIER = 'Blackboard Business'
-
-const MAX_BY_TIER: Record<string, number> = {
-  'Free Trial': 1,
-  'Sol Member': 0,
-  'As You Go': 1,
-  'Blackboard Basic': 0,
-  'Blackboard Pro': 1,
-  'Blackboard Business': 4,
-  'Blackboard Enterprise': 35,
-}
 
 const BUSINESS_TYPES: BusinessType[] = [
   'LLC', 'Corporation', 'Sole Proprietor', 'Partnership',
@@ -53,10 +41,19 @@ function onFB(e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLS
 export default function Entities() {
   const { user } = useAuth()
 
-  const maxAllowed = MAX_BY_TIER[USER_TIER] ?? 0
-  const tierAllows = maxAllowed > 0
-
   const [entities, setEntities] = useState<BusinessEntity[]>([])
+  const [maxAllowed, setMaxAllowed] = useState(0)
+
+  useEffect(() => {
+    api.get<{ count: number; max_allowed: number; results: BusinessEntity[] }>('/entities/')
+      .then(({ data }) => {
+        setEntities(data.results)
+        setMaxAllowed(data.max_allowed)
+      })
+      .catch(() => {})
+  }, [])
+
+  const tierAllows = maxAllowed > 0
 
   // Slide-in form state
   const [panelOpen, setPanelOpen] = useState(false)
@@ -108,47 +105,38 @@ export default function Entities() {
     setEditingId(null)
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!formName.trim() || !formType) return
-    if (editingId) {
-      setEntities((prev) =>
-        prev.map((e) =>
-          e.id === editingId
-            ? {
-                ...e,
-                name: formName,
-                business_type: formType as BusinessType,
-                industry: formIndustry,
-                description: formDescription,
-                address: formAddress || null,
-                website: formWebsite || null,
-                founded_date: formFoundedDate || null,
-                updated_at: new Date().toISOString(),
-              }
-            : e
-        )
-      )
-    } else {
-      const newEntity: BusinessEntity = {
-        id: crypto.randomUUID(),
-        name: formName,
-        business_type: formType as BusinessType,
-        industry: formIndustry,
-        description: formDescription,
-        address: formAddress || null,
-        website: formWebsite || null,
-        founded_date: formFoundedDate || null,
-        is_active: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }
-      setEntities((prev) => [...prev, newEntity])
+    const payload = {
+      name: formName,
+      business_type: formType,
+      industry: formIndustry,
+      description: formDescription,
+      address: formAddress || null,
+      website: formWebsite || null,
+      founded_date: formFoundedDate || null,
     }
-    closePanel()
+    try {
+      if (editingId) {
+        const { data } = await api.put<BusinessEntity>(`/entities/${editingId}/`, payload)
+        setEntities((prev) => prev.map((e) => (e.id === editingId ? data : e)))
+      } else {
+        const { data } = await api.post<BusinessEntity>('/entities/', payload)
+        setEntities((prev) => [...prev, data])
+      }
+      closePanel()
+    } catch {
+      // leave panel open so user can retry
+    }
   }
 
-  function handleDeactivate(id: string) {
-    setEntities((prev) => prev.filter((e) => e.id !== id))
+  async function handleDeactivate(id: string) {
+    try {
+      await api.delete(`/entities/${id}/`)
+      setEntities((prev) => prev.filter((e) => e.id !== id))
+    } catch {
+      // ignore
+    }
   }
 
   const pct = maxAllowed > 0 ? Math.min(100, (entities.length / maxAllowed) * 100) : 0

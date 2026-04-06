@@ -31,8 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchMe = useCallback(async () => {
     try {
       const { data } = await api.get<AuthUser>('/users/me/')
-      // TODO: remove once billing system is complete — temporary dev default
-      setUser({ ...data, subscription_tier: 'blackboard_enterprise' })
+      setUser(data)
     } catch {
       setUser(null)
       tokenStorage.clear()

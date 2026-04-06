@@ -1,12 +1,26 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 
 // Tier: 'Free Trial' | 'Sol Member' | 'As You Go' | 'Blackboard Basic' | 'Blackboard Pro' | 'Blackboard Business' | 'Blackboard Premium'
 const USER_TIER = 'Blackboard Business'
 
+// Mock business entities — replace with API data when connected
+const MOCK_ENTITIES: { id: string; name: string }[] = []
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const { user, isOnTrial, trialDaysRemaining, hasTrialExpired } = useAuth()
+  const [viewingAs, setViewingAs] = useState<string>('personal')
+
+  const firstName = user?.first_name || user?.username || 'You'
+  const lastName = user?.last_name || ''
+  const displayName = [firstName, lastName].filter(Boolean).join(' ')
+
+  const viewingAsLabel = viewingAs === 'personal'
+    ? `${displayName} (Personal)`
+    : MOCK_ENTITIES.find((e) => e.id === viewingAs)?.name ?? 'Personal'
+
   return (
     <div className="space-y-6">
       <p style={{ fontSize: 13, color: '#9CA3AF', paddingTop: 14, paddingBottom: 14 }}>
@@ -29,6 +43,26 @@ export default function Dashboard() {
             <p className="mt-1 text-2xl font-semibold text-slate-900">{value}</p>
           </div>
         ))}
+      </div>
+
+      {/* Viewing as indicator */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 12, color: '#6B7280' }}>Viewing as:</span>
+        <span style={{ fontSize: 12, color: '#374151', fontWeight: 500 }}>{viewingAsLabel}</span>
+        <select
+          value={viewingAs}
+          onChange={(e) => setViewingAs(e.target.value)}
+          style={{
+            fontSize: 11, color: '#6B7280', border: '1px solid #E5E7EB',
+            borderRadius: 6, padding: '2px 6px', background: 'white',
+            cursor: 'pointer', outline: 'none',
+          }}
+        >
+          <option value="personal">Personal</option>
+          {MOCK_ENTITIES.map((e) => (
+            <option key={e.id} value={e.id}>{e.name}</option>
+          ))}
+        </select>
       </div>
 
       {/* Trial banner — active */}

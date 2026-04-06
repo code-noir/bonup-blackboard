@@ -32,6 +32,7 @@ const nav = [
   { to: '/ai',          label: 'AI Assistant',         Icon: SparklesIcon },
   { to: '/analysis',    label: 'Contract Analysis',    Icon: emojiIcon('🔍') },
   { to: '/counter',     label: 'Contract Counter',     Icon: emojiIcon('⚡') },
+  { to: '/entities',    label: 'My Businesses',        Icon: emojiIcon('🏢') },
 ]
 
 const bottomNav = [

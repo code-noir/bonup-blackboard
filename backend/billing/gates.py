@@ -232,6 +232,58 @@ def consume_trial_contract(user):
 
 
 # ---------------------------------------------------------------------------
+# Business Entity gates
+# ---------------------------------------------------------------------------
+
+_MAX_BUSINESSES = {
+    "trial": 1,
+    "sol_member": 0,
+    "per_contract": 1,
+    "starter": 0,
+    "professional": 1,
+    "business": 4,
+    "anchor": 35,
+}
+
+
+def max_businesses(user):
+    """Return the maximum number of business entities allowed for this user's plan."""
+    sub = get_user_subscription(user)
+    if sub is None:
+        return 0
+    return _MAX_BUSINESSES.get(sub.plan.slug, 0)
+
+
+def can_create_business_entity(user):
+    """
+    Returns (allowed: bool, message: str).
+    Checks tier limit before allowing a new BusinessEntity to be created.
+    """
+    from backend.users.models import BusinessEntity
+
+    sub = get_user_subscription(user)
+    if sub is None:
+        return False, _("No active subscription.")
+    if sub.status not in _ACTIVE_STATUSES:
+        return False, _("Your subscription is not active.")
+
+    max_biz = _MAX_BUSINESSES.get(sub.plan.slug, 0)
+    if max_biz == 0:
+        return (
+            False,
+            _("Business entities are not available on your current plan. Upgrade to Blackboard Pro ($149/month) or higher."),
+        )
+
+    current = BusinessEntity.objects.filter(owner=user, is_active=True).count()
+    if current >= max_biz:
+        return (
+            False,
+            _("Business entity limit reached (%(limit)s). Please upgrade your plan to add more.") % {"limit": max_biz},
+        )
+    return True, ""
+
+
+# ---------------------------------------------------------------------------
 # Sol Member auto-upgrade / auto-downgrade helpers
 # ---------------------------------------------------------------------------
 

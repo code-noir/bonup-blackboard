@@ -68,10 +68,14 @@ const TD: React.CSSProperties = {
   padding: '13px 12px 13px 0',
 }
 
+// Mock business entities — replace with API data when connected
+const ENTITY_TABS = ['All', 'Personal']
+
 export default function Contracts() {
   const navigate = useNavigate()
   const [hoveredRow, setHoveredRow] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState(0)
+  const [entityFilter, setEntityFilter] = useState('All')
   const [isHovered, setIsHovered] = useState(false)
   const [selectedVideo, setSelectedVideo] = useState(0)
   const [isExpanded, setIsExpanded] = useState(false)
@@ -103,6 +107,38 @@ export default function Contracts() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* ── ENTITY FILTER TABS ── */}
+      <div style={{ display: 'flex', gap: 6 }}>
+        {ENTITY_TABS.map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setEntityFilter(tab)}
+            style={{
+              height: 30, padding: '0 14px',
+              background: entityFilter === tab ? '#0F1F3D' : 'white',
+              color: entityFilter === tab ? 'white' : '#6B7280',
+              border: `1px solid ${entityFilter === tab ? '#0F1F3D' : '#E5E7EB'}`,
+              borderRadius: 6, fontSize: 12, fontWeight: 500,
+              cursor: 'pointer', transition: 'all 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              if (entityFilter !== tab) {
+                e.currentTarget.style.borderColor = '#9CA3AF'
+                e.currentTarget.style.color = '#374151'
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (entityFilter !== tab) {
+                e.currentTarget.style.borderColor = '#E5E7EB'
+                e.currentTarget.style.color = '#6B7280'
+              }
+            }}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
 
       {/* ── SECTION 1: HOVER TAB SYSTEM ── */}
       <div

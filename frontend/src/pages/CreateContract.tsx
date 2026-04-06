@@ -418,6 +418,11 @@ export default function CreateContract() {
   const [isSubmittingCounter, setIsSubmittingCounter] = useState(false)
   const [paygConfirmDismissed, setPaygConfirmDismissed] = useState(false)
 
+  // Contracting As — null = personal, string = entity id
+  const [selectedEntity, setSelectedEntity] = useState<string | null>(null)
+  // Mock entities — replace with API data when connected
+  const MOCK_ENTITIES: { id: string; name: string; type: string }[] = []
+
   // Contract Details panel fields
   const [detailsType, setDetailsType] = useState('')
   const [detailsLanguage, setDetailsLanguage] = useState('English')
@@ -1572,8 +1577,148 @@ export default function CreateContract() {
                         fontFamily: "'Outfit', sans-serif", outline: 'none',
                         marginBottom: 12, boxSizing: 'border-box',
                       }
+                      const TIER_ALLOWS_BUSINESS = ['Free Trial', 'As You Go', 'Blackboard Pro', 'Blackboard Business', 'Blackboard Premium'].includes(USER_TIER)
+
+                      const userInitials =
+                        [user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join('').toUpperCase() ||
+                        user?.username?.[0]?.toUpperCase() || '?'
+                      const userDisplayName =
+                        user?.first_name ? `${user.first_name} ${user.last_name}`.trim() : user?.username ?? 'You'
+
+                      function bizInitials(name: string) {
+                        const words = name.trim().split(/\s+/)
+                        return words.length >= 2
+                          ? (words[0][0] + words[words.length - 1][0]).toUpperCase()
+                          : name.substring(0, 2).toUpperCase()
+                      }
+
+                      const CARD_BASE: React.CSSProperties = {
+                        background: 'white', borderRadius: 8, padding: '10px 12px',
+                        border: '1px solid #D1D5DB',
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        cursor: 'pointer', marginBottom: 6,
+                        transition: 'all 0.15s',
+                      }
+                      const CARD_SELECTED: React.CSSProperties = {
+                        ...CARD_BASE,
+                        borderColor: '#0F1F3D', background: '#F0F4F8',
+                        boxShadow: '0 0 0 2px rgba(15,31,61,0.1)',
+                      }
+
                       return (
                         <>
+                          {/* 0. Contracting As */}
+                          <label style={{
+                            ...LABEL,
+                            textTransform: 'uppercase' as const,
+                            letterSpacing: '0.06em',
+                            marginBottom: 8,
+                          }}>Contracting As</label>
+
+                          {/* Personal card */}
+                          <div
+                            onClick={() => setSelectedEntity(null)}
+                            style={selectedEntity === null ? CARD_SELECTED : CARD_BASE}
+                          >
+                            <div style={{
+                              width: 32, height: 32, borderRadius: '50%',
+                              background: '#0F1F3D', color: 'white',
+                              fontSize: 12, fontWeight: 600,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              flexShrink: 0,
+                            }}>
+                              {userInitials}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <span style={{ fontSize: 13, fontWeight: 500, color: '#0F1F3D' }}>
+                                {userDisplayName}
+                              </span>
+                              <span style={{
+                                marginLeft: 6, background: '#E5E7EB', color: '#374151',
+                                fontSize: 10, padding: '2px 6px', borderRadius: 4,
+                              }}>Personal</span>
+                            </div>
+                            {user?.bon_id && (
+                              <span style={{ fontSize: 10, color: '#8B5CF6', fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>
+                                {user.bon_id}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Business entity cards */}
+                          {MOCK_ENTITIES.map((entity) => (
+                            <div
+                              key={entity.id}
+                              onClick={() => setSelectedEntity(entity.id)}
+                              style={selectedEntity === entity.id ? CARD_SELECTED : CARD_BASE}
+                            >
+                              <div style={{
+                                width: 32, height: 32, borderRadius: '50%',
+                                background: '#1E3A55', color: 'white',
+                                fontSize: 12, fontWeight: 600,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                flexShrink: 0,
+                              }}>
+                                {bizInitials(entity.name)}
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <span style={{ fontSize: 13, fontWeight: 500, color: '#0F1F3D' }}>
+                                  {entity.name}
+                                </span>
+                                <span style={{
+                                  marginLeft: 6, background: '#EFF6FF', color: '#1D4ED8',
+                                  fontSize: 10, padding: '2px 6px', borderRadius: 4,
+                                }}>{entity.type}</span>
+                              </div>
+                            </div>
+                          ))}
+
+                          {/* Add a Business card — tier allows, no entities */}
+                          {TIER_ALLOWS_BUSINESS && MOCK_ENTITIES.length === 0 && (
+                            <div
+                              style={{
+                                ...CARD_BASE,
+                                border: '1px dashed #D1D5DB',
+                                color: '#6B7280', fontSize: 13,
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.borderColor = '#0F1F3D'
+                                e.currentTarget.style.color = '#0F1F3D'
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.borderColor = '#D1D5DB'
+                                e.currentTarget.style.color = '#6B7280'
+                              }}
+                              onClick={() => navigate('/entities')}
+                            >
+                              <div style={{
+                                width: 32, height: 32, borderRadius: '50%',
+                                background: '#F3F4F6',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontSize: 16, flexShrink: 0,
+                              }}>+</div>
+                              + Add a Business Entity
+                            </div>
+                          )}
+
+                          {/* Locked card — tier does not allow */}
+                          {!TIER_ALLOWS_BUSINESS && (
+                            <div
+                              style={{
+                                background: '#F9FAFB', borderRadius: 8, padding: '10px 12px',
+                                border: '1px solid #E5E7EB',
+                                display: 'flex', alignItems: 'center', gap: 10,
+                                color: '#9CA3AF', fontSize: 12, marginBottom: 6,
+                              }}
+                              onClick={() => navigate('/settings')}
+                            >
+                              <span style={{ fontSize: 16 }}>🔒</span>
+                              Business entities available on Blackboard Pro ($149/month)
+                            </div>
+                          )}
+
+                          <div style={{ marginBottom: 8 }} />
+
                           {/* 1. Contract Title */}
                           <label style={LABEL}>Contract Title</label>
                           <input

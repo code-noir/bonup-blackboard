@@ -184,6 +184,55 @@ class UserBillingInfo(models.Model):
 # USER INVITATION
 # ============================================================
 
+class BusinessEntity(models.Model):
+    """
+    A business entity that a user can contract under.
+    Tier limits enforced via billing.gates.can_create_business_entity().
+    """
+
+    BUSINESS_TYPE_CHOICES = [
+        ("LLC", "LLC"),
+        ("Corporation", "Corporation"),
+        ("Sole Proprietor", "Sole Proprietor"),
+        ("Partnership", "Partnership"),
+        ("Non-Profit", "Non-Profit"),
+        ("Trust", "Trust"),
+        ("S-Corp", "S-Corp"),
+        ("C-Corp", "C-Corp"),
+        ("Other", "Other"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="business_entities",
+    )
+
+    name = models.CharField(max_length=200)
+    business_type = models.CharField(max_length=30, choices=BUSINESS_TYPE_CHOICES)
+    description = models.CharField(max_length=300, blank=True, default="")
+    industry = models.CharField(max_length=100, blank=True, default="")
+    address = models.CharField(max_length=300, null=True, blank=True)
+    website = models.URLField(null=True, blank=True)
+    founded_date = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name_plural = "business entities"
+
+    def __str__(self):
+        return f"{self.name} ({self.business_type}) — {self.owner_id}"
+
+
+# ============================================================
+# USER INVITATION
+# ============================================================
+
 class UserInvitation(models.Model):
     """
     Invitation sent by an existing user to a non-registered email.

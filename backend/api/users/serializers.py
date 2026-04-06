@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
-from backend.users.models import BonUserProfile, UserBillingInfo, UserInvitation
+from backend.users.models import BonUserProfile, BusinessEntity, UserBillingInfo, UserInvitation
 
 User = get_user_model()
 
@@ -61,6 +61,8 @@ class UserProfileSerializer(serializers.Serializer):
     state_region = serializers.SerializerMethodField()
     country = serializers.SerializerMethodField()
     email_verified = serializers.SerializerMethodField()
+    business_count = serializers.SerializerMethodField()
+    max_businesses = serializers.SerializerMethodField()
 
     def _profile(self, obj):
         try:
@@ -91,6 +93,13 @@ class UserProfileSerializer(serializers.Serializer):
     def get_email_verified(self, obj):
         p = self._profile(obj)
         return p.email_verified if p else False
+
+    def get_business_count(self, obj):
+        return BusinessEntity.objects.filter(owner=obj, is_active=True).count()
+
+    def get_max_businesses(self, obj):
+        from backend.billing.gates import max_businesses as _max_businesses
+        return _max_businesses(obj)
 
 
 class PublicUserSerializer(serializers.Serializer):

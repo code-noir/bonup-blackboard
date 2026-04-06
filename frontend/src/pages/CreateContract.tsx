@@ -1033,77 +1033,129 @@ export default function CreateContract() {
                   </div>
 
                   {/* Panel content */}
-                  <div style={{ flex: 1, overflowY: 'auto', padding: activeTool === 'Calculator' ? 12 : 16 }}>
+                  <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
                     {activeTool === 'Calculator' ? (
                       <>
-                        {/* Secondary display */}
+                        {/* Display screen */}
                         <div style={{
-                          fontSize: 11, color: '#6B7280',
-                          textAlign: 'right', marginBottom: 4, minHeight: 16,
-                          fontFamily: "'DM Mono', monospace",
+                          background: '#0F1F3D', borderRadius: 10,
+                          padding: 16, marginBottom: 14, minHeight: 80,
+                          display: 'flex', flexDirection: 'column',
+                          justifyContent: 'flex-end', alignItems: 'flex-end',
                         }}>
-                          {calcFormula}
-                        </div>
-                        {/* Main display */}
-                        <div style={{
-                          background: '#0F1F3D', color: '#F5A623',
-                          fontSize: 28, fontFamily: "'DM Mono', monospace",
-                          textAlign: 'right', padding: '12px 16px',
-                          borderRadius: 8, marginBottom: 10,
-                          minHeight: 60, display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-                          overflowX: 'hidden', wordBreak: 'break-all',
-                        }}>
-                          {calcDisplay}
-                        </div>
-                        {/* Button grid */}
-                        {[
-                          [{ l: 'C', t: 'clear' }, { l: '±', t: 'sign' }, { l: '%', t: 'pct' }, { l: '÷', t: 'op' }],
-                          [{ l: '7', t: 'num' }, { l: '8', t: 'num' }, { l: '9', t: 'num' }, { l: '×', t: 'op' }],
-                          [{ l: '4', t: 'num' }, { l: '5', t: 'num' }, { l: '6', t: 'num' }, { l: '−', t: 'op' }],
-                          [{ l: '1', t: 'num' }, { l: '2', t: 'num' }, { l: '3', t: 'num' }, { l: '+', t: 'op' }],
-                          [{ l: '0', t: 'zero' }, { l: '.', t: 'num' }, { l: '=', t: 'eq' }],
-                        ].map((row, ri) => (
-                          <div key={ri} style={{ display: 'grid', gridTemplateColumns: ri === 4 ? '2fr 1fr 1fr' : 'repeat(4, 1fr)', gap: 6, marginBottom: 6 }}>
-                            {row.map(({ l, t }) => {
-                              let bg = 'rgba(255,255,255,0.08)'
-                              let color = 'white'
-                              if (t === 'op') { bg = 'rgba(245,166,35,0.2)'; color = '#F5A623' }
-                              if (t === 'eq') { bg = '#F5A623'; color = '#0F1F3D' }
-                              if (t === 'clear') { bg = 'rgba(239,68,68,0.2)'; color = '#F87171' }
-                              return (
-                                <button
-                                  key={l}
-                                  onClick={() => {
-                                    if (t === 'num' || t === 'zero') calcInput(l)
-                                    else if (t === 'op') calcOp(l)
-                                    else if (t === 'eq') calcEqual()
-                                    else if (t === 'clear') calcClear()
-                                    else if (t === 'sign') {
-                                      setCalcDisplay(String(parseFloat(calcDisplay) * -1))
-                                    }
-                                    else if (t === 'pct') {
-                                      setCalcDisplay(String(parseFloat(calcDisplay) / 100))
-                                    }
-                                  }}
-                                  style={{
-                                    background: bg, color, border: 'none',
-                                    borderRadius: 8, height: 44, fontSize: 15,
-                                    cursor: 'pointer', fontFamily: "'DM Mono', monospace",
-                                    fontWeight: t === 'eq' ? 700 : 400,
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.opacity = '0.85'
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.opacity = '1'
-                                  }}
-                                >
-                                  {l}
-                                </button>
-                              )
-                            })}
+                          <div style={{
+                            fontSize: 11, color: 'rgba(255,255,255,0.4)',
+                            fontFamily: "'DM Mono', monospace",
+                            marginBottom: 4, minHeight: 16,
+                          }}>
+                            {calcFormula}
                           </div>
-                        ))}
+                          <div style={{
+                            fontSize: 28, fontWeight: 500, color: '#ffffff',
+                            fontFamily: "'DM Mono', monospace",
+                            letterSpacing: '-0.02em', wordBreak: 'break-all',
+                          }}>
+                            {calcDisplay}
+                          </div>
+                        </div>
+
+                        {/* Button grid — flat array, CSS grid handles layout */}
+                        <div style={{
+                          display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
+                          gap: 8, marginBottom: 14,
+                        }}>
+                          {([
+                            { l: 'C', t: 'clear' }, { l: '±', t: 'sign' }, { l: '%', t: 'pct' }, { l: '÷', t: 'op' },
+                            { l: '7', t: 'num'   }, { l: '8', t: 'num'  }, { l: '9', t: 'num'  }, { l: '×', t: 'op' },
+                            { l: '4', t: 'num'   }, { l: '5', t: 'num'  }, { l: '6', t: 'num'  }, { l: '−', t: 'op' },
+                            { l: '1', t: 'num'   }, { l: '2', t: 'num'  }, { l: '3', t: 'num'  }, { l: '+', t: 'op' },
+                            { l: '0', t: 'zero'  }, { l: '.', t: 'num'  }, { l: '=', t: 'eq'   },
+                          ] as { l: string; t: string }[]).map(({ l, t }) => {
+                            let bg = '#ffffff'; let color = '#0F1F3D'
+                            if (t === 'op')               { bg = 'rgba(245,166,35,0.15)'; color = '#92650A' }
+                            if (t === 'eq')               { bg = '#0F1F3D';               color = '#ffffff'  }
+                            if (t === 'clear')            { bg = 'rgba(239,68,68,0.1)';   color = '#DC2626'  }
+                            if (t === 'sign' || t === 'pct') { bg = 'rgba(15,31,61,0.08)'; color = '#0F1F3D' }
+                            return (
+                              <button
+                                key={l}
+                                onClick={() => {
+                                  if (t === 'num' || t === 'zero') calcInput(l)
+                                  else if (t === 'op')   calcOp(l)
+                                  else if (t === 'eq')   calcEqual()
+                                  else if (t === 'clear') calcClear()
+                                  else if (t === 'sign') setCalcDisplay(String(parseFloat(calcDisplay) * -1))
+                                  else if (t === 'pct')  setCalcDisplay(String(parseFloat(calcDisplay) / 100))
+                                }}
+                                style={{
+                                  height: 46, border: 'none', borderRadius: 8,
+                                  fontSize: t === 'eq' ? 18 : 15, fontWeight: 500,
+                                  cursor: 'pointer', fontFamily: "'DM Mono', monospace",
+                                  transition: 'all 0.1s',
+                                  display: 'flex', alignItems: 'center',
+                                  justifyContent: t === 'zero' ? 'flex-start' : 'center',
+                                  gridColumn: t === 'zero' ? 'span 2' : undefined,
+                                  paddingLeft: t === 'zero' ? 18 : undefined,
+                                  background: bg, color,
+                                }}
+                                onMouseEnter={(e) => {
+                                  const el = e.currentTarget
+                                  if (t === 'num' || t === 'zero') el.style.background = '#F3F4F6'
+                                  else if (t === 'op')    el.style.background = 'rgba(245,166,35,0.25)'
+                                  else if (t === 'eq')    el.style.background = '#1a3460'
+                                  else if (t === 'clear') el.style.background = 'rgba(239,68,68,0.18)'
+                                  else                    el.style.background = 'rgba(15,31,61,0.14)'
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = bg
+                                  e.currentTarget.style.transform = 'scale(1)'
+                                }}
+                                onMouseDown={(e) => {
+                                  if (t === 'num' || t === 'zero') e.currentTarget.style.background = '#E5E7EB'
+                                  else if (t === 'op') e.currentTarget.style.background = 'rgba(245,166,35,0.35)'
+                                  e.currentTarget.style.transform = 'scale(0.97)'
+                                }}
+                                onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)' }}
+                              >
+                                {l}
+                              </button>
+                            )
+                          })}
+                        </div>
+
+                        {/* Financial tools */}
+                        <div style={{ height: 1, background: '#D1D5DB', margin: '4px 0 12px' }} />
+                        <p style={{
+                          fontSize: 10, color: '#9CA3AF', fontWeight: 600,
+                          textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8,
+                        }}>
+                          Financial
+                        </p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                          {(['PMT', 'PV', 'FV', '%'] as const).map((l) => (
+                            <button
+                              key={l}
+                              style={{
+                                height: 36, borderRadius: 8, fontSize: 11, fontWeight: 600,
+                                border: '1px solid #D1D5DB', background: 'white', color: '#374151',
+                                cursor: 'pointer', fontFamily: "'Outfit', sans-serif",
+                                transition: 'all 0.1s',
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = '#F8FAFC'
+                                e.currentTarget.style.borderColor = '#0F1F3D'
+                                e.currentTarget.style.color = '#0F1F3D'
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'white'
+                                e.currentTarget.style.borderColor = '#D1D5DB'
+                                e.currentTarget.style.color = '#374151'
+                              }}
+                            >
+                              {l}
+                            </button>
+                          ))}
+                        </div>
                       </>
                     ) : activeTool === 'Contract Analysis' ? (
                       <>

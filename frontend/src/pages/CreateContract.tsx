@@ -797,7 +797,7 @@ export default function CreateContract() {
             fontSize: 10, padding: '2px 8px', borderRadius: 4,
             marginRight: 8, flexShrink: 0, whiteSpace: 'nowrap',
           }}>
-            {activeEditor === 'left' ? 'Left Editor' : 'Right Editor'}
+            {activeEditor === 'left' ? 'Draft Editor' : 'Final Editor'}
           </span>
 
           {/* G1: Font Family */}
@@ -2182,7 +2182,7 @@ export default function CreateContract() {
               }}
             >
 
-              {/* LEFT EDITOR */}
+              {/* DRAFT EDITOR */}
               <div style={focusMode === 'right' ? { display: 'none' } : {
                 width: focusMode === 'left' ? '100%' : `${splitPercent}%`,
                 flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0,
@@ -2193,27 +2193,26 @@ export default function CreateContract() {
                   background: '#F8FAFC',
                   borderBottom: '1px solid #E5E7EB',
                   borderRight: focusMode === 'left' ? 'none' : '1px solid #E5E7EB',
-                  padding: '0 16px',
+                  padding: '0 12px',
                   display: 'flex', alignItems: 'center', gap: 8,
                 }}>
-                  <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Left Editor</span>
-                  {activeEditor === 'left' && focusMode !== 'left' && (
+                  <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Draft Editor</span>
+                  {activeEditor === 'left' && (
                     <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#2DD4BF' }} />
                   )}
-                  <div style={{ marginLeft: 'auto' }}>
-                    <button
-                      onClick={() => focusMode === 'left' ? exitFocus() : enterFocus('left')}
-                      title="Focus mode"
-                      style={{
-                        background: 'transparent', border: 'none',
-                        color: '#9CA3AF', fontSize: 14, cursor: 'pointer', padding: 4,
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
-                      onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
-                    >
-                      ⛶
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => focusMode === 'left' ? exitFocus() : enterFocus('left')}
+                    title="Focus mode"
+                    style={{
+                      background: 'transparent', border: 'none',
+                      color: '#9CA3AF', fontSize: 14, cursor: 'pointer', padding: 4,
+                      marginLeft: 'auto',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
+                  >
+                    ⛶
+                  </button>
                 </div>
                 {focusMode === 'left' ? (
                   <div style={{ flex: 1, overflowY: 'auto', background: '#F0F2F5', padding: 24 }}>
@@ -2275,7 +2274,7 @@ export default function CreateContract() {
                 }} />
               </div>
 
-              {/* RIGHT EDITOR */}
+              {/* FINAL EDITOR */}
               <div style={focusMode === 'left' ? { display: 'none' } : {
                 flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0,
               }}>
@@ -2284,27 +2283,26 @@ export default function CreateContract() {
                   background: '#F8FAFC',
                   borderBottom: '1px solid #E5E7EB',
                   borderLeft: focusMode === 'right' ? 'none' : '1px solid #E5E7EB',
-                  padding: '0 16px',
+                  padding: '0 12px',
                   display: 'flex', alignItems: 'center', gap: 8,
                 }}>
-                  <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Right Editor</span>
-                  {activeEditor === 'right' && focusMode !== 'right' && (
+                  <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Final Editor</span>
+                  {activeEditor === 'right' && (
                     <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#2DD4BF' }} />
                   )}
-                  <div style={{ marginLeft: 'auto' }}>
-                    <button
-                      onClick={() => focusMode === 'right' ? exitFocus() : enterFocus('right')}
-                      title="Focus mode"
-                      style={{
-                        background: 'transparent', border: 'none',
-                        color: '#9CA3AF', fontSize: 14, cursor: 'pointer', padding: 4,
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
-                      onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
-                    >
-                      ⛶
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => focusMode === 'right' ? exitFocus() : enterFocus('right')}
+                    title="Focus mode"
+                    style={{
+                      background: 'transparent', border: 'none',
+                      color: '#9CA3AF', fontSize: 14, cursor: 'pointer', padding: 4,
+                      marginLeft: 'auto',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
+                  >
+                    ⛶
+                  </button>
                 </div>
                 {focusMode === 'right' ? (
                   <div style={{ flex: 1, overflowY: 'auto', background: '#F0F2F5', padding: 24 }}>

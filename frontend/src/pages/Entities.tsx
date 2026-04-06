@@ -346,39 +346,43 @@ export default function Entities() {
         </div>
       )}
 
-      {/* Slide-in form panel */}
+      {/* Centered modal */}
       {panelOpen && (
-        <div
-          style={{
-            position: 'fixed', inset: 0, zIndex: 400,
-            background: 'rgba(0,0,0,0.3)',
-          }}
-          onClick={(e) => { if (e.target === e.currentTarget) closePanel() }}
-        >
+        <>
+          {/* Backdrop */}
+          <div
+            onClick={closePanel}
+            style={{
+              position: 'fixed', inset: 0,
+              background: 'rgba(0,0,0,0.4)', zIndex: 299,
+            }}
+          />
           <div style={{
-            position: 'fixed', left: 0, top: 0,
-            height: '100vh', width: 400,
-            background: 'white',
-            boxShadow: '4px 0 24px rgba(0,0,0,0.1)',
-            zIndex: 401,
-            display: 'flex', flexDirection: 'column',
-            transform: 'translateX(0)',
-            transition: 'transform 0.3s ease',
-            overflow: 'hidden',
+            position: 'fixed', top: '50%', left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: 480, maxHeight: '85vh', overflowY: 'auto',
+            background: 'white', borderRadius: 12,
+            boxShadow: '0 8px 40px rgba(0,0,0,0.15)',
+            zIndex: 300, padding: 28,
           }}>
-            {/* Panel header */}
-            <div style={{
-              padding: '20px 24px 16px',
-              borderBottom: '1px solid #E5E7EB',
-              flexShrink: 0,
-            }}>
-              <p style={{ fontSize: 16, fontWeight: 700, color: '#0F1F3D', margin: 0 }}>
-                {editingId ? 'Edit Business Entity' : 'Add Business Entity'}
-              </p>
-            </div>
+            {/* Close button */}
+            <button
+              onClick={closePanel}
+              style={{
+                position: 'absolute', top: 16, right: 16,
+                background: 'transparent', border: 'none',
+                fontSize: 20, color: '#9CA3AF', cursor: 'pointer', lineHeight: 1,
+              }}
+            >
+              ×
+            </button>
 
-            {/* Scrollable form body */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+            <p style={{ fontSize: 16, fontWeight: 700, color: '#0F1F3D', margin: '0 0 20px' }}>
+              {editingId ? 'Edit Business Entity' : 'Add Business Entity'}
+            </p>
+
+            {/* Form body */}
+            <div>
               {/* Business Name */}
               <label style={LABEL}>Business Name *</label>
               <input
@@ -479,8 +483,8 @@ export default function Entities() {
               />
             </div>
 
-            {/* Panel footer */}
-            <div style={{ padding: '16px 24px', borderTop: '1px solid #E5E7EB', flexShrink: 0 }}>
+            {/* Buttons */}
+            <div style={{ marginTop: 24, borderTop: '1px solid #E5E7EB', paddingTop: 20 }}>
               <button
                 onClick={closePanel}
                 style={{
@@ -514,7 +518,7 @@ export default function Entities() {
               </button>
             </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   )

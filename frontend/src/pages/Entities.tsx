@@ -56,7 +56,7 @@ export default function Entities() {
 
   const tierAllows = maxAllowed > 0
 
-  // Slide-in form state
+  // Form state
   const [panelOpen, setPanelOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formName, setFormName] = useState('')
@@ -66,6 +66,9 @@ export default function Entities() {
   const [formAddress, setFormAddress] = useState('')
   const [formWebsite, setFormWebsite] = useState('')
   const [formFoundedDate, setFormFoundedDate] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const [toast, setToast] = useState('')
 
   const atLimit = entities.length >= maxAllowed
 
@@ -104,10 +107,13 @@ export default function Entities() {
   function closePanel() {
     setPanelOpen(false)
     setEditingId(null)
+    setSaveError('')
   }
 
   async function handleSave() {
     if (!formName.trim() || !formType) return
+    setSaving(true)
+    setSaveError('')
     const payload = {
       name: formName,
       business_type: formType,
@@ -119,15 +125,21 @@ export default function Entities() {
     }
     try {
       if (editingId) {
-        const { data } = await api.put<BusinessEntity>(`/entities/${editingId}/`, payload)
-        setEntities((prev) => prev.map((e) => (e.id === editingId ? data : e)))
+        await api.put<BusinessEntity>(`/entities/${editingId}/`, payload)
       } else {
-        const { data } = await api.post<BusinessEntity>('/entities/', payload)
-        setEntities((prev) => [...prev, data])
+        await api.post<BusinessEntity>('/entities/', payload)
       }
+      // Refresh list from server
+      const { data } = await api.get<{ count: number; max_allowed: number; results: BusinessEntity[] }>('/entities/')
+      setEntities(data.results)
+      setMaxAllowed(data.max_allowed || 35)
       closePanel()
+      setToast(editingId ? 'Business entity updated successfully' : 'Business entity added successfully')
+      setTimeout(() => setToast(''), 3000)
     } catch {
-      // leave panel open so user can retry
+      setSaveError('Failed to save. Please try again.')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -501,24 +513,41 @@ export default function Entities() {
               </button>
               <button
                 onClick={handleSave}
-                disabled={!formName.trim() || !formType}
+                disabled={saving || !formName.trim() || !formType}
                 style={{
                   width: '100%', height: 40,
-                  background: !formName.trim() || !formType ? '#9CA3AF' : '#0F1F3D',
+                  background: saving || !formName.trim() || !formType ? '#9CA3AF' : '#0F1F3D',
                   color: 'white', border: 'none', borderRadius: 8,
                   fontSize: 14, fontWeight: 600,
-                  cursor: !formName.trim() || !formType ? 'default' : 'pointer',
+                  cursor: saving || !formName.trim() || !formType ? 'default' : 'pointer',
                 }}
                 onMouseEnter={(e) => {
-                  if (formName.trim() && formType) e.currentTarget.style.opacity = '0.85'
+                  if (!saving && formName.trim() && formType) e.currentTarget.style.opacity = '0.85'
                 }}
                 onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
               >
-                Save Entity
+                {saving ? 'Saving...' : 'Save Entity'}
               </button>
+              {saveError && (
+                <p style={{ fontSize: 12, color: '#DC2626', margin: '8px 0 0', textAlign: 'center' }}>
+                  {saveError}
+                </p>
+              )}
             </div>
           </div>
         </>
+      )}
+
+      {/* Success toast */}
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: 24, right: 24,
+          background: '#D1FAE5', color: '#065F46',
+          padding: '12px 20px', borderRadius: 8,
+          fontSize: 13, fontWeight: 500, zIndex: 500,
+        }}>
+          {toast}
+        </div>
       )}
     </div>
   )

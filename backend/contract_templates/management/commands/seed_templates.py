@@ -10384,6 +10384,173 @@ class Command(BaseCommand):
         self._seed_credit_consulting(force)
         self._seed_personal_loan(force)
         self._seed_barter(force)
+        self._seed_simple_personal_loan(force)
+        self._seed_simple_lawn_care_b2b(force)
+
+    def _create_simple_template(self, force, name, category, description, content):
+        """
+        Creates a raw-text template with a single general clause.
+        Uniqueness is checked by (name, category) so it does not conflict with
+        structured templates that share only the name.
+        """
+        if ContractTemplate.objects.filter(name=name, category=category).exists():
+            if not force:
+                self.stdout.write(self.style.WARNING(
+                    f'Simple template "{name}" ({category}) already exists. Use --force to recreate.'
+                ))
+                return
+            ContractTemplate.objects.filter(name=name, category=category).delete()
+            self.stdout.write(self.style.WARNING(f'Deleted existing simple template "{name}" ({category}) for recreation.'))
+
+        template = ContractTemplate.objects.create(
+            category=category,
+            subcategory=category.lower().replace(" ", "_"),
+            name=name,
+            description=description,
+            structure_type="ONE_TIME",
+            is_active=True,
+            tier_required="free",
+        )
+        TemplateClause.objects.create(
+            template=template,
+            clause_type="general",
+            title=name,
+            body=content,
+            order=1,
+            is_required=True,
+            is_conditional=False,
+            condition_description="",
+        )
+        self.stdout.write(self.style.SUCCESS(f'Seeded simple template "{name}" ({category}).'))
+
+    def _seed_simple_personal_loan(self, force):
+        self._create_simple_template(
+            force=force,
+            name="Personal Loan Agreement",
+            category="Personal",
+            description="A personal loan agreement between two individuals",
+            content=(
+                "PERSONAL LOAN AGREEMENT\n\n"
+                "This Personal Loan Agreement (\"Agreement\") is entered into as of [DATE], by and between:\n\n"
+                "LENDER: [LENDER FULL NAME], residing at [LENDER ADDRESS] (\"Lender\")\n\n"
+                "BORROWER: [BORROWER FULL NAME], residing at [BORROWER ADDRESS] (\"Borrower\")\n\n"
+                "RECITALS\n\n"
+                "WHEREAS, Borrower desires to borrow a certain sum of money from Lender; and\n\n"
+                "WHEREAS, Lender agrees to lend such sum to Borrower on the terms and conditions set forth herein.\n\n"
+                "NOW, THEREFORE, in consideration of the mutual covenants contained herein, the parties agree as follows:\n\n"
+                "1. LOAN AMOUNT\n"
+                "Lender agrees to loan Borrower the sum of $[LOAN AMOUNT] (\"Principal Amount\"). "
+                "This amount shall be delivered to Borrower on or before [DISBURSEMENT DATE].\n\n"
+                "2. INTEREST RATE\n"
+                "The outstanding Principal Amount shall accrue interest at a rate of [INTEREST RATE]% per annum, calculated monthly.\n\n"
+                "3. REPAYMENT SCHEDULE\n"
+                "Borrower agrees to repay the loan as follows:\n"
+                "- Monthly payment amount: $[MONTHLY PAYMENT]\n"
+                "- First payment due: [FIRST PAYMENT DATE]\n"
+                "- Final payment due: [FINAL PAYMENT DATE]\n"
+                "- Total number of payments: [NUMBER OF PAYMENTS]\n\n"
+                "4. LATE PAYMENT\n"
+                "If any payment is not received within [GRACE PERIOD] days of its due date, "
+                "Borrower shall pay a late fee of $[LATE FEE AMOUNT] or [LATE FEE PERCENT]% of the overdue amount, whichever is greater.\n\n"
+                "5. PREPAYMENT\n"
+                "Borrower may prepay all or any portion of the outstanding balance at any time without penalty.\n\n"
+                "6. DEFAULT\n"
+                "Borrower shall be in default if:\n"
+                "a) Any payment is more than [DEFAULT DAYS] days past due;\n"
+                "b) Borrower files for bankruptcy;\n"
+                "c) Borrower breaches any provision of this Agreement.\n\n"
+                "Upon default, the entire outstanding balance shall become immediately due and payable.\n\n"
+                "7. GOVERNING LAW\n"
+                "This Agreement shall be governed by the laws of the State of [STATE].\n\n"
+                "8. ENTIRE AGREEMENT\n"
+                "This Agreement constitutes the entire agreement between the parties and supersedes all prior negotiations, representations, or agreements.\n\n"
+                "IN WITNESS WHEREOF, the parties have executed this Agreement as of the date first written above.\n\n"
+                "LENDER:\n"
+                "Signature: _______________________\n"
+                "Print Name: [LENDER FULL NAME]\n"
+                "Date: ___________________________\n\n"
+                "BORROWER:\n"
+                "Signature: _______________________\n"
+                "Print Name: [BORROWER FULL NAME]\n"
+                "Date: ___________________________"
+            ),
+        )
+
+    def _seed_simple_lawn_care_b2b(self, force):
+        self._create_simple_template(
+            force=force,
+            name="Lawn Care Service Agreement",
+            category="Business",
+            description="A professional lawn care and landscaping service agreement between two businesses",
+            content=(
+                "LAWN CARE SERVICE AGREEMENT\n\n"
+                "This Lawn Care Service Agreement (\"Agreement\") is entered into as of [DATE], by and between:\n\n"
+                "SERVICE PROVIDER: [COMPANY NAME], a [STATE] [ENTITY TYPE] with its principal place of business at [COMPANY ADDRESS] (\"Service Provider\")\n\n"
+                "CLIENT: [CLIENT COMPANY NAME], a [STATE] [ENTITY TYPE] with its principal place of business at [CLIENT ADDRESS] (\"Client\")\n\n"
+                "RECITALS\n\n"
+                "WHEREAS, Service Provider is in the business of providing lawn care and landscaping services;\n\n"
+                "WHEREAS, Client desires to engage Service Provider to perform such services at the property described herein.\n\n"
+                "NOW, THEREFORE, in consideration of the mutual covenants contained herein, the parties agree as follows:\n\n"
+                "1. SERVICES\n"
+                "Service Provider agrees to perform the following lawn care services (\"Services\") at the property located at [PROPERTY ADDRESS]:\n\n"
+                "a) Lawn mowing and edging\n"
+                "b) Trimming and pruning\n"
+                "c) Leaf removal and cleanup\n"
+                "d) Fertilization and weed control\n"
+                "e) [ADDITIONAL SERVICES]\n\n"
+                "2. SERVICE SCHEDULE\n"
+                "Services shall be performed:\n"
+                "- Frequency: [WEEKLY/BI-WEEKLY/MONTHLY]\n"
+                "- Start Date: [START DATE]\n"
+                "- End Date: [END DATE]\n"
+                "- Service Days: [DAYS OF WEEK]\n"
+                "- Service Hours: [TIME RANGE]\n\n"
+                "3. COMPENSATION\n"
+                "Client agrees to pay Service Provider as follows:\n"
+                "- Service Rate: $[RATE] per [VISIT/MONTH]\n"
+                "- Payment Due: Within [PAYMENT TERMS] days of invoice\n"
+                "- Invoice Frequency: [WEEKLY/MONTHLY]\n"
+                "- Payment Method: [PAYMENT METHOD]\n\n"
+                "4. ADDITIONAL SERVICES\n"
+                "Any services not listed in Section 1 shall be quoted separately and require written approval from Client before performance.\n\n"
+                "5. EQUIPMENT AND MATERIALS\n"
+                "Service Provider shall supply all equipment, tools, and materials necessary to perform the Services unless otherwise agreed in writing.\n\n"
+                "6. LIABILITY AND INSURANCE\n"
+                "Service Provider shall maintain general liability insurance with minimum coverage of $[INSURANCE AMOUNT].\n\n"
+                "Service Provider shall not be liable for:\n"
+                "a) Damage caused by pre-existing conditions\n"
+                "b) Acts of God or weather events\n"
+                "c) Client's failure to disclose known property hazards\n\n"
+                "7. TERMINATION\n"
+                "Either party may terminate this Agreement with [NOTICE PERIOD] days written notice.\n\n"
+                "Upon termination, Client shall pay for all Services performed up to the termination date.\n\n"
+                "8. INDEPENDENT CONTRACTOR\n"
+                "Service Provider is an independent contractor and not an employee of Client. "
+                "Service Provider is responsible for all taxes and insurance related to its employees.\n\n"
+                "9. CONFIDENTIALITY\n"
+                "Both parties agree to keep the terms of this Agreement confidential.\n\n"
+                "10. DISPUTE RESOLUTION\n"
+                "Any disputes arising from this Agreement shall first be attempted to be resolved through good faith negotiation. "
+                "If unresolved within [NEGOTIATION DAYS] days, disputes shall be submitted to [ARBITRATION/MEDIATION] in [JURISDICTION].\n\n"
+                "11. GOVERNING LAW\n"
+                "This Agreement shall be governed by the laws of the State of [STATE].\n\n"
+                "12. ENTIRE AGREEMENT\n"
+                "This Agreement constitutes the entire agreement between the parties regarding the Services described herein.\n\n"
+                "IN WITNESS WHEREOF, the parties have executed this Agreement as of the date first written above.\n\n"
+                "SERVICE PROVIDER:\n"
+                "Signature: _______________________\n"
+                "Print Name: ______________________\n"
+                "Title: ___________________________\n"
+                "Company: ________________________\n"
+                "Date: ___________________________\n\n"
+                "CLIENT:\n"
+                "Signature: _______________________\n"
+                "Print Name: ______________________\n"
+                "Title: ___________________________\n"
+                "Company: ________________________\n"
+                "Date: ___________________________"
+            ),
+        )
 
     def _seed_personal_training(self, force):
         name = "Personal Training Agreement"

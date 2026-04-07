@@ -36,8 +36,9 @@ const nav = [
 ]
 
 const bottomNav = [
-  { to: '/notifications', label: 'Notifications', Icon: BellIcon,      goldIcon: true },
-  { to: '/settings',      label: 'Settings',       Icon: Cog6ToothIcon, goldIcon: false },
+  { to: '/notifications', label: 'Notifications', Icon: BellIcon,         goldIcon: true },
+  { to: '/profile',       label: 'My Profile',    Icon: emojiIcon('🧑'), goldIcon: false },
+  { to: '/settings',      label: 'Settings',       Icon: Cog6ToothIcon,   goldIcon: false },
 ]
 
 function NavItem({

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
+import api from '@/api/client'
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
@@ -39,6 +40,15 @@ const CURRENCIES = [
 ] as const
 
 interface ContractSection { id: string; number: number; name: string }
+
+interface TemplateItem {
+  id: string
+  name: string
+  category: string
+  description: string
+  content: string
+  tier_required: string
+}
 
 const DEFAULT_SECTIONS: ContractSection[] = [
   { id: 's1',  number: 1,  name: 'Introduction' },
@@ -418,6 +428,13 @@ export default function CreateContract() {
   const [isSubmittingCounter, setIsSubmittingCounter] = useState(false)
   const [paygConfirmDismissed, setPaygConfirmDismissed] = useState(false)
 
+  // Templates panel state
+  const [templates, setTemplates] = useState<TemplateItem[]>([])
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [templateSearch, setTemplateSearch] = useState('')
+  const [templateCategoryFilter, setTemplateCategoryFilter] = useState<'All' | 'Personal' | 'Business'>('All')
+  const [templateToast, setTemplateToast] = useState('')
+
   // Contracting As — null = personal, string = entity id
   const [selectedEntity, setSelectedEntity] = useState<string | null>(null)
   // Mock entities — replace with API data when connected
@@ -519,6 +536,26 @@ export default function CreateContract() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [focusMode])
+
+  useEffect(() => {
+    if (activeTool === 'Templates') {
+      setTemplatesLoading(true)
+      api.get<TemplateItem[]>('/templates/')
+        .then(({ data }) => setTemplates(data))
+        .catch(() => setTemplates([]))
+        .finally(() => setTemplatesLoading(false))
+    }
+  }, [activeTool])
+
+  function loadTemplate(tmpl: TemplateItem) {
+    if (leftEditorRef.current) {
+      leftEditorRef.current.innerText = tmpl.content
+      setLeftEmpty(false)
+    }
+    setActiveTool(null)
+    setTemplateToast('Template loaded')
+    setTimeout(() => setTemplateToast(''), 2000)
+  }
 
   useEffect(() => {
     document.documentElement.style.setProperty('--sidebar-w', '48px')
@@ -2392,6 +2429,114 @@ export default function CreateContract() {
                           ))}
                         </>
                       )
+                    })() : activeTool === 'Templates' ? (() => {
+                      const filtered = templates.filter((t) => {
+                        const matchCat = templateCategoryFilter === 'All' || t.category === templateCategoryFilter
+                        const matchSearch = !templateSearch.trim() || t.name.toLowerCase().includes(templateSearch.toLowerCase()) || t.description.toLowerCase().includes(templateSearch.toLowerCase())
+                        return matchCat && matchSearch
+                      })
+                      return (
+                        <>
+                          {/* Search */}
+                          <input
+                            type="text"
+                            value={templateSearch}
+                            onChange={(e) => setTemplateSearch(e.target.value)}
+                            placeholder="Search templates..."
+                            style={{
+                              width: '100%', height: 34, background: 'white',
+                              border: '1px solid #D1D5DB', borderRadius: 8,
+                              padding: '0 12px', fontSize: 12, outline: 'none',
+                              boxSizing: 'border-box', marginBottom: 12,
+                            }}
+                          />
+
+                          {/* Category tabs */}
+                          <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
+                            {(['All', 'Personal', 'Business'] as const).map((cat) => (
+                              <button
+                                key={cat}
+                                onClick={() => setTemplateCategoryFilter(cat)}
+                                style={{
+                                  fontSize: 11, padding: '4px 10px',
+                                  borderRadius: 20, cursor: 'pointer', border: 'none',
+                                  background: templateCategoryFilter === cat ? '#0F1F3D' : 'transparent',
+                                  color: templateCategoryFilter === cat ? 'white' : '#6B7280',
+                                }}
+                              >
+                                {cat}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Template list */}
+                          {templatesLoading ? (
+                            <div style={{ fontSize: 12, color: '#9CA3AF', textAlign: 'center', padding: 24 }}>
+                              Loading templates…
+                            </div>
+                          ) : filtered.length === 0 ? (
+                            <div style={{ fontSize: 12, color: '#9CA3AF', textAlign: 'center', padding: 24 }}>
+                              No templates available
+                            </div>
+                          ) : (
+                            filtered.map((tmpl) => {
+                              const isPersonal = tmpl.category === 'Personal'
+                              const badgeBg = isPersonal ? '#EFF6FF' : '#F0FDF4'
+                              const badgeColor = isPersonal ? '#1E40AF' : '#166534'
+                              return (
+                                <div
+                                  key={tmpl.id}
+                                  style={{
+                                    background: 'white', borderRadius: 8,
+                                    padding: '12px 14px', marginBottom: 8,
+                                    border: '1px solid #E5E7EB', cursor: 'pointer',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.borderColor = '#0F1F3D'
+                                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)'
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.borderColor = '#E5E7EB'
+                                    e.currentTarget.style.boxShadow = 'none'
+                                  }}
+                                >
+                                  {/* Category badge */}
+                                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+                                    <span style={{
+                                      background: badgeBg, color: badgeColor,
+                                      fontSize: 10, padding: '2px 8px', borderRadius: 4,
+                                    }}>
+                                      {tmpl.category}
+                                    </span>
+                                  </div>
+                                  {/* Name */}
+                                  <div style={{ fontSize: 13, fontWeight: 600, color: '#0F1F3D', marginBottom: 4 }}>
+                                    {tmpl.name}
+                                  </div>
+                                  {/* Description */}
+                                  <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 10 }}>
+                                    {tmpl.description}
+                                  </div>
+                                  {/* Use button */}
+                                  <button
+                                    onClick={() => loadTemplate(tmpl)}
+                                    style={{
+                                      width: '100%', height: 30,
+                                      background: '#0F1F3D', color: 'white',
+                                      border: 'none', borderRadius: 6,
+                                      fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                                    }}
+                                    onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
+                                    onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+                                  >
+                                    Use Template
+                                  </button>
+                                </div>
+                              )
+                            })
+                          )}
+                        </>
+                      )
                     })() : (
                       <div style={{ fontSize: 12, color: '#6B7280', textAlign: 'center', marginTop: 40 }}>
                         {activeTool} coming soon
@@ -2885,6 +3030,18 @@ export default function CreateContract() {
           bonUP © 2026
         </span>
       </div>
+
+      {/* Template loaded toast */}
+      {templateToast && (
+        <div style={{
+          position: 'fixed', bottom: 44, right: 24, zIndex: 500,
+          background: '#D1FAE5', color: '#065F46',
+          padding: '10px 18px', borderRadius: 8,
+          fontSize: 13, fontWeight: 500,
+        }}>
+          {templateToast}
+        </div>
+      )}
     </>
   )
 }

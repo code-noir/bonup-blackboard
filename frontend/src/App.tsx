@@ -9,6 +9,7 @@ import CreateContract from '@/pages/CreateContract'
 import Analysis from '@/pages/Analysis'
 import Counter from '@/pages/Counter'
 import Entities from '@/pages/Entities'
+import Profile from '@/pages/Profile'
 import NotFound from '@/pages/NotFound'
 
 // Placeholder page used for routes not yet built
@@ -89,6 +90,7 @@ export default function App() {
             <Route path="/analysis" element={<Analysis />} />
             <Route path="/counter" element={<Counter />} />
             <Route path="/entities" element={<Entities />} />
+            <Route path="/profile" element={<Profile />} />
             <Route path="/notifications" element={<PaygLock name="Notifications" />} />
             <Route path="/settings" element={<Placeholder name="Settings" />} />
           </Route>

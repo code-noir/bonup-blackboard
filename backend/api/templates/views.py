@@ -154,6 +154,8 @@ class TemplatesViewSet(ViewSet):
 # ------------------------------------------------------------------
 
 def _serialize_template_summary(template):
+    clauses = list(template.clauses.all())
+    content = "\n\n".join(c.body for c in clauses) if clauses else ""
     return {
         "id": str(template.id),
         "category": template.category,
@@ -162,6 +164,7 @@ def _serialize_template_summary(template):
         "description": template.description,
         "structure_type": template.structure_type,
         "tier_required": template.tier_required,
+        "content": content,
     }
 
 

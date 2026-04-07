@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import api from '@/api/client'
 import type { BusinessEntity } from '@/types/entities'
 import { useAuth } from '@/context/AuthContext'
@@ -78,10 +78,12 @@ const TD: React.CSSProperties = {
 
 export default function Contracts() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuth()
   const [hoveredRow, setHoveredRow] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState(0)
-  const [entityFilter, setEntityFilter] = useState('All')
+  const initialEntity = (location.state as { entityFilter?: string } | null)?.entityFilter ?? 'All'
+  const [entityFilter, setEntityFilter] = useState(initialEntity)
   const [contracts, setContracts] = useState<ContractRow[]>([])
   const [entities, setEntities] = useState<BusinessEntity[]>([])
   const [showEntityModal, setShowEntityModal] = useState(false)

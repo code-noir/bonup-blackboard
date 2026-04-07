@@ -1278,7 +1278,7 @@ export default function CreateContract() {
             flexShrink: 0,
             transition: toolPanelSnapping ? 'width 0.3s ease' : 'none',
             overflow: 'hidden',
-            background: '#4A7C7E',
+            background: '#1E3A3A',
             boxShadow: '4px 0 12px rgba(0,0,0,0.08)',
             position: 'relative',
           }}>
@@ -1288,7 +1288,7 @@ export default function CreateContract() {
                   {/* Panel header */}
                   <div style={{
                     padding: '16px 16px 12px',
-                    borderBottom: '1px solid rgba(255,255,255,0.15)',
+                    borderBottom: '1px solid rgba(255,255,255,0.1)',
                     display: 'flex', alignItems: 'center', flexShrink: 0,
                   }}>
                     <span style={{ fontSize: 13, fontWeight: 600, color: '#ffffff', flex: 1 }}>
@@ -1299,11 +1299,11 @@ export default function CreateContract() {
                       title={toolPanelWidth >= 560 ? 'Collapse panel' : 'Expand panel'}
                       style={{
                         background: 'transparent', border: 'none',
-                        color: 'rgba(255,255,255,0.7)', fontSize: 14,
+                        color: 'rgba(255,255,255,0.55)', fontSize: 14,
                         cursor: 'pointer', padding: '0 4px', lineHeight: 1, marginRight: 4,
                       }}
                       onMouseEnter={(e) => (e.currentTarget.style.color = 'white')}
-                      onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.7)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.55)')}
                     >
                       ⇔
                     </button>
@@ -1311,11 +1311,11 @@ export default function CreateContract() {
                       onClick={() => setActiveTool(null)}
                       style={{
                         background: 'transparent', border: 'none',
-                        color: 'rgba(255,255,255,0.7)', fontSize: 16,
+                        color: 'rgba(255,255,255,0.55)', fontSize: 16,
                         cursor: 'pointer', padding: 0, lineHeight: 1,
                       }}
                       onMouseEnter={(e) => (e.currentTarget.style.color = 'white')}
-                      onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.7)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.55)')}
                     >
                       ✕
                     </button>
@@ -1435,7 +1435,7 @@ export default function CreateContract() {
                         {/* Financial tools */}
                         <div style={{ height: 1, background: '#D1D5DB', margin: '4px 0 12px' }} />
                         <p style={{
-                          fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: 600,
+                          fontSize: 10, color: 'rgba(255,255,255,0.35)', fontWeight: 600,
                           textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8,
                         }}>
                           Financial
@@ -1446,19 +1446,19 @@ export default function CreateContract() {
                               key={l}
                               style={{
                                 height: 36, borderRadius: 8, fontSize: 11, fontWeight: 600,
-                                border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.9)',
+                                border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.85)',
                                 cursor: 'pointer', fontFamily: "'Outfit', sans-serif",
                                 transition: 'all 0.1s',
                               }}
                               onMouseEnter={(e) => {
-                                e.currentTarget.style.background = 'rgba(255,255,255,0.2)'
-                                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.35)'
+                                e.currentTarget.style.background = 'rgba(255,255,255,0.14)'
+                                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.22)'
                                 e.currentTarget.style.color = 'white'
                               }}
                               onMouseLeave={(e) => {
-                                e.currentTarget.style.background = 'rgba(255,255,255,0.12)'
-                                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)'
-                                e.currentTarget.style.color = 'rgba(255,255,255,0.9)'
+                                e.currentTarget.style.background = 'rgba(255,255,255,0.07)'
+                                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)'
+                                e.currentTarget.style.color = 'rgba(255,255,255,0.85)'
                               }}
                             >
                               {l}
@@ -1468,7 +1468,7 @@ export default function CreateContract() {
                       </>
                     ) : activeTool === 'Contract Analysis' ? (
                       <>
-                        <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginBottom: 16 }}>
+                        <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginBottom: 16 }}>
                           Write or paste your contract in the editor, then click Analyze for a full AI breakdown.
                         </p>
                         {USER_TIER === 'As You Go' && (
@@ -1510,9 +1510,9 @@ export default function CreateContract() {
                           {isAnalyzing ? 'Analyzing…' : 'Analyze Contract'}
                         </button>
                         <div style={{
-                          background: 'rgba(255,255,255,0.12)', borderRadius: 8, padding: 12,
-                          minHeight: 120, border: '1px solid rgba(255,255,255,0.2)',
-                          fontSize: 12, color: analysisResult ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.5)',
+                          background: 'rgba(255,255,255,0.07)', borderRadius: 8, padding: 12,
+                          minHeight: 120, border: '1px solid rgba(255,255,255,0.12)',
+                          fontSize: 12, color: analysisResult ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.35)',
                         }}>
                           {analysisResult || 'Analysis results will appear here…'}
                         </div>
@@ -1522,7 +1522,7 @@ export default function CreateContract() {
                         {USER_TIER === 'Blackboard Basic' ? (
                           <div style={{ textAlign: 'center' }}>
                             <div style={{ fontSize: 32, marginBottom: 12 }}>🔒</div>
-                            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.9)', marginBottom: 16 }}>
+                            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', marginBottom: 16 }}>
                               Contract Counter is available on Blackboard Pro and above.
                             </p>
                             <button
@@ -1540,7 +1540,7 @@ export default function CreateContract() {
                           </div>
                         ) : (
                           <>
-                            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginBottom: 12 }}>
+                            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginBottom: 12 }}>
                               Review the contract and propose your counter terms.
                             </p>
                             {USER_TIER === 'As You Go' && (
@@ -1554,13 +1554,13 @@ export default function CreateContract() {
                               placeholder="Enter your counter terms…"
                               style={{
                                 width: '100%', minHeight: 100,
-                                border: '1px solid rgba(255,255,255,0.2)',
+                                border: '1px solid rgba(255,255,255,0.12)',
                                 borderRadius: 8, padding: 10,
                                 fontSize: 12, resize: 'vertical',
                                 outline: 'none', fontFamily: 'inherit',
                                 boxSizing: 'border-box',
                                 marginBottom: 12,
-                                background: 'rgba(255,255,255,0.12)',
+                                background: 'rgba(255,255,255,0.07)',
                                 color: 'white',
                               }}
                             />
@@ -1596,14 +1596,14 @@ export default function CreateContract() {
                       </>
                     ) : activeTool === 'Parties' ? (() => {
                       const SECTION_HDR: React.CSSProperties = {
-                        fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.7)',
+                        fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.55)',
                         textTransform: 'uppercase', letterSpacing: '0.06em',
                         margin: '0 0 10px',
                       }
                       const ROLE_SELECT: React.CSSProperties = {
                         width: 120, fontSize: 12,
-                        border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6,
-                        padding: '4px 8px', background: 'rgba(255,255,255,0.12)',
+                        border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6,
+                        padding: '4px 8px', background: 'rgba(255,255,255,0.07)',
                         color: 'white', outline: 'none', flexShrink: 0,
                         cursor: 'pointer',
                       }
@@ -1614,8 +1614,8 @@ export default function CreateContract() {
                         justifyContent: 'center', flexShrink: 0,
                       }
                       const CUSTOM_ROLE_INPUT: React.CSSProperties = {
-                        width: '100%', background: 'rgba(255,255,255,0.12)',
-                        border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8,
+                        width: '100%', background: 'rgba(255,255,255,0.07)',
+                        border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8,
                         padding: '8px 12px', fontSize: 13, color: 'white',
                         fontFamily: "'Outfit', sans-serif", outline: 'none',
                         marginBottom: 12, boxSizing: 'border-box',
@@ -1633,7 +1633,7 @@ export default function CreateContract() {
                         <>
                           {/* Party count indicator */}
                           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-                            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>
+                            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)' }}>
                               {partyCount} of 6 parties added
                             </span>
                           </div>
@@ -1776,13 +1776,13 @@ export default function CreateContract() {
                       )
                     })() : activeTool === 'Contract Details' ? (() => {
                       const LABEL: React.CSSProperties = {
-                        fontSize: 11, fontWeight: 500, color: 'rgba(255,255,255,0.7)',
+                        fontSize: 11, fontWeight: 500, color: 'rgba(255,255,255,0.55)',
                         marginBottom: 4, display: 'block',
                         textTransform: 'uppercase', letterSpacing: '0.06em',
                       }
                       const FIELD: React.CSSProperties = {
-                        width: '100%', background: 'rgba(255,255,255,0.12)',
-                        border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8,
+                        width: '100%', background: 'rgba(255,255,255,0.07)',
+                        border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8,
                         padding: '8px 12px', fontSize: 13, color: 'white',
                         fontFamily: "'Outfit', sans-serif", outline: 'none',
                         marginBottom: 12, boxSizing: 'border-box',
@@ -2192,7 +2192,7 @@ export default function CreateContract() {
                           {/* Header row */}
                           <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
                             <span style={{
-                              fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.9)',
+                              fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.85)',
                               textTransform: 'uppercase', letterSpacing: '0.08em',
                               flex: 1,
                             }}>
@@ -2201,7 +2201,7 @@ export default function CreateContract() {
                             <button
                               onClick={() => { setAddingSection(true); setNewSectionInput('') }}
                               style={{
-                                fontSize: 11, color: 'rgba(255,255,255,0.7)', background: 'transparent',
+                                fontSize: 11, color: 'rgba(255,255,255,0.55)', background: 'transparent',
                                 border: 'none', cursor: 'pointer', fontWeight: 500, padding: 0,
                               }}
                               onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
@@ -2212,7 +2212,7 @@ export default function CreateContract() {
                           </div>
 
                           {/* Section count */}
-                          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginBottom: 10 }}>
+                          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 10 }}>
                             {sections.length} {sections.length === 1 ? 'section' : 'sections'}
                           </p>
 
@@ -2426,9 +2426,9 @@ export default function CreateContract() {
                               processFiles(e.dataTransfer.files)
                             }}
                             style={{
-                              background: attachDragOver ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.1)',
+                              background: attachDragOver ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.05)',
                               borderRadius: 10,
-                              border: `2px dashed ${attachDragOver ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.25)'}`,
+                              border: `2px dashed ${attachDragOver ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.15)'}`,
                               padding: '28px 16px',
                               textAlign: 'center',
                               cursor: 'pointer',
@@ -2437,7 +2437,7 @@ export default function CreateContract() {
                             }}
                           >
                             <span style={{ fontSize: 28, display: 'block', marginBottom: 8 }}>📎</span>
-                            <p style={{ fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.9)', margin: 0 }}>
+                            <p style={{ fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.85)', margin: 0 }}>
                               Drop files here
                             </p>
                             <p style={{ fontSize: 12, color: '#9CA3AF', margin: '4px 0 0' }}>
@@ -2461,8 +2461,8 @@ export default function CreateContract() {
                                   fontSize: 11, padding: '4px 10px',
                                   borderRadius: 20, cursor: 'pointer',
                                   border: 'none',
-                                  background: attachFilter === key ? 'rgba(255,255,255,0.2)' : 'transparent',
-                                  color: attachFilter === key ? 'white' : 'rgba(255,255,255,0.7)',
+                                  background: attachFilter === key ? 'rgba(255,255,255,0.12)' : 'transparent',
+                                  color: attachFilter === key ? 'white' : 'rgba(255,255,255,0.55)',
                                 }}
                               >
                                 {label}
@@ -2472,7 +2472,7 @@ export default function CreateContract() {
 
                           {/* File count + total */}
                           {filtered.length > 0 && (
-                            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 8 }}>
+                            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginBottom: 8 }}>
                               {filtered.length} {filtered.length === 1 ? 'file' : 'files'}
                               {totalBytes > 0 && ` · ${formatBytes(totalBytes)} total`}
                             </p>
@@ -2480,7 +2480,7 @@ export default function CreateContract() {
 
                           {/* Empty state */}
                           {filtered.length === 0 && (
-                            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', textAlign: 'center', padding: 16 }}>
+                            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', textAlign: 'center', padding: 16 }}>
                               No files attached yet
                             </p>
                           )}
@@ -2598,8 +2598,8 @@ export default function CreateContract() {
                             onChange={(e) => setTemplateSearch(e.target.value)}
                             placeholder="Search templates..."
                             style={{
-                              width: '100%', height: 34, background: 'rgba(255,255,255,0.12)',
-                              border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8,
+                              width: '100%', height: 34, background: 'rgba(255,255,255,0.07)',
+                              border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8,
                               padding: '0 12px', fontSize: 12, outline: 'none',
                               boxSizing: 'border-box', marginBottom: 12, color: 'white',
                             }}
@@ -2618,8 +2618,8 @@ export default function CreateContract() {
                                 style={{
                                   fontSize: 11, padding: '4px 10px',
                                   borderRadius: 20, cursor: 'pointer', border: 'none',
-                                  background: templateCategoryFilter === tab ? 'rgba(255,255,255,0.2)' : 'transparent',
-                                  color: templateCategoryFilter === tab ? 'white' : 'rgba(255,255,255,0.7)',
+                                  background: templateCategoryFilter === tab ? 'rgba(255,255,255,0.12)' : 'transparent',
+                                  color: templateCategoryFilter === tab ? 'white' : 'rgba(255,255,255,0.55)',
                                   whiteSpace: 'nowrap', flexShrink: 0,
                                 }}
                               >
@@ -2630,11 +2630,11 @@ export default function CreateContract() {
 
                           {/* Template list */}
                           {templatesLoading ? (
-                            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', textAlign: 'center', padding: 24 }}>
+                            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', textAlign: 'center', padding: 24 }}>
                               Loading templates…
                             </div>
                           ) : filtered.length === 0 ? (
-                            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', textAlign: 'center', padding: 24 }}>
+                            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', textAlign: 'center', padding: 24 }}>
                               No templates available
                             </div>
                           ) : (
@@ -2714,7 +2714,7 @@ export default function CreateContract() {
                         </>
                       )
                     })() : (
-                      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginTop: 40 }}>
+                      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', textAlign: 'center', marginTop: 40 }}>
                         {activeTool} coming soon
                       </div>
                     )}

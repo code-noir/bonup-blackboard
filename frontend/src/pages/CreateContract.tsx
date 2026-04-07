@@ -1278,7 +1278,7 @@ export default function CreateContract() {
             flexShrink: 0,
             transition: toolPanelSnapping ? 'width 0.3s ease' : 'none',
             overflow: 'hidden',
-            background: '#1E3A3A',
+            background: '#4E6E7A',
             boxShadow: '4px 0 12px rgba(0,0,0,0.08)',
             position: 'relative',
           }}>

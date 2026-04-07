@@ -2188,11 +2188,14 @@ export default function CreateContract() {
                       }
 
                       return (
-                        <>
-                          {/* Header row */}
-                          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+                        <div style={{ margin: -16, minHeight: 'calc(100% + 32px)', display: 'flex', flexDirection: 'column' }}>
+                          {/* Dark navy header */}
+                          <div style={{
+                            background: '#1C2B3A', padding: '14px 16px',
+                            display: 'flex', alignItems: 'center', flexShrink: 0,
+                          }}>
                             <span style={{
-                              fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.85)',
+                              fontSize: 12, fontWeight: 600, color: 'white',
                               textTransform: 'uppercase', letterSpacing: '0.08em',
                               flex: 1,
                             }}>
@@ -2201,158 +2204,168 @@ export default function CreateContract() {
                             <button
                               onClick={() => { setAddingSection(true); setNewSectionInput('') }}
                               style={{
-                                fontSize: 11, color: 'rgba(255,255,255,0.55)', background: 'transparent',
+                                fontSize: 11, color: 'rgba(255,255,255,0.65)', background: 'transparent',
                                 border: 'none', cursor: 'pointer', fontWeight: 500, padding: 0,
                               }}
-                              onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
-                              onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
+                              onMouseEnter={(e) => (e.currentTarget.style.color = 'white')}
+                              onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.65)')}
                             >
                               + Add Section
                             </button>
                           </div>
 
-                          {/* Section count */}
-                          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 10 }}>
-                            {sections.length} {sections.length === 1 ? 'section' : 'sections'}
-                          </p>
+                          {/* Light body */}
+                          <div style={{ flex: 1, background: '#F0F2F5', padding: 16 }}>
+                            {/* Section count */}
+                            <p style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 10 }}>
+                              {sections.length} {sections.length === 1 ? 'section' : 'sections'}
+                            </p>
 
-                          {/* Sections list */}
-                          {sections.map((s) => {
-                            const isActive = activeSection === s.id
-                            const isEditing = editingSection === s.id
-                            const isHovered = hoveredSection === s.id
-                            const isDragTarget = sectDragOverId === s.id && sectDragId !== s.id
-                            return (
-                              <div
-                                key={s.id}
-                                draggable
-                                onDragStart={() => setSectDragId(s.id)}
-                                onDragOver={(e) => { e.preventDefault(); setSectDragOverId(s.id) }}
-                                onDrop={() => {
-                                  if (sectDragId) reorder(sectDragId, s.id)
-                                  setSectDragId(null); setSectDragOverId(null)
-                                }}
-                                onDragEnd={() => { setSectDragId(null); setSectDragOverId(null) }}
-                                onClick={() => { if (!isEditing) scrollToSection(s.id) }}
-                                onMouseEnter={() => setHoveredSection(s.id)}
-                                onMouseLeave={() => setHoveredSection(null)}
-                                style={{
-                                  background: isActive ? '#EFF6FF' : isHovered ? '#F8FAFC' : 'white',
-                                  borderRadius: 8,
-                                  padding: '10px 12px',
-                                  marginBottom: 6,
-                                  border: isActive ? '1px solid #BFDBFE' : isDragTarget ? '1px dashed #0F1F3D' : '1px solid #E5E7EB',
-                                  borderLeft: isActive ? '3px solid #0F1F3D' : isDragTarget ? '3px solid #9CA3AF' : '3px solid transparent',
-                                  display: 'flex', alignItems: 'center', gap: 8,
-                                  cursor: isEditing ? 'default' : 'pointer',
-                                  transition: 'all 0.15s',
-                                  opacity: sectDragId === s.id ? 0.4 : 1,
-                                }}
-                              >
-                                {/* Drag handle */}
-                                <span style={{ fontSize: 14, color: '#D1D5DB', cursor: 'grab', flexShrink: 0, lineHeight: 1 }}>
-                                  ⠿
-                                </span>
-
-                                {/* Number */}
-                                <span style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 500, minWidth: 18, flexShrink: 0 }}>
-                                  {s.number}
-                                </span>
-
-                                {/* Name / rename input */}
-                                {isEditing ? (
-                                  <input
-                                    autoFocus
-                                    value={editingSectionName}
-                                    onChange={(e) => setEditingSectionName(e.target.value)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') { e.preventDefault(); commitRename() }
-                                      if (e.key === 'Escape') cancelRename()
-                                    }}
-                                    onBlur={commitRename}
-                                    style={{
-                                      flex: 1, fontSize: 13, border: 'none', outline: 'none',
-                                      background: 'transparent', color: '#374151',
-                                      fontFamily: 'inherit',
-                                    }}
-                                    onClick={(e) => e.stopPropagation()}
-                                  />
-                                ) : (
-                                  <span style={{
-                                    flex: 1, fontSize: 13,
-                                    color: isActive ? '#0F1F3D' : '#374151',
-                                    fontWeight: isActive ? 500 : 400,
-                                  }}>
-                                    {s.name}
+                            {/* Sections list */}
+                            {sections.map((s) => {
+                              const isActive = activeSection === s.id
+                              const isEditing = editingSection === s.id
+                              const isHovered = hoveredSection === s.id
+                              const isDragTarget = sectDragOverId === s.id && sectDragId !== s.id
+                              return (
+                                <div
+                                  key={s.id}
+                                  draggable
+                                  onDragStart={() => setSectDragId(s.id)}
+                                  onDragOver={(e) => { e.preventDefault(); setSectDragOverId(s.id) }}
+                                  onDrop={() => {
+                                    if (sectDragId) reorder(sectDragId, s.id)
+                                    setSectDragId(null); setSectDragOverId(null)
+                                  }}
+                                  onDragEnd={() => { setSectDragId(null); setSectDragOverId(null) }}
+                                  onClick={() => { if (!isEditing) scrollToSection(s.id) }}
+                                  onMouseEnter={() => setHoveredSection(s.id)}
+                                  onMouseLeave={() => setHoveredSection(null)}
+                                  style={{
+                                    background: isActive ? '#FFFBF0' : 'white',
+                                    borderRadius: 8,
+                                    padding: '10px 14px',
+                                    marginBottom: 6,
+                                    border: isDragTarget ? '1px dashed #0F1F3D' : '1px solid #E5E7EB',
+                                    borderLeft: isActive ? '3px solid #F5A623' : isDragTarget ? '3px solid #9CA3AF' : '3px solid transparent',
+                                    display: 'flex', alignItems: 'center', gap: 10,
+                                    cursor: isEditing ? 'default' : 'pointer',
+                                    transition: 'all 0.15s ease',
+                                    opacity: sectDragId === s.id ? 0.4 : 1,
+                                    boxShadow: isHovered
+                                      ? '0 2px 8px rgba(0,0,0,0.1)'
+                                      : '0 1px 3px rgba(0,0,0,0.06)',
+                                    transform: isHovered && !isEditing ? 'translateY(-1px)' : 'none',
+                                    ...(isHovered && !isEditing && { borderColor: '#0F1F3D' }),
+                                  }}
+                                >
+                                  {/* Drag handle */}
+                                  <span style={{ fontSize: 14, color: '#D1D5DB', cursor: 'grab', flexShrink: 0, lineHeight: 1 }}>
+                                    ⠿
                                   </span>
-                                )}
 
-                                {/* Action buttons — show on hover */}
-                                {isHovered && !isEditing && (
-                                  <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-                                    <button
-                                      title="Rename"
-                                      onClick={(e) => { e.stopPropagation(); startRename(s) }}
-                                      style={{
-                                        background: 'transparent', border: 'none',
-                                        cursor: 'pointer', fontSize: 12, padding: '2px 3px',
-                                        color: '#9CA3AF', lineHeight: 1,
+                                  {/* Number */}
+                                  <span style={{ fontSize: 11, color: '#9CA3AF', minWidth: 20, flexShrink: 0 }}>
+                                    {s.number}
+                                  </span>
+
+                                  {/* Name / rename input */}
+                                  {isEditing ? (
+                                    <input
+                                      autoFocus
+                                      value={editingSectionName}
+                                      onChange={(e) => setEditingSectionName(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') { e.preventDefault(); commitRename() }
+                                        if (e.key === 'Escape') cancelRename()
                                       }}
-                                      onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
-                                      onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
-                                    >
-                                      ✏️
-                                    </button>
-                                    <button
-                                      title="Delete"
-                                      onClick={(e) => { e.stopPropagation(); deleteSection(s.id) }}
+                                      onBlur={commitRename}
                                       style={{
-                                        background: 'transparent', border: 'none',
-                                        cursor: 'pointer', fontSize: 12, padding: '2px 3px',
-                                        color: '#9CA3AF', lineHeight: 1,
+                                        flex: 1, fontSize: 13, border: 'none', outline: 'none',
+                                        background: 'transparent', color: '#0F1F3D',
+                                        fontFamily: 'inherit',
                                       }}
-                                      onMouseEnter={(e) => (e.currentTarget.style.color = '#DC2626')}
-                                      onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
-                                    >
-                                      🗑
-                                    </button>
-                                  </div>
-                                )}
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  ) : (
+                                    <span style={{
+                                      flex: 1, fontSize: 13,
+                                      color: '#0F1F3D',
+                                      fontWeight: 400,
+                                    }}>
+                                      {s.name}
+                                    </span>
+                                  )}
+
+                                  {/* Action buttons — show on hover */}
+                                  {isHovered && !isEditing && (
+                                    <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                                      <button
+                                        title="Rename"
+                                        onClick={(e) => { e.stopPropagation(); startRename(s) }}
+                                        style={{
+                                          background: 'transparent', border: 'none',
+                                          cursor: 'pointer', fontSize: 12, padding: '2px 3px',
+                                          color: '#9CA3AF', lineHeight: 1,
+                                        }}
+                                        onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
+                                        onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
+                                      >
+                                        ✏️
+                                      </button>
+                                      <button
+                                        title="Delete"
+                                        onClick={(e) => { e.stopPropagation(); deleteSection(s.id) }}
+                                        style={{
+                                          background: 'transparent', border: 'none',
+                                          cursor: 'pointer', fontSize: 12, padding: '2px 3px',
+                                          color: '#9CA3AF', lineHeight: 1,
+                                        }}
+                                        onMouseEnter={(e) => (e.currentTarget.style.color = '#DC2626')}
+                                        onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
+                                      >
+                                        🗑
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
+
+                            {/* Add section input row */}
+                            {addingSection && (
+                              <div style={{
+                                background: 'white', borderRadius: 8, padding: '10px 14px',
+                                marginBottom: 6,
+                                border: '1px dashed #0F1F3D',
+                                borderLeft: '3px solid #0F1F3D',
+                                display: 'flex', alignItems: 'center', gap: 10,
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                              }}>
+                                <span style={{ fontSize: 14, color: '#D1D5DB', flexShrink: 0 }}>⠿</span>
+                                <span style={{ fontSize: 11, color: '#9CA3AF', minWidth: 20, flexShrink: 0 }}>
+                                  {sections.length + 1}
+                                </span>
+                                <input
+                                  autoFocus
+                                  value={newSectionInput}
+                                  onChange={(e) => setNewSectionInput(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') { e.preventDefault(); commitAdd() }
+                                    if (e.key === 'Escape') { setAddingSection(false); setNewSectionInput('') }
+                                  }}
+                                  onBlur={commitAdd}
+                                  placeholder="Section name..."
+                                  style={{
+                                    flex: 1, fontSize: 13, border: 'none', outline: 'none',
+                                    background: 'transparent', color: '#0F1F3D',
+                                    fontFamily: 'inherit',
+                                  }}
+                                />
                               </div>
-                            )
-                          })}
-
-                          {/* Add section input row */}
-                          {addingSection && (
-                            <div style={{
-                              background: 'white', borderRadius: 8, padding: '10px 12px',
-                              marginBottom: 6, border: '1px dashed #0F1F3D',
-                              borderLeft: '3px solid #0F1F3D',
-                              display: 'flex', alignItems: 'center', gap: 8,
-                            }}>
-                              <span style={{ fontSize: 14, color: '#E5E7EB', flexShrink: 0 }}>⠿</span>
-                              <span style={{ fontSize: 10, color: '#9CA3AF', minWidth: 18, flexShrink: 0 }}>
-                                {sections.length + 1}
-                              </span>
-                              <input
-                                autoFocus
-                                value={newSectionInput}
-                                onChange={(e) => setNewSectionInput(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') { e.preventDefault(); commitAdd() }
-                                  if (e.key === 'Escape') { setAddingSection(false); setNewSectionInput('') }
-                                }}
-                                onBlur={commitAdd}
-                                placeholder="Section name..."
-                                style={{
-                                  flex: 1, fontSize: 13, border: 'none', outline: 'none',
-                                  background: 'transparent', color: '#374151',
-                                  fontFamily: 'inherit',
-                                }}
-                              />
-                            </div>
-                          )}
-                        </>
+                            )}
+                          </div>
+                        </div>
                       )
                     })() : activeTool === 'Attachments' ? (() => {
                       function processFiles(rawFiles: FileList | File[]) {

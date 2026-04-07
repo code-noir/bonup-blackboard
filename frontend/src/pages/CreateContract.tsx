@@ -1215,7 +1215,7 @@ export default function CreateContract() {
           {/* TOOL ICON STRIP */}
           <div style={{
             width: 52, flexShrink: 0,
-            background: '#1C2B3A',
+            background: '#0A1628',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center', paddingTop: 8,
@@ -2798,7 +2798,7 @@ export default function CreateContract() {
                 height: aiPanelOpen ? `calc(100% - ${aiPanelHeight}px)` : '100%',
                 transition: 'height 0.35s ease',
                 display: 'flex', flexDirection: 'row', overflow: 'hidden',
-                minHeight: 200,
+                minHeight: 200, background: '#0D1A2E',
               }}
             >
 
@@ -2809,7 +2809,7 @@ export default function CreateContract() {
                 transition: 'width 0.3s ease',
               }}>
                 {focusMode === 'left' ? (
-                  <div style={{ flex: 1, overflowY: 'auto', background: '#F0F2F5', padding: 24 }}>
+                  <div style={{ flex: 1, overflowY: 'auto', background: '#0D1A2E', padding: 24 }}>
                     <div
                       ref={leftEditorRef}
                       contentEditable
@@ -2873,7 +2873,7 @@ export default function CreateContract() {
                 flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0,
               }}>
                 {focusMode === 'right' ? (
-                  <div style={{ flex: 1, overflowY: 'auto', background: '#F0F2F5', padding: 24 }}>
+                  <div style={{ flex: 1, overflowY: 'auto', background: '#0D1A2E', padding: 24 }}>
                     <div
                       ref={rightEditorRef}
                       contentEditable

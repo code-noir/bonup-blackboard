@@ -110,7 +110,7 @@ export default function TopBar() {
   const [sloganIdx, setSloganIdx] = useState(0)
   const [visible, setVisible] = useState(true)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('bb_bars_collapsed') === 'true')
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('bb_topbar_collapsed') === 'true')
 
   useEffect(() => {
     // Cycle: 10s visible → 3s fade out → swap text → 3s fade in → 10s visible → ...
@@ -182,26 +182,27 @@ export default function TopBar() {
         startDelayMs={6000}
       />
 
-      {/* Collapse toggle */}
+      {/* Collapse toggle — gold bee */}
       <button
         onClick={() => {
           const next = !collapsed
           setCollapsed(next)
-          localStorage.setItem('bb_bars_collapsed', String(next))
-          window.dispatchEvent(new CustomEvent('bars-collapse', { detail: next }))
+          localStorage.setItem('bb_topbar_collapsed', String(next))
+          window.dispatchEvent(new CustomEvent('topbar-collapse', { detail: next }))
         }}
+        title={collapsed ? 'Show header bars' : 'Hide header bars'}
         style={{
           marginLeft: 12, flexShrink: 0,
-          background: 'transparent',
-          border: '1px solid rgba(255,255,255,0.2)',
-          borderRadius: 6, color: 'rgba(255,255,255,0.6)',
-          fontSize: 11, padding: '3px 10px',
-          cursor: 'pointer',
+          background: collapsed ? 'rgba(245,166,35,0.15)' : 'transparent',
+          border: `1px solid ${collapsed ? 'rgba(245,166,35,0.5)' : 'rgba(255,255,255,0.2)'}`,
+          borderRadius: 6, fontSize: 15, padding: '2px 8px',
+          cursor: 'pointer', lineHeight: 1,
+          transition: 'background 0.15s, border-color 0.15s',
         }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
-        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(245,166,35,0.2)')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = collapsed ? 'rgba(245,166,35,0.15)' : 'transparent')}
       >
-        {collapsed ? '▼ Show' : '▲ Hide'}
+        🐝
       </button>
     </div>
   )

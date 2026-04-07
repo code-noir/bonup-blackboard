@@ -429,7 +429,7 @@ export default function CreateContract() {
   const [paygConfirmDismissed, setPaygConfirmDismissed] = useState(false)
 
   // Toolbar collapse state
-  const [barsCollapsed, setBarsCollapsed] = useState(() => localStorage.getItem('bb_bars_collapsed') === 'true')
+  const [barsCollapsed, setBarsCollapsed] = useState(() => localStorage.getItem('bb_topbar_collapsed') === 'true')
 
   // Templates panel state
   const [templates, setTemplates] = useState<TemplateItem[]>([])
@@ -545,8 +545,8 @@ export default function CreateContract() {
     function onCollapse(e: Event) {
       setBarsCollapsed((e as CustomEvent<boolean>).detail)
     }
-    window.addEventListener('bars-collapse', onCollapse)
-    return () => window.removeEventListener('bars-collapse', onCollapse)
+    window.addEventListener('topbar-collapse', onCollapse)
+    return () => window.removeEventListener('topbar-collapse', onCollapse)
   }, [])
 
   useEffect(() => {
@@ -912,10 +912,6 @@ export default function CreateContract() {
           borderBottom: '1px solid rgba(255,255,255,0.06)',
           display: 'flex', alignItems: 'center',
           padding: '0 16px', gap: 6,
-          maxHeight: barsCollapsed ? 0 : 28,
-          overflow: 'hidden',
-          opacity: barsCollapsed ? 0 : 1,
-          transition: 'max-height 0.3s ease, opacity 0.2s ease',
         }}>
           <span
             onClick={() => navigate('/contracts')}
@@ -948,10 +944,6 @@ export default function CreateContract() {
           background: '#1C2B3A',
           borderBottom: '1px solid rgba(255,255,255,0.07)',
           display: 'flex', alignItems: 'center', padding: '0 16px', gap: 8,
-          maxHeight: barsCollapsed ? 0 : 44,
-          overflow: 'hidden',
-          opacity: barsCollapsed ? 0 : 1,
-          transition: 'max-height 0.3s ease, opacity 0.2s ease',
         }}>
           {/* Title */}
           <input
@@ -1085,10 +1077,7 @@ export default function CreateContract() {
           borderBottom: '1px solid #E5E7EB',
           display: 'flex', alignItems: 'center',
           padding: '0 12px', gap: 2, overflowX: 'auto',
-          maxHeight: barsCollapsed ? 0 : 42,
-          opacity: barsCollapsed ? 0 : 1,
-          overflow: barsCollapsed ? 'hidden' : 'auto',
-          transition: 'max-height 0.3s ease, opacity 0.2s ease',
+          overflowX: 'auto',
         }}>
           {/* Active editor pill */}
           <span style={{

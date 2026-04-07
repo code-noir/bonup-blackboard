@@ -201,14 +201,14 @@ function MyEntitiesBtn() {
 }
 
 export default function ActionBar() {
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('bb_bars_collapsed') === 'true')
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('bb_topbar_collapsed') === 'true')
 
   useEffect(() => {
     function onCollapse(e: Event) {
       setCollapsed((e as CustomEvent<boolean>).detail)
     }
-    window.addEventListener('bars-collapse', onCollapse)
-    return () => window.removeEventListener('bars-collapse', onCollapse)
+    window.addEventListener('topbar-collapse', onCollapse)
+    return () => window.removeEventListener('topbar-collapse', onCollapse)
   }, [])
 
   return (

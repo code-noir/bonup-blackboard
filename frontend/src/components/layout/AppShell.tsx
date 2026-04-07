@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
@@ -13,6 +14,16 @@ import ActionBar from './ActionBar'
 //   Total           → pt-[159px] on main
 
 export default function AppShell() {
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('bb_topbar_collapsed') === 'true')
+
+  useEffect(() => {
+    function onCollapse(e: Event) {
+      setCollapsed((e as CustomEvent<boolean>).detail)
+    }
+    window.addEventListener('topbar-collapse', onCollapse)
+    return () => window.removeEventListener('topbar-collapse', onCollapse)
+  }, [])
+
   return (
     <div className="min-h-screen bg-[#ECEEF2]">
       <Sidebar />
@@ -22,12 +33,16 @@ export default function AppShell() {
 
       {/* Gold gradient separator */}
       <div
-        className="fixed right-0 z-30 h-px"
+        className="fixed right-0 z-30"
         style={{
           top: 158,
           left: 216,
+          height: 1,
           background:
             'linear-gradient(90deg, transparent, rgba(245,166,35,0.45) 35%, rgba(245,166,35,0.15) 65%, transparent)',
+          opacity: collapsed ? 0 : 1,
+          transition: 'opacity 0.2s ease',
+          pointerEvents: 'none',
         }}
       />
 

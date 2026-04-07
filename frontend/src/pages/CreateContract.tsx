@@ -1327,12 +1327,12 @@ export default function CreateContract() {
                     style={{
                       position: 'absolute', right: 0, top: 0, bottom: 0,
                       width: 6, cursor: 'col-resize',
-                      background: 'rgba(255,255,255,0.05)',
+                      background: '#1C2B3A',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       zIndex: 5,
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.15)')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = '#263d52')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = '#1C2B3A')}
                   >
                     <div style={{
                       width: 3, height: 40,
@@ -2851,11 +2851,11 @@ export default function CreateContract() {
               {/* CENTER DIVIDER — draggable resizer */}
               <div
                 onMouseDown={onDividerMouseDown}
-                onMouseEnter={(e) => { if (!isDragging) (e.currentTarget.style.background = '#CBD5E1') }}
-                onMouseLeave={(e) => { if (!isDragging) (e.currentTarget.style.background = '#E5E7EB') }}
+                onMouseEnter={(e) => { if (!isDragging) (e.currentTarget.style.background = '#B8BFC8') }}
+                onMouseLeave={(e) => { if (!isDragging) (e.currentTarget.style.background = '#C8CDD4') }}
                 style={{
                   width: 6, flexShrink: 0,
-                  background: isDragging ? '#CBD5E1' : '#E5E7EB',
+                  background: isDragging ? '#B8BFC8' : '#C8CDD4',
                   cursor: 'col-resize',
                   position: 'relative',
                   display: focusMode !== 'none' ? 'none' : 'flex',

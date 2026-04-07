@@ -96,7 +96,7 @@ const ACTIVITY = [
 function Divider() {
   return (
     <div style={{
-      width: 1, height: 20, background: '#E5E7EB',
+      width: 1, height: 20, background: 'rgba(255,255,255,0.15)',
       marginLeft: 4, marginRight: 4, flexShrink: 0,
     }} />
   )
@@ -115,11 +115,11 @@ function TBtn({
       onClick={onClick}
       style={{
         width: 28, height: 28, borderRadius: 4, border: 'none',
-        background: 'transparent', color: '#374151', fontSize: 13,
+        background: 'transparent', color: 'rgba(255,255,255,0.75)', fontSize: 13,
         cursor: 'pointer', flexShrink: 0,
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = '#F3F4F6')}
+      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')}
       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
     >
       {label}
@@ -901,7 +901,7 @@ export default function CreateContract() {
       <div style={{
         position: 'fixed', top: barsCollapsed ? 65 : 159, left: 48, right: 0, bottom: 32,
         display: 'flex', flexDirection: 'column', zIndex: 20, overflow: 'hidden',
-        background: '#F8FAFC',
+        background: '#ffffff',
         transition: 'top 0.3s ease',
       }}>
 
@@ -941,8 +941,7 @@ export default function CreateContract() {
         {/* ── TOOLBAR 1: Contract Actions ── */}
         <div style={{
           height: 44, flexShrink: 0,
-          background: '#1C2B3A',
-          borderBottom: '1px solid rgba(255,255,255,0.07)',
+          background: '#172334',
           display: 'flex', alignItems: 'center', padding: '0 16px', gap: 8,
         }}>
           {/* Title */}
@@ -1073,8 +1072,8 @@ export default function CreateContract() {
         {/* ── TOOLBAR 2: Rich Text ── */}
         <div style={{
           height: 42, flexShrink: 0,
-          background: '#ffffff',
-          borderBottom: '1px solid #E5E7EB',
+          background: '#172334',
+          borderBottom: '1px solid rgba(255,255,255,0.08)',
           display: 'flex', alignItems: 'center',
           padding: '0 12px', gap: 2, overflowX: 'auto',
         }}>
@@ -1084,8 +1083,8 @@ export default function CreateContract() {
             onChange={(e) => { setFontFamily(e.target.value); execCmd('fontName', e.target.value) }}
             style={{
               minWidth: 140, height: 26, fontSize: 12,
-              border: '1px solid #E5E7EB', borderRadius: 4,
-              color: '#374151', background: 'white',
+              border: '1px solid rgba(255,255,255,0.15)', borderRadius: 4,
+              color: 'rgba(255,255,255,0.85)', background: 'rgba(255,255,255,0.08)',
               cursor: 'pointer', flexShrink: 0, padding: '0 4px',
             }}
           >
@@ -1099,8 +1098,8 @@ export default function CreateContract() {
             onChange={(e) => { setFontSize(e.target.value); execCmd('fontSize', e.target.value) }}
             style={{
               width: 52, height: 26, fontSize: 12,
-              border: '1px solid #E5E7EB', borderRadius: 4,
-              color: '#374151', background: 'white',
+              border: '1px solid rgba(255,255,255,0.15)', borderRadius: 4,
+              color: 'rgba(255,255,255,0.85)', background: 'rgba(255,255,255,0.08)',
               cursor: 'pointer', flexShrink: 0, padding: '0 2px',
             }}
           >
@@ -2697,7 +2696,7 @@ export default function CreateContract() {
             {/* EDITOR HEADER ROW — always visible, never inside a display:none container */}
             <div style={{
               display: 'flex', height: 36, flexShrink: 0,
-              background: '#F8FAFC',
+              background: '#ffffff',
               borderBottom: '1px solid #E5E7EB',
             }}>
               {/* Draft Editor header — hidden when right-focused */}

@@ -19,6 +19,7 @@ from .helpers import (
     make_contract,
     make_obligation,
     make_payment,
+    make_subscription,
     make_user,
     make_version,
 )
@@ -30,6 +31,8 @@ class IdempotencyBasePayload:
     def setUp(self):
         self.alice = make_user("alice", "alice@example.com")
         self.bob = make_user("bob", "bob@example.com")
+        make_subscription(self.alice)
+        make_subscription(self.bob)
         self.contract = make_contract(self.alice, counterparty_email="bob@example.com")
         self._client = authed_client(self.alice)
 

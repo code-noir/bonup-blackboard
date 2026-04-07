@@ -11,6 +11,7 @@ from .helpers import (
     make_contract,
     make_obligation,
     make_payment,
+    make_subscription,
     make_user,
     make_version,
 )
@@ -105,6 +106,9 @@ class OwnershipObligationTests(TestCase):
         self.alice = make_user("alice", "alice@example.com")
         self.bob = make_user("bob", "bob@example.com")
         self.charlie = make_user("charlie", "charlie@example.com")
+        make_subscription(self.alice)
+        make_subscription(self.bob)
+        make_subscription(self.charlie)
 
         self.contract = make_contract(self.alice, counterparty_email="bob@example.com")
         self.version = make_version(self.contract, self.alice)
@@ -151,6 +155,9 @@ class OwnershipPaymentTests(TestCase):
         self.alice = make_user("alice", "alice@example.com")
         self.bob = make_user("bob", "bob@example.com")
         self.charlie = make_user("charlie", "charlie@example.com")
+        make_subscription(self.alice)
+        make_subscription(self.bob)
+        make_subscription(self.charlie)
 
         self.contract = make_contract(self.alice, counterparty_email="bob@example.com")
         self.payment = make_payment(self.contract, payer=self.alice, payee=self.bob)

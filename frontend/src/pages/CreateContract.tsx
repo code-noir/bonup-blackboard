@@ -432,7 +432,7 @@ export default function CreateContract() {
   const [templates, setTemplates] = useState<TemplateItem[]>([])
   const [templatesLoading, setTemplatesLoading] = useState(false)
   const [templateSearch, setTemplateSearch] = useState('')
-  const [templateCategoryFilter, setTemplateCategoryFilter] = useState<'All' | 'Personal' | 'Business'>('All')
+  const [templateCategoryFilter, setTemplateCategoryFilter] = useState<string>('All')
   const [templateToast, setTemplateToast] = useState('')
   const [previewTemplate, setPreviewTemplate] = useState<TemplateItem | null>(null)
 
@@ -552,8 +552,11 @@ export default function CreateContract() {
     return s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
   }
 
+  function escapeHtml(text: string): string {
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  }
+
   function parseTemplateSections(content: string): ContractSection[] {
-    // Match numbered headings: "1. SECTION NAME" on their own line
     const regex = /^(\d+)\.\s+([A-Z][A-Z\s/&,().-]+)$/gm
     const matches = [...content.matchAll(regex)]
     if (matches.length < 2) return DEFAULT_SECTIONS
@@ -564,12 +567,27 @@ export default function CreateContract() {
     }))
   }
 
+  function buildTemplateHtml(content: string, parsedSections: ContractSection[]): string {
+    const byNum = new Map(parsedSections.map((s) => [s.number, s]))
+    return content.split('\n').map((line) => {
+      const m = line.match(/^(\d+)\.\s+([A-Z][A-Z\s/&,().-]+)$/)
+      if (m) {
+        const num = parseInt(m[1], 10)
+        const sec = byNum.get(num)
+        const id = sec ? sec.id : `ts${num}`
+        return `<h2 id="section-${id}" style="margin:20px 0 4px;font-size:14px;font-weight:700;color:#0F1F3D;">${escapeHtml(line)}</h2>`
+      }
+      if (line.trim() === '') return '<div style="height:6px"></div>'
+      return `<div style="font-size:14px;line-height:1.6;color:#374151;margin-bottom:2px;">${escapeHtml(line)}</div>`
+    }).join('')
+  }
+
   function loadTemplate(tmpl: TemplateItem) {
+    const parsed = parseTemplateSections(tmpl.content)
     if (leftEditorRef.current) {
-      leftEditorRef.current.innerText = tmpl.content
+      leftEditorRef.current.innerHTML = buildTemplateHtml(tmpl.content, parsed)
       setLeftEmpty(false)
     }
-    const parsed = parseTemplateSections(tmpl.content)
     setSections(parsed)
     setPreviewTemplate(null)
     setActiveTool(null)
@@ -2006,7 +2024,11 @@ export default function CreateContract() {
                       )
                     })() : activeTool === 'Contract Sections' ? (() => {
                       function scrollToSection(id: string) {
-                        document.getElementById(`section-${id}`)?.scrollIntoView({ behavior: 'smooth' })
+                        const editorEl = leftEditorRef.current
+                        if (editorEl) {
+                          const target = editorEl.querySelector(`#section-${id}`)
+                          target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                        }
                         setActiveSection(id)
                       }
 
@@ -2450,12 +2472,23 @@ export default function CreateContract() {
                         </>
                       )
                     })() : activeTool === 'Templates' ? (() => {
-                      const PERSONAL_CATS = new Set(['Personal', 'lending', 'barter'])
-                      const BUSINESS_CATS = new Set(['Business', 'creative_services', 'education_tutoring', 'financial_services', 'freelancer', 'health_wellness', 'manual_labor', 'rental', 'technology_services'])
+                      const TAB_CATS: Record<string, string[]> = {
+                        'All':                [],
+                        'Personal':           ['Personal', 'lending', 'barter'],
+                        'Business':           ['Business', 'freelancer'],
+                        'Creative Services':  ['creative_services'],
+                        'Financial Services': ['financial_services'],
+                        'Real Estate':        ['rental'],
+                        'Employment':         ['education_tutoring'],
+                        'Technology':         ['technology_services'],
+                        'Legal':              [],
+                        'Healthcare':         ['health_wellness'],
+                        'Construction':       ['manual_labor'],
+                      }
+                      const TAB_LABELS = Object.keys(TAB_CATS)
                       const filtered = templates.filter((t) => {
-                        const matchCat = templateCategoryFilter === 'All'
-                          || (templateCategoryFilter === 'Personal' && PERSONAL_CATS.has(t.category))
-                          || (templateCategoryFilter === 'Business' && BUSINESS_CATS.has(t.category))
+                        const cats = TAB_CATS[templateCategoryFilter] ?? []
+                        const matchCat = templateCategoryFilter === 'All' || cats.includes(t.category)
                         const q = templateSearch.trim().toLowerCase()
                         const matchSearch = !q || t.name.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)
                         return matchCat && matchSearch
@@ -2476,20 +2509,25 @@ export default function CreateContract() {
                             }}
                           />
 
-                          {/* Category tabs */}
-                          <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
-                            {(['All', 'Personal', 'Business'] as const).map((cat) => (
+                          {/* Category tabs — horizontally scrollable */}
+                          <div style={{
+                            display: 'flex', gap: 4, marginBottom: 12,
+                            overflowX: 'auto', flexShrink: 0,
+                            msOverflowStyle: 'none',
+                          }}>
+                            {TAB_LABELS.map((tab) => (
                               <button
-                                key={cat}
-                                onClick={() => setTemplateCategoryFilter(cat)}
+                                key={tab}
+                                onClick={() => setTemplateCategoryFilter(tab)}
                                 style={{
                                   fontSize: 11, padding: '4px 10px',
                                   borderRadius: 20, cursor: 'pointer', border: 'none',
-                                  background: templateCategoryFilter === cat ? '#0F1F3D' : 'transparent',
-                                  color: templateCategoryFilter === cat ? 'white' : '#6B7280',
+                                  background: templateCategoryFilter === tab ? '#0F1F3D' : 'transparent',
+                                  color: templateCategoryFilter === tab ? 'white' : '#6B7280',
+                                  whiteSpace: 'nowrap', flexShrink: 0,
                                 }}
                               >
-                                {cat}
+                                {tab}
                               </button>
                             ))}
                           </div>
@@ -2505,7 +2543,7 @@ export default function CreateContract() {
                             </div>
                           ) : (
                             filtered.map((tmpl) => {
-                              const isPersonalCat = PERSONAL_CATS.has(tmpl.category)
+                              const isPersonalCat = TAB_CATS['Personal'].includes(tmpl.category)
                               const badgeLabel = isPersonalCat ? 'Personal' : 'Business'
                               const badgeBg = isPersonalCat ? '#EFF6FF' : '#F0FDF4'
                               const badgeColor = isPersonalCat ? '#1E40AF' : '#166534'

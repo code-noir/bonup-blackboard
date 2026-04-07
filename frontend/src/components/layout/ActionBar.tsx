@@ -201,10 +201,28 @@ function MyEntitiesBtn() {
 }
 
 export default function ActionBar() {
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('bb_bars_collapsed') === 'true')
+
+  useEffect(() => {
+    function onCollapse(e: Event) {
+      setCollapsed((e as CustomEvent<boolean>).detail)
+    }
+    window.addEventListener('bars-collapse', onCollapse)
+    return () => window.removeEventListener('bars-collapse', onCollapse)
+  }, [])
+
   return (
     <div
       className="fixed right-0 z-40 flex h-[44px] items-center gap-2 px-5"
-      style={{ top: 114, left: 'var(--sidebar-w, 216px)', background: '#132030' }}
+      style={{
+        top: 114,
+        left: 'var(--sidebar-w, 216px)',
+        background: '#132030',
+        maxHeight: collapsed ? 0 : 44,
+        overflow: 'hidden',
+        opacity: collapsed ? 0 : 1,
+        transition: 'max-height 0.3s ease, opacity 0.2s ease',
+      }}
     >
       <MyEntitiesBtn />
       <GhostBtn label="▶  Start Live Session" />

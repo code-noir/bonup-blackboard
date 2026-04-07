@@ -428,6 +428,9 @@ export default function CreateContract() {
   const [isSubmittingCounter, setIsSubmittingCounter] = useState(false)
   const [paygConfirmDismissed, setPaygConfirmDismissed] = useState(false)
 
+  // Toolbar collapse state
+  const [barsCollapsed, setBarsCollapsed] = useState(() => localStorage.getItem('bb_bars_collapsed') === 'true')
+
   // Templates panel state
   const [templates, setTemplates] = useState<TemplateItem[]>([])
   const [templatesLoading, setTemplatesLoading] = useState(false)
@@ -537,6 +540,14 @@ export default function CreateContract() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [focusMode])
+
+  useEffect(() => {
+    function onCollapse(e: Event) {
+      setBarsCollapsed((e as CustomEvent<boolean>).detail)
+    }
+    window.addEventListener('bars-collapse', onCollapse)
+    return () => window.removeEventListener('bars-collapse', onCollapse)
+  }, [])
 
   useEffect(() => {
     if (activeTool === 'Templates') {
@@ -888,9 +899,10 @@ export default function CreateContract() {
 
       {/* ── WORKSPACE: fixed below top bars, above status bar ── */}
       <div style={{
-        position: 'fixed', top: 159, left: 48, right: 0, bottom: 32,
+        position: 'fixed', top: barsCollapsed ? 65 : 159, left: 48, right: 0, bottom: 32,
         display: 'flex', flexDirection: 'column', zIndex: 20, overflow: 'hidden',
         background: '#F8FAFC',
+        transition: 'top 0.3s ease',
       }}>
 
         {/* ── BREADCRUMB BAR ── */}
@@ -900,6 +912,10 @@ export default function CreateContract() {
           borderBottom: '1px solid rgba(255,255,255,0.06)',
           display: 'flex', alignItems: 'center',
           padding: '0 16px', gap: 6,
+          maxHeight: barsCollapsed ? 0 : 28,
+          overflow: 'hidden',
+          opacity: barsCollapsed ? 0 : 1,
+          transition: 'max-height 0.3s ease, opacity 0.2s ease',
         }}>
           <span
             onClick={() => navigate('/contracts')}
@@ -932,6 +948,10 @@ export default function CreateContract() {
           background: '#1C2B3A',
           borderBottom: '1px solid rgba(255,255,255,0.07)',
           display: 'flex', alignItems: 'center', padding: '0 16px', gap: 8,
+          maxHeight: barsCollapsed ? 0 : 44,
+          overflow: 'hidden',
+          opacity: barsCollapsed ? 0 : 1,
+          transition: 'max-height 0.3s ease, opacity 0.2s ease',
         }}>
           {/* Title */}
           <input
@@ -957,25 +977,85 @@ export default function CreateContract() {
             v1
           </span>
 
-          {/* Status — center */}
-          <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-            <select
-              value={contractStatus}
-              onChange={(e) => setContractStatus(e.target.value)}
-              style={{
-                background: 'rgba(255,255,255,0.08)',
-                color: 'rgba(255,255,255,0.7)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: 6, fontSize: 12, padding: '4px 10px',
-                cursor: 'pointer', outline: 'none',
-              }}
-            >
-              <option>Draft</option>
-              <option>Active</option>
-              <option>Pending</option>
-              <option>Completed</option>
-            </select>
-          </div>
+          {/* Status dropdown */}
+          <select
+            value={contractStatus}
+            onChange={(e) => setContractStatus(e.target.value)}
+            style={{
+              background: 'rgba(255,255,255,0.08)',
+              color: 'rgba(255,255,255,0.7)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 6, fontSize: 12, padding: '4px 10px',
+              cursor: 'pointer', outline: 'none', flexShrink: 0,
+            }}
+          >
+            <option>Draft</option>
+            <option>Active</option>
+            <option>Pending</option>
+            <option>Completed</option>
+          </select>
+
+          {/* Choose a Template — gold */}
+          <button
+            onClick={() => setActiveTool('Templates')}
+            style={{
+              height: 28, padding: '0 12px', borderRadius: 6,
+              fontSize: 12, fontWeight: 500, cursor: 'pointer', flexShrink: 0,
+              background: 'rgba(245,166,35,0.12)',
+              border: '1px solid rgba(245,166,35,0.4)',
+              color: '#F5A623',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(245,166,35,0.2)'
+              e.currentTarget.style.borderColor = 'rgba(245,166,35,0.6)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(245,166,35,0.12)'
+              e.currentTarget.style.borderColor = 'rgba(245,166,35,0.4)'
+            }}
+          >
+            ⊟ Choose a Template
+          </button>
+
+          {/* Start from Scratch */}
+          <button
+            onClick={() => {
+              if (leftEditorRef.current) {
+                leftEditorRef.current.innerHTML = ''
+                setLeftEmpty(true)
+              }
+            }}
+            style={{
+              height: 28, padding: '0 12px', borderRadius: 6,
+              fontSize: 12, cursor: 'pointer', flexShrink: 0,
+              background: 'transparent',
+              border: '1px solid rgba(255,255,255,0.15)',
+              color: 'rgba(255,255,255,0.7)',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+          >
+            ✎ Start from Scratch
+          </button>
+
+          {/* Ask AI */}
+          <button
+            onClick={() => setAiPanelOpen((v) => !v)}
+            style={{
+              height: 28, padding: '0 12px', borderRadius: 6,
+              fontSize: 12, cursor: 'pointer', flexShrink: 0,
+              background: 'transparent',
+              border: '1px solid rgba(255,255,255,0.15)',
+              color: 'rgba(255,255,255,0.7)',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+          >
+            ✦ Ask AI
+          </button>
+
+          {/* flex spacer */}
+          <div style={{ flex: 1 }} />
 
           {/* Right buttons */}
           <GhostActionBtn label="Share / Invite" />
@@ -1005,6 +1085,10 @@ export default function CreateContract() {
           borderBottom: '1px solid #E5E7EB',
           display: 'flex', alignItems: 'center',
           padding: '0 12px', gap: 2, overflowX: 'auto',
+          maxHeight: barsCollapsed ? 0 : 42,
+          opacity: barsCollapsed ? 0 : 1,
+          overflow: barsCollapsed ? 'hidden' : 'auto',
+          transition: 'max-height 0.3s ease, opacity 0.2s ease',
         }}>
           {/* Active editor pill */}
           <span style={{
@@ -2630,68 +2714,6 @@ export default function CreateContract() {
 
           {/* CENTER AREA */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
-
-            {/* Top action buttons — visible in all modes */}
-            <div style={{
-              padding: 16, background: '#F8FAFC',
-              borderBottom: '1px solid #E5E7EB',
-              display: 'flex', justifyContent: 'center', gap: 16, flexShrink: 0,
-            }}>
-              {/* Choose a Template — gold treatment */}
-              <button
-                onClick={() => setActiveTool('Templates')}
-                style={{
-                  height: 36, padding: '0 20px', borderRadius: 8,
-                  fontSize: 13, fontWeight: 500, cursor: 'pointer',
-                  background: 'rgba(245,166,35,0.12)',
-                  border: '1px solid rgba(245,166,35,0.4)',
-                  color: '#0F1F3D',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(245,166,35,0.2)'
-                  e.currentTarget.style.borderColor = 'rgba(245,166,35,0.6)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(245,166,35,0.12)'
-                  e.currentTarget.style.borderColor = 'rgba(245,166,35,0.4)'
-                }}
-              >
-                ⊟ Choose a Template
-              </button>
-
-              {/* Start from Scratch — ghost */}
-              <button
-                style={{
-                  height: 36, padding: '0 20px', borderRadius: 8,
-                  fontSize: 13, fontWeight: 500, cursor: 'pointer',
-                  border: '1px solid #D1D5DB', background: 'white', color: '#374151',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#F9FAFB'
-                  e.currentTarget.style.borderColor = '#9CA3AF'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'white'
-                  e.currentTarget.style.borderColor = '#D1D5DB'
-                }}
-              >
-                ✎ Start from Scratch
-              </button>
-
-              {/* Ask AI — toggles the slide-up panel */}
-              <button
-                onClick={() => setAiPanelOpen((v) => !v)}
-                style={{
-                  height: 36, padding: '0 20px', borderRadius: 8,
-                  fontSize: 13, fontWeight: 500, cursor: 'pointer',
-                  border: aiPanelOpen ? '1px solid #BFDBFE' : '1px solid #D1D5DB',
-                  background: aiPanelOpen ? '#EFF6FF' : 'white',
-                  color: aiPanelOpen ? '#1E40AF' : '#374151',
-                }}
-              >
-                ✦ Ask AI
-              </button>
-            </div>
 
             {/* EDITOR HEADER ROW — always visible, never inside a display:none container */}
             <div style={{

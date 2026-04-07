@@ -15,6 +15,7 @@ export default function Header() {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('bb_bars_collapsed') === 'true')
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -22,6 +23,14 @@ export default function Header() {
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  useEffect(() => {
+    function onCollapse(e: Event) {
+      setCollapsed((e as CustomEvent<boolean>).detail)
+    }
+    window.addEventListener('bars-collapse', onCollapse)
+    return () => window.removeEventListener('bars-collapse', onCollapse)
   }, [])
 
   const handleLogout = async () => {
@@ -46,6 +55,10 @@ export default function Header() {
         left: 'var(--sidebar-w, 216px)',
         background: '#172334',
         borderBottom: '1px solid rgba(255,255,255,0.06)',
+        maxHeight: collapsed ? 0 : 50,
+        overflow: 'hidden',
+        opacity: collapsed ? 0 : 1,
+        transition: 'max-height 0.3s ease, opacity 0.2s ease',
       }}
     >
       {/* Left — welcome + bonID */}

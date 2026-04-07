@@ -110,6 +110,7 @@ export default function TopBar() {
   const [sloganIdx, setSloganIdx] = useState(0)
   const [visible, setVisible] = useState(true)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('bb_bars_collapsed') === 'true')
 
   useEffect(() => {
     // Cycle: 10s visible → 3s fade out → swap text → 3s fade in → 10s visible → ...
@@ -180,6 +181,28 @@ export default function TopBar() {
         maskBg="rgba(22,33,44,0.97)"
         startDelayMs={6000}
       />
+
+      {/* Collapse toggle */}
+      <button
+        onClick={() => {
+          const next = !collapsed
+          setCollapsed(next)
+          localStorage.setItem('bb_bars_collapsed', String(next))
+          window.dispatchEvent(new CustomEvent('bars-collapse', { detail: next }))
+        }}
+        style={{
+          marginLeft: 12, flexShrink: 0,
+          background: 'transparent',
+          border: '1px solid rgba(255,255,255,0.2)',
+          borderRadius: 6, color: 'rgba(255,255,255,0.6)',
+          fontSize: 11, padding: '3px 10px',
+          cursor: 'pointer',
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+      >
+        {collapsed ? '▼ Show' : '▲ Hide'}
+      </button>
     </div>
   )
 }

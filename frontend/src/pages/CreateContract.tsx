@@ -1077,17 +1077,7 @@ export default function CreateContract() {
           borderBottom: '1px solid #E5E7EB',
           display: 'flex', alignItems: 'center',
           padding: '0 12px', gap: 2, overflowX: 'auto',
-          overflowX: 'auto',
         }}>
-          {/* Active editor pill */}
-          <span style={{
-            background: '#F0F4F8', color: '#374151',
-            fontSize: 10, padding: '2px 8px', borderRadius: 4,
-            marginRight: 8, flexShrink: 0, whiteSpace: 'nowrap',
-          }}>
-            {activeEditor === 'left' ? 'Draft Editor' : 'Final Editor'}
-          </span>
-
           {/* G1: Font Family */}
           <select
             value={fontFamily}

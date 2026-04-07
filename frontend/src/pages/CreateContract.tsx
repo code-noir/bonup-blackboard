@@ -397,6 +397,7 @@ function PartySearchBlock({
 
 export default function CreateContract() {
   const [activeTool, setActiveTool] = useState<string | null>(null)
+  const [templateDropdownOpen, setTemplateDropdownOpen] = useState(false)
   const [rightDrawerOpen, setRightDrawerOpen] = useState(true)
   const [activeEditor, setActiveEditor] = useState<'left' | 'right'>('left')
   const [aiPanelOpen, setAiPanelOpen] = useState(false)
@@ -986,27 +987,58 @@ export default function CreateContract() {
             <option>Completed</option>
           </select>
 
-          {/* Choose a Template — gold */}
-          <button
-            onClick={() => setActiveTool('Templates')}
-            style={{
-              height: 28, padding: '0 12px', borderRadius: 6,
-              fontSize: 12, fontWeight: 500, cursor: 'pointer', flexShrink: 0,
-              background: 'rgba(245,166,35,0.12)',
-              border: '1px solid rgba(245,166,35,0.4)',
-              color: '#F5A623',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(245,166,35,0.2)'
-              e.currentTarget.style.borderColor = 'rgba(245,166,35,0.6)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(245,166,35,0.12)'
-              e.currentTarget.style.borderColor = 'rgba(245,166,35,0.4)'
-            }}
-          >
-            ⊟ Choose a Template
-          </button>
+          {/* Choose a Template — gold dropdown */}
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <button
+              onClick={() => setTemplateDropdownOpen((v) => !v)}
+              style={{
+                height: 28, padding: '0 12px', borderRadius: 6,
+                fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                background: 'rgba(245,166,35,0.12)',
+                border: '1px solid rgba(245,166,35,0.4)',
+                color: '#F5A623',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(245,166,35,0.2)'
+                e.currentTarget.style.borderColor = 'rgba(245,166,35,0.6)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(245,166,35,0.12)'
+                e.currentTarget.style.borderColor = 'rgba(245,166,35,0.4)'
+              }}
+            >
+              ⊟ Choose a Template ▾
+            </button>
+            {templateDropdownOpen && (
+              <div
+                style={{
+                  position: 'absolute', top: '100%', left: 0, marginTop: 4,
+                  background: '#0F1F3D', border: '1px solid rgba(245,166,35,0.3)',
+                  borderRadius: 6, overflow: 'hidden', zIndex: 200, minWidth: 180,
+                }}
+              >
+                {([
+                  { icon: '📄', label: 'Contract Template', tool: 'Templates' },
+                  { icon: '✓', label: 'Obligation Template', tool: 'Obligations' },
+                  { icon: '💰', label: 'Payment Template', tool: 'Payments' },
+                ] as { icon: string; label: string; tool: string }[]).map(({ icon, label, tool }) => (
+                  <button
+                    key={tool}
+                    onClick={() => { setActiveTool(tool); setTemplateDropdownOpen(false) }}
+                    style={{
+                      display: 'block', width: '100%', textAlign: 'left',
+                      padding: '7px 12px', fontSize: 12, cursor: 'pointer',
+                      background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.85)',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(245,166,35,0.12)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    {icon} {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Start from Scratch */}
           <button

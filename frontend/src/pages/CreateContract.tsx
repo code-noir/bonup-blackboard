@@ -2631,33 +2631,53 @@ export default function CreateContract() {
           {/* CENTER AREA */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
 
-            {/* Top action buttons */}
+            {/* Top action buttons — visible in all modes */}
             <div style={{
               padding: 16, background: '#F8FAFC',
               borderBottom: '1px solid #E5E7EB',
-              display: focusMode !== 'none' ? 'none' : 'flex',
-              justifyContent: 'center', gap: 16, flexShrink: 0,
+              display: 'flex', justifyContent: 'center', gap: 16, flexShrink: 0,
             }}>
-              {['⊟ Choose a Template', '✎ Start from Scratch'].map((label) => (
-                <button
-                  key={label}
-                  style={{
-                    height: 36, padding: '0 20px', borderRadius: 8,
-                    fontSize: 13, fontWeight: 500, cursor: 'pointer',
-                    border: '1px solid #D1D5DB', background: 'white', color: '#374151',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#F9FAFB'
-                    e.currentTarget.style.borderColor = '#9CA3AF'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'white'
-                    e.currentTarget.style.borderColor = '#D1D5DB'
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
+              {/* Choose a Template — gold treatment */}
+              <button
+                onClick={() => setActiveTool('Templates')}
+                style={{
+                  height: 36, padding: '0 20px', borderRadius: 8,
+                  fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                  background: 'rgba(245,166,35,0.12)',
+                  border: '1px solid rgba(245,166,35,0.4)',
+                  color: '#0F1F3D',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(245,166,35,0.2)'
+                  e.currentTarget.style.borderColor = 'rgba(245,166,35,0.6)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(245,166,35,0.12)'
+                  e.currentTarget.style.borderColor = 'rgba(245,166,35,0.4)'
+                }}
+              >
+                ⊟ Choose a Template
+              </button>
+
+              {/* Start from Scratch — ghost */}
+              <button
+                style={{
+                  height: 36, padding: '0 20px', borderRadius: 8,
+                  fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                  border: '1px solid #D1D5DB', background: 'white', color: '#374151',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#F9FAFB'
+                  e.currentTarget.style.borderColor = '#9CA3AF'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'white'
+                  e.currentTarget.style.borderColor = '#D1D5DB'
+                }}
+              >
+                ✎ Start from Scratch
+              </button>
+
               {/* Ask AI — toggles the slide-up panel */}
               <button
                 onClick={() => setAiPanelOpen((v) => !v)}

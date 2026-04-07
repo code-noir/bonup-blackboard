@@ -434,6 +434,7 @@ export default function CreateContract() {
   const [templateSearch, setTemplateSearch] = useState('')
   const [templateCategoryFilter, setTemplateCategoryFilter] = useState<'All' | 'Personal' | 'Business'>('All')
   const [templateToast, setTemplateToast] = useState('')
+  const [previewTemplate, setPreviewTemplate] = useState<TemplateItem | null>(null)
 
   // Contracting As — null = personal, string = entity id
   const [selectedEntity, setSelectedEntity] = useState<string | null>(null)
@@ -547,11 +548,30 @@ export default function CreateContract() {
     }
   }, [activeTool])
 
+  function toTitleCase(s: string): string {
+    return s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
+  }
+
+  function parseTemplateSections(content: string): ContractSection[] {
+    // Match numbered headings: "1. SECTION NAME" on their own line
+    const regex = /^(\d+)\.\s+([A-Z][A-Z\s/&,().-]+)$/gm
+    const matches = [...content.matchAll(regex)]
+    if (matches.length < 2) return DEFAULT_SECTIONS
+    return matches.map((m, i) => ({
+      id: `ts${i + 1}`,
+      number: parseInt(m[1], 10),
+      name: toTitleCase(m[2].trim()),
+    }))
+  }
+
   function loadTemplate(tmpl: TemplateItem) {
     if (leftEditorRef.current) {
       leftEditorRef.current.innerText = tmpl.content
       setLeftEmpty(false)
     }
+    const parsed = parseTemplateSections(tmpl.content)
+    setSections(parsed)
+    setPreviewTemplate(null)
     setActiveTool(null)
     setTemplateToast('Template loaded')
     setTimeout(() => setTemplateToast(''), 2000)
@@ -2430,9 +2450,14 @@ export default function CreateContract() {
                         </>
                       )
                     })() : activeTool === 'Templates' ? (() => {
+                      const PERSONAL_CATS = new Set(['Personal', 'lending', 'barter'])
+                      const BUSINESS_CATS = new Set(['Business', 'creative_services', 'education_tutoring', 'financial_services', 'freelancer', 'health_wellness', 'manual_labor', 'rental', 'technology_services'])
                       const filtered = templates.filter((t) => {
-                        const matchCat = templateCategoryFilter === 'All' || t.category === templateCategoryFilter
-                        const matchSearch = !templateSearch.trim() || t.name.toLowerCase().includes(templateSearch.toLowerCase()) || t.description.toLowerCase().includes(templateSearch.toLowerCase())
+                        const matchCat = templateCategoryFilter === 'All'
+                          || (templateCategoryFilter === 'Personal' && PERSONAL_CATS.has(t.category))
+                          || (templateCategoryFilter === 'Business' && BUSINESS_CATS.has(t.category))
+                        const q = templateSearch.trim().toLowerCase()
+                        const matchSearch = !q || t.name.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)
                         return matchCat && matchSearch
                       })
                       return (
@@ -2480,16 +2505,17 @@ export default function CreateContract() {
                             </div>
                           ) : (
                             filtered.map((tmpl) => {
-                              const isPersonal = tmpl.category === 'Personal'
-                              const badgeBg = isPersonal ? '#EFF6FF' : '#F0FDF4'
-                              const badgeColor = isPersonal ? '#1E40AF' : '#166534'
+                              const isPersonalCat = PERSONAL_CATS.has(tmpl.category)
+                              const badgeLabel = isPersonalCat ? 'Personal' : 'Business'
+                              const badgeBg = isPersonalCat ? '#EFF6FF' : '#F0FDF4'
+                              const badgeColor = isPersonalCat ? '#1E40AF' : '#166534'
                               return (
                                 <div
                                   key={tmpl.id}
                                   style={{
                                     background: 'white', borderRadius: 8,
                                     padding: '12px 14px', marginBottom: 8,
-                                    border: '1px solid #E5E7EB', cursor: 'pointer',
+                                    border: '1px solid #E5E7EB',
                                   }}
                                   onMouseEnter={(e) => {
                                     e.currentTarget.style.borderColor = '#0F1F3D'
@@ -2506,7 +2532,7 @@ export default function CreateContract() {
                                       background: badgeBg, color: badgeColor,
                                       fontSize: 10, padding: '2px 8px', borderRadius: 4,
                                     }}>
-                                      {tmpl.category}
+                                      {badgeLabel}
                                     </span>
                                   </div>
                                   {/* Name */}
@@ -2517,6 +2543,22 @@ export default function CreateContract() {
                                   <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 10 }}>
                                     {tmpl.description}
                                   </div>
+                                  {/* Preview button */}
+                                  <button
+                                    onClick={() => setPreviewTemplate(tmpl)}
+                                    style={{
+                                      width: '100%', height: 28,
+                                      background: 'transparent',
+                                      border: '1px solid #D1D5DB',
+                                      borderRadius: 6, fontSize: 12,
+                                      color: '#374151', marginBottom: 6,
+                                      cursor: 'pointer',
+                                    }}
+                                    onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#0F1F3D')}
+                                    onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#D1D5DB')}
+                                  >
+                                    Preview
+                                  </button>
                                   {/* Use button */}
                                   <button
                                     onClick={() => loadTemplate(tmpl)}
@@ -2599,20 +2641,20 @@ export default function CreateContract() {
               background: '#F8FAFC',
               borderBottom: '1px solid #E5E7EB',
             }}>
-              {/* Draft Editor header */}
-              <div style={{
-                width: focusMode === 'none' ? `${splitPercent}%` : '50%',
-                flexShrink: 0, padding: '0 12px',
-                display: 'flex', alignItems: 'center', gap: 8,
-                overflow: 'hidden', minWidth: 0,
-                borderRight: '1px solid #E5E7EB',
-                transition: 'width 0.3s ease',
-              }}>
-                <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Draft Editor</span>
-                {activeEditor === 'left' && (
-                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#2DD4BF' }} />
-                )}
-                {focusMode !== 'right' && (
+              {/* Draft Editor header — hidden when right-focused */}
+              {focusMode !== 'right' && (
+                <div style={{
+                  width: focusMode === 'none' ? `${splitPercent}%` : '100%',
+                  flexShrink: 0, padding: '0 12px',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  overflow: 'hidden', minWidth: 0,
+                  borderRight: focusMode === 'none' ? '1px solid #E5E7EB' : 'none',
+                  transition: 'width 0.3s ease',
+                }}>
+                  <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Draft Editor</span>
+                  {activeEditor === 'left' && (
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#2DD4BF' }} />
+                  )}
                   <button
                     onClick={() => focusMode === 'left' ? exitFocus() : enterFocus('left')}
                     title={focusMode === 'left' ? 'Exit focus mode' : 'Focus mode'}
@@ -2626,19 +2668,19 @@ export default function CreateContract() {
                   >
                     ⛶
                   </button>
-                )}
-              </div>
-              {/* Final Editor header */}
-              <div style={{
-                flex: 1, padding: '0 12px',
-                display: 'flex', alignItems: 'center', gap: 8,
-                overflow: 'hidden', minWidth: 0,
-              }}>
-                <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Final Editor</span>
-                {activeEditor === 'right' && (
-                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#2DD4BF' }} />
-                )}
-                {focusMode !== 'left' && (
+                </div>
+              )}
+              {/* Final Editor header — hidden when left-focused */}
+              {focusMode !== 'left' && (
+                <div style={{
+                  flex: 1, padding: '0 12px',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  overflow: 'hidden', minWidth: 0,
+                }}>
+                  <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Final Editor</span>
+                  {activeEditor === 'right' && (
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#2DD4BF' }} />
+                  )}
                   <button
                     onClick={() => focusMode === 'right' ? exitFocus() : enterFocus('right')}
                     title={focusMode === 'right' ? 'Exit focus mode' : 'Focus mode'}
@@ -2652,8 +2694,8 @@ export default function CreateContract() {
                   >
                     ⛶
                   </button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
 
             {/* Editors + AI panel wrapper */}
@@ -3040,6 +3082,88 @@ export default function CreateContract() {
           fontSize: 13, fontWeight: 500,
         }}>
           {templateToast}
+        </div>
+      )}
+
+      {/* Template preview modal */}
+      {previewTemplate && (
+        <div
+          onClick={() => setPreviewTemplate(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 600,
+            background: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 24,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 600, maxHeight: '80vh',
+              background: 'white', borderRadius: 12,
+              padding: 28, boxShadow: '0 8px 40px rgba(0,0,0,0.15)',
+              display: 'flex', flexDirection: 'column',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Modal header */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 16, flexShrink: 0 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#0F1F3D', marginBottom: 4 }}>
+                  {previewTemplate.name}
+                </div>
+                <div style={{ fontSize: 12, color: '#6B7280' }}>
+                  {previewTemplate.description}
+                </div>
+              </div>
+              <button
+                onClick={() => setPreviewTemplate(null)}
+                style={{
+                  background: 'transparent', border: 'none',
+                  color: '#9CA3AF', fontSize: 20, cursor: 'pointer',
+                  padding: '0 0 0 12px', lineHeight: 1, flexShrink: 0,
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Contract text */}
+            <div style={{
+              flex: 1, overflowY: 'auto',
+              borderTop: '1px solid #E5E7EB',
+              borderBottom: '1px solid #E5E7EB',
+              padding: '16px 0',
+              marginBottom: 16,
+            }}>
+              <pre style={{
+                fontFamily: 'Georgia, serif',
+                fontSize: 13, lineHeight: 1.7,
+                color: '#374151', whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word', margin: 0,
+              }}>
+                {previewTemplate.content}
+              </pre>
+            </div>
+
+            {/* Use button */}
+            <button
+              onClick={() => loadTemplate(previewTemplate)}
+              style={{
+                width: '100%', height: 40,
+                background: '#0F1F3D', color: 'white',
+                border: 'none', borderRadius: 8,
+                fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                flexShrink: 0,
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+            >
+              Use This Template
+            </button>
+          </div>
         </div>
       )}
     </>

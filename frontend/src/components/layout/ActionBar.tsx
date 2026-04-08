@@ -41,51 +41,69 @@ function GhostBtn({ label }: { label: string }) {
 
 // ── My Contracts dropdown ─────────────────────────────────────────────────────
 
-interface ContractEntry { id: string; title: string; status: string }
-
-const PLACEHOLDER_CONTRACTS: Record<string, ContractEntry[]> = {
-  'In Progress': [
-    { id: 'ip1', title: 'Freelance Web Dev Agreement', status: 'In Progress' },
-    { id: 'ip2', title: 'Photography Services Contract', status: 'In Progress' },
-    { id: 'ip3', title: 'Office Space Lease', status: 'In Progress' },
-  ],
-  'Under Negotiation': [
-    { id: 'un1', title: 'Software Licensing Deal', status: 'Under Negotiation' },
-    { id: 'un2', title: 'Marketing Retainer Agreement', status: 'Under Negotiation' },
-    { id: 'un3', title: 'Partnership MOU', status: 'Under Negotiation' },
-  ],
-  'Active': [
-    { id: 'ac1', title: 'Annual Maintenance Contract', status: 'Active' },
-    { id: 'ac2', title: 'SaaS Subscription Agreement', status: 'Active' },
-    { id: 'ac3', title: 'Consulting Services MSA', status: 'Active' },
-  ],
-  'Completed': [
-    { id: 'co1', title: 'Logo Design Contract', status: 'Completed' },
-    { id: 'co2', title: 'Event Photography Agreement', status: 'Completed' },
-    { id: 'co3', title: 'Copywriting Services Contract', status: 'Completed' },
-  ],
-  'Archived': [
-    { id: 'ar1', title: 'Old Vendor Agreement 2023', status: 'Archived' },
-    { id: 'ar2', title: 'Expired NDA', status: 'Archived' },
-    { id: 'ar3', title: 'Legacy Lease Agreement', status: 'Archived' },
-  ],
+interface ContractEntry {
+  id: string
+  title: string
+  sub: string       // counterparty or descriptor shown after em-dash
+  pill: 'Draft' | 'Negotiation' | 'Active' | 'Completed' | 'Archived'
 }
 
-const CATEGORY_ICONS: Record<string, string> = {
-  'In Progress': '🔨',
-  'Under Negotiation': '📋',
-  'Active': '✅',
-  'Completed': '🏁',
-  'Archived': '📦',
+interface ContractCategory {
+  icon: string
+  label: string
+  items: ContractEntry[]
 }
 
-const PILL_COLORS: Record<string, { bg: string; color: string }> = {
-  'In Progress':       { bg: 'rgba(59,130,246,0.18)',  color: '#93C5FD' },
-  'Under Negotiation': { bg: 'rgba(245,158,11,0.18)',  color: '#FCD34D' },
-  'Active':            { bg: 'rgba(34,197,94,0.18)',   color: '#86EFAC' },
-  'Completed':         { bg: 'rgba(156,163,175,0.18)', color: '#D1D5DB' },
-  'Archived':          { bg: 'rgba(107,114,128,0.12)', color: '#9CA3AF' },
+const PILL_STYLE: Record<string, React.CSSProperties> = {
+  Draft:       { background: 'rgba(255,255,255,0.1)',   color: 'rgba(255,255,255,0.65)' },
+  Negotiation: { background: 'rgba(245,166,35,0.2)',    color: '#F5A623' },
+  Active:      { background: 'rgba(16,185,129,0.2)',    color: '#10B981' },
+  Completed:   { background: 'rgba(139,92,246,0.2)',    color: '#8B5CF6' },
+  Archived:    { background: 'rgba(107,114,128,0.2)',   color: '#6B7280' },
 }
+
+const CONTRACT_CATEGORIES: ContractCategory[] = [
+  {
+    icon: '🔨', label: 'In Progress',
+    items: [
+      { id: 'ip1', title: 'Untitled Contract', sub: 'Personal',    pill: 'Draft' },
+      { id: 'ip2', title: 'Service Agreement Draft', sub: '',       pill: 'Draft' },
+      { id: 'ip3', title: 'Consulting Agreement',   sub: '',        pill: 'Draft' },
+    ],
+  },
+  {
+    icon: '📋', label: 'Under Negotiation',
+    items: [
+      { id: 'un1', title: 'Web Design Contract v2',      sub: '',  pill: 'Negotiation' },
+      { id: 'un2', title: 'Freelance Agreement v1',      sub: '',  pill: 'Negotiation' },
+      { id: 'un3', title: 'NDA — Meridian Labs v3',      sub: '',  pill: 'Negotiation' },
+    ],
+  },
+  {
+    icon: '✅', label: 'Active',
+    items: [
+      { id: 'ac1', title: 'Lawn Care Agreement',   sub: 'A&C Lawn Care',   pill: 'Active' },
+      { id: 'ac2', title: 'Consulting Retainer',   sub: 'Vanta Digital',   pill: 'Active' },
+      { id: 'ac3', title: 'Studio Contract',       sub: 'Fenix Creative',  pill: 'Active' },
+    ],
+  },
+  {
+    icon: '🏁', label: 'Completed',
+    items: [
+      { id: 'co1', title: 'Q1 Service Agreement',  sub: 'Clearpath Inc',   pill: 'Completed' },
+      { id: 'co2', title: 'Personal Loan',         sub: 'John Smith',      pill: 'Completed' },
+      { id: 'co3', title: 'Staffing Contract',     sub: 'Orin Staffing',   pill: 'Completed' },
+    ],
+  },
+  {
+    icon: '📦', label: 'Archived',
+    items: [
+      { id: 'ar1', title: '2024 Web Contract',     sub: 'BluePrint Agency', pill: 'Archived' },
+      { id: 'ar2', title: 'Old NDA',               sub: 'Nova Tech',        pill: 'Archived' },
+      { id: 'ar3', title: 'Expired Retainer',      sub: 'Apex Media',       pill: 'Archived' },
+    ],
+  },
+]
 
 function MyContractsBtn() {
   const navigate = useNavigate()
@@ -103,14 +121,10 @@ function MyContractsBtn() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  // Inject the WIP contract into In Progress when on /contracts/create
-  const categories = Object.entries(PLACEHOLDER_CONTRACTS).map(([cat, items]) => {
-    if (cat === 'In Progress' && isBuilding) {
-      const wipTitle = localStorage.getItem('bb_wip_contract_title') || 'Untitled Contract'
-      return [cat, [{ id: 'wip', title: wipTitle, status: 'In Progress' }, ...items]] as [string, ContractEntry[]]
-    }
-    return [cat, items] as [string, ContractEntry[]]
-  })
+  // Prepend WIP contract to In Progress when on /contracts/create
+  const wipTitle = isBuilding
+    ? (localStorage.getItem('bb_wip_contract_title') || 'Untitled Contract')
+    : null
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
@@ -136,44 +150,52 @@ function MyContractsBtn() {
           border: '1px solid rgba(255,255,255,0.1)',
           boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
           minWidth: 280, zIndex: 200, padding: '8px 0',
-          maxHeight: 480, overflowY: 'auto',
+          maxHeight: 500, overflowY: 'auto',
         }}>
-          {categories.map(([cat, items]) => (
-            <div key={cat}>
-              <div style={{
-                fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em',
-                color: 'rgba(255,255,255,0.3)', padding: '8px 16px 4px',
-              }}>
-                {CATEGORY_ICONS[cat]} {cat}
-              </div>
-              {items.map((contract) => {
-                const pill = PILL_COLORS[contract.status] ?? PILL_COLORS['Archived']
-                return (
+          {CONTRACT_CATEGORIES.map((cat) => {
+            const items: ContractEntry[] = cat.label === 'In Progress' && wipTitle
+              ? [{ id: 'wip', title: wipTitle, sub: 'Building now', pill: 'Draft' }, ...cat.items]
+              : cat.items
+            return (
+              <div key={cat.label}>
+                {/* Category header */}
+                <div style={{
+                  fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em',
+                  color: 'rgba(255,255,255,0.3)', padding: '8px 16px 4px',
+                  marginTop: cat.label === 'In Progress' ? 0 : 8,
+                }}>
+                  {cat.icon} {cat.label}
+                </div>
+                {/* Contract rows */}
+                {items.map((c) => (
                   <div
-                    key={contract.id}
+                    key={c.id}
                     onClick={() => { setOpen(false); navigate('/contracts') }}
                     style={{
-                      padding: '8px 16px', fontSize: 12,
+                      padding: '6px 16px', fontSize: 12,
                       color: 'rgba(255,255,255,0.7)', cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', gap: 8,
+                      display: 'flex', alignItems: 'center',
+                      justifyContent: 'space-between', gap: 8,
                     }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
                     onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                   >
                     <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {contract.id === 'wip' ? <strong style={{ color: '#ffffff' }}>{contract.title}</strong> : contract.title}
+                      {c.title}
+                      {c.sub ? <span style={{ color: 'rgba(255,255,255,0.35)', marginLeft: 4 }}>— {c.sub}</span> : null}
                     </span>
                     <span style={{
-                      fontSize: 9, padding: '2px 6px', borderRadius: 4, flexShrink: 0,
-                      background: pill.bg, color: pill.color, fontWeight: 500,
+                      fontSize: 10, padding: '1px 6px', borderRadius: 4,
+                      flexShrink: 0, fontWeight: 500,
+                      ...PILL_STYLE[c.pill],
                     }}>
-                      {contract.status}
+                      {c.pill}
                     </span>
                   </div>
-                )
-              })}
-            </div>
-          ))}
+                ))}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

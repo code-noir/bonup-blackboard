@@ -50,6 +50,25 @@ interface TemplateItem {
   tier_required: string
 }
 
+interface ObligationTemplateItem {
+  id: string
+  name: string
+  description: string
+  content: string
+  category: string
+  contract_template_id: string | null
+}
+
+interface PaymentTemplateItem {
+  id: string
+  name: string
+  description: string
+  content: string
+  schedule_type: string
+  category: string
+  contract_template_id: string | null
+}
+
 const DEFAULT_SECTIONS: ContractSection[] = [
   { id: 's1',  number: 1,  name: 'Introduction' },
   { id: 's2',  number: 2,  name: 'Parties' },
@@ -440,6 +459,16 @@ export default function CreateContract() {
   const [templateToast, setTemplateToast] = useState('')
   const [previewTemplate, setPreviewTemplate] = useState<TemplateItem | null>(null)
 
+  // Obligations panel state
+  const [obligationTemplates, setObligationTemplates] = useState<ObligationTemplateItem[]>([])
+  const [obligationTemplatesLoading, setObligationTemplatesLoading] = useState(false)
+  const [insertedObligations, setInsertedObligations] = useState<string[]>([])
+
+  // Payments panel state
+  const [paymentTemplates, setPaymentTemplates] = useState<PaymentTemplateItem[]>([])
+  const [paymentTemplatesLoading, setPaymentTemplatesLoading] = useState(false)
+  const [insertedPayments, setInsertedPayments] = useState<string[]>([])
+
   // Contracting As — null = personal, string = entity id
   const [selectedEntity, setSelectedEntity] = useState<string | null>(null)
   // Mock entities — replace with API data when connected
@@ -557,6 +586,20 @@ export default function CreateContract() {
         .then(({ data }) => setTemplates(data))
         .catch(() => setTemplates([]))
         .finally(() => setTemplatesLoading(false))
+    }
+    if (activeTool === 'Obligations') {
+      setObligationTemplatesLoading(true)
+      api.get<ObligationTemplateItem[]>('/obligation-templates/')
+        .then(({ data }) => setObligationTemplates(data))
+        .catch(() => setObligationTemplates([]))
+        .finally(() => setObligationTemplatesLoading(false))
+    }
+    if (activeTool === 'Payments') {
+      setPaymentTemplatesLoading(true)
+      api.get<PaymentTemplateItem[]>('/payment-templates/')
+        .then(({ data }) => setPaymentTemplates(data))
+        .catch(() => setPaymentTemplates([]))
+        .finally(() => setPaymentTemplatesLoading(false))
     }
   }, [activeTool])
 
@@ -2725,6 +2768,140 @@ export default function CreateContract() {
                             })
                           )}
                         </>
+                      )
+                    })() : activeTool === 'Obligations' ? (() => {
+                      function insertObligation(tmpl: ObligationTemplateItem) {
+                        const ref = activeEditor === 'left' ? leftEditorRef : rightEditorRef
+                        if (ref.current) {
+                          ref.current.focus()
+                          document.execCommand('insertText', false, '\n\n' + tmpl.content)
+                        }
+                        setInsertedObligations((prev) => prev.includes(tmpl.id) ? prev : [...prev, tmpl.id])
+                      }
+                      return (
+                        <div style={{ margin: -16, minHeight: 'calc(100% + 32px)', display: 'flex', flexDirection: 'column' }}>
+                          {/* Dark header */}
+                          <div style={{ background: '#1C2B3A', padding: '14px 16px' }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: 'white', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                              Obligation Templates
+                            </span>
+                            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>
+                              Click a template to insert at cursor
+                            </div>
+                          </div>
+                          {/* Body */}
+                          <div style={{ flex: 1, background: '#F0F2F5', padding: 12 }}>
+                            {obligationTemplatesLoading ? (
+                              <div style={{ fontSize: 12, color: '#6B7280', textAlign: 'center', marginTop: 30 }}>Loading…</div>
+                            ) : obligationTemplates.length === 0 ? (
+                              <div style={{ fontSize: 12, color: '#6B7280', textAlign: 'center', marginTop: 30 }}>No obligation templates found.</div>
+                            ) : (
+                              obligationTemplates.map((tmpl) => {
+                                const inserted = insertedObligations.includes(tmpl.id)
+                                return (
+                                  <div
+                                    key={tmpl.id}
+                                    onClick={() => insertObligation(tmpl)}
+                                    style={{
+                                      background: inserted ? '#FFFBF0' : 'white',
+                                      borderLeft: inserted ? '3px solid #F5A623' : '3px solid transparent',
+                                      borderRadius: 6,
+                                      padding: '10px 12px',
+                                      marginBottom: 8,
+                                      cursor: 'pointer',
+                                      boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                                      transition: 'all 0.15s',
+                                    }}
+                                    onMouseEnter={(e) => { if (!inserted) e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,0.12)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.boxShadow = inserted ? '0 1px 3px rgba(0,0,0,0.08)' : '0 1px 3px rgba(0,0,0,0.08)'; e.currentTarget.style.transform = 'none' }}
+                                  >
+                                    <div style={{ fontSize: 12, fontWeight: 600, color: '#111827', marginBottom: 3 }}>{tmpl.name}</div>
+                                    <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 4 }}>{tmpl.category}</div>
+                                    {tmpl.description ? (
+                                      <div style={{ fontSize: 11, color: '#9CA3AF', lineHeight: 1.4 }}>{tmpl.description}</div>
+                                    ) : null}
+                                    {inserted && (
+                                      <div style={{ fontSize: 10, color: '#F5A623', fontWeight: 600, marginTop: 4 }}>✓ Inserted</div>
+                                    )}
+                                  </div>
+                                )
+                              })
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })() : activeTool === 'Payments' ? (() => {
+                      const SCHEDULE_LABELS: Record<string, string> = {
+                        one_time: 'One-Time',
+                        installment: 'Installment',
+                        recurring: 'Recurring',
+                        milestone: 'Milestone',
+                      }
+                      function insertPayment(tmpl: PaymentTemplateItem) {
+                        const ref = activeEditor === 'left' ? leftEditorRef : rightEditorRef
+                        if (ref.current) {
+                          ref.current.focus()
+                          document.execCommand('insertText', false, '\n\n' + tmpl.content)
+                        }
+                        setInsertedPayments((prev) => prev.includes(tmpl.id) ? prev : [...prev, tmpl.id])
+                      }
+                      return (
+                        <div style={{ margin: -16, minHeight: 'calc(100% + 32px)', display: 'flex', flexDirection: 'column' }}>
+                          {/* Dark header */}
+                          <div style={{ background: '#1C2B3A', padding: '14px 16px' }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: 'white', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                              Payment Templates
+                            </span>
+                            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>
+                              Click a template to insert at cursor
+                            </div>
+                          </div>
+                          {/* Body */}
+                          <div style={{ flex: 1, background: '#F0F2F5', padding: 12 }}>
+                            {paymentTemplatesLoading ? (
+                              <div style={{ fontSize: 12, color: '#6B7280', textAlign: 'center', marginTop: 30 }}>Loading…</div>
+                            ) : paymentTemplates.length === 0 ? (
+                              <div style={{ fontSize: 12, color: '#6B7280', textAlign: 'center', marginTop: 30 }}>No payment templates found.</div>
+                            ) : (
+                              paymentTemplates.map((tmpl) => {
+                                const inserted = insertedPayments.includes(tmpl.id)
+                                return (
+                                  <div
+                                    key={tmpl.id}
+                                    onClick={() => insertPayment(tmpl)}
+                                    style={{
+                                      background: inserted ? '#FFFBF0' : 'white',
+                                      borderLeft: inserted ? '3px solid #F5A623' : '3px solid transparent',
+                                      borderRadius: 6,
+                                      padding: '10px 12px',
+                                      marginBottom: 8,
+                                      cursor: 'pointer',
+                                      boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                                      transition: 'all 0.15s',
+                                    }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,0.12)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.08)'; e.currentTarget.style.transform = 'none' }}
+                                  >
+                                    <div style={{ fontSize: 12, fontWeight: 600, color: '#111827', marginBottom: 3 }}>{tmpl.name}</div>
+                                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
+                                      <span style={{ fontSize: 10, color: '#6B7280' }}>{tmpl.category}</span>
+                                      <span style={{
+                                        fontSize: 10, padding: '1px 6px', borderRadius: 10,
+                                        background: '#E5E7EB', color: '#374151', fontWeight: 500,
+                                      }}>{SCHEDULE_LABELS[tmpl.schedule_type] ?? tmpl.schedule_type}</span>
+                                    </div>
+                                    {tmpl.description ? (
+                                      <div style={{ fontSize: 11, color: '#9CA3AF', lineHeight: 1.4 }}>{tmpl.description}</div>
+                                    ) : null}
+                                    {inserted && (
+                                      <div style={{ fontSize: 10, color: '#F5A623', fontWeight: 600, marginTop: 4 }}>✓ Inserted</div>
+                                    )}
+                                  </div>
+                                )
+                              })
+                            )}
+                          </div>
+                        </div>
                       )
                     })() : (
                       <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', textAlign: 'center', marginTop: 40 }}>

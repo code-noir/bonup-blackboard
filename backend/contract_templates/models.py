@@ -155,3 +155,65 @@ class TemplateObligationPattern(models.Model):
 
     def __str__(self):
         return f"{self.template.name} — obligation pattern ({self.obligation_type}, {self.frequency_type})"
+
+
+class ObligationTemplate(models.Model):
+    """Standalone obligation/deliverable template extracted from contract templates."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    content = models.TextField()
+    category = models.CharField(max_length=100)
+    contract_template = models.ForeignKey(
+        ContractTemplate,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="obligation_templates",
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["category", "name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.category})"
+
+
+class PaymentTemplate(models.Model):
+    """Standalone payment terms template extracted from contract templates."""
+
+    SCHEDULE_TYPE_CHOICES = [
+        ("one_time", "One Time"),
+        ("installment", "Installment"),
+        ("recurring", "Recurring"),
+        ("milestone", "Milestone"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    content = models.TextField()
+    schedule_type = models.CharField(
+        max_length=50,
+        choices=SCHEDULE_TYPE_CHOICES,
+        default="one_time",
+    )
+    category = models.CharField(max_length=100)
+    contract_template = models.ForeignKey(
+        ContractTemplate,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="payment_templates",
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["category", "name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.category} / {self.schedule_type})"

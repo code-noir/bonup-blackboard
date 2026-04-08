@@ -39,6 +39,147 @@ function GhostBtn({ label }: { label: string }) {
   )
 }
 
+// ── My Contracts dropdown ─────────────────────────────────────────────────────
+
+interface ContractEntry { id: string; title: string; status: string }
+
+const PLACEHOLDER_CONTRACTS: Record<string, ContractEntry[]> = {
+  'In Progress': [
+    { id: 'ip1', title: 'Freelance Web Dev Agreement', status: 'In Progress' },
+    { id: 'ip2', title: 'Photography Services Contract', status: 'In Progress' },
+    { id: 'ip3', title: 'Office Space Lease', status: 'In Progress' },
+  ],
+  'Under Negotiation': [
+    { id: 'un1', title: 'Software Licensing Deal', status: 'Under Negotiation' },
+    { id: 'un2', title: 'Marketing Retainer Agreement', status: 'Under Negotiation' },
+    { id: 'un3', title: 'Partnership MOU', status: 'Under Negotiation' },
+  ],
+  'Active': [
+    { id: 'ac1', title: 'Annual Maintenance Contract', status: 'Active' },
+    { id: 'ac2', title: 'SaaS Subscription Agreement', status: 'Active' },
+    { id: 'ac3', title: 'Consulting Services MSA', status: 'Active' },
+  ],
+  'Completed': [
+    { id: 'co1', title: 'Logo Design Contract', status: 'Completed' },
+    { id: 'co2', title: 'Event Photography Agreement', status: 'Completed' },
+    { id: 'co3', title: 'Copywriting Services Contract', status: 'Completed' },
+  ],
+  'Archived': [
+    { id: 'ar1', title: 'Old Vendor Agreement 2023', status: 'Archived' },
+    { id: 'ar2', title: 'Expired NDA', status: 'Archived' },
+    { id: 'ar3', title: 'Legacy Lease Agreement', status: 'Archived' },
+  ],
+}
+
+const CATEGORY_ICONS: Record<string, string> = {
+  'In Progress': '🔨',
+  'Under Negotiation': '📋',
+  'Active': '✅',
+  'Completed': '🏁',
+  'Archived': '📦',
+}
+
+const PILL_COLORS: Record<string, { bg: string; color: string }> = {
+  'In Progress':       { bg: 'rgba(59,130,246,0.18)',  color: '#93C5FD' },
+  'Under Negotiation': { bg: 'rgba(245,158,11,0.18)',  color: '#FCD34D' },
+  'Active':            { bg: 'rgba(34,197,94,0.18)',   color: '#86EFAC' },
+  'Completed':         { bg: 'rgba(156,163,175,0.18)', color: '#D1D5DB' },
+  'Archived':          { bg: 'rgba(107,114,128,0.12)', color: '#9CA3AF' },
+}
+
+function MyContractsBtn() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  const isBuilding = location.pathname === '/contracts/create'
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  // Inject the WIP contract into In Progress when on /contracts/create
+  const categories = Object.entries(PLACEHOLDER_CONTRACTS).map(([cat, items]) => {
+    if (cat === 'In Progress' && isBuilding) {
+      const wipTitle = localStorage.getItem('bb_wip_contract_title') || 'Untitled Contract'
+      return [cat, [{ id: 'wip', title: wipTitle, status: 'In Progress' }, ...items]] as [string, ContractEntry[]]
+    }
+    return [cat, items] as [string, ContractEntry[]]
+  })
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={BTN}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = 'rgba(255,255,255,0.07)'
+          e.currentTarget.style.color = '#ffffff'
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = 'transparent'
+          e.currentTarget.style.color = 'rgba(255,255,255,0.58)'
+        }}
+      >
+        My Contracts&nbsp;<span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 4px)', left: 0,
+          background: '#1C2B3A', borderRadius: 8,
+          border: '1px solid rgba(255,255,255,0.1)',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+          minWidth: 280, zIndex: 200, padding: '8px 0',
+          maxHeight: 480, overflowY: 'auto',
+        }}>
+          {categories.map(([cat, items]) => (
+            <div key={cat}>
+              <div style={{
+                fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em',
+                color: 'rgba(255,255,255,0.3)', padding: '8px 16px 4px',
+              }}>
+                {CATEGORY_ICONS[cat]} {cat}
+              </div>
+              {items.map((contract) => {
+                const pill = PILL_COLORS[contract.status] ?? PILL_COLORS['Archived']
+                return (
+                  <div
+                    key={contract.id}
+                    onClick={() => { setOpen(false); navigate('/contracts') }}
+                    style={{
+                      padding: '8px 16px', fontSize: 12,
+                      color: 'rgba(255,255,255,0.7)', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 8,
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {contract.id === 'wip' ? <strong style={{ color: '#ffffff' }}>{contract.title}</strong> : contract.title}
+                    </span>
+                    <span style={{
+                      fontSize: 9, padding: '2px 6px', borderRadius: 4, flexShrink: 0,
+                      background: pill.bg, color: pill.color, fontWeight: 500,
+                    }}>
+                      {contract.status}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function bizInitials(name: string): string {
   const words = name.trim().split(/\s+/)
   return words.length >= 2
@@ -224,6 +365,7 @@ export default function ActionBar() {
         transition: 'max-height 0.3s ease, opacity 0.2s ease',
       }}
     >
+      <MyContractsBtn />
       <MyEntitiesBtn />
       <GhostBtn label="▶  Start Live Session" />
       <GhostBtn label="+ New Contract" />

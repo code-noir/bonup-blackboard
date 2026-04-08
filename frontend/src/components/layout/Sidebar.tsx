@@ -21,7 +21,8 @@ function emojiIcon(emoji: string): React.ElementType {
 }
 
 const nav = [
-  { to: '/dashboard',   label: 'Dashboard',           Icon: HomeIcon },
+  { to: '/contracts',   label: 'My Contracts',         Icon: emojiIcon('📑') },
+  { to: '/dashboard',   label: 'Dashboard',            Icon: HomeIcon },
   { to: '/contracts',   label: 'Contracts',            Icon: DocumentTextIcon },
   { to: '/obligations', label: 'Obligations',          Icon: ClipboardDocumentListIcon },
   { to: '/payments',    label: 'Payments',             Icon: CreditCardIcon },

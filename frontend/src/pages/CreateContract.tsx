@@ -516,6 +516,7 @@ export default function CreateContract() {
   // Contract Sections panel state
   const [sections, setSections] = useState<ContractSection[]>(DEFAULT_SECTIONS)
   const [activeSection, setActiveSection] = useState<string | null>(null)
+  const [sectionsStripVisible, setSectionsStripVisible] = useState(true)
   const [editingSection, setEditingSection] = useState<string | null>(null)
   const [editingSectionName, setEditingSectionName] = useState('')
   const [addingSection, setAddingSection] = useState(false)
@@ -2914,8 +2915,130 @@ export default function CreateContract() {
             </div>
           </div>
 
+          {/* SECTIONS STRIP */}
+          <div style={{
+            width: sectionsStripVisible ? 140 : 0,
+            flexShrink: 0,
+            overflow: 'hidden',
+            transition: 'width 0.2s ease',
+            position: 'relative',
+          }}>
+            <div style={{
+              width: 140,
+              height: '100%',
+              background: 'transparent',
+              borderRight: '1px solid #E5E7EB',
+              padding: '8px 0',
+              overflowY: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+            }}>
+              {/* Toggle button */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', paddingRight: 6, marginBottom: 4 }}>
+                <button
+                  onClick={() => setSectionsStripVisible(false)}
+                  title="Hide sections"
+                  style={{
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    fontSize: 11, color: 'rgba(0,0,0,0.25)', padding: '0 4px', lineHeight: 1,
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = '#0F1F3D')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(0,0,0,0.25)')}
+                >
+                  ‹
+                </button>
+              </div>
+              {/* Header */}
+              <div style={{
+                fontSize: 9, fontWeight: 600, color: 'rgba(0,0,0,0.25)',
+                letterSpacing: '0.12em', textTransform: 'uppercase',
+                padding: '0 10px 8px',
+                borderBottom: '1px solid #F0F0F0',
+                marginBottom: 6,
+              }}>
+                Sections
+              </div>
+              {/* Items */}
+              {sections.map((s) => {
+                const isActive = activeSection === s.id
+                return (
+                  <div
+                    key={s.id}
+                    onClick={() => {
+                      const editorEl = leftEditorRef.current
+                      if (editorEl) {
+                        const target = editorEl.querySelector(`#section-${s.id}`)
+                        target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                      }
+                      setActiveSection(s.id)
+                    }}
+                    style={{
+                      padding: '6px 10px',
+                      fontSize: 11,
+                      color: isActive ? '#0F1F3D' : '#6B7280',
+                      fontWeight: isActive ? 500 : 400,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isActive) {
+                        e.currentTarget.style.color = '#0F1F3D'
+                        const dot = e.currentTarget.querySelector<HTMLElement>('.sec-dot')
+                        if (dot) dot.style.background = '#F5A623'
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isActive) {
+                        e.currentTarget.style.color = '#6B7280'
+                        const dot = e.currentTarget.querySelector<HTMLElement>('.sec-dot')
+                        if (dot) dot.style.background = '#D1D5DB'
+                      }
+                    }}
+                  >
+                    <span
+                      className="sec-dot"
+                      style={{
+                        width: 4, height: 4, borderRadius: '50%',
+                        background: isActive ? '#F5A623' : '#D1D5DB',
+                        flexShrink: 0,
+                        display: 'inline-block',
+                      }}
+                    />
+                    {s.name}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* SECTIONS STRIP SHOW BUTTON — visible only when strip is hidden */}
+          {!sectionsStripVisible && (
+            <button
+              onClick={() => setSectionsStripVisible(true)}
+              title="Show sections"
+              style={{
+                position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
+                zIndex: 10,
+                width: 16, height: 40,
+                background: '#F0F2F5',
+                border: '1px solid #E5E7EB',
+                borderLeft: 'none',
+                borderRadius: '0 4px 4px 0',
+                cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 10, color: 'rgba(0,0,0,0.35)',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = '#0F1F3D')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(0,0,0,0.35)')}
+            >
+              ›
+            </button>
+          )}
+
           {/* CENTER AREA */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, position: 'relative' }}>
 
             {/* EDITOR HEADER ROW — always visible, never inside a display:none container */}
             <div style={{

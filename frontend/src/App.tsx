@@ -8,6 +8,7 @@ import Contracts from '@/pages/Contracts'
 import CreateContract from '@/pages/CreateContract'
 import Analysis from '@/pages/Analysis'
 import Counter from '@/pages/Counter'
+import Contacts from '@/pages/Contacts'
 import Entities from '@/pages/Entities'
 import Profile from '@/pages/Profile'
 import NotFound from '@/pages/NotFound'
@@ -86,6 +87,7 @@ export default function App() {
             <Route path="/sol/*" element={<PaygLock name="Sol Groups" />} />
             <Route path="/templates/*" element={<Placeholder name="Templates" />} />
             <Route path="/search" element={<Placeholder name="Search" />} />
+            <Route path="/contacts" element={<Contacts />} />
             <Route path="/ai" element={<Placeholder name="AI Assistant" />} />
             <Route path="/analysis" element={<Analysis />} />
             <Route path="/counter" element={<Counter />} />

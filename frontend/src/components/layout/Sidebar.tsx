@@ -29,6 +29,7 @@ const nav = [
   { to: '/sol',         label: 'Sol Groups',           Icon: UserGroupIcon },
   { to: '/templates',   label: 'Templates',            Icon: RectangleStackIcon },
   { to: '/search',      label: 'Search',               Icon: MagnifyingGlassIcon },
+  { to: '/contacts',    label: 'Contacts',             Icon: emojiIcon('👥') },
   { to: '/ai',          label: 'AI Assistant',         Icon: SparklesIcon },
   { to: '/analysis',    label: 'Contract Analysis',    Icon: emojiIcon('🔍') },
   { to: '/counter',     label: 'Contract Counter',     Icon: emojiIcon('⚡') },

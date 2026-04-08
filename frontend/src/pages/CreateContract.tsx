@@ -2,6 +2,13 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import api from '@/api/client'
+import {
+  loadContacts,
+  saveContactFromParty,
+  getContactInitials,
+  getContactDisplayName,
+  type Contact,
+} from '@/lib/contacts'
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
@@ -488,6 +495,11 @@ export default function CreateContract() {
   const [detailsConfidentiality, setDetailsConfidentiality] = useState('Not confidential')
   const [detailsDispute, setDetailsDispute] = useState('Negotiation')
   const [detailsDescription, setDetailsDescription] = useState('')
+
+  // Contacts state (shared with Contacts page via localStorage)
+  const [contacts, setContacts] = useState<Contact[]>([])
+  useEffect(() => { setContacts(loadContacts()) }, [])
+  function reloadContacts() { setContacts(loadContacts()) }
 
   // Parties panel state
   const { user, hasTrialExpired, canCreateContract } = useAuth()
@@ -1735,12 +1747,83 @@ export default function CreateContract() {
                             searchDone={party2SearchDone}
                             onSearchDoneChange={setParty2SearchDone}
                             added={party2Added}
-                            onAddedChange={setParty2Added}
+                            onAddedChange={(v) => {
+                              setParty2Added(v)
+                              if (v && party2SearchResult) {
+                                saveContactFromParty({ name: party2SearchResult.name, bonId: party2SearchResult.bonId })
+                                reloadContacts()
+                              }
+                            }}
                             role={party2Role}
                             onRoleChange={setParty2Role}
                             customRole={party2CustomRole}
                             onCustomRoleChange={setParty2CustomRole}
                           />
+
+                          {/* Your Contacts */}
+                          {!party2Added && contacts.length > 0 && (
+                            <div style={{ marginBottom: 16 }}>
+                              <p style={{ ...SECTION_HDR, marginTop: 8, marginBottom: 8 }}>Your Contacts</p>
+                              <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+                                {contacts.map((c) => (
+                                  <div
+                                    key={c.id}
+                                    style={{
+                                      display: 'flex', alignItems: 'center', gap: 8,
+                                      background: 'rgba(255,255,255,0.07)',
+                                      borderRadius: 8, padding: '8px 10px',
+                                      marginBottom: 6,
+                                    }}
+                                  >
+                                    <div style={{
+                                      width: 30, height: 30, borderRadius: '50%',
+                                      background: '#0F1F3D', color: 'white',
+                                      fontSize: 11, fontWeight: 700,
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                      flexShrink: 0,
+                                    }}>
+                                      {getContactInitials(c)}
+                                    </div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{
+                                        fontSize: 12, fontWeight: 500, color: 'white',
+                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                      }}>
+                                        {getContactDisplayName(c)}
+                                      </div>
+                                      {c.bonId && (
+                                        <div style={{ fontSize: 10, color: '#8B5CF6', fontFamily: "'DM Mono', monospace" }}>
+                                          {c.bonId}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <button
+                                      onClick={() => {
+                                        const name = getContactDisplayName(c)
+                                        const bonId = c.bonId || `#${name.toUpperCase().replace(/\s+/g, '').slice(0, 8)}`
+                                        setParty2SearchResult({ name, bonId, initials: getContactInitials(c) })
+                                        setParty2SearchDone(true)
+                                        setParty2Added(true)
+                                        setParty2SearchQuery(name)
+                                        saveContactFromParty({ name, bonId })
+                                        reloadContacts()
+                                      }}
+                                      style={{
+                                        height: 22, padding: '0 8px', fontSize: 10, fontWeight: 500,
+                                        borderRadius: 4, border: '1px solid #0F1F3D',
+                                        background: '#0F1F3D', color: 'white', cursor: 'pointer',
+                                        flexShrink: 0,
+                                      }}
+                                      onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
+                                      onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+                                    >
+                                      Select
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
 
                           {/* Additional parties */}
                           {additionalParties.map((p, idx) => (
@@ -1769,7 +1852,13 @@ export default function CreateContract() {
                                 searchDone={p.searchDone}
                                 onSearchDoneChange={(v) => setAdditionalParties((prev) => prev.map((ap, i) => i === idx ? { ...ap, searchDone: v } : ap))}
                                 added={p.added}
-                                onAddedChange={(v) => setAdditionalParties((prev) => prev.map((ap, i) => i === idx ? { ...ap, added: v } : ap))}
+                                onAddedChange={(v) => {
+                                  setAdditionalParties((prev) => prev.map((ap, i) => i === idx ? { ...ap, added: v } : ap))
+                                  if (v && p.searchResult) {
+                                    saveContactFromParty({ name: p.searchResult.name, bonId: p.searchResult.bonId })
+                                    reloadContacts()
+                                  }
+                                }}
                                 role={p.role}
                                 onRoleChange={(v) => setAdditionalParties((prev) => prev.map((ap, i) => i === idx ? { ...ap, role: v } : ap))}
                                 customRole={p.customRole}
@@ -1804,20 +1893,6 @@ export default function CreateContract() {
                             </button>
                           )}
 
-                          {/* Save */}
-                          <button
-                            style={{
-                              width: '100%', height: 36,
-                              background: '#0F1F3D', color: 'white',
-                              border: 'none', borderRadius: 8,
-                              fontSize: 13, fontWeight: 600,
-                              cursor: 'pointer', marginTop: 8,
-                            }}
-                            onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
-                            onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
-                          >
-                            Save Parties
-                          </button>
                         </>
                       )
                     })() : activeTool === 'Contract Details' ? (() => {

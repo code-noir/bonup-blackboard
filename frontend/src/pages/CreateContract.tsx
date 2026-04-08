@@ -496,6 +496,12 @@ export default function CreateContract() {
   const [detailsDispute, setDetailsDispute] = useState('Negotiation')
   const [detailsDescription, setDetailsDescription] = useState('')
 
+  // Created contract identity (set after POST /api/contracts/)
+  const [createdContractId, setCreatedContractId] = useState<string | null>(null)
+  const [createdContractTitle, setCreatedContractTitle] = useState<string>('')
+  const [contractCreating, setContractCreating] = useState(false)
+  const [contractCreateError, setContractCreateError] = useState('')
+
   // Contacts state (shared with Contacts page via localStorage)
   const [contacts, setContacts] = useState<Contact[]>([])
   useEffect(() => { setContacts(loadContacts()) }, [])
@@ -1134,6 +1140,17 @@ export default function CreateContract() {
           >
             ✦ Ask AI
           </button>
+
+          {/* Contract identity indicator — shown once contract is created */}
+          {createdContractId && (
+            <span style={{
+              fontSize: 11, color: 'rgba(255,255,255,0.5)',
+              flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              maxWidth: 260,
+            }}>
+              📄 {createdContractTitle || 'Untitled Contract'} — {createdContractId.slice(0, 8)}…
+            </span>
+          )}
 
           {/* flex spacer */}
           <div style={{ flex: 1 }} />
@@ -2223,19 +2240,60 @@ export default function CreateContract() {
                             onBlur={onFieldBlur}
                           />
 
-                          {/* Save button */}
+                          {/* Create Contract button */}
+                          {contractCreateError && (
+                            <div style={{ fontSize: 11, color: '#F87171', marginBottom: 8 }}>
+                              {contractCreateError}
+                            </div>
+                          )}
+                          {createdContractId && (
+                            <div style={{
+                              fontSize: 11, color: '#34D399', marginBottom: 8,
+                              display: 'flex', alignItems: 'center', gap: 4,
+                            }}>
+                              ✓ Contract created — ID saved
+                            </div>
+                          )}
                           <button
+                            disabled={contractCreating}
+                            onClick={() => {
+                              setContractCreateError('')
+                              setContractCreating(true)
+                              const counterparty = party2SearchResult?.bonId
+                                ? `${party2SearchResult.bonId.replace('#', '').toLowerCase()}@bonup.placeholder`
+                                : 'unknown@bonup.placeholder'
+                              api.post<{ id: string; counterparty_email: string }>('/contracts/', {
+                                counterparty_email: counterparty,
+                                structure_type: detailsType || 'ONE_TIME',
+                                currency: detailsCurrency || 'USD',
+                              })
+                                .then(({ data }) => {
+                                  const title = detailsDescription.trim() || detailsType || 'Untitled Contract'
+                                  setCreatedContractId(data.id)
+                                  setCreatedContractTitle(title)
+                                  localStorage.setItem('bb_wip_contract_title', title)
+                                  localStorage.setItem('bb_wip_contract_id', data.id)
+                                })
+                                .catch((err) => {
+                                  const msg = err?.response?.data
+                                    ? Object.values(err.response.data).flat().join(' ')
+                                    : 'Failed to create contract.'
+                                  setContractCreateError(String(msg))
+                                })
+                                .finally(() => setContractCreating(false))
+                            }}
                             style={{
                               width: '100%', height: 36,
-                              background: '#0F1F3D', color: 'white',
-                              border: 'none', borderRadius: 8,
+                              background: createdContractId ? '#064E3B' : '#0F1F3D',
+                              color: 'white', border: 'none', borderRadius: 8,
                               fontSize: 13, fontWeight: 600,
-                              cursor: 'pointer', marginTop: 4,
+                              cursor: contractCreating ? 'wait' : 'pointer', marginTop: 4,
+                              opacity: contractCreating ? 0.7 : 1,
                             }}
-                            onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
-                            onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+                            onMouseEnter={(e) => { if (!contractCreating) e.currentTarget.style.background = createdContractId ? '#065F46' : '#1a3460' }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = createdContractId ? '#064E3B' : '#0F1F3D' }}
                           >
-                            Save Details
+                            {contractCreating ? 'Creating…' : createdContractId ? '✓ Contract Created' : 'Create Contract'}
                           </button>
                         </>
                       )

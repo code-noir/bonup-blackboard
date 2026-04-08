@@ -149,7 +149,7 @@ function MyContractsBtn() {
           background: '#1C2B3A', borderRadius: 8,
           border: '1px solid rgba(255,255,255,0.1)',
           boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-          minWidth: 280, zIndex: 200, padding: '8px 0',
+          minWidth: 280, zIndex: 9999, padding: '8px 0',
           maxHeight: 500, overflowY: 'auto',
         }}>
           {CONTRACT_CATEGORIES.map((cat) => {

@@ -1141,14 +1141,17 @@ export default function CreateContract() {
             ✦ Ask AI
           </button>
 
-          {/* Contract identity indicator — shown once contract is created */}
+          {/* Currently building indicator — shown once contract is created */}
           {createdContractId && (
             <span style={{
               fontSize: 11, color: 'rgba(255,255,255,0.5)',
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 6, padding: '3px 10px',
               flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              maxWidth: 260,
+              maxWidth: 240,
             }}>
-              📄 {createdContractTitle || 'Untitled Contract'} — {createdContractId.slice(0, 8)}…
+              📄 {createdContractTitle ? createdContractTitle : 'In Progress'}
             </span>
           )}
 
@@ -2273,6 +2276,7 @@ export default function CreateContract() {
                                   setCreatedContractTitle(title)
                                   localStorage.setItem('bb_wip_contract_title', title)
                                   localStorage.setItem('bb_wip_contract_id', data.id)
+                                  setActiveTool(null)
                                 })
                                 .catch((err) => {
                                   const msg = err?.response?.data

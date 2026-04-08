@@ -91,7 +91,7 @@ const CONTRACT_TOOLS = [
   { icon: '✓', label: 'Obligations' },
   { icon: '💰', label: 'Payments' },
   { icon: '📎', label: 'Attachments' },
-  { icon: '📐', label: 'Templates' },
+  { icon: '📐', label: 'Contract Templates' },
   { icon: '🔢', label: 'Calculator' },
   { icon: '📅', label: 'Calendar' },
   { icon: '🔒', label: 'Permissions' },
@@ -583,7 +583,7 @@ export default function CreateContract() {
   }, [])
 
   useEffect(() => {
-    if (activeTool === 'Templates') {
+    if (activeTool === 'Contract Templates') {
       setTemplatesLoading(true)
       api.get<TemplateItem[]>('/templates/')
         .then(({ data }) => setTemplates(data))
@@ -1064,7 +1064,7 @@ export default function CreateContract() {
                 }}
               >
                 {([
-                  { icon: '📄', label: 'Contract Template', tool: 'Templates' },
+                  { icon: '📄', label: 'Contract Templates', tool: 'Contract Templates' },
                   { icon: '✓', label: 'Obligation Template', tool: 'Obligations' },
                   { icon: '💰', label: 'Payment Template', tool: 'Payments' },
                 ] as { icon: string; label: string; tool: string }[]).map(({ icon, label, tool }) => (
@@ -2626,7 +2626,7 @@ export default function CreateContract() {
                           ))}
                         </>
                       )
-                    })() : activeTool === 'Templates' ? (() => {
+                    })() : activeTool === 'Contract Templates' ? (() => {
                       const TAB_CATS: Record<string, string[]> = {
                         'All':                [],
                         'Personal':           ['Personal', 'lending', 'barter'],
@@ -2706,8 +2706,9 @@ export default function CreateContract() {
                                 <div
                                   key={tmpl.id}
                                   style={{
+                                    position: 'relative',
                                     background: 'white', borderRadius: 8,
-                                    padding: '12px 14px', marginBottom: 8,
+                                    padding: '12px 14px 36px', marginBottom: 8,
                                     border: '1px solid #E5E7EB',
                                   }}
                                   onMouseEnter={(e) => {
@@ -2733,39 +2734,36 @@ export default function CreateContract() {
                                     {tmpl.name}
                                   </div>
                                   {/* Description */}
-                                  <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 10 }}>
+                                  <div style={{ fontSize: 11, color: '#6B7280' }}>
                                     {tmpl.description}
                                   </div>
-                                  {/* Preview button */}
-                                  <button
-                                    onClick={() => setPreviewTemplate(tmpl)}
-                                    style={{
-                                      width: '100%', height: 28,
-                                      background: 'transparent',
-                                      border: '1px solid #D1D5DB',
-                                      borderRadius: 6, fontSize: 12,
-                                      color: '#374151', marginBottom: 6,
-                                      cursor: 'pointer',
-                                    }}
-                                    onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#0F1F3D')}
-                                    onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#D1D5DB')}
-                                  >
-                                    Preview
-                                  </button>
-                                  {/* Use button */}
-                                  <button
-                                    onClick={() => loadTemplate(tmpl)}
-                                    style={{
-                                      width: '100%', height: 30,
-                                      background: '#0F1F3D', color: 'white',
-                                      border: 'none', borderRadius: 6,
-                                      fontSize: 12, fontWeight: 500, cursor: 'pointer',
-                                    }}
-                                    onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
-                                    onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
-                                  >
-                                    Use Template
-                                  </button>
+                                  {/* Action buttons */}
+                                  <div style={{ position: 'absolute', bottom: 8, right: 10, display: 'flex', gap: 6 }}>
+                                    <button
+                                      onClick={() => setPreviewTemplate(tmpl)}
+                                      style={{
+                                        height: 22, padding: '0 8px', fontSize: 10, fontWeight: 500,
+                                        borderRadius: 4, border: '1px solid #D1D5DB',
+                                        background: 'transparent', color: '#6B7280', cursor: 'pointer',
+                                      }}
+                                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#0F1F3D'; e.currentTarget.style.color = '#0F1F3D' }}
+                                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#D1D5DB'; e.currentTarget.style.color = '#6B7280' }}
+                                    >
+                                      Preview
+                                    </button>
+                                    <button
+                                      onClick={() => loadTemplate(tmpl)}
+                                      style={{
+                                        height: 22, padding: '0 8px', fontSize: 10, fontWeight: 500,
+                                        borderRadius: 4, border: '1px solid #0F1F3D',
+                                        background: '#0F1F3D', color: 'white', cursor: 'pointer',
+                                      }}
+                                      onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
+                                      onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+                                    >
+                                      Use
+                                    </button>
+                                  </div>
                                 </div>
                               )
                             })

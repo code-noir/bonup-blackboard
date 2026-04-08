@@ -463,11 +463,13 @@ export default function CreateContract() {
   const [obligationTemplates, setObligationTemplates] = useState<ObligationTemplateItem[]>([])
   const [obligationTemplatesLoading, setObligationTemplatesLoading] = useState(false)
   const [insertedObligations, setInsertedObligations] = useState<string[]>([])
+  const [previewObligationTemplate, setPreviewObligationTemplate] = useState<ObligationTemplateItem | null>(null)
 
   // Payments panel state
   const [paymentTemplates, setPaymentTemplates] = useState<PaymentTemplateItem[]>([])
   const [paymentTemplatesLoading, setPaymentTemplatesLoading] = useState(false)
   const [insertedPayments, setInsertedPayments] = useState<string[]>([])
+  const [previewPaymentTemplate, setPreviewPaymentTemplate] = useState<PaymentTemplateItem | null>(null)
 
   // Contracting As — null = personal, string = entity id
   const [selectedEntity, setSelectedEntity] = useState<string | null>(null)
@@ -2781,16 +2783,14 @@ export default function CreateContract() {
                       }
                       return (
                         <div style={{ margin: -16, minHeight: 'calc(100% + 32px)', display: 'flex', flexDirection: 'column' }}>
-                          {/* Dark header */}
                           <div style={{ background: '#1C2B3A', padding: '14px 16px' }}>
                             <span style={{ fontSize: 12, fontWeight: 600, color: 'white', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                               Obligation Templates
                             </span>
                             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>
-                              Click a template to insert at cursor
+                              Select a template to insert at cursor
                             </div>
                           </div>
-                          {/* Body */}
                           <div style={{ flex: 1, background: '#F0F2F5', padding: 12 }}>
                             {obligationTemplatesLoading ? (
                               <div style={{ fontSize: 12, color: '#6B7280', textAlign: 'center', marginTop: 30 }}>Loading…</div>
@@ -2802,19 +2802,18 @@ export default function CreateContract() {
                                 return (
                                   <div
                                     key={tmpl.id}
-                                    onClick={() => insertObligation(tmpl)}
                                     style={{
+                                      position: 'relative',
                                       background: inserted ? '#FFFBF0' : 'white',
                                       borderLeft: inserted ? '3px solid #F5A623' : '3px solid transparent',
                                       borderRadius: 6,
-                                      padding: '10px 12px',
+                                      padding: '10px 12px 36px',
                                       marginBottom: 8,
-                                      cursor: 'pointer',
                                       boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                                      transition: 'all 0.15s',
+                                      transition: 'box-shadow 0.15s, transform 0.15s',
                                     }}
-                                    onMouseEnter={(e) => { if (!inserted) e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,0.12)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
-                                    onMouseLeave={(e) => { e.currentTarget.style.boxShadow = inserted ? '0 1px 3px rgba(0,0,0,0.08)' : '0 1px 3px rgba(0,0,0,0.08)'; e.currentTarget.style.transform = 'none' }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,0.12)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.08)'; e.currentTarget.style.transform = 'none' }}
                                   >
                                     <div style={{ fontSize: 12, fontWeight: 600, color: '#111827', marginBottom: 3 }}>{tmpl.name}</div>
                                     <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 4 }}>{tmpl.category}</div>
@@ -2824,6 +2823,33 @@ export default function CreateContract() {
                                     {inserted && (
                                       <div style={{ fontSize: 10, color: '#F5A623', fontWeight: 600, marginTop: 4 }}>✓ Inserted</div>
                                     )}
+                                    {/* Action buttons */}
+                                    <div style={{ position: 'absolute', bottom: 8, right: 10, display: 'flex', gap: 6 }}>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); setPreviewObligationTemplate(tmpl) }}
+                                        style={{
+                                          height: 22, padding: '0 8px', fontSize: 10, fontWeight: 500,
+                                          borderRadius: 4, border: '1px solid #D1D5DB',
+                                          background: 'transparent', color: '#6B7280', cursor: 'pointer',
+                                        }}
+                                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#0F1F3D'; e.currentTarget.style.color = '#0F1F3D' }}
+                                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#D1D5DB'; e.currentTarget.style.color = '#6B7280' }}
+                                      >
+                                        Preview
+                                      </button>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); insertObligation(tmpl) }}
+                                        style={{
+                                          height: 22, padding: '0 8px', fontSize: 10, fontWeight: 500,
+                                          borderRadius: 4, border: '1px solid #0F1F3D',
+                                          background: '#0F1F3D', color: 'white', cursor: 'pointer',
+                                        }}
+                                        onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
+                                        onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+                                      >
+                                        Use
+                                      </button>
+                                    </div>
                                   </div>
                                 )
                               })
@@ -2848,16 +2874,14 @@ export default function CreateContract() {
                       }
                       return (
                         <div style={{ margin: -16, minHeight: 'calc(100% + 32px)', display: 'flex', flexDirection: 'column' }}>
-                          {/* Dark header */}
                           <div style={{ background: '#1C2B3A', padding: '14px 16px' }}>
                             <span style={{ fontSize: 12, fontWeight: 600, color: 'white', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                               Payment Templates
                             </span>
                             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>
-                              Click a template to insert at cursor
+                              Select a template to insert at cursor
                             </div>
                           </div>
-                          {/* Body */}
                           <div style={{ flex: 1, background: '#F0F2F5', padding: 12 }}>
                             {paymentTemplatesLoading ? (
                               <div style={{ fontSize: 12, color: '#6B7280', textAlign: 'center', marginTop: 30 }}>Loading…</div>
@@ -2869,16 +2893,15 @@ export default function CreateContract() {
                                 return (
                                   <div
                                     key={tmpl.id}
-                                    onClick={() => insertPayment(tmpl)}
                                     style={{
+                                      position: 'relative',
                                       background: inserted ? '#FFFBF0' : 'white',
                                       borderLeft: inserted ? '3px solid #F5A623' : '3px solid transparent',
                                       borderRadius: 6,
-                                      padding: '10px 12px',
+                                      padding: '10px 12px 36px',
                                       marginBottom: 8,
-                                      cursor: 'pointer',
                                       boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                                      transition: 'all 0.15s',
+                                      transition: 'box-shadow 0.15s, transform 0.15s',
                                     }}
                                     onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,0.12)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
                                     onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.08)'; e.currentTarget.style.transform = 'none' }}
@@ -2897,6 +2920,33 @@ export default function CreateContract() {
                                     {inserted && (
                                       <div style={{ fontSize: 10, color: '#F5A623', fontWeight: 600, marginTop: 4 }}>✓ Inserted</div>
                                     )}
+                                    {/* Action buttons */}
+                                    <div style={{ position: 'absolute', bottom: 8, right: 10, display: 'flex', gap: 6 }}>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); setPreviewPaymentTemplate(tmpl) }}
+                                        style={{
+                                          height: 22, padding: '0 8px', fontSize: 10, fontWeight: 500,
+                                          borderRadius: 4, border: '1px solid #D1D5DB',
+                                          background: 'transparent', color: '#6B7280', cursor: 'pointer',
+                                        }}
+                                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#0F1F3D'; e.currentTarget.style.color = '#0F1F3D' }}
+                                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#D1D5DB'; e.currentTarget.style.color = '#6B7280' }}
+                                      >
+                                        Preview
+                                      </button>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); insertPayment(tmpl) }}
+                                        style={{
+                                          height: 22, padding: '0 8px', fontSize: 10, fontWeight: 500,
+                                          borderRadius: 4, border: '1px solid #0F1F3D',
+                                          background: '#0F1F3D', color: 'white', cursor: 'pointer',
+                                        }}
+                                        onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
+                                        onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+                                      >
+                                        Use
+                                      </button>
+                                    </div>
                                   </div>
                                 )
                               })
@@ -3556,6 +3606,170 @@ export default function CreateContract() {
             {/* Use button */}
             <button
               onClick={() => loadTemplate(previewTemplate)}
+              style={{
+                width: '100%', height: 40,
+                background: '#0F1F3D', color: 'white',
+                border: 'none', borderRadius: 8,
+                fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                flexShrink: 0,
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+            >
+              Use This Template
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Obligation template preview modal */}
+      {previewObligationTemplate && (
+        <div
+          onClick={() => setPreviewObligationTemplate(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 600,
+            background: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 24,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 600, maxHeight: '80vh',
+              background: 'white', borderRadius: 12,
+              padding: 28, boxShadow: '0 8px 40px rgba(0,0,0,0.15)',
+              display: 'flex', flexDirection: 'column',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 16, flexShrink: 0 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#0F1F3D', marginBottom: 4 }}>
+                  {previewObligationTemplate.name}
+                </div>
+                <div style={{ fontSize: 12, color: '#6B7280' }}>
+                  {previewObligationTemplate.description}
+                </div>
+              </div>
+              <button
+                onClick={() => setPreviewObligationTemplate(null)}
+                style={{
+                  background: 'transparent', border: 'none',
+                  color: '#9CA3AF', fontSize: 20, cursor: 'pointer',
+                  padding: '0 0 0 12px', lineHeight: 1, flexShrink: 0,
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{
+              flex: 1, overflowY: 'auto',
+              borderTop: '1px solid #E5E7EB',
+              borderBottom: '1px solid #E5E7EB',
+              padding: '16px 0',
+              marginBottom: 16,
+            }}>
+              <pre style={{
+                fontFamily: 'Georgia, serif',
+                fontSize: 13, lineHeight: 1.7,
+                color: '#374151', whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word', margin: 0,
+              }}>
+                {previewObligationTemplate.content}
+              </pre>
+            </div>
+            <button
+              onClick={() => {
+                const ref = activeEditor === 'left' ? leftEditorRef : rightEditorRef
+                if (ref.current) { ref.current.focus(); document.execCommand('insertText', false, '\n\n' + previewObligationTemplate.content) }
+                setInsertedObligations((prev) => prev.includes(previewObligationTemplate.id) ? prev : [...prev, previewObligationTemplate.id])
+                setPreviewObligationTemplate(null)
+              }}
+              style={{
+                width: '100%', height: 40,
+                background: '#0F1F3D', color: 'white',
+                border: 'none', borderRadius: 8,
+                fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                flexShrink: 0,
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+            >
+              Use This Template
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Payment template preview modal */}
+      {previewPaymentTemplate && (
+        <div
+          onClick={() => setPreviewPaymentTemplate(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 600,
+            background: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 24,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 600, maxHeight: '80vh',
+              background: 'white', borderRadius: 12,
+              padding: 28, boxShadow: '0 8px 40px rgba(0,0,0,0.15)',
+              display: 'flex', flexDirection: 'column',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 16, flexShrink: 0 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#0F1F3D', marginBottom: 4 }}>
+                  {previewPaymentTemplate.name}
+                </div>
+                <div style={{ fontSize: 12, color: '#6B7280' }}>
+                  {previewPaymentTemplate.description}
+                </div>
+              </div>
+              <button
+                onClick={() => setPreviewPaymentTemplate(null)}
+                style={{
+                  background: 'transparent', border: 'none',
+                  color: '#9CA3AF', fontSize: 20, cursor: 'pointer',
+                  padding: '0 0 0 12px', lineHeight: 1, flexShrink: 0,
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{
+              flex: 1, overflowY: 'auto',
+              borderTop: '1px solid #E5E7EB',
+              borderBottom: '1px solid #E5E7EB',
+              padding: '16px 0',
+              marginBottom: 16,
+            }}>
+              <pre style={{
+                fontFamily: 'Georgia, serif',
+                fontSize: 13, lineHeight: 1.7,
+                color: '#374151', whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word', margin: 0,
+              }}>
+                {previewPaymentTemplate.content}
+              </pre>
+            </div>
+            <button
+              onClick={() => {
+                const ref = activeEditor === 'left' ? leftEditorRef : rightEditorRef
+                if (ref.current) { ref.current.focus(); document.execCommand('insertText', false, '\n\n' + previewPaymentTemplate.content) }
+                setInsertedPayments((prev) => prev.includes(previewPaymentTemplate.id) ? prev : [...prev, previewPaymentTemplate.id])
+                setPreviewPaymentTemplate(null)
+              }}
               style={{
                 width: '100%', height: 40,
                 background: '#0F1F3D', color: 'white',

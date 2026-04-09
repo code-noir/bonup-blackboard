@@ -2,8 +2,8 @@ import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 
-// Tier: 'Free Trial' | 'Sol Member' | 'As You Go' | 'Blackboard Basic' | 'Blackboard Pro' | 'Blackboard Business' | 'Blackboard Enterprise'
-const USER_TIER = 'Blackboard Business'
+// Tier slugs matching DB: 'trial' | 'sol_member' | 'per_contract' | 'starter' | 'professional' | 'business' | 'anchor'
+const USER_TIER = 'business'
 
 // Mock business entities — replace with API data when connected
 const MOCK_ENTITIES: { id: string; name: string }[] = []
@@ -226,7 +226,7 @@ export default function Dashboard() {
                 </span>
               </div>
             )}
-            {(USER_TIER === 'Blackboard Basic' || USER_TIER === 'Sol Member') ? (
+            {(USER_TIER === 'starter' || USER_TIER === 'sol_member') ? (
               <>
                 <div style={{ fontSize: 20, marginBottom: 8 }}>🔒</div>
                 <button

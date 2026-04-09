@@ -23,8 +23,8 @@ const FONTS = [
 
 const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72]
 
-// Tier: 'Free Trial' | 'Sol Member' | 'As You Go' | 'Blackboard Basic' | 'Blackboard Pro' | 'Blackboard Business' | 'Blackboard Enterprise'
-const USER_TIER = 'Blackboard Business'
+// Tier slugs matching DB: 'trial' | 'sol_member' | 'per_contract' | 'starter' | 'professional' | 'business' | 'anchor'
+const USER_TIER = 'business'
 
 const CURRENCIES = [
   ['USD', 'US Dollar'], ['CAD', 'Canadian Dollar'], ['MXN', 'Mexican Peso'],
@@ -883,7 +883,7 @@ export default function CreateContract() {
       )}
 
       {/* ── PAYG CHARGE NOTICE MODAL ── */}
-      {USER_TIER === 'As You Go' && !paygConfirmDismissed && (
+      {USER_TIER === 'per_contract' && !paygConfirmDismissed && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 1000,
           background: 'rgba(0,0,0,0.45)',
@@ -1549,7 +1549,7 @@ export default function CreateContract() {
                         <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginBottom: 16 }}>
                           Write or paste your contract in the editor, then click Analyze for a full AI breakdown.
                         </p>
-                        {USER_TIER === 'As You Go' && (
+                        {USER_TIER === 'per_contract' && (
                           <p style={{ fontSize: 11, color: '#065F46', marginBottom: 12 }}>
                             ✓ Included with your $25 contract
                           </p>
@@ -1597,7 +1597,7 @@ export default function CreateContract() {
                       </>
                     ) : activeTool === 'Contract Counter' ? (
                       <>
-                        {USER_TIER === 'Blackboard Basic' ? (
+                        {USER_TIER === 'starter' ? (
                           <div style={{ textAlign: 'center' }}>
                             <div style={{ fontSize: 32, marginBottom: 12 }}>🔒</div>
                             <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', marginBottom: 16 }}>
@@ -1621,7 +1621,7 @@ export default function CreateContract() {
                             <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginBottom: 12 }}>
                               Review the contract and propose your counter terms.
                             </p>
-                            {USER_TIER === 'As You Go' && (
+                            {USER_TIER === 'per_contract' && (
                               <p style={{ fontSize: 11, color: '#065F46', marginBottom: 12 }}>
                                 ✓ Included with your $25 contract
                               </p>
@@ -1928,7 +1928,7 @@ export default function CreateContract() {
                         fontFamily: "'Outfit', sans-serif", outline: 'none',
                         marginBottom: 12, boxSizing: 'border-box',
                       }
-                      const TIER_ALLOWS_BUSINESS = ['Free Trial', 'As You Go', 'Blackboard Pro', 'Blackboard Business', 'Blackboard Enterprise'].includes(USER_TIER)
+                      const TIER_ALLOWS_BUSINESS = ['trial', 'per_contract', 'professional', 'business', 'anchor'].includes(USER_TIER)
 
                       const userInitials =
                         [user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join('').toUpperCase() ||

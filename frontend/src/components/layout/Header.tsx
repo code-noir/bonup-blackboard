@@ -84,11 +84,11 @@ export default function Header() {
         >
           {user?.subscription_tier === 'trial' ? 'Free Trial'
             : user?.subscription_tier === 'sol_member' ? 'Sol Member'
-            : user?.subscription_tier === 'pay_as_you_go' ? 'Pay As You Go'
-            : user?.subscription_tier === 'blackboard_basic' ? 'Blackboard Basic'
-            : user?.subscription_tier === 'blackboard_pro' ? 'Blackboard Pro'
-            : user?.subscription_tier === 'blackboard_business' ? 'Blackboard Business'
-            : user?.subscription_tier === 'blackboard_enterprise' ? 'Blackboard Enterprise'
+            : user?.subscription_tier === 'per_contract' ? 'Pay As You Go'
+            : user?.subscription_tier === 'starter' ? 'Blackboard Basic'
+            : user?.subscription_tier === 'professional' ? 'Blackboard Pro'
+            : user?.subscription_tier === 'business' ? 'Blackboard Business'
+            : user?.subscription_tier === 'anchor' ? 'Blackboard Enterprise'
             : 'No Plan'}
         </span>
         {isOnTrial() && (() => {

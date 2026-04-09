@@ -91,9 +91,9 @@ export default function Contracts() {
   const bizDropdownRef = useRef<HTMLDivElement>(null)
 
   const tier = user?.subscription_tier ?? ''
-  const isEnterprise = tier === 'blackboard_enterprise'
-  const isBusiness = tier === 'blackboard_business'
-  const isPro = tier === 'blackboard_pro'
+  const isEnterprise = tier === 'anchor'
+  const isBusiness = tier === 'business'
+  const isPro = tier === 'professional'
   const bizDropdownTier = isEnterprise || isBusiness
 
   // Close biz dropdown on outside click

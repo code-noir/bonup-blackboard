@@ -9,6 +9,7 @@ interface AuthContextValue {
   isLoading: boolean
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
+  refreshUser: () => Promise<void>
   isOnTrial: () => boolean
   trialDaysRemaining: () => number
   hasTrialExpired: () => boolean
@@ -32,7 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data } = await api.get<AuthUser>('/users/me/')
       // TODO: remove once billing system is complete — temporary dev override
-      setUser({ ...data, subscription_tier: 'blackboard_enterprise' })
+      setUser({ ...data, subscription_tier: 'anchor' })
     } catch {
       setUser(null)
       tokenStorage.clear()
@@ -98,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         login,
         logout,
+        refreshUser: fetchMe,
         isOnTrial,
         trialDaysRemaining,
         hasTrialExpired,

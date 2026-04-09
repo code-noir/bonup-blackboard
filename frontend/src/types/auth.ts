@@ -1,11 +1,11 @@
 export type SubscriptionTier =
   | 'trial'
   | 'sol_member'
-  | 'pay_as_you_go'
-  | 'blackboard_basic'
-  | 'blackboard_pro'
-  | 'blackboard_business'
-  | 'blackboard_enterprise'
+  | 'per_contract'
+  | 'starter'
+  | 'professional'
+  | 'business'
+  | 'anchor'
 
 export interface TokenPair {
   access: string

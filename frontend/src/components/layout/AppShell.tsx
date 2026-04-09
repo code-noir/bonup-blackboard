@@ -36,7 +36,7 @@ export default function AppShell() {
         className="fixed right-0 z-30"
         style={{
           top: 133,
-          left: 216,
+          left: 'var(--sidebar-w, 216px)',
           height: 1,
           background:
             'linear-gradient(90deg, transparent, rgba(245,166,35,0.45) 35%, rgba(245,166,35,0.15) 65%, transparent)',

@@ -76,6 +76,7 @@ function NavItem({
       >
         <NavLink
           to={to}
+          end
           style={({ isActive }) =>
             isActive
               ? {
@@ -134,6 +135,7 @@ function NavItem({
   return (
     <NavLink
       to={to}
+      end
       style={({ isActive }) =>
         isActive
           ? {

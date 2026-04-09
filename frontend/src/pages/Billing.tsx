@@ -1,379 +1,346 @@
-const CURRENT_PLAN = 'enterprise'
+const USAGE_ROWS = [
+  { label: 'Active contracts',       value: 'Unlimited', green: true },
+  { label: 'Contract Analysis',      value: 'Unlocked',  green: true },
+  { label: 'Contract Counter',       value: 'Unlocked',  green: true },
+  { label: 'Contract Import',        value: 'Unlocked',  green: true },
+  { label: 'Businesses on account',  value: '0 of 35',   green: false, bold: true },
+]
 
-const PLANS = [
+type PlanCard = {
+  id: string
+  label: string
+  labelColor?: string
+  name: string
+  price: string | null
+  priceSuffix: string
+  description: string
+  button: string
+  buttonStyle: React.CSSProperties
+  buttonDisabled?: boolean
+  cardBorder?: string
+  custom?: boolean
+}
+
+const PLANS: PlanCard[] = [
   {
-    id: 'trial',
-    name: 'Free Trial',
-    price: 'Free',
-    priceNum: null,
-    description: '1 contract, full access, 30 days',
-    features: [
-      '1 contract included',
-      'Full platform access',
-      'Personal or business',
-      'All features unlocked once',
-      'No credit card required',
-    ],
-    actionLabel: 'Start Free Trial',
-    actionStyle: { background: '#10B981', color: 'white' } as React.CSSProperties,
-  },
-  {
-    id: 'sol_member',
+    id: 'sol',
+    label: 'Sol network',
     name: 'Sol Member',
     price: '$10',
-    priceNum: 10,
-    description: 'Community savings members',
-    features: [
-      'Everything in Blackboard Basic',
-      'Auto-assigned when joining Sol group',
-      'Personal identity only',
-      'Contract Analysis included',
-      'Community rate discount',
-    ],
-    actionLabel: 'Join a Sol Group',
-    actionStyle: { background: '#6B7280', color: 'white' } as React.CSSProperties,
+    priceSuffix: '/month',
+    description: 'For Sol group participants only. Assigned automatically — not available for open purchase.',
+    button: 'Invitation only',
+    buttonStyle: { background: '#F3F4F6', color: '#9CA3AF', border: 'none', cursor: 'default' },
+    buttonDisabled: true,
   },
   {
-    id: 'per_contract',
+    id: 'payg',
+    label: 'Pay per use',
     name: 'Pay As You Go',
     price: '$25',
-    priceSuffix: '/use',
-    priceNum: 25,
-    description: 'No monthly commitment',
-    features: [
-      '$25 per contract created',
-      '$25 per contract analysis',
-      '$25 per contract counter',
-      'Personal or business',
-      'AI Assistant included',
-      'Templates included',
-      'No lifecycle management',
-    ],
-    actionLabel: 'Select Plan',
-    actionStyle: null,
+    priceSuffix: '/contract',
+    description: 'No monthly fee. No lifecycle management. Pay for each contract individually.',
+    button: 'Switch to this',
+    buttonStyle: { background: 'white', color: '#374151', border: '1px solid #D1D5DB' },
   },
   {
-    id: 'basic',
-    name: 'Blackboard Basic',
+    id: 'starter',
+    label: 'Starter',
+    name: 'Blackboard Starter',
     price: '$19',
-    priceNum: 19,
-    description: 'Personal contracting',
-    features: [
-      'Personal identity only',
-      'Unlimited contracts',
-      'Contract Analysis unlimited',
-      'AI Assistant',
-      'Templates',
-      'Contract lifecycle management',
-      'Obligations tracking',
-      'Payment tracking',
-    ],
-    actionLabel: 'Select Plan',
-    actionStyle: null,
+    priceSuffix: '/month',
+    description: 'Personal identity only. Full contract lifecycle and AI assistant included.',
+    button: 'Downgrade',
+    buttonStyle: { background: 'white', color: '#374151', border: '1px solid #D1D5DB' },
   },
   {
     id: 'pro',
+    label: 'Pro',
     name: 'Blackboard Pro',
     price: '$149',
-    priceNum: 149,
-    description: 'Personal + 1 business',
-    features: [
-      'Personal + 1 business entity',
-      'Everything in Basic',
-      'Contract Counter unlocked',
-      'Live Sessions',
-      'Negotiation prep',
-      'Priority support',
-    ],
-    actionLabel: 'Upgrade',
-    actionStyle: null,
+    priceSuffix: '/month',
+    description: 'Personal + 1 business. Contract Analysis included.',
+    button: 'Downgrade',
+    buttonStyle: { background: 'white', color: '#374151', border: '1px solid #D1D5DB' },
   },
   {
     id: 'business',
+    label: 'Business',
     name: 'Blackboard Business',
     price: '$399',
-    priceNum: 399,
-    description: 'Personal + up to 4 businesses',
-    features: [
-      'Personal + up to 4 businesses',
-      'Everything in Pro',
-      'Sol group management',
-      'Multi-entity contract management',
-      'Advanced analytics',
-      'Team collaboration',
-    ],
-    actionLabel: 'Upgrade',
-    actionStyle: null,
+    priceSuffix: '/month',
+    description: 'Personal + up to 4 businesses. Counter unlocked.',
+    button: 'Downgrade',
+    buttonStyle: { background: 'white', color: '#374151', border: '1px solid #D1D5DB' },
   },
   {
     id: 'enterprise',
+    label: 'Current plan',
+    labelColor: '#F5A623',
     name: 'Blackboard Enterprise',
     price: '$999',
-    priceNum: 999,
-    description: 'Personal + up to 35 businesses',
-    features: [
-      'Personal + up to 35 businesses',
-      'Everything in Business',
-      'Contract Import',
-      'Dedicated support',
-      'Custom integrations',
-      'White label options',
-      'API access',
-    ],
-    actionLabel: 'Current Plan',
-    actionStyle: null,
+    priceSuffix: '/month',
+    description: 'Personal + up to 35 businesses. Counter, Import, and Analysis — all unlocked.',
+    button: 'Active',
+    buttonStyle: { background: 'white', color: '#374151', border: '1px solid #D1D5DB', cursor: 'default' },
+    buttonDisabled: true,
+    cardBorder: '2px solid #F5A623',
+  },
+  {
+    id: 'custom',
+    label: 'Custom',
+    name: 'Need more?',
+    price: null,
+    priceSuffix: '',
+    description: 'More than 35 businesses or high-volume contracting? We\'ll build a plan around you.',
+    button: 'Contact sales',
+    buttonStyle: { background: 'white', color: '#8B5CF6', border: '1px solid #8B5CF6' },
+    custom: true,
   },
 ]
 
-const BILLING_HISTORY = [
-  { date: 'Apr 9, 2026',  description: 'Blackboard Enterprise', amount: '$999.00', status: 'Paid' },
-  { date: 'Mar 9, 2026',  description: 'Blackboard Enterprise', amount: '$999.00', status: 'Paid' },
-  { date: 'Feb 9, 2026',  description: 'Blackboard Enterprise', amount: '$999.00', status: 'Paid' },
-]
-
-const DOWNGRADE_IDS = new Set(['trial', 'sol_member', 'per_contract', 'basic', 'pro', 'business'])
-
-function planButton(planId: string): { label: string; style: React.CSSProperties } {
-  if (planId === CURRENT_PLAN) {
-    return {
-      label: 'Current Plan',
-      style: { background: '#E5E7EB', color: '#9CA3AF', cursor: 'default' },
-    }
-  }
-  if (DOWNGRADE_IDS.has(planId)) {
-    return {
-      label: 'Switch Plan',
-      style: { background: 'transparent', border: '1px solid #D1D5DB', color: '#374151' },
-    }
-  }
-  return {
-    label: 'Upgrade',
-    style: { background: '#0F1F3D', color: 'white' },
-  }
-}
+const ROW1 = PLANS.slice(0, 3)
+const ROW2 = PLANS.slice(3)
 
 export default function Billing() {
   return (
-    <div style={{ maxWidth: 900 }}>
-      {/* Page header */}
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0F1F3D', margin: 0 }}>
-          Billing &amp; Subscription
-        </h1>
-        <p style={{ fontSize: 13, color: '#6B7280', marginTop: 4 }}>
-          Manage your plan and billing details
-        </p>
-      </div>
+    <div style={{ background: '#F9FAFB', minHeight: '100vh' }}>
+      <div style={{ maxWidth: 900, margin: '0 auto', padding: '40px 24px' }}>
 
-      {/* Current Plan */}
-      <div style={{
-        background: 'white',
-        borderRadius: 11,
-        padding: 24,
-        marginBottom: 24,
-        border: '1px solid rgba(0,0,0,0.06)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-              <span style={{ fontSize: 20, fontWeight: 700, color: '#0F1F3D' }}>
-                Blackboard Enterprise
-              </span>
-              <span style={{
-                background: '#D1FAE5', color: '#065F46',
-                fontSize: 12, padding: '3px 10px', borderRadius: 20,
-              }}>
-                Active
-              </span>
-            </div>
-            <div style={{ fontSize: 16, color: '#6B7280', marginBottom: 6 }}>$999/month</div>
-            <div style={{ fontSize: 13, color: '#6B7280' }}>Next billing: May 9, 2026</div>
-          </div>
-          <span style={{ fontSize: 12, color: '#DC2626', cursor: 'pointer' }}>
-            Cancel Subscription
-          </span>
+        {/* Page header */}
+        <div style={{ marginBottom: 32 }}>
+          <h1 style={{ fontSize: 28, fontWeight: 700, color: '#0F1F3D', margin: 0 }}>
+            Billing
+          </h1>
+          <p style={{ fontSize: 14, color: '#F5A623', marginTop: 6 }}>
+            Manage your plan, payment method, and invoices.
+          </p>
         </div>
-      </div>
 
-      {/* Available Plans */}
-      <div style={{ marginBottom: 32 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 600, color: '#0F1F3D', marginBottom: 16 }}>
-          Available Plans
-        </h2>
+        {/* Current Plan Card */}
+        <div style={{
+          background: 'white',
+          borderRadius: 12,
+          padding: 32,
+          marginBottom: 32,
+          border: '1px solid #E5E7EB',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+        }}>
+          {/* Left */}
+          <div>
+            <span style={{
+              border: '1px solid #F5A623',
+              color: '#F5A623',
+              fontSize: 11,
+              fontWeight: 600,
+              padding: '3px 12px',
+              borderRadius: 20,
+              display: 'inline-block',
+              marginBottom: 16,
+            }}>
+              ACTIVE
+            </span>
+            <div style={{ fontSize: 36, fontWeight: 700, color: '#D1D5DB', lineHeight: 1.15 }}>
+              Blackboard<br />Enterprise
+            </div>
+            <p style={{ fontSize: 13, color: '#9CA3AF', marginTop: 8 }}>
+              Personal identity · Up to 35 businesses · All features unlocked
+            </p>
+          </div>
+
+          {/* Right */}
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 48, fontWeight: 300, color: '#9CA3AF', lineHeight: 1 }}>
+              $999
+            </div>
+            <div style={{ fontSize: 13, color: '#9CA3AF' }}>per month</div>
+            <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 8 }}>
+              Renews{' '}
+              <span style={{ fontWeight: 600, color: '#374151' }}>May 8, 2026</span>
+            </div>
+            <span style={{ fontSize: 13, color: '#374151', cursor: 'pointer', marginTop: 8, display: 'block' }}>
+              Manage subscription
+            </span>
+          </div>
+        </div>
+
+        {/* Two-column: Plan Usage + Payment Method */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(2, 1fr)',
-          gap: 16,
+          gridTemplateColumns: '1fr 1fr',
+          gap: 32,
+          marginBottom: 32,
         }}>
-          {PLANS.map((plan) => {
-            const isCurrent = plan.id === CURRENT_PLAN
-            const btn = isCurrent
-              ? { label: 'Current Plan', style: { background: '#E5E7EB', color: '#9CA3AF', cursor: 'default' } as React.CSSProperties }
-              : plan.actionStyle
-                ? { label: plan.actionLabel, style: plan.actionStyle }
-                : planButton(plan.id)
-
-            return (
+          {/* Plan Usage */}
+          <div>
+            <div style={{
+              fontSize: 11, fontWeight: 600, color: '#9CA3AF',
+              textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 16,
+            }}>
+              Plan Usage
+            </div>
+            {USAGE_ROWS.map((row) => (
               <div
-                key={plan.id}
+                key={row.label}
                 style={{
-                  background: 'white',
-                  borderRadius: 11,
-                  padding: 20,
-                  border: isCurrent ? '2px solid #0F1F3D' : '1px solid rgba(0,0,0,0.06)',
-                  boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-                  position: 'relative',
                   display: 'flex',
-                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  padding: '14px 0',
+                  borderBottom: '1px solid #F3F4F6',
+                  fontSize: 14,
+                  color: '#374151',
                 }}
               >
-                {isCurrent && (
-                  <span style={{
-                    position: 'absolute', top: 14, right: 14,
-                    background: '#0F1F3D', color: 'white',
-                    fontSize: 11, padding: '3px 8px', borderRadius: 4,
-                  }}>
-                    Current Plan
-                  </span>
-                )}
-
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#0F1F3D', marginBottom: 4 }}>
-                  {plan.name}
-                </div>
-
-                <div style={{ marginBottom: 0 }}>
-                  <span style={{ fontSize: 22, fontWeight: 700, color: '#0F1F3D' }}>
-                    {plan.price}
-                  </span>
-                  <span style={{ fontSize: 13, color: '#6B7280', fontWeight: 400 }}>
-                    {plan.priceSuffix ?? (plan.priceNum !== null ? '/month' : '')}
-                  </span>
-                </div>
-
-                <div style={{ fontSize: 12, color: '#6B7280', margin: '8px 0 16px' }}>
-                  {plan.description}
-                </div>
-
-                <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 20px', flex: 1 }}>
-                  {plan.features.map((f) => (
-                    <li key={f} style={{ fontSize: 12, color: '#374151', lineHeight: 1.8 }}>
-                      <span style={{ color: '#10B981' }}>✓</span> {f}
-                    </li>
-                  ))}
-                </ul>
-
-                <button
-                  disabled={isCurrent}
-                  style={{
-                    width: '100%',
-                    height: 36,
-                    borderRadius: 8,
-                    fontSize: 13,
-                    fontWeight: 600,
-                    border: 'none',
-                    cursor: isCurrent ? 'default' : 'pointer',
-                    ...btn.style,
-                  }}
-                >
-                  {btn.label}
-                </button>
+                <span>{row.label}</span>
+                <span style={{
+                  color: row.green ? '#10B981' : '#374151',
+                  fontWeight: row.green ? 500 : (row.bold ? 700 : 400),
+                }}>
+                  {row.value}
+                </span>
               </div>
-            )
-          })}
-        </div>
-      </div>
+            ))}
+          </div>
 
-      {/* Billing History */}
-      <div style={{ marginBottom: 32 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 600, color: '#0F1F3D', marginBottom: 16 }}>
-          Billing History
-        </h2>
-        <div style={{
-          background: 'white',
-          borderRadius: 11,
-          overflow: 'hidden',
-          border: '1px solid rgba(0,0,0,0.06)',
-        }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: '#F9FAFB' }}>
-                {['Date', 'Description', 'Amount', 'Status', 'Invoice'].map((col) => (
-                  <th
-                    key={col}
-                    style={{
-                      fontSize: 11, fontWeight: 600, color: '#6B7280',
-                      textTransform: 'uppercase', letterSpacing: '0.06em',
-                      padding: '12px 20px', textAlign: 'left',
-                    }}
-                  >
-                    {col}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {BILLING_HISTORY.map((row, i) => (
-                <tr key={i} style={{ borderTop: '1px solid #F3F4F6' }}>
-                  <td style={{ padding: '14px 20px', fontSize: 13, color: '#374151' }}>{row.date}</td>
-                  <td style={{ padding: '14px 20px', fontSize: 13, color: '#374151' }}>{row.description}</td>
-                  <td style={{ padding: '14px 20px', fontSize: 13, color: '#374151' }}>{row.amount}</td>
-                  <td style={{ padding: '14px 20px' }}>
-                    <span style={{
-                      color: '#065F46', background: '#D1FAE5',
-                      fontSize: 11, padding: '2px 8px', borderRadius: 4,
-                    }}>
-                      {row.status}
-                    </span>
-                  </td>
-                  <td style={{ padding: '14px 20px' }}>
-                    <span style={{ color: '#0F1F3D', fontSize: 12, cursor: 'pointer', textDecoration: 'underline' }}>
-                      Download
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Payment Method */}
-      <div style={{ marginBottom: 32 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 600, color: '#0F1F3D', marginBottom: 16 }}>
-          Payment Method
-        </h2>
-        <div style={{
-          background: 'white',
-          borderRadius: 11,
-          padding: 20,
-          border: '1px solid rgba(0,0,0,0.06)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: 22 }}>💳</span>
-            <div>
-              <div style={{ fontSize: 14, color: '#374151', fontWeight: 500 }}>
-                •••• •••• •••• 4242
+          {/* Payment Method */}
+          <div>
+            <div style={{
+              fontSize: 11, fontWeight: 600, color: '#9CA3AF',
+              textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 16,
+            }}>
+              Payment Method
+            </div>
+            <div style={{
+              fontSize: 18, color: '#374151',
+              letterSpacing: '0.15em', marginBottom: 12,
+            }}>
+              •••• •••• •••• 4242
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+              <div>
+                <div style={{ fontSize: 10, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+                  Card Holder
+                </div>
+                <div style={{ fontSize: 13, color: '#374151' }}>bonup account</div>
               </div>
-              <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>Expires 12/27</div>
+              <div>
+                <div style={{ fontSize: 10, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+                  Expires
+                </div>
+                <div style={{ fontSize: 13, color: '#374151' }}>09 / 28</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 16 }}>
+              <span style={{ fontSize: 13, color: '#8B5CF6', cursor: 'pointer' }}>Update card</span>
+              <span style={{ fontSize: 13, color: '#9CA3AF', cursor: 'pointer' }}>Remove</span>
             </div>
           </div>
-          <button style={{
-            background: 'transparent',
-            border: '1px solid #D1D5DB',
-            color: '#374151',
-            height: 32,
-            padding: '0 16px',
-            borderRadius: 8,
-            fontSize: 12,
-            cursor: 'pointer',
-          }}>
-            Update Payment Method
-          </button>
         </div>
+
+        {/* Change Plan */}
+        <div style={{ marginBottom: 40 }}>
+          <h2 style={{ fontSize: 22, fontWeight: 700, color: '#0F1F3D', marginBottom: 4 }}>
+            Change plan
+          </h2>
+          <p style={{ fontSize: 13, color: '#F5A623', marginBottom: 24 }}>
+            Upgrades apply immediately. Downgrades take effect at the next billing cycle.
+          </p>
+
+          {/* Row 1 — 3 cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 16 }}>
+            {ROW1.map((plan) => (
+              <PlanCardItem key={plan.id} plan={plan} />
+            ))}
+          </div>
+
+          {/* Row 2 — 4 cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+            {ROW2.map((plan) => (
+              <PlanCardItem key={plan.id} plan={plan} />
+            ))}
+          </div>
+        </div>
+
+        {/* Invoices */}
+        <div>
+          <h2 style={{ fontSize: 22, fontWeight: 700, color: '#0F1F3D', marginBottom: 8 }}>
+            Invoices
+          </h2>
+          <div style={{
+            background: 'white',
+            borderRadius: 12,
+            border: '1px solid #E5E7EB',
+            padding: 60,
+            textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 32, color: '#D1D5DB', marginBottom: 16 }}>🧾</div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: '#0F1F3D', marginBottom: 8 }}>
+              No invoices yet
+            </div>
+            <p style={{ fontSize: 13, color: '#9CA3AF', maxWidth: 360, margin: '0 auto' }}>
+              Once Stripe is connected and billing goes live, your invoices will appear here and be available to download.
+            </p>
+          </div>
+        </div>
+
       </div>
+    </div>
+  )
+}
+
+function PlanCardItem({ plan }: { plan: PlanCard }) {
+  return (
+    <div style={{
+      background: 'white',
+      borderRadius: 12,
+      padding: 24,
+      border: plan.cardBorder ?? '1px solid #E5E7EB',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'space-between',
+      minHeight: 280,
+    }}>
+      <div>
+        <div style={{
+          fontSize: 11,
+          color: plan.labelColor ?? '#9CA3AF',
+          marginBottom: 8,
+        }}>
+          {plan.label}
+        </div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: '#0F1F3D', marginBottom: 8 }}>
+          {plan.name}
+        </div>
+        {plan.custom ? (
+          <div style={{ fontSize: 32, fontWeight: 700, color: '#9CA3AF', lineHeight: 1.1 }}>
+            Let's talk
+          </div>
+        ) : (
+          <div>
+            <span style={{ fontSize: 28, fontWeight: 700, color: '#0F1F3D' }}>{plan.price}</span>
+            <span style={{ fontSize: 13, color: '#9CA3AF' }}>{plan.priceSuffix}</span>
+          </div>
+        )}
+        <p style={{ fontSize: 12, color: '#9CA3AF', margin: '12px 0', lineHeight: 1.6 }}>
+          {plan.description}
+        </p>
+      </div>
+      <button
+        disabled={plan.buttonDisabled}
+        style={{
+          width: '100%',
+          height: 40,
+          borderRadius: 8,
+          fontSize: 13,
+          fontWeight: 500,
+          cursor: plan.buttonDisabled ? 'default' : 'pointer',
+          ...plan.buttonStyle,
+        }}
+      >
+        {plan.button}
+      </button>
     </div>
   )
 }

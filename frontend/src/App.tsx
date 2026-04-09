@@ -11,6 +11,7 @@ import Counter from '@/pages/Counter'
 import Contacts from '@/pages/Contacts'
 import Entities from '@/pages/Entities'
 import Profile from '@/pages/Profile'
+import Billing from '@/pages/Billing'
 import NotFound from '@/pages/NotFound'
 
 // Placeholder page used for routes not yet built
@@ -95,6 +96,7 @@ export default function App() {
             <Route path="/profile" element={<Profile />} />
             <Route path="/notifications" element={<PaygLock name="Notifications" />} />
             <Route path="/settings" element={<Placeholder name="Settings" />} />
+            <Route path="/billing" element={<Billing />} />
           </Route>
 
           <Route path="*" element={<NotFound />} />

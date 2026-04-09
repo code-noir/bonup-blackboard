@@ -993,14 +993,12 @@ export default function CreateContract() {
           <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 500 }}>
             Create Contract
           </span>
-          {entityLabel && (
-            <>
-              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>›</span>
-              <span style={{ fontSize: 11, color: '#F5A623', fontWeight: 500 }}>
-                {entityLabel}
-              </span>
-            </>
-          )}
+          <>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>›</span>
+            <span style={{ fontSize: 11, color: '#F5A623', fontWeight: 500 }}>
+              {entityLabel ?? 'Personal'}
+            </span>
+          </>
         </div>
 
         {/* ── TOOLBAR 1: Contract Actions ── */}
@@ -2430,7 +2428,7 @@ export default function CreateContract() {
                                     padding: '10px 14px',
                                     marginBottom: 6,
                                     border: isDragTarget ? '1px dashed #0F1F3D' : '1px solid #E5E7EB',
-                                    borderLeft: isActive ? '3px solid #F5A623' : isDragTarget ? '3px solid #9CA3AF' : '3px solid transparent',
+                                    borderLeft: isActive ? '3px solid #F5A623' : isDragTarget ? '3px solid #9CA3AF' : 'none',
                                     display: 'flex', alignItems: 'center', gap: 10,
                                     cursor: isEditing ? 'default' : 'pointer',
                                     transition: 'all 0.15s ease',
@@ -2940,7 +2938,7 @@ export default function CreateContract() {
                                     style={{
                                       position: 'relative',
                                       background: inserted ? '#FFFBF0' : 'white',
-                                      borderLeft: inserted ? '3px solid #F5A623' : '3px solid transparent',
+                                      borderLeft: inserted ? '3px solid #F5A623' : 'none',
                                       borderRadius: 6,
                                       padding: '10px 12px 36px',
                                       marginBottom: 8,
@@ -3031,7 +3029,7 @@ export default function CreateContract() {
                                     style={{
                                       position: 'relative',
                                       background: inserted ? '#FFFBF0' : 'white',
-                                      borderLeft: inserted ? '3px solid #F5A623' : '3px solid transparent',
+                                      borderLeft: inserted ? '3px solid #F5A623' : 'none',
                                       borderRadius: 6,
                                       padding: '10px 12px 36px',
                                       marginBottom: 8,

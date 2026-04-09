@@ -90,6 +90,98 @@ export default function Contracts() {
   const [bizDropdownOpen, setBizDropdownOpen] = useState(false)
   const bizDropdownRef = useRef<HTMLDivElement>(null)
 
+  // Contract Details modal state
+  const [showDetailsModal, setShowDetailsModal] = useState(false)
+  const [cdEntityLabel, setCdEntityLabel] = useState('')
+  const [cdTitle, setCdTitle] = useState('')
+  const [cdType, setCdType] = useState('')
+  const [cdLanguage, setCdLanguage] = useState('English')
+  const [cdStartDate, setCdStartDate] = useState('')
+  const [cdEndDate, setCdEndDate] = useState('')
+  const [cdValue, setCdValue] = useState('')
+  const [cdCurrency, setCdCurrency] = useState('USD')
+  const [cdJurisdiction, setCdJurisdiction] = useState('')
+  const [cdGoverningLaw, setCdGoverningLaw] = useState('')
+  const [cdConfidentiality, setCdConfidentiality] = useState('Not confidential')
+  const [cdDispute, setCdDispute] = useState('Negotiation')
+  const [cdDescription, setCdDescription] = useState('')
+  const [cdTitleError, setCdTitleError] = useState(false)
+  const [cdTypeError, setCdTypeError] = useState(false)
+  const [cdLoading, setCdLoading] = useState(false)
+  const [cdError, setCdError] = useState('')
+
+  function openDetailsModal(entityLabel: string) {
+    setCdEntityLabel(entityLabel)
+    setCdTitle('')
+    setCdType('')
+    setCdLanguage('English')
+    setCdStartDate('')
+    setCdEndDate('')
+    setCdValue('')
+    setCdCurrency('USD')
+    setCdJurisdiction('')
+    setCdGoverningLaw('')
+    setCdConfidentiality('Not confidential')
+    setCdDispute('Negotiation')
+    setCdDescription('')
+    setCdTitleError(false)
+    setCdTypeError(false)
+    setCdError('')
+    setShowDetailsModal(true)
+  }
+
+  function handleCreateContract() {
+    let hasError = false
+    if (!cdTitle.trim()) { setCdTitleError(true); hasError = true }
+    if (!cdType) { setCdTypeError(true); hasError = true }
+    if (hasError) return
+
+    setCdLoading(true)
+    setCdError('')
+
+    const structureType =
+      cdType === 'Employment Contract' ? 'ONGOING' :
+      cdType === 'Partnership Agreement' || cdType === 'Joint Venture' ? 'COLLABORATIVE' :
+      cdType === 'Settlement Agreement' ? 'RESOLUTION' : 'ONE_TIME'
+
+    api.post<{ id: string }>('/contracts/', {
+      counterparty_email: 'pending@bonup.placeholder',
+      structure_type: structureType,
+      currency: cdCurrency || 'USD',
+    })
+      .then(({ data }) => {
+        localStorage.setItem('bb_wip_contract_title', cdTitle)
+        localStorage.setItem('bb_wip_contract_id', data.id)
+        setShowDetailsModal(false)
+        const entityQs = cdEntityLabel === 'Personal'
+          ? 'entity=personal'
+          : `entity=business&name=${encodeURIComponent(cdEntityLabel)}`
+        navigate(`/contracts/create?id=${data.id}&${entityQs}`, {
+          state: {
+            contractTitle: cdTitle,
+            contractType: cdType,
+            contractLanguage: cdLanguage,
+            startDate: cdStartDate,
+            endDate: cdEndDate,
+            contractValue: cdValue,
+            currency: cdCurrency,
+            jurisdiction: cdJurisdiction,
+            governingLaw: cdGoverningLaw,
+            confidentiality: cdConfidentiality,
+            dispute: cdDispute,
+            description: cdDescription,
+          },
+        })
+      })
+      .catch((err) => {
+        const msg = err?.response?.data
+          ? Object.values(err.response.data).flat().join(' ')
+          : 'Failed to create contract. Please try again.'
+        setCdError(String(msg))
+      })
+      .finally(() => setCdLoading(false))
+  }
+
   const tier = user?.subscription_tier ?? ''
   const isEnterprise = tier === 'anchor'
   const isBusiness = tier === 'business'
@@ -109,10 +201,9 @@ export default function Contracts() {
 
   function openCreateModal() {
     if (entityFilter === 'Personal') {
-      navigate('/contracts/create?entity=personal')
+      openDetailsModal('Personal')
     } else if (entityFilter !== 'All' && entityFilter !== 'Business') {
-      // A specific business entity is selected
-      navigate(`/contracts/create?entity=business&name=${encodeURIComponent(entityFilter)}`)
+      openDetailsModal(entityFilter)
     } else {
       setShowEntityModal(true)
     }
@@ -120,12 +211,12 @@ export default function Contracts() {
 
   function handleSelectPersonal() {
     setShowEntityModal(false)
-    navigate('/contracts/create?entity=personal')
+    openDetailsModal('Personal')
   }
 
   function handleSelectBusiness(name: string) {
     setShowEntityModal(false)
-    navigate(`/contracts/create?entity=business&name=${encodeURIComponent(name)}`)
+    openDetailsModal(name)
   }
 
   const displayName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.username || 'You'
@@ -451,6 +542,255 @@ export default function Contracts() {
                 </>
               )}
             </div>
+          </div>
+        </>
+      )}
+
+      {/* ── CONTRACT DETAILS MODAL ── */}
+      {showDetailsModal && (
+        <>
+          <div
+            onClick={() => setShowDetailsModal(false)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 499 }}
+          />
+          <div style={{
+            position: 'fixed', top: '50%', left: '50%',
+            transform: 'translate(-50%, -50%)',
+            background: 'white', borderRadius: 16,
+            padding: 36, width: 560,
+            maxHeight: '85vh', overflowY: 'auto',
+            boxShadow: '0 16px 48px rgba(0,0,0,0.15)',
+            zIndex: 500,
+          }}>
+            {/* Close */}
+            <button
+              onClick={() => setShowDetailsModal(false)}
+              style={{
+                position: 'absolute', top: 16, right: 18,
+                background: 'transparent', border: 'none',
+                fontSize: 20, color: '#9CA3AF', cursor: 'pointer', lineHeight: 1,
+              }}
+            >×</button>
+
+            {/* Header */}
+            <p style={{ fontSize: 20, fontWeight: 700, color: '#0F1F3D', margin: '0 0 4px' }}>
+              New Contract
+            </p>
+            <p style={{ fontSize: 13, color: '#6B7280', margin: '0 0 24px' }}>
+              Creating as: {cdEntityLabel || 'Personal'}
+            </p>
+
+            {/* Form — helper styles */}
+            {(() => {
+              const LBL: React.CSSProperties = {
+                fontSize: 11, fontWeight: 500, color: '#6B7280',
+                display: 'block', marginBottom: 4,
+                textTransform: 'uppercase', letterSpacing: '0.06em',
+              }
+              const FLD: React.CSSProperties = {
+                width: '100%', border: '1px solid #D1D5DB', borderRadius: 8,
+                padding: '9px 12px', fontSize: 13, color: '#374151',
+                fontFamily: "'Outfit', sans-serif", outline: 'none',
+                boxSizing: 'border-box', background: 'white',
+              }
+              const FLD_ERR: React.CSSProperties = { ...FLD, borderColor: '#DC2626' }
+              function onFocus(e: React.FocusEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) {
+                e.currentTarget.style.borderColor = '#0F1F3D'
+                e.currentTarget.style.boxShadow = '0 0 0 2px rgba(15,31,61,0.08)'
+              }
+              function onBlur(e: React.FocusEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) {
+                e.currentTarget.style.borderColor = (e.currentTarget as HTMLElement).dataset.err ? '#DC2626' : '#D1D5DB'
+                e.currentTarget.style.boxShadow = 'none'
+              }
+
+              return (
+                <div>
+                  {/* Row 1: Contract Title (full width) */}
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={LBL}>Contract Title *</label>
+                    <input
+                      type="text"
+                      value={cdTitle}
+                      onChange={(e) => { setCdTitle(e.target.value); if (e.target.value.trim()) setCdTitleError(false) }}
+                      placeholder="e.g. Lawn Care Services Agreement"
+                      style={cdTitleError ? FLD_ERR : FLD}
+                      data-err={cdTitleError ? '1' : undefined}
+                      onFocus={onFocus}
+                      onBlur={onBlur}
+                    />
+                    {cdTitleError && <p style={{ fontSize: 11, color: '#DC2626', margin: '4px 0 0' }}>Title is required</p>}
+                  </div>
+
+                  {/* Row 2: Contract Type + Language */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                    <div>
+                      <label style={LBL}>Contract Type *</label>
+                      <select
+                        value={cdType}
+                        onChange={(e) => { setCdType(e.target.value); if (e.target.value) setCdTypeError(false) }}
+                        style={cdTypeError ? FLD_ERR : FLD}
+                        data-err={cdTypeError ? '1' : undefined}
+                        onFocus={onFocus}
+                        onBlur={onBlur}
+                      >
+                        <option value="">Select type…</option>
+                        <option>Service Agreement</option>
+                        <option>Employment Contract</option>
+                        <option>Freelance Contract</option>
+                        <option>NDA / Confidentiality</option>
+                        <option>Partnership Agreement</option>
+                        <option>Sales Contract</option>
+                        <option>Lease Agreement</option>
+                        <option>Loan Agreement</option>
+                        <option>Settlement Agreement</option>
+                        <option>Consulting Agreement</option>
+                        <option>Licensing Agreement</option>
+                        <option>Distribution Agreement</option>
+                        <option>Joint Venture</option>
+                        <option>Purchase Agreement</option>
+                        <option>Other</option>
+                      </select>
+                      {cdTypeError && <p style={{ fontSize: 11, color: '#DC2626', margin: '4px 0 0' }}>Type is required</p>}
+                    </div>
+                    <div>
+                      <label style={LBL}>Language</label>
+                      <select value={cdLanguage} onChange={(e) => setCdLanguage(e.target.value)} style={FLD} onFocus={onFocus} onBlur={onBlur}>
+                        <option>English</option>
+                        <option>Haitian Creole</option>
+                        <option>Spanish</option>
+                        <option>French</option>
+                        <option>Portuguese</option>
+                        <option>Arabic</option>
+                        <option>Swahili</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Row 3: Start + End Date */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                    <div>
+                      <label style={LBL}>Start Date</label>
+                      <input type="date" value={cdStartDate} onChange={(e) => setCdStartDate(e.target.value)} style={FLD} onFocus={onFocus} onBlur={onBlur} />
+                    </div>
+                    <div>
+                      <label style={LBL}>End Date</label>
+                      <input type="date" value={cdEndDate} onChange={(e) => setCdEndDate(e.target.value)} style={FLD} onFocus={onFocus} onBlur={onBlur} />
+                    </div>
+                  </div>
+
+                  {/* Row 4: Contract Value + Currency */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                    <div>
+                      <label style={LBL}>Contract Value</label>
+                      <input type="number" value={cdValue} onChange={(e) => setCdValue(e.target.value)} placeholder="0.00" min={0} step={0.01} style={FLD} onFocus={onFocus} onBlur={onBlur} />
+                    </div>
+                    <div>
+                      <label style={LBL}>Currency</label>
+                      <select value={cdCurrency} onChange={(e) => setCdCurrency(e.target.value)} style={FLD} onFocus={onFocus} onBlur={onBlur}>
+                        {([['USD','US Dollar'],['CAD','Canadian Dollar'],['EUR','Euro'],['GBP','British Pound'],['MXN','Mexican Peso'],['BRL','Brazilian Real'],['AUD','Australian Dollar'],['JPY','Japanese Yen'],['CNY','Chinese Yuan'],['INR','Indian Rupee']] as [string,string][]).map(([code, name]) => (
+                          <option key={code} value={code}>{code} — {name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Row 5: Jurisdiction + Governing Law */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                    <div>
+                      <label style={LBL}>Jurisdiction</label>
+                      <input type="text" value={cdJurisdiction} onChange={(e) => setCdJurisdiction(e.target.value)} placeholder="e.g. New York, USA" style={FLD} onFocus={onFocus} onBlur={onBlur} />
+                    </div>
+                    <div>
+                      <label style={LBL}>Governing Law</label>
+                      <input type="text" value={cdGoverningLaw} onChange={(e) => setCdGoverningLaw(e.target.value)} placeholder="e.g. Laws of New York State" style={FLD} onFocus={onFocus} onBlur={onBlur} />
+                    </div>
+                  </div>
+
+                  {/* Row 6: Confidentiality + Dispute Resolution */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                    <div>
+                      <label style={LBL}>Confidentiality</label>
+                      <select value={cdConfidentiality} onChange={(e) => setCdConfidentiality(e.target.value)} style={FLD} onFocus={onFocus} onBlur={onBlur}>
+                        <option>Not confidential</option>
+                        <option>Confidential</option>
+                        <option>Strictly confidential</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={LBL}>Dispute Resolution</label>
+                      <select value={cdDispute} onChange={(e) => setCdDispute(e.target.value)} style={FLD} onFocus={onFocus} onBlur={onBlur}>
+                        <option>Negotiation</option>
+                        <option>Mediation</option>
+                        <option>Arbitration</option>
+                        <option>Litigation</option>
+                        <option>Arbitration then Litigation</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Row 7: Description */}
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={LBL}>Description</label>
+                    <textarea
+                      value={cdDescription}
+                      onChange={(e) => setCdDescription(e.target.value)}
+                      placeholder="Brief description of this contract…"
+                      rows={2}
+                      style={{ ...FLD, resize: 'vertical' }}
+                      onFocus={onFocus}
+                      onBlur={onBlur}
+                    />
+                  </div>
+
+                  {/* Version info box */}
+                  <div style={{
+                    background: '#F8FAFC', borderRadius: 8,
+                    padding: '12px 16px', border: '1px solid #E5E7EB', marginTop: 16,
+                  }}>
+                    <p style={{ fontSize: 12, color: '#6B7280', margin: 0 }}>
+                      This contract will be saved as <strong>Draft · Version 1</strong>
+                    </p>
+                    <p style={{ fontSize: 11, color: '#9CA3AF', margin: '4px 0 0' }}>
+                      You have 3 versions before you must start over. Contracts become active only when signed by all parties.
+                    </p>
+                  </div>
+
+                  {/* Error */}
+                  {cdError && (
+                    <p style={{ fontSize: 12, color: '#DC2626', margin: '12px 0 0' }}>{cdError}</p>
+                  )}
+
+                  {/* Buttons */}
+                  <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
+                    <button
+                      onClick={() => setShowDetailsModal(false)}
+                      style={{
+                        flex: 1, height: 40,
+                        background: 'transparent', border: '1px solid #D1D5DB',
+                        color: '#374151', borderRadius: 8, fontSize: 14,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleCreateContract}
+                      disabled={cdLoading}
+                      style={{
+                        flex: 1, height: 40,
+                        background: '#0F1F3D', color: 'white',
+                        border: 'none', borderRadius: 8,
+                        fontSize: 14, fontWeight: 600,
+                        cursor: cdLoading ? 'wait' : 'pointer',
+                        opacity: cdLoading ? 0.7 : 1,
+                      }}
+                    >
+                      {cdLoading ? 'Creating…' : 'Create Contract'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         </>
       )}

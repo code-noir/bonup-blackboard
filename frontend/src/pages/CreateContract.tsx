@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import api from '@/api/client'
 import {
@@ -438,6 +438,7 @@ export default function CreateContract() {
   ])
   const [contractTitle, setContractTitle] = useState('')
   const [contractStatus, setContractStatus] = useState('Draft')
+  const [contractVersion] = useState(1)
   const [hoverDescription] = useState('')
   const [fontFamily, setFontFamily] = useState('Arial')
   const [fontSize, setFontSize] = useState('14')
@@ -510,8 +511,10 @@ export default function CreateContract() {
   // Parties panel state
   const { user, hasTrialExpired, canCreateContract } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const entityParam = searchParams.get('entity')
+  const contractIdParam = searchParams.get('id')
   const entityNameParam = searchParams.get('name')
   const entityLabel = entityParam === 'personal'
     ? 'Personal'
@@ -599,6 +602,47 @@ export default function CreateContract() {
     window.addEventListener('topbar-collapse', onCollapse)
     return () => window.removeEventListener('topbar-collapse', onCollapse)
   }, [])
+
+  // Pre-fill Contract Details from navigation state (passed by Contracts.tsx modal)
+  useEffect(() => {
+    const state = location.state as {
+      contractTitle?: string
+      contractType?: string
+      contractLanguage?: string
+      startDate?: string
+      endDate?: string
+      contractValue?: string
+      currency?: string
+      jurisdiction?: string
+      governingLaw?: string
+      confidentiality?: string
+      dispute?: string
+      description?: string
+    } | null
+    if (!state) return
+    if (state.contractTitle) setContractTitle(state.contractTitle)
+    if (state.contractType) setDetailsType(state.contractType)
+    if (state.contractLanguage) setDetailsLanguage(state.contractLanguage)
+    if (state.startDate) setDetailsStartDate(state.startDate)
+    if (state.endDate) setDetailsEndDate(state.endDate)
+    if (state.contractValue) setDetailsValue(state.contractValue)
+    if (state.currency) setDetailsCurrency(state.currency)
+    if (state.jurisdiction) setDetailsJurisdiction(state.jurisdiction)
+    if (state.governingLaw) setDetailsGoverningLaw(state.governingLaw)
+    if (state.confidentiality) setDetailsConfidentiality(state.confidentiality)
+    if (state.dispute) setDetailsDispute(state.dispute)
+    if (state.description) setDetailsDescription(state.description)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // If arriving with a contract id param, persist it and set the title from localStorage
+  useEffect(() => {
+    if (!contractIdParam) return
+    setCreatedContractId(contractIdParam)
+    const stored = localStorage.getItem('bb_wip_contract_title')
+    if (stored) setCreatedContractTitle(stored)
+    // Title may already be set by the nav-state effect above; only fall back if empty
+    setContractTitle((prev) => prev || stored || '')
+  }, [contractIdParam]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (activeTool === 'Contract Templates') {
@@ -1028,7 +1072,7 @@ export default function CreateContract() {
             color: 'rgba(255,255,255,0.6)',
             fontSize: 11, padding: '2px 8px', borderRadius: 4, flexShrink: 0,
           }}>
-            v1
+            v{contractVersion}
           </span>
 
           {/* Status dropdown */}

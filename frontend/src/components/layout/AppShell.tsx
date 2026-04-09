@@ -7,11 +7,10 @@ import ActionBar from './ActionBar'
 
 // Sidebar: full-height, left: 0, width: 216px
 // Content-side bars (left: 216px):
-//   BrandBar  40px  → top: 0
-//   Header    50px  → top: 40
-//   ActionBar 44px  → top: 90
-//   Separator  1px  → top: 133
-//   Total           → pt-[134px] on main
+//   TopBar    40px  → top: 0
+//   Header    74px  → top: 40
+//   ActionBar 44px  → top: 114
+//   Total           → pt-[158px] on main
 
 export default function AppShell() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('bb_topbar_collapsed') === 'true')
@@ -33,7 +32,7 @@ export default function AppShell() {
 
       <main
         className="min-h-screen px-6 pb-10"
-        style={{ marginLeft: 216, paddingTop: 134 }}
+        style={{ marginLeft: 216, paddingTop: 158 }}
       >
         <Outlet />
       </main>

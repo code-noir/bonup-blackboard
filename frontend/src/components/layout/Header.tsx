@@ -56,7 +56,7 @@ export default function Header() {
         background: '#172334',
         borderBottom: '1px solid rgba(255,255,255,0.06)',
         maxHeight: collapsed ? 0 : 50,
-        overflow: 'hidden',
+        overflow: collapsed ? 'hidden' : 'visible',
         opacity: collapsed ? 0 : 1,
         transition: 'max-height 0.3s ease, opacity 0.2s ease',
       }}
@@ -137,30 +137,8 @@ export default function Header() {
         </div>
       </div>
 
-      {/* PBVD + Date */}
-      <div className="shrink-0 mr-4 flex items-center" style={{ gap: 12 }}>
-        <button
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            height: 26,
-            padding: '0 12px',
-            borderRadius: 7,
-            fontSize: 11,
-            fontWeight: 600,
-            fontFamily: "'Outfit', sans-serif",
-            color: '#000000',
-            background: '#ffffff',
-            border: 'none',
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-            transition: 'background 0.15s',
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = '#F0F0F0')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = '#ffffff')}
-        >
-          My Account
-        </button>
+      {/* Date */}
+      <div className="shrink-0 mr-4 flex items-center">
         <span style={{ fontSize: 12, fontWeight: 400, color: 'rgba(255,255,255,0.45)', fontFamily: "'Outfit', sans-serif", whiteSpace: 'nowrap' }}>
           {TODAY}
         </span>
@@ -192,11 +170,23 @@ export default function Header() {
         </button>
 
         {open && (
-          <div className="absolute right-0 top-full z-50 mt-1 w-48 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+          <div className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-slate-200 bg-white py-1 shadow-lg" style={{ zIndex: 9999 }}>
             <div className="border-b border-slate-100 px-4 py-2">
               <p className="text-xs text-slate-500">Signed in as</p>
               <p className="truncate text-sm font-medium text-slate-800">{user?.email}</p>
             </div>
+            <button
+              onClick={() => { setOpen(false); navigate('/profile') }}
+              className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+            >
+              Profile
+            </button>
+            <button
+              onClick={() => { setOpen(false); navigate('/billing') }}
+              className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+            >
+              Billing
+            </button>
             <button
               onClick={() => { setOpen(false); navigate('/settings') }}
               className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"

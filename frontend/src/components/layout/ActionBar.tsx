@@ -385,7 +385,7 @@ export default function ActionBar() {
         overflow: collapsed ? 'hidden' : 'visible',
         opacity: collapsed ? 0 : 1,
         transition: 'max-height 0.3s ease, opacity 0.2s ease',
-        zIndex: 100,
+        zIndex: 30,
       }}
     >
       <MyContractsBtn />

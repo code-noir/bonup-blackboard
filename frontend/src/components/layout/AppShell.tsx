@@ -31,21 +31,6 @@ export default function AppShell() {
       <Header />
       <ActionBar />
 
-      {/* Gold gradient separator */}
-      <div
-        className="fixed right-0 z-30"
-        style={{
-          top: 133,
-          left: 'var(--sidebar-w, 216px)',
-          height: 1,
-          background:
-            'linear-gradient(90deg, transparent, rgba(245,166,35,0.45) 35%, rgba(245,166,35,0.15) 65%, transparent)',
-          opacity: collapsed ? 0 : 1,
-          transition: 'opacity 0.2s ease',
-          pointerEvents: 'none',
-        }}
-      />
-
       <main
         className="min-h-screen px-6 pb-10"
         style={{ marginLeft: 216, paddingTop: 134 }}

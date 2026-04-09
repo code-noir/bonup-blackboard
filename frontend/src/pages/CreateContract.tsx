@@ -964,7 +964,7 @@ export default function CreateContract() {
 
       {/* ── WORKSPACE: fixed below top bars, above status bar ── */}
       <div style={{
-        position: 'fixed', top: barsCollapsed ? 65 : 159, left: 48, right: 0, bottom: 32,
+        position: 'fixed', top: barsCollapsed ? 65 : 134, left: 48, right: 0, bottom: 32,
         display: 'flex', flexDirection: 'column', zIndex: 20, overflow: 'hidden',
         background: '#ffffff',
         transition: 'top 0.3s ease',

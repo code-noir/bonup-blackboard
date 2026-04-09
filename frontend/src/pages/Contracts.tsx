@@ -194,7 +194,7 @@ export default function Contracts() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
       {/* ── ENTITY FILTER TABS ── */}
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 16 }}>
         {/* All */}
         {['All', 'Personal'].map((tab) => (
           <button

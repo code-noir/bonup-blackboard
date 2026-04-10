@@ -109,7 +109,7 @@ function MyContractsBtn() {
   const [contracts, setContracts] = useState<ApiContract[]>([])
   const ref = useRef<HTMLDivElement>(null)
 
-  const isBuilding = location.pathname === '/contracts/create'
+  const isBuilding = location.pathname === '/contracts/new'
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {

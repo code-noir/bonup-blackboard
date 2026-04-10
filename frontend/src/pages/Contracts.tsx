@@ -962,7 +962,7 @@ export default function Contracts() {
                         <td style={{ ...TD_DARK, color: '#9CA3AF' }}>{row.createdAt}</td>
                         <td style={{ ...TD_DARK, paddingRight: 0 }}>
                           <button
-                            onClick={() => navigate(`/contracts/create?id=${row.id}`)}
+                            onClick={() => navigate(`/contracts/new?id=${row.id}`)}
                             style={{ fontSize: 12, fontWeight: 500, color: '#374151', background: 'transparent', border: '1px solid #D1D5DB', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                             onMouseEnter={(e) => { e.currentTarget.style.background = '#E5E7EB' }}
                             onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}

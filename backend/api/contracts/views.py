@@ -53,17 +53,16 @@ class ContractViewSet(ViewSet):
         if not allowed:
             return Response({"error": message}, status=status.HTTP_403_FORBIDDEN)
 
-        # Strip entity fields so the serializer doesn't choke on them;
-        # we apply them directly in save().
-        data = {k: v for k, v in request.data.items()
-                if k not in ('entity_type', 'entity', 'initiator')}
-
         entity_type = request.data.get('entity_type', 'personal')
         entity_id = request.data.get('entity')
 
+        # Strip fields we set explicitly so the serializer never sees them.
+        data = {k: v for k, v in request.data.items()
+                if k not in ('entity', 'initiator')}
+
         serializer = ContractSerializer(data=data)
         if serializer.is_valid():
-            save_kwargs = {'initiator': request.user, 'entity_type': entity_type}
+            save_kwargs = {'initiator': request.user}
             if entity_type == 'business' and entity_id:
                 from backend.users.models import BusinessEntity
                 try:

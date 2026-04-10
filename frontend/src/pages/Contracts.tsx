@@ -257,6 +257,7 @@ export default function Contracts() {
       setContracts([])
       return
     }
+    setContracts([])
     setContractsLoading(true)
     api.get<{ id: string; counterparty_email: string; structure_type: string; state: string; created_at: string; max_versions: number }[]>(
       '/contracts/', { params }
@@ -917,7 +918,7 @@ export default function Contracts() {
             {activeTab === 0 && !contractsLoading && contracts.length === 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 220, gap: 12 }}>
                 <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0, textAlign: 'center' }}>
-                  No contracts yet
+                  No contracts yet for {entityFilter}
                 </p>
                 <button
                   onClick={openCreateModal}

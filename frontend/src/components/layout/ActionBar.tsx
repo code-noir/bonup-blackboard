@@ -65,19 +65,11 @@ const PILL_STYLE: Record<string, React.CSSProperties> = {
 const CONTRACT_CATEGORIES: ContractCategory[] = [
   {
     icon: '🔨', label: 'In Progress',
-    items: [
-      { id: 'ip1', title: 'Untitled Contract', sub: 'Personal',    pill: 'Draft' },
-      { id: 'ip2', title: 'Service Agreement Draft', sub: '',       pill: 'Draft' },
-      { id: 'ip3', title: 'Consulting Agreement',   sub: '',        pill: 'Draft' },
-    ],
+    items: [],
   },
   {
     icon: '📋', label: 'Under Negotiation',
-    items: [
-      { id: 'un1', title: 'Web Design Contract v2',      sub: '',  pill: 'Negotiation' },
-      { id: 'un2', title: 'Freelance Agreement v1',      sub: '',  pill: 'Negotiation' },
-      { id: 'un3', title: 'NDA — Meridian Labs v3',      sub: '',  pill: 'Negotiation' },
-    ],
+    items: [],
   },
   {
     icon: '✅', label: 'Active',
@@ -89,19 +81,11 @@ const CONTRACT_CATEGORIES: ContractCategory[] = [
   },
   {
     icon: '🏁', label: 'Completed',
-    items: [
-      { id: 'co1', title: 'Q1 Service Agreement',  sub: 'Clearpath Inc',   pill: 'Completed' },
-      { id: 'co2', title: 'Personal Loan',         sub: 'John Smith',      pill: 'Completed' },
-      { id: 'co3', title: 'Staffing Contract',     sub: 'Orin Staffing',   pill: 'Completed' },
-    ],
+    items: [],
   },
   {
     icon: '📦', label: 'Archived',
-    items: [
-      { id: 'ar1', title: '2024 Web Contract',     sub: 'BluePrint Agency', pill: 'Archived' },
-      { id: 'ar2', title: 'Old NDA',               sub: 'Nova Tech',        pill: 'Archived' },
-      { id: 'ar3', title: 'Expired Retainer',      sub: 'Apex Media',       pill: 'Archived' },
-    ],
+    items: [],
   },
 ]
 
@@ -167,7 +151,11 @@ function MyContractsBtn() {
                   {cat.icon} {cat.label}
                 </div>
                 {/* Contract rows */}
-                {items.map((c) => (
+                {items.length === 0 ? (
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', padding: '8px 16px' }}>
+                    No contracts yet
+                  </div>
+                ) : items.map((c) => (
                   <div
                     key={c.id}
                     onClick={() => { setOpen(false); navigate('/contracts') }}

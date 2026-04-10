@@ -17,29 +17,62 @@ class ContractViewSet(ViewSet):
 
     def list(self, request):
         """
-        Return only contracts where the authenticated user is a party
-        (initiator or counterparty).
+        Return contracts where the authenticated user is a party, filtered
+        strictly by entity so contracts never bleed across identity contexts.
+
+        ?entity=personal  → only personal-type contracts for this user
+        ?entity=<uuid>    → only contracts under that specific business entity
+        (no param)        → all contracts for this user (admin/fallback only)
         """
         from django.db.models import Q
-        contracts = Contract.objects.filter(
+        entity_param = request.query_params.get('entity')
+
+        qs = Contract.objects.filter(
             Q(initiator=request.user)
             | Q(counterparty_email=request.user.email)
         )
-        serializer = ContractSerializer(contracts, many=True)
+
+        if entity_param == 'personal':
+            qs = qs.filter(entity_type='personal')
+        elif entity_param:
+            qs = qs.filter(entity_type='business', entity_id=entity_param)
+
+        serializer = ContractSerializer(qs, many=True)
         return Response(serializer.data)
 
     def create(self, request):
         """
         Create a contract. The initiator is always the authenticated user —
         callers cannot set or override this field.
+
+        Accepted entity fields (not validated by serializer — handled here):
+          entity_type: 'personal' | 'business'  (default: 'personal')
+          entity:      business entity UUID       (required when entity_type='business')
         """
         allowed, message = can_create_contract(request.user)
         if not allowed:
             return Response({"error": message}, status=status.HTTP_403_FORBIDDEN)
 
-        serializer = ContractSerializer(data=request.data)
+        # Strip entity fields so the serializer doesn't choke on them;
+        # we apply them directly in save().
+        data = {k: v for k, v in request.data.items()
+                if k not in ('entity_type', 'entity', 'initiator')}
+
+        entity_type = request.data.get('entity_type', 'personal')
+        entity_id = request.data.get('entity')
+
+        serializer = ContractSerializer(data=data)
         if serializer.is_valid():
-            contract = serializer.save(initiator=request.user)
+            save_kwargs = {'initiator': request.user, 'entity_type': entity_type}
+            if entity_type == 'business' and entity_id:
+                from backend.users.models import BusinessEntity
+                try:
+                    biz = BusinessEntity.objects.get(pk=entity_id, owner=request.user)
+                    save_kwargs['entity'] = biz
+                except (BusinessEntity.DoesNotExist, Exception):
+                    pass
+
+            contract = serializer.save(**save_kwargs)
             increment_contracts_used(request.user)
             log_activity(
                 contract=contract,

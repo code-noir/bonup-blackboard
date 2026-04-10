@@ -55,6 +55,20 @@ class Contract(models.Model):
         default="USD",
     )
 
+    ENTITY_TYPE_CHOICES = [("personal", "Personal"), ("business", "Business")]
+    entity_type = models.CharField(
+        max_length=10,
+        choices=ENTITY_TYPE_CHOICES,
+        default="personal",
+    )
+    entity = models.ForeignKey(
+        "users.BusinessEntity",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contracts",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     is_active = models.BooleanField(default=True)

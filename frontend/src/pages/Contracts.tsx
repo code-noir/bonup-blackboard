@@ -94,6 +94,7 @@ export default function Contracts() {
   // Contract Details modal state
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [cdEntityLabel, setCdEntityLabel] = useState('')
+  const [cdEntityId, setCdEntityId] = useState<string | null>(null)
   const [cdTitle, setCdTitle] = useState('')
   const [cdType, setCdType] = useState('')
   const [cdLanguage, setCdLanguage] = useState('English')
@@ -111,8 +112,9 @@ export default function Contracts() {
   const [cdLoading, setCdLoading] = useState(false)
   const [cdError, setCdError] = useState('')
 
-  function openDetailsModal(entityLabel: string) {
+  function openDetailsModal(entityLabel: string, entityId: string | null = null) {
     setCdEntityLabel(entityLabel)
+    setCdEntityId(entityId)
     setCdTitle('')
     setCdType('')
     setCdLanguage('English')
@@ -145,10 +147,13 @@ export default function Contracts() {
       cdType === 'Partnership Agreement' || cdType === 'Joint Venture' ? 'COLLABORATIVE' :
       cdType === 'Settlement Agreement' ? 'RESOLUTION' : 'ONE_TIME'
 
+    const isPersonal = cdEntityLabel === 'Personal'
     api.post<{ id: string }>('/contracts/', {
       counterparty_email: 'pending@bonup.placeholder',
       structure_type: structureType,
       currency: cdCurrency || 'USD',
+      entity_type: isPersonal ? 'personal' : 'business',
+      ...(isPersonal ? {} : { entity: cdEntityId }),
     })
       .then(({ data }) => {
         localStorage.setItem('bb_wip_contract_title', cdTitle)
@@ -202,9 +207,10 @@ export default function Contracts() {
 
   function openCreateModal() {
     if (entityFilter === 'Personal') {
-      openDetailsModal('Personal')
+      openDetailsModal('Personal', null)
     } else if (entityFilter !== 'Business') {
-      openDetailsModal(entityFilter)
+      const match = entities.find(e => e.name === entityFilter)
+      openDetailsModal(entityFilter, match?.id ?? null)
     } else {
       setShowEntityModal(true)
     }
@@ -212,12 +218,13 @@ export default function Contracts() {
 
   function handleSelectPersonal() {
     setShowEntityModal(false)
-    openDetailsModal('Personal')
+    openDetailsModal('Personal', null)
   }
 
   function handleSelectBusiness(name: string) {
     setShowEntityModal(false)
-    openDetailsModal(name)
+    const match = entities.find(e => e.name === name)
+    openDetailsModal(name, match?.id ?? null)
   }
 
   const displayName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.username || 'You'
@@ -230,15 +237,25 @@ export default function Contracts() {
       .catch(() => {})
   }, [])
 
-  // Refetch contracts whenever entity filter changes
+  // Refetch contracts whenever entity filter changes.
+  // Always pass entity param — never omit it — so the backend never mixes entities.
   useEffect(() => {
     const params: Record<string, string> = {}
     if (entityFilter === 'Personal') {
       params.entity = 'personal'
     } else if (entityFilter !== 'Business') {
-      // specific business entity
+      // specific named business entity
       const match = entities.find(e => e.name === entityFilter)
-      if (match) params.entity = match.id
+      if (match) {
+        params.entity = match.id
+      } else {
+        // entity not yet loaded — skip fetch until entities arrive
+        return
+      }
+    } else {
+      // Generic "Business" tab with no specific entity selected — show nothing
+      setContracts([])
+      return
     }
     setContractsLoading(true)
     api.get<{ id: string; counterparty_email: string; structure_type: string; state: string; created_at: string; max_versions: number }[]>(

@@ -837,7 +837,7 @@ export default function Contracts() {
         {/* Create a Contract button — absolute top right */}
         <div style={{ position: 'absolute', top: 9, right: 22, zIndex: 1 }}>
           <button
-            onClick={openCreateModal}
+            onClick={() => navigate('/contracts/new')}
             style={{
               background: '#000000',
               color: '#fff',
@@ -919,7 +919,7 @@ export default function Contracts() {
                   No contracts yet for {entityFilter}
                 </p>
                 <button
-                  onClick={openCreateModal}
+                  onClick={() => navigate('/contracts/new')}
                   style={{ background: '#000000', color: '#fff', fontSize: 13, fontWeight: 500, height: 34, padding: '0 18px', borderRadius: 8, border: 'none', cursor: 'pointer' }}
                 >
                   Create a Contract
@@ -1152,7 +1152,7 @@ export default function Contracts() {
                 {/* Create a Contract */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
                   <button
-                    onClick={openCreateModal}
+                    onClick={() => navigate('/contracts/new')}
                     style={{
                       background: '#F5A623',
                       color: '#0F1F3D',

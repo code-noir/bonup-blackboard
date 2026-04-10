@@ -39,6 +39,26 @@ function GhostBtn({ label }: { label: string }) {
   )
 }
 
+function GhostBtnLink({ label, to }: { label: string; to: string }) {
+  const navigate = useNavigate()
+  return (
+    <button
+      onClick={() => navigate(to)}
+      style={BTN}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = 'rgba(255,255,255,0.07)'
+        e.currentTarget.style.color = '#ffffff'
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = 'transparent'
+        e.currentTarget.style.color = 'rgba(255,255,255,0.58)'
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+
 // ── My Contracts dropdown ─────────────────────────────────────────────────────
 
 interface ContractEntry {
@@ -403,7 +423,7 @@ export default function ActionBar() {
       <MyContractsBtn />
       <MyEntitiesBtn />
       <GhostBtn label="▶  Start Live Session" />
-      <GhostBtn label="+ New Contract" />
+      <GhostBtnLink label="+ New Contract" to="/contracts/new" />
       <GhostBtn label="⊟ Browse Templates" />
       <GhostBtn label="⌕ Find a User" />
       <GhostBtn label="⚡ Negotiation Prep" />

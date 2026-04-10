@@ -12,10 +12,13 @@ const STATUS_STYLES: Record<string, { background: string; color: string }> = {
 }
 
 const STATUS_DARK: Record<string, { background: string; color: string }> = {
+  DRAFT:     { background: 'rgba(107,114,128,0.15)', color: '#6B7280' },
   ACTIVE:    { background: 'rgba(255,255,255,0.15)', color: '#ffffff' },
   PENDING:   { background: '#F5A623',                color: '#0F1F3D' },
   OVERDUE:   { background: '#DC2626',                color: '#ffffff' },
   COMPLETED: { background: 'rgba(255,255,255,0.1)',  color: 'rgba(255,255,255,0.6)' },
+  SENT:      { background: 'rgba(245,166,35,0.2)',   color: '#F5A623' },
+  ARCHIVED:  { background: 'rgba(107,114,128,0.1)',  color: '#9CA3AF' },
 }
 
 const TH_DARK: React.CSSProperties = {
@@ -149,6 +152,17 @@ export default function Contracts() {
 
     const isPersonal = cdEntityLabel === 'Personal'
     api.post<{ id: string }>('/contracts/', {
+      title: cdTitle.trim(),
+      contract_type: cdType,
+      language: cdLanguage || 'English',
+      start_date: cdStartDate || null,
+      end_date: cdEndDate || null,
+      value: cdValue ? cdValue : null,
+      jurisdiction: cdJurisdiction,
+      governing_law: cdGoverningLaw,
+      confidentiality: cdConfidentiality,
+      dispute_resolution: cdDispute,
+      description: cdDescription,
       counterparty_email: 'pending@bonup.placeholder',
       structure_type: structureType,
       currency: cdCurrency || 'USD',
@@ -156,27 +170,14 @@ export default function Contracts() {
       ...(isPersonal ? {} : { entity: cdEntityId }),
     })
       .then(({ data }) => {
-        localStorage.setItem('bb_wip_contract_title', cdTitle)
-        localStorage.setItem('bb_wip_contract_id', data.id)
+        // Verify all fields saved correctly
+        api.get(`/contracts/${data.id}/`).then(({ data: full }) => {
+          console.log('[Contract created] full response:', full)
+        })
         setShowDetailsModal(false)
-        const entityQs = cdEntityLabel === 'Personal'
-          ? 'entity=personal'
-          : `entity=business&name=${encodeURIComponent(cdEntityLabel)}`
-        navigate(`/contracts/create?id=${data.id}&${entityQs}`, {
-          state: {
-            contractTitle: cdTitle,
-            contractType: cdType,
-            contractLanguage: cdLanguage,
-            startDate: cdStartDate,
-            endDate: cdEndDate,
-            contractValue: cdValue,
-            currency: cdCurrency,
-            jurisdiction: cdJurisdiction,
-            governingLaw: cdGoverningLaw,
-            confidentiality: cdConfidentiality,
-            dispute: cdDispute,
-            description: cdDescription,
-          },
+        // Navigate back to contracts list with entity pre-selected
+        navigate('/contracts', {
+          state: { entityFilter: cdEntityLabel },
         })
       })
       .catch((err) => {
@@ -259,15 +260,12 @@ export default function Contracts() {
     }
     setContracts([])
     setContractsLoading(true)
-    api.get<{ id: string; counterparty_email: string; structure_type: string; state: string; created_at: string; max_versions: number }[]>(
+    api.get<{ id: string; title: string; status: string; version: number; counterparty_email: string; structure_type: string; state: string; created_at: string; max_versions: number }[]>(
       '/contracts/', { params }
     )
       .then(({ data }) => {
         setContracts(data.map((c) => {
-          const storedTitle = localStorage.getItem('bb_wip_contract_id') === c.id
-            ? (localStorage.getItem('bb_wip_contract_title') || '')
-            : ''
-          const title = storedTitle || `${structureLabel(c.structure_type)} #${c.id.slice(-6).toUpperCase()}`
+          const title = c.title || `${structureLabel(c.structure_type)} #${c.id.slice(-6).toUpperCase()}`
           const party = c.counterparty_email === 'pending@bonup.placeholder'
             ? 'No party yet'
             : c.counterparty_email
@@ -278,8 +276,8 @@ export default function Contracts() {
             id: c.id,
             title,
             party,
-            status: stateToStatus(c.state),
-            version: 'v1',
+            status: c.status.toUpperCase(),
+            version: `v${c.version ?? 1}`,
             createdAt: date,
           }
         }))

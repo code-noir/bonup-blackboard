@@ -78,6 +78,45 @@ class Contract(models.Model):
         default="active"
     )
 
+    # ── Metadata fields ────────────────────────────────────────────────────────
+
+    title = models.CharField(max_length=255, blank=True, default="")
+
+    contract_type = models.CharField(max_length=100, blank=True, default="")
+
+    language = models.CharField(max_length=50, blank=True, default="English")
+
+    start_date = models.DateField(null=True, blank=True)
+
+    end_date = models.DateField(null=True, blank=True)
+
+    value = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+
+    jurisdiction = models.CharField(max_length=255, blank=True, default="")
+
+    governing_law = models.CharField(max_length=255, blank=True, default="")
+
+    confidentiality = models.CharField(max_length=100, blank=True, default="")
+
+    dispute_resolution = models.CharField(max_length=100, blank=True, default="")
+
+    description = models.TextField(blank=True, default="")
+
+    STATUS_CHOICES = [
+        ("draft", "Draft"),
+        ("sent", "Sent"),
+        ("active", "Active"),
+        ("completed", "Completed"),
+        ("archived", "Archived"),
+    ]
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="draft",
+    )
+
+    version = models.PositiveIntegerField(default=1)
+
     def str(self):
         return f"Contract {self.id}"
 

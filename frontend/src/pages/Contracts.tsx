@@ -157,7 +157,7 @@ export default function Contracts() {
       language: cdLanguage || 'English',
       start_date: cdStartDate || null,
       end_date: cdEndDate || null,
-      value: cdValue ? cdValue : null,
+      contract_value: cdValue ? cdValue : null,
       jurisdiction: cdJurisdiction,
       governing_law: cdGoverningLaw,
       confidentiality: cdConfidentiality,

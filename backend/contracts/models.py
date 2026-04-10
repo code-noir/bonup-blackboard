@@ -39,6 +39,8 @@ class Contract(models.Model):
         related_name="initiated_contracts",
     )
 
+    counterparty_name = models.CharField(max_length=255, blank=True, default="")
+
     counterparty_email = models.EmailField()
 
     structure_type = models.CharField(
@@ -90,7 +92,7 @@ class Contract(models.Model):
 
     end_date = models.DateField(null=True, blank=True)
 
-    value = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    contract_value = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
 
     jurisdiction = models.CharField(max_length=255, blank=True, default="")
 

@@ -6,6 +6,7 @@ import Login from '@/pages/Login'
 import Dashboard from '@/pages/Dashboard'
 import Contracts from '@/pages/Contracts'
 import CreateContract from '@/pages/CreateContract'
+import NewContract from '@/pages/NewContract'
 import Analysis from '@/pages/Analysis'
 import Counter from '@/pages/Counter'
 import Contacts from '@/pages/Contacts'
@@ -81,6 +82,7 @@ export default function App() {
           >
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/contracts" element={<Contracts />} />
+            <Route path="/contracts/new" element={<NewContract />} />
             <Route path="/contracts/create" element={<CreateContract />} />
             <Route path="/obligations/*" element={<PaygLock name="Obligations" />} />
             <Route path="/payments/*" element={<PaygLock name="Payments" />} />

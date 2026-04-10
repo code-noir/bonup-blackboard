@@ -35,7 +35,7 @@ const TD_DARK: React.CSSProperties = {
   padding: '8px 12px 8px 0',
 }
 
-interface ContractRow { id: string; name: string; party: string; status: string; nextDue: string }
+interface ContractRow { id: string; title: string; party: string; status: string; version: string; createdAt: string }
 
 function stateToStatus(state: string): string {
   if (state === 'fulfilled') return 'COMPLETED'
@@ -82,9 +82,10 @@ export default function Contracts() {
   const { user } = useAuth()
   const [hoveredRow, setHoveredRow] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState(0)
-  const initialEntity = (location.state as { entityFilter?: string } | null)?.entityFilter ?? 'All'
+  const initialEntity = (location.state as { entityFilter?: string } | null)?.entityFilter ?? 'Personal'
   const [entityFilter, setEntityFilter] = useState(initialEntity)
   const [contracts, setContracts] = useState<ContractRow[]>([])
+  const [contractsLoading, setContractsLoading] = useState(false)
   const [entities, setEntities] = useState<BusinessEntity[]>([])
   const [showEntityModal, setShowEntityModal] = useState(false)
   const [bizDropdownOpen, setBizDropdownOpen] = useState(false)
@@ -202,7 +203,7 @@ export default function Contracts() {
   function openCreateModal() {
     if (entityFilter === 'Personal') {
       openDetailsModal('Personal')
-    } else if (entityFilter !== 'All' && entityFilter !== 'Business') {
+    } else if (entityFilter !== 'Business') {
       openDetailsModal(entityFilter)
     } else {
       setShowEntityModal(true)
@@ -232,24 +233,41 @@ export default function Contracts() {
   // Refetch contracts whenever entity filter changes
   useEffect(() => {
     const params: Record<string, string> = {}
-    if (entityFilter === 'Personal') params.entity = 'personal'
-    else if (entityFilter !== 'All') {
+    if (entityFilter === 'Personal') {
+      params.entity = 'personal'
+    } else if (entityFilter !== 'Business') {
+      // specific business entity
       const match = entities.find(e => e.name === entityFilter)
       if (match) params.entity = match.id
     }
-    api.get<{ id: string; counterparty_email: string; structure_type: string; state: string }[]>(
+    setContractsLoading(true)
+    api.get<{ id: string; counterparty_email: string; structure_type: string; state: string; created_at: string; max_versions: number }[]>(
       '/contracts/', { params }
     )
       .then(({ data }) => {
-        setContracts(data.map((c) => ({
-          id: c.id,
-          name: `${structureLabel(c.structure_type)} #${c.id.slice(-6).toUpperCase()}`,
-          party: c.counterparty_email,
-          status: stateToStatus(c.state),
-          nextDue: '—',
-        })))
+        setContracts(data.map((c) => {
+          const storedTitle = localStorage.getItem('bb_wip_contract_id') === c.id
+            ? (localStorage.getItem('bb_wip_contract_title') || '')
+            : ''
+          const title = storedTitle || `${structureLabel(c.structure_type)} #${c.id.slice(-6).toUpperCase()}`
+          const party = c.counterparty_email === 'pending@bonup.placeholder'
+            ? 'No party yet'
+            : c.counterparty_email
+          const date = c.created_at
+            ? new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            : '—'
+          return {
+            id: c.id,
+            title,
+            party,
+            status: stateToStatus(c.state),
+            version: 'v1',
+            createdAt: date,
+          }
+        }))
       })
       .catch(() => {})
+      .finally(() => setContractsLoading(false))
   }, [entityFilter, entities])
 
   const [isHovered, setIsHovered] = useState(false)
@@ -286,8 +304,8 @@ export default function Contracts() {
 
       {/* ── ENTITY FILTER TABS ── */}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 16 }}>
-        {/* All */}
-        {['All', 'Personal'].map((tab) => (
+        {/* Personal tab */}
+        {['Personal'].map((tab) => (
           <button
             key={tab}
             onClick={() => setEntityFilter(tab)}
@@ -391,16 +409,15 @@ export default function Contracts() {
         )}
       </div>
 
-      {/* ── ENTITY INDICATOR BAR ── */}
-      {entityFilter !== 'All' && entityFilter !== 'Business' && (
-        <div style={{
-          background: '#EFF6FF', color: '#1E40AF',
-          fontSize: 12, padding: '6px 16px',
-          borderRadius: 6, marginBottom: 12, alignSelf: 'flex-start',
-        }}>
-          Viewing as: {entityFilter === 'Personal'
-            ? `${displayName} (Personal)`
-            : entityFilter}
+      {/* ── ENTITY INDICATOR ── */}
+      {entityFilter !== 'Business' && (
+        <div style={{ marginBottom: 4 }}>
+          <span style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 400, display: 'block', marginBottom: 2 }}>
+            Viewing as:
+          </span>
+          <span style={{ fontSize: 18, fontWeight: 700, color: '#0F1F3D', display: 'block' }}>
+            {entityFilter === 'Personal' ? `${displayName} (Personal)` : entityFilter}
+          </span>
         </div>
       )}
 
@@ -874,11 +891,16 @@ export default function Contracts() {
             }}
           >
 
-            {/* Tab 0: My Contracts — real data */}
-            {activeTab === 0 && contracts.length === 0 && (
+            {/* Tab 0: My Contracts */}
+            {activeTab === 0 && contractsLoading && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 220 }}>
+                <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Loading contracts…</p>
+              </div>
+            )}
+            {activeTab === 0 && !contractsLoading && contracts.length === 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 220, gap: 12 }}>
                 <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0, textAlign: 'center' }}>
-                  No My Contracts yet
+                  No contracts yet
                 </p>
                 <button
                   onClick={openCreateModal}
@@ -888,15 +910,16 @@ export default function Contracts() {
                 </button>
               </div>
             )}
-            {activeTab === 0 && contracts.length > 0 && (
+            {activeTab === 0 && !contractsLoading && contracts.length > 0 && (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                      <th style={TH_DARK}>Contract Name</th>
+                      <th style={TH_DARK}>Contract Title</th>
                       <th style={TH_DARK}>Party</th>
                       <th style={TH_DARK}>Status</th>
-                      <th style={TH_DARK}>Next Due Date</th>
+                      <th style={TH_DARK}>Version</th>
+                      <th style={TH_DARK}>Created</th>
                       <th style={{ ...TH_DARK, paddingRight: 0 }}></th>
                     </tr>
                   </thead>
@@ -912,22 +935,23 @@ export default function Contracts() {
                         onMouseEnter={() => setHoveredRow(i)}
                         onMouseLeave={() => setHoveredRow(null)}
                       >
-                        <td style={{ ...TD_DARK, fontWeight: 500 }}>{row.name}</td>
-                        <td style={TD_DARK}>{row.party}</td>
+                        <td style={{ ...TD_DARK, fontWeight: 500 }}>{row.title}</td>
+                        <td style={{ ...TD_DARK, color: row.party === 'No party yet' ? '#9CA3AF' : TD_DARK.color }}>{row.party}</td>
                         <td style={TD_DARK}>
                           <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', ...STATUS_DARK[row.status] }}>
                             {row.status}
                           </span>
                         </td>
-                        <td style={{ ...TD_DARK, color: '#9CA3AF' }}>{row.nextDue}</td>
+                        <td style={{ ...TD_DARK, color: '#9CA3AF' }}>{row.version}</td>
+                        <td style={{ ...TD_DARK, color: '#9CA3AF' }}>{row.createdAt}</td>
                         <td style={{ ...TD_DARK, paddingRight: 0 }}>
                           <button
-                            onClick={() => navigate(`/contracts/${row.id}`)}
+                            onClick={() => navigate(`/contracts/create?id=${row.id}`)}
                             style={{ fontSize: 12, fontWeight: 500, color: '#374151', background: 'transparent', border: '1px solid #D1D5DB', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                             onMouseEnter={(e) => { e.currentTarget.style.background = '#E5E7EB' }}
                             onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
                           >
-                            View →
+                            Open
                           </button>
                         </td>
                       </tr>

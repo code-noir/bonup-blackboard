@@ -44,7 +44,7 @@ function GhostBtn({ label }: { label: string }) {
 interface ContractEntry {
   id: string
   title: string
-  sub: string       // counterparty or descriptor shown after em-dash
+  sub: string
   pill: 'Draft' | 'Negotiation' | 'Active' | 'Completed' | 'Archived'
 }
 
@@ -62,37 +62,51 @@ const PILL_STYLE: Record<string, React.CSSProperties> = {
   Archived:    { background: 'rgba(107,114,128,0.2)',   color: '#6B7280' },
 }
 
-const CONTRACT_CATEGORIES: ContractCategory[] = [
-  {
-    icon: '🔨', label: 'In Progress',
-    items: [],
-  },
-  {
-    icon: '📋', label: 'Under Negotiation',
-    items: [],
-  },
-  {
-    icon: '✅', label: 'Active',
-    items: [
-      { id: 'ac1', title: 'Lawn Care Agreement',   sub: 'A&C Lawn Care',   pill: 'Active' },
-      { id: 'ac2', title: 'Consulting Retainer',   sub: 'Vanta Digital',   pill: 'Active' },
-      { id: 'ac3', title: 'Studio Contract',       sub: 'Fenix Creative',  pill: 'Active' },
-    ],
-  },
-  {
-    icon: '🏁', label: 'Completed',
-    items: [],
-  },
-  {
-    icon: '📦', label: 'Archived',
-    items: [],
-  },
+const CATEGORY_DEFS: Omit<ContractCategory, 'items'>[] = [
+  { icon: '🔨', label: 'In Progress' },
+  { icon: '📋', label: 'Under Negotiation' },
+  { icon: '✅', label: 'Active' },
+  { icon: '🏁', label: 'Completed' },
+  { icon: '📦', label: 'Archived' },
 ]
+
+interface ApiContract {
+  id: string
+  structure_type: string
+  counterparty_email: string
+  state: string
+}
+
+function structureLabel(type: string): string {
+  const map: Record<string, string> = {
+    ONE_TIME: 'One-Time',
+    ONGOING: 'Ongoing',
+    COLLABORATIVE: 'Collaborative',
+    RESOLUTION: 'Resolution',
+  }
+  return map[type] ?? type
+}
+
+function apiContractToEntry(c: ApiContract): ContractEntry & { category: string } {
+  const title = `${structureLabel(c.structure_type)} #${c.id.slice(-6).toUpperCase()}`
+  const sub = c.counterparty_email === 'pending@bonup.placeholder' ? '' : c.counterparty_email
+  let pill: ContractEntry['pill'] = 'Active'
+  let category = 'Active'
+  if (c.state === 'fulfilled') {
+    pill = 'Completed'
+    category = 'Completed'
+  } else if (c.state === 'active' || c.state === 'at_risk') {
+    pill = 'Active'
+    category = 'Active'
+  }
+  return { id: c.id, title, sub, pill, category }
+}
 
 function MyContractsBtn() {
   const navigate = useNavigate()
   const location = useLocation()
   const [open, setOpen] = useState(false)
+  const [contracts, setContracts] = useState<ApiContract[]>([])
   const ref = useRef<HTMLDivElement>(null)
 
   const isBuilding = location.pathname === '/contracts/create'
@@ -105,10 +119,22 @@ function MyContractsBtn() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  // Prepend WIP contract to In Progress when on /contracts/create
+  useEffect(() => {
+    if (open) {
+      api.get<ApiContract[]>('/contracts/')
+        .then(({ data }) => setContracts(Array.isArray(data) ? data : []))
+        .catch(() => setContracts([]))
+    }
+  }, [open])
+
   const wipTitle = isBuilding
     ? (localStorage.getItem('bb_wip_contract_title') || 'Untitled Contract')
     : null
+
+  const categories: ContractCategory[] = CATEGORY_DEFS.map((def) => ({
+    ...def,
+    items: contracts.map(apiContractToEntry).filter((e) => e.category === def.label),
+  }))
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
@@ -136,13 +162,12 @@ function MyContractsBtn() {
           minWidth: 280, zIndex: 9999, padding: '8px 0',
           maxHeight: 500, overflowY: 'auto',
         }}>
-          {CONTRACT_CATEGORIES.map((cat) => {
+          {categories.map((cat) => {
             const items: ContractEntry[] = cat.label === 'In Progress' && wipTitle
               ? [{ id: 'wip', title: wipTitle, sub: 'Building now', pill: 'Draft' }, ...cat.items]
               : cat.items
             return (
               <div key={cat.label}>
-                {/* Category header */}
                 <div style={{
                   fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em',
                   color: 'rgba(255,255,255,0.3)', padding: '8px 16px 4px',
@@ -150,7 +175,6 @@ function MyContractsBtn() {
                 }}>
                   {cat.icon} {cat.label}
                 </div>
-                {/* Contract rows */}
                 {items.length === 0 ? (
                   <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', padding: '8px 16px' }}>
                     No contracts yet

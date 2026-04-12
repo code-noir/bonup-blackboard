@@ -43,6 +43,7 @@ class ContractViewSet(ViewSet):
                 entity_id=entity_param
             )
 
+        print(f"[DEBUG] entity_param={entity_param!r} qs_count_after_filter={qs.count()}")
         serializer = ContractSerializer(qs, many=True)
         return Response(serializer.data)
 
@@ -69,13 +70,21 @@ class ContractViewSet(ViewSet):
         serializer = ContractSerializer(data=data)
         if serializer.is_valid():
             save_kwargs = {'initiator': request.user}
-            if entity_type == 'business' and entity_id:
+            if entity_type == 'business':
+                if not entity_id:
+                    return Response(
+                        {"entity": "A business entity ID is required when entity_type is 'business'."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
                 from backend.users.models import BusinessEntity
                 try:
                     biz = BusinessEntity.objects.get(pk=entity_id, owner=request.user)
                     save_kwargs['entity'] = biz
-                except (BusinessEntity.DoesNotExist, Exception):
-                    pass
+                except BusinessEntity.DoesNotExist:
+                    return Response(
+                        {"entity": "Business entity not found or does not belong to you."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
             contract = serializer.save(**save_kwargs)
             increment_contracts_used(request.user)

@@ -240,14 +240,20 @@ export default function Contracts() {
   const [entityFilter, setEntityFilter] = useState<string>(() => {
     try {
       const raw = localStorage.getItem('bb_active_entity')
-      if (raw) return (JSON.parse(raw) as { name: string }).name
+      if (raw) {
+        const parsed = JSON.parse(raw) as { id: string | null; name: string }
+        return parsed.name
+      }
     } catch {}
-    return (location.state as { entityFilter?: string } | null)?.entityFilter ?? 'Personal'
+    return 'Personal'
   })
   const [activeEntityId, setActiveEntityId] = useState<string | null>(() => {
     try {
       const raw = localStorage.getItem('bb_active_entity')
-      if (raw) return (JSON.parse(raw) as { id: string | null }).id
+      if (raw) {
+        const parsed = JSON.parse(raw) as { id: string | null; name: string }
+        return parsed.id
+      }
     } catch {}
     return null
   })
@@ -406,6 +412,7 @@ export default function Contracts() {
   // AbortController ensures a stale in-flight response never overwrites newer results.
   // tabOpen resets so the list closes and reopens cleanly with the new entity's data.
   useEffect(() => {
+    console.log('[ENTITY SWITCH] activeEntityId is now: ' + activeEntityId)
     const entityParam = activeEntityId === null ? 'personal' : activeEntityId
     console.log('[Contracts] activeEntityId changed → fetching for entity:', entityParam)
 

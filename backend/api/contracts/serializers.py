@@ -10,6 +10,19 @@ class ContractSerializer(serializers.ModelSerializer):
         model = Contract
         fields = "__all__"
 
+    def validate(self, attrs):
+        # Resolve effective entity_type: prefer incoming value, fall back to existing instance.
+        entity_type = attrs.get('entity_type') or (
+            self.instance.entity_type if self.instance else 'personal'
+        )
+        # Block any update that explicitly clears entity while entity_type stays 'business'.
+        # (Creation is protected by the view; this guards partial PATCH paths.)
+        if entity_type == 'business' and 'entity' in attrs and attrs['entity'] is None:
+            raise serializers.ValidationError(
+                {"entity": "A business entity must be set when entity_type is 'business'."}
+            )
+        return attrs
+
 
 class ContractVersionSerializer(serializers.ModelSerializer):
     class Meta:

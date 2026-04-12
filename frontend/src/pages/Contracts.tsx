@@ -401,6 +401,22 @@ export default function Contracts() {
   const [isHovered, setIsHovered] = useState(false)
   const [selectedVideo, setSelectedVideo] = useState(0)
   const [isExpanded, setIsExpanded] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
+
+  const tutorialVideos = [
+    'How to create a contract',
+    'Understanding obligations',
+    'How to negotiate a contract',
+    'Signing and rejecting versions',
+    'Using contract templates',
+    'Managing payments in Blackboard',
+    'How Live Sessions work',
+    'What is a PBVD?',
+    'Sol groups explained',
+    'Role switching guide',
+  ]
+  const [tabOpen, setTabOpen] = useState(false)
+  const [viewMode, setViewMode] = useState<'list' | 'card'>('list')
   const [message, setMessage] = useState('')
   const [chat, setChat] = useState([
     {
@@ -833,12 +849,8 @@ export default function Contracts() {
         </>
       )}
 
-      {/* ── SECTION 1: HOVER TAB SYSTEM ── */}
-      <div
-        style={{ position: 'relative' }}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-      >
+      {/* ── SECTION 1: TAB SYSTEM ── */}
+      <div style={{ position: 'relative' }}>
         {/* Create a Contract button — absolute top right */}
         <div style={{ position: 'absolute', top: 9, right: 22, zIndex: 1 }}>
           <button
@@ -874,7 +886,7 @@ export default function Contracts() {
           {['My Contracts', 'Pending Review', 'Active Obligations', 'Negotiations', 'Expiring Soon', 'Archived'].map((tab, i) => (
             <div
               key={i}
-              onMouseEnter={() => setActiveTab(i)}
+              onClick={() => { setActiveTab(i); setTabOpen(true) }}
               style={{
                 padding: '18px 24px',
                 fontSize: 15,
@@ -892,14 +904,14 @@ export default function Contracts() {
           ))}
         </div>
 
-        {/* Content area — max-height transition, normal document flow */}
+        {/* Content area — expands on tab click */}
         <div
           style={{
-            maxHeight: isHovered ? '320px' : '0',
+            maxHeight: tabOpen ? '320px' : '0',
             overflow: 'hidden',
-            opacity: isHovered ? 1 : 0,
+            opacity: tabOpen ? 1 : 0,
             transition: 'max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s ease',
-            transitionDelay: isHovered ? '0s' : '0.1s',
+            transitionDelay: tabOpen ? '0s' : '0.1s',
           }}
         >
           <div
@@ -932,8 +944,50 @@ export default function Contracts() {
               </div>
             )}
             {activeTab === 0 && !contractsLoading && contracts.length > 0 && (
+              <div>
+                {/* View toggle */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 12, paddingBottom: 4, gap: 4 }}>
+                  <button
+                    onClick={() => setViewMode('list')}
+                    title="List view"
+                    style={{
+                      width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      borderRadius: 5, border: '1px solid #D1D5DB', cursor: 'pointer',
+                      background: viewMode === 'list' ? '#0F1F3D' : 'transparent',
+                      color: viewMode === 'list' ? '#fff' : '#6B7280',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                      <rect x="0" y="1" width="13" height="2" rx="1" fill="currentColor"/>
+                      <rect x="0" y="5.5" width="13" height="2" rx="1" fill="currentColor"/>
+                      <rect x="0" y="10" width="13" height="2" rx="1" fill="currentColor"/>
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => setViewMode('card')}
+                    title="Card view"
+                    style={{
+                      width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      borderRadius: 5, border: '1px solid #D1D5DB', cursor: 'pointer',
+                      background: viewMode === 'card' ? '#0F1F3D' : 'transparent',
+                      color: viewMode === 'card' ? '#fff' : '#6B7280',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                      <rect x="0" y="0" width="5.5" height="5.5" rx="1" fill="currentColor"/>
+                      <rect x="7.5" y="0" width="5.5" height="5.5" rx="1" fill="currentColor"/>
+                      <rect x="0" y="7.5" width="5.5" height="5.5" rx="1" fill="currentColor"/>
+                      <rect x="7.5" y="7.5" width="5.5" height="5.5" rx="1" fill="currentColor"/>
+                    </svg>
+                  </button>
+                </div>
+
+                {/* List view */}
+                {viewMode === 'list' && (
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 4 }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
                       <th style={TH_DARK}>Contract Title</th>
@@ -980,6 +1034,34 @@ export default function Contracts() {
                   </tbody>
                 </table>
               </div>
+                )}
+
+                {/* Card view */}
+                {viewMode === 'card' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12, paddingTop: 4, paddingBottom: 8 }}>
+                    {contracts.map((row) => (
+                      <div
+                        key={row.id}
+                        onClick={() => navigate(`/contracts/new?id=${row.id}`)}
+                        style={{
+                          background: '#fff', borderRadius: 8, border: '1px solid #E5E7EB',
+                          padding: '14px 16px', cursor: 'pointer', display: 'flex',
+                          flexDirection: 'column', gap: 6, transition: 'border-color 0.15s',
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#9CA3AF')}
+                        onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#E5E7EB')}
+                      >
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#0F1F3D', lineHeight: 1.3 }}>{row.title}</span>
+                        <span style={{ fontSize: 12, color: row.party === 'No party yet' ? '#9CA3AF' : '#6B7280' }}>{row.party}</span>
+                        <span style={{ display: 'inline-block', alignSelf: 'flex-start', padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', ...STATUS_DARK[row.status] }}>
+                          {row.status}
+                        </span>
+                        <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>{row.createdAt}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
 
             {/* Tab 1: Pending Review — empty state */}
@@ -1021,167 +1103,10 @@ export default function Contracts() {
         </div>
       </div>
 
-      {/* ── SECTIONS 2 & 3: bottom half grid ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+      {/* ── SECTION 2: ASK AI ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 20 }}>
 
-        {/* SECTION 2 — CONTRACT TUTORIALS */}
-        {(() => {
-          const videos = [
-            'How to create a contract',
-            'Understanding obligations',
-            'How to negotiate a contract',
-            'Signing and rejecting versions',
-            'Using contract templates',
-            'Managing payments in Blackboard',
-            'How Live Sessions work',
-            'What is a PBVD?',
-            'Sol groups explained',
-            'Role switching guide',
-          ]
-          return (
-            <div style={{ ...CARD, padding: 20, display: 'flex', flexDirection: 'row', gap: 16 }}>
-
-              {/* Playlist — hidden when expanded */}
-              {!isExpanded && (
-                <div style={{ width: 220, flexShrink: 0 }}>
-                  <p style={{ fontSize: 16, fontWeight: 700, color: '#0F1F3D', margin: '0 0 16px 0' }}>
-                    Contract Tutorials
-                  </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    {videos.map((title, i) => (
-                      <button
-                        key={i}
-                        onClick={() => setSelectedVideo(i)}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 10,
-                          padding: '10px 12px',
-                          borderRadius: 8,
-                          cursor: 'pointer',
-                          border: 'none',
-                          background: selectedVideo === i ? '#F3F0FF' : 'transparent',
-                          textAlign: 'left',
-                          width: '100%',
-                          transition: 'background 0.1s',
-                        }}
-                        onMouseEnter={(e) => {
-                          if (selectedVideo !== i)
-                            (e.currentTarget as HTMLButtonElement).style.background = '#F9FAFB'
-                        }}
-                        onMouseLeave={(e) => {
-                          if (selectedVideo !== i)
-                            (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: 9,
-                            color: selectedVideo === i ? '#8B5CF6' : '#9CA3AF',
-                            lineHeight: 1,
-                          }}
-                        >
-                          ▶
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 12,
-                            color: selectedVideo === i ? '#0F1F3D' : '#374151',
-                            fontWeight: selectedVideo === i ? 500 : 400,
-                            lineHeight: 1.4,
-                          }}
-                        >
-                          {title}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Player */}
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', height: '100%' }}>
-                <p style={{ fontSize: 13, fontWeight: 600, color: '#0F1F3D', margin: '0 0 10px 0' }}>
-                  {videos[selectedVideo]}
-                </p>
-
-                {/* Player area */}
-                <div
-                  style={{
-                    width: '100%',
-                    aspectRatio: '16 / 9',
-                    background: '#1C2B3A',
-                    borderRadius: 8,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 8,
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: '50%',
-                      background: 'rgba(255,255,255,0.15)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <span style={{ color: '#fff', fontSize: 18, marginLeft: 3 }}>▶</span>
-                  </div>
-                  <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', margin: 0 }}>
-                    Tutorial coming soon
-                  </p>
-                </div>
-
-                {/* Expand / Collapse toggle */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                  <button
-                    onClick={() => setIsExpanded((v) => !v)}
-                    style={{
-                      fontSize: 11,
-                      color: '#9CA3AF',
-                      cursor: 'pointer',
-                      border: 'none',
-                      background: 'transparent',
-                      padding: 0,
-                    }}
-                  >
-                    {isExpanded ? '⤡ Collapse' : '⤢ Expand'}
-                  </button>
-                </div>
-
-                {/* Create a Contract */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-                  <button
-                    onClick={() => navigate('/contracts/new')}
-                    style={{
-                      background: '#F5A623',
-                      color: '#0F1F3D',
-                      fontSize: 13,
-                      fontWeight: 600,
-                      height: 34,
-                      padding: '0 18px',
-                      borderRadius: 8,
-                      border: 'none',
-                      cursor: 'pointer',
-                    }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#D4900A' }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#F5A623' }}
-                  >
-                    Create a Contract
-                  </button>
-                </div>
-              </div>
-
-            </div>
-          )
-        })()}
-
-        {/* SECTION 3 — ASK AI */}
+        {/* ASK AI */}
         <div
           style={{
             ...CARD,
@@ -1284,6 +1209,136 @@ export default function Contracts() {
         </div>
 
       </div>
+
+      {/* ── FLOATING HELP BUTTON ── */}
+      <button
+        onClick={() => setShowHelp(true)}
+        style={{
+          position: 'fixed',
+          bottom: 28,
+          right: 28,
+          background: '#F5A623',
+          color: '#0F1F3D',
+          fontSize: 13,
+          fontWeight: 700,
+          height: 40,
+          padding: '0 20px',
+          borderRadius: 20,
+          border: 'none',
+          cursor: 'pointer',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+          zIndex: 50,
+          transition: 'background 0.15s, transform 0.15s',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = '#D4900A'
+          e.currentTarget.style.transform = 'scale(1.04)'
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = '#F5A623'
+          e.currentTarget.style.transform = 'scale(1)'
+        }}
+      >
+        Help
+      </button>
+
+      {/* ── HELP PANEL ── */}
+      {showHelp && (
+        <>
+          {/* Backdrop */}
+          <div
+            onClick={() => setShowHelp(false)}
+            style={{
+              position: 'fixed', inset: 0,
+              background: 'rgba(0,0,0,0.35)',
+              zIndex: 200,
+            }}
+          />
+          {/* Panel */}
+          <div style={{
+            position: 'fixed',
+            top: 0, right: 0, bottom: 0,
+            width: 400,
+            background: '#ffffff',
+            zIndex: 201,
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '-4px 0 24px rgba(0,0,0,0.12)',
+          }}>
+            {/* Header */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '18px 22px', borderBottom: '1px solid #E5E7EB',
+            }}>
+              <span style={{ fontSize: 16, fontWeight: 700, color: '#0F1F3D' }}>
+                Contract Tutorials
+              </span>
+              <button
+                onClick={() => setShowHelp(false)}
+                style={{
+                  background: 'transparent', border: 'none', cursor: 'pointer',
+                  fontSize: 20, color: '#9CA3AF', lineHeight: 1, padding: '0 2px',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Playlist */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {tutorialVideos.map((title, i) => (
+                <button
+                  key={i}
+                  onClick={() => setSelectedVideo(i)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '12px 14px', borderRadius: 8, cursor: 'pointer',
+                    border: 'none', textAlign: 'left', width: '100%',
+                    background: selectedVideo === i ? '#FFF8EC' : 'transparent',
+                    transition: 'background 0.1s',
+                  }}
+                  onMouseEnter={(e) => { if (selectedVideo !== i) e.currentTarget.style.background = '#F9FAFB' }}
+                  onMouseLeave={(e) => { if (selectedVideo !== i) e.currentTarget.style.background = 'transparent' }}
+                >
+                  <span style={{ fontSize: 9, color: selectedVideo === i ? '#F5A623' : '#9CA3AF', lineHeight: 1, flexShrink: 0 }}>▶</span>
+                  <span style={{
+                    fontSize: 13,
+                    color: selectedVideo === i ? '#0F1F3D' : '#374151',
+                    fontWeight: selectedVideo === i ? 600 : 400,
+                    lineHeight: 1.4,
+                  }}>
+                    {title}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Player */}
+            <div style={{ padding: '0 22px 22px' }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: '#0F1F3D', margin: '0 0 8px' }}>
+                {tutorialVideos[selectedVideo]}
+              </p>
+              <div style={{
+                width: '100%', aspectRatio: '16 / 9',
+                background: '#1C2B3A', borderRadius: 8,
+                display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center', gap: 8,
+              }}>
+                <div style={{
+                  width: 44, height: 44, borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.15)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <span style={{ color: '#fff', fontSize: 16, marginLeft: 3 }}>▶</span>
+                </div>
+                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: 0 }}>Tutorial coming soon</p>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }

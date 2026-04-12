@@ -919,8 +919,8 @@ export default function Contracts() {
 
       {/* ── SECTION 1: TAB SYSTEM ── */}
       <div style={{ position: 'relative' }}>
-        {/* Create a Contract button — absolute top right */}
-        <div style={{ position: 'absolute', top: 9, right: 22, zIndex: 1 }}>
+        {/* Create a Contract button — absolute, aligned with the tab row */}
+        <div style={{ position: 'absolute', top: 50, right: 22, zIndex: 1 }}>
           <button
             onClick={() => navigate('/contracts/new')}
             style={{
@@ -940,6 +940,18 @@ export default function Contracts() {
           </button>
         </div>
 
+        {/* Section title */}
+        <p style={{
+          fontSize: 18,
+          fontWeight: 700,
+          color: '#0F1F3D',
+          margin: '0 0 10px 4px',
+          userSelect: 'none' as const,
+          letterSpacing: '-0.01em',
+        }}>
+          My Contracts
+        </p>
+
         {/* Tab row */}
         <div
           style={{
@@ -952,22 +964,6 @@ export default function Contracts() {
             gap: 0,
           }}
         >
-          {/* "My Contracts" label — not a tab */}
-          <span style={{
-            fontSize: 15,
-            fontWeight: 700,
-            color: '#0F1F3D',
-            padding: '18px 24px 18px 0',
-            marginRight: 8,
-            whiteSpace: 'nowrap' as const,
-            userSelect: 'none' as const,
-          }}>
-            My Contracts
-          </span>
-
-          {/* Divider */}
-          <span style={{ width: 1, height: 18, background: '#E5E7EB', flexShrink: 0, marginRight: 8 }} />
-
           {['In Progress', 'Under Review', 'In Negotiation', 'Active', 'Archived'].map((tab, i) => (
             <div
               key={i}

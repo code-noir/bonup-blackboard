@@ -79,6 +79,113 @@ const TD: React.CSSProperties = {
   padding: '13px 12px 13px 0',
 }
 
+function ContractContextBar({
+  entityFilter,
+  displayName,
+  entities,
+  onSelect,
+}: {
+  entityFilter: string
+  displayName: string
+  entities: BusinessEntity[]
+  onSelect: (name: string) => void
+}) {
+  const isPersonal = entityFilter === 'Personal' || entityFilter === displayName
+  const viewingName = isPersonal ? displayName : entityFilter
+
+  const allEntities = [
+    { name: displayName, personal: true },
+    ...entities.map((e) => ({ name: e.name, personal: false })),
+  ]
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 158,
+      left: 'var(--sidebar-w, 216px)',
+      right: 0,
+      height: 44,
+      background: '#ffffff',
+      borderBottom: '1px solid #E5E7EB',
+      display: 'flex',
+      alignItems: 'center',
+      paddingLeft: 20,
+      paddingRight: 20,
+      zIndex: 25,
+      gap: 20,
+    }}>
+      {/* LEFT: Viewing as */}
+      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', flexShrink: 0 }}>
+        <span style={{
+          fontSize: 9, color: 'rgba(0,0,0,0.35)', textTransform: 'uppercase',
+          letterSpacing: '0.08em', fontFamily: "'Outfit', sans-serif",
+        }}>
+          Viewing as
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
+          <span style={{
+            fontSize: 13, fontWeight: 700, color: '#0F1F3D',
+            fontFamily: "'Outfit', sans-serif", whiteSpace: 'nowrap',
+          }}>
+            {viewingName}
+          </span>
+          <span style={{
+            fontSize: 9, fontWeight: 500, fontFamily: "'Outfit', sans-serif",
+            padding: '1px 5px', borderRadius: 3,
+            color: isPersonal ? 'rgba(0,0,0,0.45)' : '#10B981',
+            background: isPersonal ? 'rgba(0,0,0,0.06)' : 'rgba(16,185,129,0.12)',
+          }}>
+            {isPersonal ? 'Personal' : 'Business'}
+          </span>
+        </div>
+      </div>
+
+      {/* Divider */}
+      <div style={{ width: 1, height: 24, background: '#E5E7EB', flexShrink: 0 }} />
+
+      {/* CENTER: Entity switcher */}
+      <div style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+        {allEntities.map((entity, i) => {
+          const active = entity.personal
+            ? (entityFilter === 'Personal' || entityFilter === displayName)
+            : entityFilter === entity.name
+          return (
+            <span key={entity.name} style={{ display: 'inline-flex', alignItems: 'center' }}>
+              {i > 0 && (
+                <span style={{
+                  color: '#D1D5DB', padding: '0 10px', fontSize: 13,
+                  userSelect: 'none', lineHeight: 1,
+                }}>|</span>
+              )}
+              <span
+                onClick={() => onSelect(entity.personal ? 'Personal' : entity.name)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  fontSize: 13, fontWeight: active ? 600 : 400,
+                  color: active ? '#0F1F3D' : '#6B7280',
+                  cursor: 'pointer', userSelect: 'none',
+                  fontFamily: "'Outfit', sans-serif",
+                  transition: 'color 0.15s',
+                }}
+                onMouseEnter={(e) => { if (!active) e.currentTarget.style.color = '#374151' }}
+                onMouseLeave={(e) => { if (!active) e.currentTarget.style.color = '#6B7280' }}
+              >
+                {active && (
+                  <span style={{
+                    width: 6, height: 6, borderRadius: '50%',
+                    background: '#10B981', display: 'inline-block', flexShrink: 0,
+                  }} />
+                )}
+                {entity.name}
+              </span>
+            </span>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function Contracts() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -317,6 +424,16 @@ export default function Contracts() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      <ContractContextBar
+        entityFilter={entityFilter}
+        displayName={displayName}
+        entities={entities}
+        onSelect={setEntityFilter}
+      />
+
+      {/* Spacer to push content below the fixed context bar */}
+      <div style={{ height: 44, flexShrink: 0 }} />
 
       {/* ── ENTITY FILTER TABS ── */}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 16 }}>

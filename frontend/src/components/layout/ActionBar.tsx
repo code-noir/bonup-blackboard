@@ -10,15 +10,17 @@ const BTN: React.CSSProperties = {
   height: 28,
   padding: '0 10px',
   borderRadius: 7,
-  fontSize: 11,
+  fontSize: 13,
   fontWeight: 500,
   fontFamily: "'Outfit', sans-serif",
-  color: 'rgba(255,255,255,0.58)',
-  background: 'transparent',
-  border: '1px solid rgba(255,255,255,0.12)',
+  color: '#ffffff',
+  background: '#6B7280',
+  border: '1px solid rgba(19,32,48,0.2)',
   cursor: 'pointer',
   whiteSpace: 'nowrap' as const,
   transition: 'background 0.15s, color 0.15s',
+  WebkitFontSmoothing: 'antialiased' as const,
+  MozOsxFontSmoothing: 'grayscale' as const,
 }
 
 function GhostBtn({ label }: { label: string }) {
@@ -26,12 +28,12 @@ function GhostBtn({ label }: { label: string }) {
     <button
       style={BTN}
       onMouseEnter={(e) => {
-        e.currentTarget.style.background = 'rgba(255,255,255,0.07)'
+        e.currentTarget.style.background = '#4B5563'
         e.currentTarget.style.color = '#ffffff'
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.background = 'transparent'
-        e.currentTarget.style.color = 'rgba(255,255,255,0.58)'
+        e.currentTarget.style.background = '#6B7280'
+        e.currentTarget.style.color = '#ffffff'
       }}
     >
       {label}
@@ -46,12 +48,12 @@ function GhostBtnLink({ label, to }: { label: string; to: string }) {
       onClick={() => navigate(to)}
       style={BTN}
       onMouseEnter={(e) => {
-        e.currentTarget.style.background = 'rgba(255,255,255,0.07)'
+        e.currentTarget.style.background = '#4B5563'
         e.currentTarget.style.color = '#ffffff'
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.background = 'transparent'
-        e.currentTarget.style.color = 'rgba(255,255,255,0.58)'
+        e.currentTarget.style.background = '#6B7280'
+        e.currentTarget.style.color = '#ffffff'
       }}
     >
       {label}
@@ -162,12 +164,12 @@ function MyContractsBtn() {
         onClick={() => setOpen((v) => !v)}
         style={BTN}
         onMouseEnter={(e) => {
-          e.currentTarget.style.background = 'rgba(255,255,255,0.07)'
+          e.currentTarget.style.background = 'rgba(19,32,48,0.07)'
           e.currentTarget.style.color = '#ffffff'
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.background = 'transparent'
-          e.currentTarget.style.color = 'rgba(255,255,255,0.58)'
+          e.currentTarget.style.color = '#ffffff'
         }}
       >
         My Contracts&nbsp;<span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>
@@ -282,12 +284,12 @@ function MyEntitiesBtn() {
         onClick={() => setOpen((v) => !v)}
         style={BTN}
         onMouseEnter={(e) => {
-          e.currentTarget.style.background = 'rgba(255,255,255,0.07)'
+          e.currentTarget.style.background = '#4B5563'
           e.currentTarget.style.color = '#ffffff'
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'transparent'
-          e.currentTarget.style.color = 'rgba(255,255,255,0.58)'
+          e.currentTarget.style.background = '#6B7280'
+          e.currentTarget.style.color = '#ffffff'
         }}
       >
         ⊕ My Entities&nbsp;<span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>
@@ -397,6 +399,7 @@ function MyEntitiesBtn() {
 
 export default function ActionBar() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('bb_topbar_collapsed') === 'true')
+  const [askAiOpen, setAskAiOpen] = useState(false)
 
   useEffect(() => {
     function onCollapse(e: Event) {
@@ -406,13 +409,19 @@ export default function ActionBar() {
     return () => window.removeEventListener('topbar-collapse', onCollapse)
   }, [])
 
+  function toggleAskAi() {
+    const next = !askAiOpen
+    setAskAiOpen(next)
+    window.dispatchEvent(new CustomEvent('ask-ai-toggle', { detail: next }))
+  }
+
   return (
     <div
       className="fixed right-0 flex h-[44px] items-center gap-2 px-5"
       style={{
         top: 114,
         left: 'var(--sidebar-w, 216px)',
-        background: '#132030',
+        background: '#F3F4F6',
         maxHeight: collapsed ? 0 : 44,
         overflow: collapsed ? 'hidden' : 'visible',
         opacity: collapsed ? 0 : 1,
@@ -420,16 +429,29 @@ export default function ActionBar() {
         zIndex: 30,
       }}
     >
-      <MyContractsBtn />
       <MyEntitiesBtn />
-      <GhostBtn label="▶  Start Live Session" />
+      <GhostBtn label="▶  Book a Live Session" />
       <GhostBtnLink label="+ New Contract" to="/contracts/new" />
-      <GhostBtn label="⊟ Browse Templates" />
-      <GhostBtn label="⌕ Find a User" />
+
       <GhostBtn label="⚡ Negotiation Prep" />
-      <GhostBtn label="✓ My Obligations" />
-      <GhostBtn label="◎ Sol Balance" />
-      <GhostBtn label="✦ Ask AI" />
+      <button
+        onClick={toggleAskAi}
+        style={{
+          ...BTN,
+          background: askAiOpen ? '#4B5563' : '#6B7280',
+          color: '#ffffff',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = 'rgba(19,32,48,0.07)'
+          e.currentTarget.style.color = '#ffffff'
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = askAiOpen ? '#4B5563' : '#6B7280'
+          e.currentTarget.style.color = '#ffffff'
+        }}
+      >
+        ✦ Ask AI
+      </button>
       <GhostBtn label="🔍 Analyze Contract" />
       <GhostBtn label="⚡ Contract Counter" />
       <GhostBtn label="🌐 Language" />

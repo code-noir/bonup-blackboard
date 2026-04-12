@@ -143,7 +143,17 @@ function MyContractsBtn() {
 
   useEffect(() => {
     if (open) {
-      api.get<ApiContract[]>('/contracts/')
+      const entityParam = (() => {
+        try {
+          const raw = localStorage.getItem('bb_active_entity')
+          if (raw) {
+            const saved = JSON.parse(raw) as { id: string | null }
+            return saved.id === null ? 'personal' : saved.id
+          }
+        } catch {}
+        return 'personal'
+      })()
+      api.get<ApiContract[]>('/contracts/', { params: { entity: entityParam } })
         .then(({ data }) => setContracts(Array.isArray(data) ? data : []))
         .catch(() => setContracts([]))
     }

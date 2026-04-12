@@ -62,7 +62,11 @@ api.interceptors.response.use(
       refreshQueue.forEach((cb) => cb(data.access))
       refreshQueue = []
       original.headers.Authorization = `Bearer ${data.access}`
-      return api(original)
+      // Drop the AbortController signal from the original config before retrying.
+      // The signal may already be aborted (React cleanup ran while we were refreshing),
+      // which would silently cancel the retry and leave stale contract data on screen.
+      const { signal: _dropped, ...retryConfig } = original
+      return api(retryConfig)
     } catch {
       tokenStorage.clear()
       window.location.href = '/login'

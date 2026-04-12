@@ -90,7 +90,7 @@ function ContractContextBar({
   entityFilter: string
   displayName: string
   entities: BusinessEntity[]
-  onSelect: (name: string) => void
+  onSelect: (name: string, id: string | null) => void
   onAskAI: () => void
   onHelp: () => void
 }) {
@@ -98,8 +98,8 @@ function ContractContextBar({
   const viewingName = isPersonal ? displayName : entityFilter
 
   const allEntities = [
-    { name: displayName, personal: true },
-    ...entities.map((e) => ({ name: e.name, personal: false })),
+    { name: displayName, personal: true, id: null as string | null },
+    ...entities.map((e) => ({ name: e.name, personal: false, id: e.id })),
   ]
 
   return (
@@ -198,7 +198,7 @@ function ContractContextBar({
                   }}>|</span>
                 )}
                 <span
-                  onClick={() => onSelect(entity.personal ? 'Personal' : entity.name)}
+                  onClick={() => onSelect(entity.personal ? 'Personal' : entity.name, entity.personal ? null : entity.id)}
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: 5,
                     fontSize: 13, fontWeight: active ? 600 : 400,
@@ -233,8 +233,20 @@ export default function Contracts() {
   const { user } = useAuth()
   const [hoveredRow, setHoveredRow] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState(0)
-  const initialEntity = (location.state as { entityFilter?: string } | null)?.entityFilter ?? 'Personal'
-  const [entityFilter, setEntityFilter] = useState(initialEntity)
+  const [entityFilter, setEntityFilter] = useState<string>(() => {
+    try {
+      const raw = localStorage.getItem('bb_active_entity')
+      if (raw) return (JSON.parse(raw) as { name: string }).name
+    } catch {}
+    return (location.state as { entityFilter?: string } | null)?.entityFilter ?? 'Personal'
+  })
+  const [activeEntityId, setActiveEntityId] = useState<string | null>(() => {
+    try {
+      const raw = localStorage.getItem('bb_active_entity')
+      if (raw) return (JSON.parse(raw) as { id: string | null }).id
+    } catch {}
+    return null
+  })
   const [contracts, setContracts] = useState<ContractRow[]>([])
   const [contractsLoading, setContractsLoading] = useState(false)
   const [entities, setEntities] = useState<BusinessEntity[]>([])
@@ -323,10 +335,7 @@ export default function Contracts() {
           console.log('[Contract created] full response:', full)
         })
         setShowDetailsModal(false)
-        // Navigate back to contracts list with entity pre-selected
-        navigate('/contracts', {
-          state: { entityFilter: cdEntityLabel },
-        })
+        navigate('/contracts')
       })
       .catch((err) => {
         const msg = err?.response?.data
@@ -354,14 +363,17 @@ export default function Contracts() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
+  function onSelectEntity(name: string, id: string | null) {
+    setEntityFilter(name)
+    setActiveEntityId(id)
+    localStorage.setItem('bb_active_entity', JSON.stringify({ id, name }))
+  }
+
   function openCreateModal() {
-    if (entityFilter === 'Personal') {
-      openDetailsModal('Personal', null)
-    } else if (entityFilter !== 'Business') {
-      const match = entities.find(e => e.name === entityFilter)
-      openDetailsModal(entityFilter, match?.id ?? null)
+    if (activeEntityId === null) {
+      openDetailsModal(entityFilter === 'Personal' ? 'Personal' : entityFilter, null)
     } else {
-      setShowEntityModal(true)
+      openDetailsModal(entityFilter, activeEntityId)
     }
   }
 
@@ -386,25 +398,14 @@ export default function Contracts() {
       .catch(() => {})
   }, [])
 
-  // Refetch contracts whenever entity filter changes.
+  // Refetch contracts whenever active entity changes.
   // Always pass entity param — never omit it — so the backend never mixes entities.
   useEffect(() => {
     const params: Record<string, string> = {}
-    if (entityFilter === 'Personal') {
+    if (activeEntityId === null) {
       params.entity = 'personal'
-    } else if (entityFilter !== 'Business') {
-      // specific named business entity
-      const match = entities.find(e => e.name === entityFilter)
-      if (match) {
-        params.entity = match.id
-      } else {
-        // entity not yet loaded — skip fetch until entities arrive
-        return
-      }
     } else {
-      // Generic "Business" tab with no specific entity selected — show nothing
-      setContracts([])
-      return
+      params.entity = activeEntityId
     }
     setContracts([])
     setContractsLoading(true)
@@ -432,7 +433,7 @@ export default function Contracts() {
       })
       .catch(() => {})
       .finally(() => setContractsLoading(false))
-  }, [entityFilter, entities])
+  }, [activeEntityId])
 
   const [isHovered, setIsHovered] = useState(false)
   const [selectedVideo, setSelectedVideo] = useState(0)
@@ -508,7 +509,7 @@ export default function Contracts() {
         entityFilter={entityFilter}
         displayName={displayName}
         entities={entities}
-        onSelect={setEntityFilter}
+        onSelect={onSelectEntity}
         onAskAI={() => {
           setShowAskAI(true)
           setAskAiCollapsed(false)

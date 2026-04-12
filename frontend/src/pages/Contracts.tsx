@@ -948,10 +948,27 @@ export default function Contracts() {
             border: '1px solid rgba(0,0,0,0.05)',
             padding: '0 22px',
             display: 'flex',
+            alignItems: 'center',
             gap: 0,
           }}
         >
-          {['My Contracts', 'Pending Review', 'Active Obligations', 'Negotiations', 'Expiring Soon', 'Archived'].map((tab, i) => (
+          {/* "My Contracts" label — not a tab */}
+          <span style={{
+            fontSize: 15,
+            fontWeight: 700,
+            color: '#0F1F3D',
+            padding: '18px 24px 18px 0',
+            marginRight: 8,
+            whiteSpace: 'nowrap' as const,
+            userSelect: 'none' as const,
+          }}>
+            My Contracts
+          </span>
+
+          {/* Divider */}
+          <span style={{ width: 1, height: 18, background: '#E5E7EB', flexShrink: 0, marginRight: 8 }} />
+
+          {['In Progress', 'Under Review', 'In Negotiation', 'Active', 'Archived'].map((tab, i) => (
             <div
               key={i}
               onClick={() => { setActiveTab(i); setTabOpen(true) }}
@@ -992,7 +1009,7 @@ export default function Contracts() {
             }}
           >
 
-            {/* Tab 0: My Contracts */}
+            {/* Tab 0: In Progress */}
             {activeTab === 0 && contractsLoading && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 220 }}>
                 <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Loading contracts…</p>
@@ -1132,38 +1149,31 @@ export default function Contracts() {
               </div>
             )}
 
-            {/* Tab 1: Pending Review — empty state */}
+            {/* Tab 1: Under Review — empty state */}
             {activeTab === 1 && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 220 }}>
-                <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0, textAlign: 'center' }}>No Pending Review yet</p>
+                <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0, textAlign: 'center' }}>No contracts under review</p>
               </div>
             )}
 
-            {/* Tab 2: Active Obligations — empty state */}
+            {/* Tab 2: In Negotiation — empty state */}
             {activeTab === 2 && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 220 }}>
-                <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0, textAlign: 'center' }}>No Active Obligations yet</p>
+                <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0, textAlign: 'center' }}>No contracts in negotiation</p>
               </div>
             )}
 
-            {/* Tab 3: Negotiations — empty state */}
+            {/* Tab 3: Active — empty state */}
             {activeTab === 3 && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 220 }}>
-                <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0, textAlign: 'center' }}>No Negotiations yet</p>
+                <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0, textAlign: 'center' }}>No active contracts</p>
               </div>
             )}
 
-            {/* Tab 4: Expiring Soon — empty state */}
+            {/* Tab 4: Archived — empty state */}
             {activeTab === 4 && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 220 }}>
-                <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0, textAlign: 'center' }}>No Expiring Soon yet</p>
-              </div>
-            )}
-
-            {/* Tab 5: Archived — empty state */}
-            {activeTab === 5 && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 220 }}>
-                <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0, textAlign: 'center' }}>No Archived yet</p>
+                <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0, textAlign: 'center' }}>No archived contracts</p>
               </div>
             )}
 

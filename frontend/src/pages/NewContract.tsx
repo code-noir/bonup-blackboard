@@ -442,6 +442,24 @@ export default function NewContract() {
 
   async function onSubmit(data: FormValues) {
     setSubmitError('')
+
+    // Read the active entity directly from localStorage at submit time so we
+    // always use the current value, never a stale mount-time snapshot.
+    let activeEntityType: 'personal' | 'business' = 'personal'
+    let activeEntityId: string | null = null
+    let activeEntityName: string | null = null
+    try {
+      const raw = localStorage.getItem('bb_active_entity')
+      if (raw) {
+        const saved = JSON.parse(raw) as { id: string | null; name: string }
+        if (saved.id !== null) {
+          activeEntityType = 'business'
+          activeEntityId = saved.id
+          activeEntityName = saved.name
+        }
+      }
+    } catch {}
+
     const payload: Record<string, unknown> = {
       title: data.title,
       contract_type: data.contract_type,
@@ -458,19 +476,19 @@ export default function NewContract() {
       counterparty_name: data.counterparty_name,
       counterparty_email: data.counterparty_email || 'pending@bonup.placeholder',
       structure_type: structureTypeFromContractType(data.contract_type),
-      entity_type: entity.type,
+      entity_type: activeEntityType,
       status: 'draft',
     }
-    if (entity.type === 'business') {
-      payload.entity = entity.id
+    if (activeEntityType === 'business') {
+      payload.entity = activeEntityId
     }
 
     try {
       const { data: created } = await api.post('/contracts/', payload)
       navigate(`/contracts/${created.id}`, {
         state: {
-          entityName: entity.type === 'business' ? entity.name : null,
-          entityType: entity.type,
+          entityName: activeEntityName,
+          entityType: activeEntityType,
         },
       })
     } catch (err: unknown) {

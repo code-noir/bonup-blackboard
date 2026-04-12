@@ -84,11 +84,15 @@ function ContractContextBar({
   displayName,
   entities,
   onSelect,
+  onAskAI,
+  onHelp,
 }: {
   entityFilter: string
   displayName: string
   entities: BusinessEntity[]
   onSelect: (name: string) => void
+  onAskAI: () => void
+  onHelp: () => void
 }) {
   const isPersonal = entityFilter === 'Personal' || entityFilter === displayName
   const viewingName = isPersonal ? displayName : entityFilter
@@ -141,6 +145,38 @@ function ContractContextBar({
 
       {/* Divider */}
       <div style={{ width: 1, height: 24, background: '#E5E7EB', flexShrink: 0, marginRight: 16 }} />
+
+      {/* RIGHT: Ask AI + Help buttons */}
+      <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexShrink: 0 }}>
+        <button
+          onClick={onAskAI}
+          style={{
+            height: 28, padding: '0 18px',
+            background: '#1D4ED8', color: '#ffffff',
+            border: 'none', borderRadius: 6,
+            fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            whiteSpace: 'nowrap', fontFamily: "'Outfit', sans-serif",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = '#1e40af')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = '#1D4ED8')}
+        >
+          Ask AI
+        </button>
+        <button
+          onClick={onHelp}
+          style={{
+            height: 28, padding: '0 18px',
+            background: '#F5A623', color: '#0F1F3D',
+            border: 'none', borderRadius: 6,
+            fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            whiteSpace: 'nowrap', fontFamily: "'Outfit', sans-serif",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = '#D4900A')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = '#F5A623')}
+        >
+          Help
+        </button>
+      </div>
 
       {/* CENTER: Entity switcher — absolutely centered in the bar */}
       <div style={{
@@ -402,6 +438,8 @@ export default function Contracts() {
   const [selectedVideo, setSelectedVideo] = useState(0)
   const [isExpanded, setIsExpanded] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
+  const [showAskAI, setShowAskAI] = useState(false)
+  const [askAiCollapsed, setAskAiCollapsed] = useState(false)
 
   const tutorialVideos = [
     'How to create a contract',
@@ -451,6 +489,8 @@ export default function Contracts() {
         displayName={displayName}
         entities={entities}
         onSelect={setEntityFilter}
+        onAskAI={() => { setShowAskAI(true); setAskAiCollapsed(false) }}
+        onHelp={() => setShowHelp(true)}
       />
 
       {/* Spacer to push content below the fixed context bar */}
@@ -1103,239 +1143,118 @@ export default function Contracts() {
         </div>
       </div>
 
-      {/* ── SECTION 2: ASK AI ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 20 }}>
-
-        {/* ASK AI */}
-        <div
-          style={{
-            ...CARD,
-            padding: 20,
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          <p style={{ fontSize: 16, fontWeight: 700, color: '#0F1F3D', margin: '0 0 16px 0' }}>
-            Ask AI about contracts
-          </p>
-
-          {/* Chat area */}
-          <div
-            style={{
-              flex: 1,
-              minHeight: 180,
-              background: '#F9FAFB',
-              borderRadius: 8,
-              padding: 12,
-              overflowY: 'auto',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8,
-            }}
-          >
-            {chat.map((msg, i) =>
-              msg.role === 'ai' ? (
-                <div key={i} style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                  <span
-                    style={{
-                      background: '#E8F4FD',
-                      color: '#0F1F3D',
-                      borderRadius: 8,
-                      padding: '10px 14px',
-                      fontSize: 13,
-                      maxWidth: '85%',
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {msg.text}
-                  </span>
-                </div>
-              ) : (
-                <div key={i} style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                  <span
-                    style={{
-                      background: '#0F1F3D',
-                      color: '#fff',
-                      borderRadius: 8,
-                      padding: '10px 14px',
-                      fontSize: 13,
-                      maxWidth: '85%',
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {msg.text}
-                  </span>
-                </div>
-              )
-            )}
-          </div>
-
-          {/* Input bar */}
-          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-            <input
-              type="text"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask a question…"
-              style={{
-                flex: 1,
-                background: '#fff',
-                border: '1px solid #E5E7EB',
-                borderRadius: 8,
-                fontSize: 13,
-                padding: '8px 12px',
-                outline: 'none',
-                color: '#374151',
-              }}
-            />
-            <button
-              onClick={sendMessage}
-              style={{
-                background: '#000',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 8,
-                padding: '0 16px',
-                fontSize: 13,
-                fontWeight: 500,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              Send
-            </button>
-          </div>
-        </div>
-
-      </div>
-
-      {/* ── FLOATING HELP BUTTON ── */}
-      <button
-        onClick={() => setShowHelp(true)}
-        style={{
-          position: 'fixed',
-          bottom: 28,
-          right: 28,
-          background: '#F5A623',
-          color: '#0F1F3D',
-          fontSize: 13,
-          fontWeight: 700,
-          height: 40,
-          padding: '0 20px',
-          borderRadius: 20,
-          border: 'none',
-          cursor: 'pointer',
-          boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
-          zIndex: 50,
-          transition: 'background 0.15s, transform 0.15s',
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = '#D4900A'
-          e.currentTarget.style.transform = 'scale(1.04)'
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = '#F5A623'
-          e.currentTarget.style.transform = 'scale(1)'
-        }}
-      >
-        Help
-      </button>
-
-      {/* ── HELP PANEL ── */}
+      {/* ── HELP MODAL ── */}
       {showHelp && (
         <>
           {/* Backdrop */}
-          <div
-            onClick={() => setShowHelp(false)}
-            style={{
-              position: 'fixed', inset: 0,
-              background: 'rgba(0,0,0,0.35)',
-              zIndex: 200,
-            }}
-          />
-          {/* Panel */}
+          {/* Backdrop */}
+          <div onClick={() => setShowHelp(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200 }} />
+          {/* Centered wide modal */}
           <div style={{
-            position: 'fixed',
-            top: 0, right: 0, bottom: 0,
-            width: 400,
-            background: '#ffffff',
-            zIndex: 201,
-            display: 'flex',
-            flexDirection: 'column',
-            boxShadow: '-4px 0 24px rgba(0,0,0,0.12)',
+            position: 'fixed', top: '50%', left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: 'min(880px, 92vw)', maxHeight: '88vh',
+            background: '#ffffff', borderRadius: 12, zIndex: 201,
+            display: 'flex', flexDirection: 'column',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
           }}>
             {/* Header */}
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '18px 22px', borderBottom: '1px solid #E5E7EB',
-            }}>
-              <span style={{ fontSize: 16, fontWeight: 700, color: '#0F1F3D' }}>
-                Contract Tutorials
-              </span>
-              <button
-                onClick={() => setShowHelp(false)}
-                style={{
-                  background: 'transparent', border: 'none', cursor: 'pointer',
-                  fontSize: 20, color: '#9CA3AF', lineHeight: 1, padding: '0 2px',
-                }}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 24px', borderBottom: '1px solid #E5E7EB', flexShrink: 0 }}>
+              <span style={{ fontSize: 16, fontWeight: 700, color: '#0F1F3D' }}>Contract Tutorials</span>
+              <button onClick={() => setShowHelp(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 22, color: '#9CA3AF', lineHeight: 1, padding: '0 2px' }}
                 onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
-                onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
-              >
-                ×
-              </button>
+                onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}>×</button>
             </div>
-
-            {/* Playlist */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {tutorialVideos.map((title, i) => (
-                <button
-                  key={i}
-                  onClick={() => setSelectedVideo(i)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 12,
-                    padding: '12px 14px', borderRadius: 8, cursor: 'pointer',
+            {/* Body: playlist + player side by side */}
+            <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+              {/* Playlist */}
+              <div style={{ width: 240, flexShrink: 0, borderRight: '1px solid #E5E7EB', overflowY: 'auto', padding: '10px 12px' }}>
+                {tutorialVideos.map((title, i) => (
+                  <button key={i} onClick={() => setSelectedVideo(i)} style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 12px', borderRadius: 7, cursor: 'pointer',
                     border: 'none', textAlign: 'left', width: '100%',
-                    background: selectedVideo === i ? '#FFF8EC' : 'transparent',
-                    transition: 'background 0.1s',
+                    background: selectedVideo === i ? '#FFF8EC' : 'transparent', transition: 'background 0.1s',
                   }}
-                  onMouseEnter={(e) => { if (selectedVideo !== i) e.currentTarget.style.background = '#F9FAFB' }}
-                  onMouseLeave={(e) => { if (selectedVideo !== i) e.currentTarget.style.background = 'transparent' }}
-                >
-                  <span style={{ fontSize: 9, color: selectedVideo === i ? '#F5A623' : '#9CA3AF', lineHeight: 1, flexShrink: 0 }}>▶</span>
-                  <span style={{
-                    fontSize: 13,
-                    color: selectedVideo === i ? '#0F1F3D' : '#374151',
-                    fontWeight: selectedVideo === i ? 600 : 400,
-                    lineHeight: 1.4,
-                  }}>
-                    {title}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            {/* Player */}
-            <div style={{ padding: '0 22px 22px' }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: '#0F1F3D', margin: '0 0 8px' }}>
-                {tutorialVideos[selectedVideo]}
-              </p>
-              <div style={{
-                width: '100%', aspectRatio: '16 / 9',
-                background: '#1C2B3A', borderRadius: 8,
-                display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center', gap: 8,
-              }}>
-                <div style={{
-                  width: 44, height: 44, borderRadius: '50%',
-                  background: 'rgba(255,255,255,0.15)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <span style={{ color: '#fff', fontSize: 16, marginLeft: 3 }}>▶</span>
+                    onMouseEnter={(e) => { if (selectedVideo !== i) e.currentTarget.style.background = '#F9FAFB' }}
+                    onMouseLeave={(e) => { if (selectedVideo !== i) e.currentTarget.style.background = 'transparent' }}>
+                    <span style={{ fontSize: 9, color: selectedVideo === i ? '#F5A623' : '#9CA3AF', lineHeight: 1, flexShrink: 0 }}>▶</span>
+                    <span style={{ fontSize: 12, color: selectedVideo === i ? '#0F1F3D' : '#374151', fontWeight: selectedVideo === i ? 600 : 400, lineHeight: 1.4 }}>{title}</span>
+                  </button>
+                ))}
+              </div>
+              {/* Player */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '20px 24px', overflowY: 'auto' }}>
+                <p style={{ fontSize: 14, fontWeight: 600, color: '#0F1F3D', margin: '0 0 12px' }}>{tutorialVideos[selectedVideo]}</p>
+                <div style={{ width: '100%', aspectRatio: '16 / 9', background: '#1C2B3A', borderRadius: 8, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                  <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ color: '#fff', fontSize: 20, marginLeft: 4 }}>▶</span>
+                  </div>
+                  <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', margin: 0 }}>Tutorial coming soon</p>
                 </div>
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: 0 }}>Tutorial coming soon</p>
               </div>
             </div>
+            {/* Footer */}
+            <div style={{ padding: '14px 24px', borderTop: '1px solid #E5E7EB', display: 'flex', justifyContent: 'flex-end', flexShrink: 0 }}>
+              <button onClick={() => { setShowHelp(false); navigate('/contracts/new') }} style={{ background: '#F5A623', color: '#0F1F3D', fontSize: 13, fontWeight: 600, height: 34, padding: '0 20px', borderRadius: 7, border: 'none', cursor: 'pointer' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = '#D4900A')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = '#F5A623')}>
+                Create a Contract
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── ASK AI PANEL ── */}
+      {showAskAI && (
+        <>
+          <div onClick={() => setShowAskAI(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 200 }} />
+          <div style={{
+            position: 'fixed', top: '50%', left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: 'min(520px, 48vw)', minWidth: 360,
+            background: '#ffffff', borderRadius: 12, zIndex: 201,
+            display: 'flex', flexDirection: 'column',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.18)',
+          }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #E5E7EB', flexShrink: 0 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#0F1F3D' }}>Ask AI about contracts</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button onClick={() => setAskAiCollapsed((v) => !v)} style={{ background: 'transparent', border: '1px solid #E5E7EB', borderRadius: 5, cursor: 'pointer', fontSize: 11, color: '#6B7280', padding: '2px 8px', lineHeight: 1.4 }}
+                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#9CA3AF')}
+                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#E5E7EB')}>
+                  {askAiCollapsed ? '⤢ Expand' : '⤡ Collapse'}
+                </button>
+                <button onClick={() => setShowAskAI(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 22, color: '#9CA3AF', lineHeight: 1, padding: '0 2px' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}>×</button>
+              </div>
+            </div>
+            {/* Body — hidden when collapsed */}
+            {!askAiCollapsed && (
+              <>
+                <div style={{ height: 260, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 8, background: '#F9FAFB' }}>
+                  {chat.map((msg, i) =>
+                    msg.role === 'ai' ? (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                        <span style={{ background: '#E8F4FD', color: '#0F1F3D', borderRadius: 8, padding: '9px 13px', fontSize: 13, maxWidth: '85%', lineHeight: 1.5 }}>{msg.text}</span>
+                      </div>
+                    ) : (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <span style={{ background: '#0F1F3D', color: '#fff', borderRadius: 8, padding: '9px 13px', fontSize: 13, maxWidth: '85%', lineHeight: 1.5 }}>{msg.text}</span>
+                      </div>
+                    )
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 8, padding: '10px 14px', borderTop: '1px solid #E5E7EB', flexShrink: 0 }}>
+                  <input type="text" value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={handleKeyDown} placeholder="Ask a question…"
+                    style={{ flex: 1, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 7, fontSize: 13, padding: '7px 11px', outline: 'none', color: '#374151' }} />
+                  <button onClick={sendMessage} style={{ background: '#0F1F3D', color: '#fff', border: 'none', borderRadius: 7, padding: '0 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}>Send</button>
+                </div>
+              </>
+            )}
           </div>
         </>
       )}

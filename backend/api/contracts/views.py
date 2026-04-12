@@ -22,9 +22,12 @@ class ContractViewSet(ViewSet):
 
         ?entity=personal  → only personal-type contracts for this user
         ?entity=<uuid>    → only contracts under that specific business entity
+                            (entity must be owned by the requesting user)
         (no param)        → defaults to personal; never returns all contracts
         """
         from django.db.models import Q
+        from backend.users.models import BusinessEntity
+
         entity_param = request.query_params.get('entity', 'personal')
 
         qs = Contract.objects.filter(
@@ -35,6 +38,10 @@ class ContractViewSet(ViewSet):
         if entity_param == 'personal':
             qs = qs.filter(entity_type='personal')
         else:
+            # Verify the requested entity is owned by this user before filtering.
+            # Return empty if the entity doesn't exist or belongs to someone else.
+            if not BusinessEntity.objects.filter(pk=entity_param, owner=request.user).exists():
+                return Response([])
             qs = qs.filter(entity_type='business', entity_id=entity_param)
 
         serializer = ContractSerializer(qs, many=True)

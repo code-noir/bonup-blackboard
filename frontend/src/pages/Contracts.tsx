@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import axios from 'axios'
 import { useNavigate, useLocation } from 'react-router-dom'
 import api from '@/api/client'
 import type { BusinessEntity } from '@/types/entities'
@@ -399,20 +400,21 @@ export default function Contracts() {
   }, [])
 
   // Refetch contracts whenever active entity changes.
-  // Always pass entity param — never omit it — so the backend never mixes entities.
+  // AbortController ensures a stale in-flight response never overwrites newer results.
   useEffect(() => {
-    const params: Record<string, string> = {}
-    if (activeEntityId === null) {
-      params.entity = 'personal'
-    } else {
-      params.entity = activeEntityId
-    }
+    const entityParam = activeEntityId === null ? 'personal' : activeEntityId
+    console.log('[Contracts] fetching contracts for entity:', entityParam)
+
+    const controller = new AbortController()
     setContracts([])
     setContractsLoading(true)
+
     api.get<{ id: string; title: string; status: string; version: number; counterparty_email: string; structure_type: string; state: string; created_at: string; max_versions: number }[]>(
-      '/contracts/', { params }
+      '/contracts/',
+      { params: { entity: entityParam }, signal: controller.signal }
     )
       .then(({ data }) => {
+        console.log('[Contracts] received', data.length, 'contracts for entity:', entityParam)
         setContracts(data.map((c) => {
           const title = c.title || `${structureLabel(c.structure_type)} #${c.id.slice(-6).toUpperCase()}`
           const party = c.counterparty_email === 'pending@bonup.placeholder'
@@ -431,8 +433,16 @@ export default function Contracts() {
           }
         }))
       })
-      .catch(() => {})
+      .catch((err) => {
+        if (axios.isCancel(err)) {
+          console.log('[Contracts] fetch aborted for entity:', entityParam)
+          return
+        }
+      })
       .finally(() => setContractsLoading(false))
+
+    // Abort the in-flight request if entity changes before it resolves
+    return () => controller.abort()
   }, [activeEntityId])
 
   const [isHovered, setIsHovered] = useState(false)

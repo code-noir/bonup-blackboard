@@ -92,43 +92,10 @@ const CATEGORY_DEFS: Omit<ContractCategory, 'items'>[] = [
   { icon: '📦', label: 'Archived' },
 ]
 
-interface ApiContract {
-  id: string
-  structure_type: string
-  counterparty_email: string
-  state: string
-}
-
-function structureLabel(type: string): string {
-  const map: Record<string, string> = {
-    ONE_TIME: 'One-Time',
-    ONGOING: 'Ongoing',
-    COLLABORATIVE: 'Collaborative',
-    RESOLUTION: 'Resolution',
-  }
-  return map[type] ?? type
-}
-
-function apiContractToEntry(c: ApiContract): ContractEntry & { category: string } {
-  const title = `${structureLabel(c.structure_type)} #${c.id.slice(-6).toUpperCase()}`
-  const sub = c.counterparty_email === 'pending@bonup.placeholder' ? '' : c.counterparty_email
-  let pill: ContractEntry['pill'] = 'Active'
-  let category = 'Active'
-  if (c.state === 'fulfilled') {
-    pill = 'Completed'
-    category = 'Completed'
-  } else if (c.state === 'active' || c.state === 'at_risk') {
-    pill = 'Active'
-    category = 'Active'
-  }
-  return { id: c.id, title, sub, pill, category }
-}
-
 function MyContractsBtn() {
   const navigate = useNavigate()
   const location = useLocation()
   const [open, setOpen] = useState(false)
-  const [contracts, setContracts] = useState<ApiContract[]>([])
   const ref = useRef<HTMLDivElement>(null)
 
   const isBuilding = location.pathname === '/contracts/new'
@@ -141,31 +108,13 @@ function MyContractsBtn() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  useEffect(() => {
-    if (open) {
-      const entityParam = (() => {
-        try {
-          const raw = localStorage.getItem('bb_active_entity')
-          if (raw) {
-            const saved = JSON.parse(raw) as { id: string | null }
-            return saved.id === null ? 'personal' : saved.id
-          }
-        } catch {}
-        return 'personal'
-      })()
-      api.get<ApiContract[]>('/contracts/', { params: { entity: entityParam } })
-        .then(({ data }) => setContracts(Array.isArray(data) ? data : []))
-        .catch(() => setContracts([]))
-    }
-  }, [open])
-
   const wipTitle = isBuilding
     ? (localStorage.getItem('bb_wip_contract_title') || 'Untitled Contract')
     : null
 
   const categories: ContractCategory[] = CATEGORY_DEFS.map((def) => ({
     ...def,
-    items: contracts.map(apiContractToEntry).filter((e) => e.category === def.label),
+    items: [],
   }))
 
   return (

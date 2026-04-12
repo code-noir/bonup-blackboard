@@ -112,12 +112,11 @@ function ContractContextBar({
       paddingLeft: 20,
       paddingRight: 20,
       zIndex: 25,
-      gap: 20,
     }}>
       {/* LEFT: Viewing as */}
-      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', flexShrink: 0 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', flexShrink: 0, marginRight: 16 }}>
         <span style={{
-          fontSize: 9, color: 'rgba(0,0,0,0.35)', textTransform: 'uppercase',
+          fontSize: 9, color: '#6B7280', textTransform: 'uppercase',
           letterSpacing: '0.08em', fontFamily: "'Outfit', sans-serif",
         }}>
           Viewing as
@@ -132,8 +131,8 @@ function ContractContextBar({
           <span style={{
             fontSize: 9, fontWeight: 500, fontFamily: "'Outfit', sans-serif",
             padding: '1px 5px', borderRadius: 3,
-            color: isPersonal ? 'rgba(0,0,0,0.45)' : '#10B981',
-            background: isPersonal ? 'rgba(0,0,0,0.06)' : 'rgba(16,185,129,0.12)',
+            color: '#10B981',
+            background: 'rgba(16,185,129,0.12)',
           }}>
             {isPersonal ? 'Personal' : 'Business'}
           </span>
@@ -141,46 +140,52 @@ function ContractContextBar({
       </div>
 
       {/* Divider */}
-      <div style={{ width: 1, height: 24, background: '#E5E7EB', flexShrink: 0 }} />
+      <div style={{ width: 1, height: 24, background: '#E5E7EB', flexShrink: 0, marginRight: 16 }} />
 
-      {/* CENTER: Entity switcher */}
-      <div style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
-        {allEntities.map((entity, i) => {
-          const active = entity.personal
-            ? (entityFilter === 'Personal' || entityFilter === displayName)
-            : entityFilter === entity.name
-          return (
-            <span key={entity.name} style={{ display: 'inline-flex', alignItems: 'center' }}>
-              {i > 0 && (
-                <span style={{
-                  color: '#D1D5DB', padding: '0 10px', fontSize: 13,
-                  userSelect: 'none', lineHeight: 1,
-                }}>|</span>
-              )}
-              <span
-                onClick={() => onSelect(entity.personal ? 'Personal' : entity.name)}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 5,
-                  fontSize: 13, fontWeight: active ? 600 : 400,
-                  color: active ? '#0F1F3D' : '#6B7280',
-                  cursor: 'pointer', userSelect: 'none',
-                  fontFamily: "'Outfit', sans-serif",
-                  transition: 'color 0.15s',
-                }}
-                onMouseEnter={(e) => { if (!active) e.currentTarget.style.color = '#374151' }}
-                onMouseLeave={(e) => { if (!active) e.currentTarget.style.color = '#6B7280' }}
-              >
-                {active && (
+      {/* CENTER: Entity switcher — absolutely centered in the bar */}
+      <div style={{
+        position: 'absolute', left: 0, right: 0,
+        display: 'flex', justifyContent: 'center', alignItems: 'center',
+        pointerEvents: 'none',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', pointerEvents: 'auto' }}>
+          {allEntities.map((entity, i) => {
+            const active = entity.personal
+              ? (entityFilter === 'Personal' || entityFilter === displayName)
+              : entityFilter === entity.name
+            return (
+              <span key={entity.name} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                {i > 0 && (
                   <span style={{
-                    width: 6, height: 6, borderRadius: '50%',
-                    background: '#10B981', display: 'inline-block', flexShrink: 0,
-                  }} />
+                    color: '#D1D5DB', padding: '0 10px', fontSize: 13,
+                    userSelect: 'none', lineHeight: 1,
+                  }}>|</span>
                 )}
-                {entity.name}
+                <span
+                  onClick={() => onSelect(entity.personal ? 'Personal' : entity.name)}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    fontSize: 13, fontWeight: active ? 600 : 400,
+                    color: active ? '#0F1F3D' : '#6B7280',
+                    cursor: 'pointer', userSelect: 'none',
+                    fontFamily: "'Outfit', sans-serif",
+                    transition: 'color 0.15s',
+                  }}
+                  onMouseEnter={(e) => { if (!active) e.currentTarget.style.color = '#374151' }}
+                  onMouseLeave={(e) => { if (!active) e.currentTarget.style.color = '#6B7280' }}
+                >
+                  {active && (
+                    <span style={{
+                      width: 6, height: 6, borderRadius: '50%',
+                      background: '#10B981', display: 'inline-block', flexShrink: 0,
+                    }} />
+                  )}
+                  {entity.name}
+                </span>
               </span>
-            </span>
-          )
-        })}
+            )
+          })}
+        </div>
       </div>
     </div>
   )
@@ -542,17 +547,6 @@ export default function Contracts() {
         )}
       </div>
 
-      {/* ── ENTITY INDICATOR ── */}
-      {entityFilter !== 'Business' && (
-        <div style={{ marginBottom: 4 }}>
-          <span style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 400, display: 'block', marginBottom: 2 }}>
-            Viewing as:
-          </span>
-          <span style={{ fontSize: 18, fontWeight: 700, color: '#0F1F3D', display: 'block' }}>
-            {entityFilter === 'Personal' ? `${displayName} (Personal)` : entityFilter}
-          </span>
-        </div>
-      )}
 
       {/* ── ENTITY SELECTION MODAL ── */}
       {showEntityModal && (

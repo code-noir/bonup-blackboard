@@ -22,10 +22,10 @@ class ContractViewSet(ViewSet):
 
         ?entity=personal  → only personal-type contracts for this user
         ?entity=<uuid>    → only contracts under that specific business entity
-        (no param)        → all contracts for this user (admin/fallback only)
+        (no param)        → defaults to personal; never returns all contracts
         """
         from django.db.models import Q
-        entity_param = request.query_params.get('entity')
+        entity_param = request.query_params.get('entity', 'personal')
 
         qs = Contract.objects.filter(
             Q(initiator=request.user)
@@ -34,7 +34,7 @@ class ContractViewSet(ViewSet):
 
         if entity_param == 'personal':
             qs = qs.filter(entity_type='personal')
-        elif entity_param:
+        else:
             qs = qs.filter(entity_type='business', entity_id=entity_param)
 
         serializer = ContractSerializer(qs, many=True)

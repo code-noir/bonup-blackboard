@@ -408,7 +408,24 @@ export default function NewContract() {
     | { type: 'personal'; id: null }
     | { type: 'business'; id: string; name: string }
 
-  const [entity, setEntity] = useState<EntitySelection>({ type: 'personal', id: null })
+  const [entity, setEntity] = useState<EntitySelection>(() => {
+    try {
+      const raw = localStorage.getItem('bb_active_entity')
+      if (raw) {
+        const saved = JSON.parse(raw) as { id: string | null; name: string }
+        if (saved.id !== null) return { type: 'business', id: saved.id, name: saved.name }
+      }
+    } catch {}
+    return { type: 'personal', id: null }
+  })
+
+  function handleEntityChange(v: EntitySelection) {
+    setEntity(v)
+    localStorage.setItem('bb_active_entity', JSON.stringify({
+      id: v.id,
+      name: v.type === 'personal' ? 'Personal' : (v as { type: 'business'; id: string; name: string }).name,
+    }))
+  }
   const [submitError, setSubmitError] = useState('')
 
   function handleContactSelect(name: string, email: string) {
@@ -542,7 +559,7 @@ export default function NewContract() {
             <div style={SECTION_TITLE}>Parties</div>
 
             <div style={{ marginBottom: 20 }}>
-              <EntityPicker value={entity} onChange={setEntity} />
+              <EntityPicker value={entity} onChange={handleEntityChange} />
             </div>
 
             <ContactSearch onSelect={handleContactSelect} />

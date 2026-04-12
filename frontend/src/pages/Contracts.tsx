@@ -477,12 +477,15 @@ export default function Contracts() {
   const [tabOpen, setTabOpen] = useState(false)
   const [viewMode, setViewMode] = useState<'list' | 'card'>('list')
   const [message, setMessage] = useState('')
-  const [chat, setChat] = useState([
-    {
-      role: 'ai',
-      text: 'Hi! I can help you understand contracts, obligations, and how to get started. What would you like to know?',
-    },
-  ])
+  const INITIAL_CHAT = [{ role: 'ai', text: 'Hi! I can help you understand contracts, obligations, and how to get started. What would you like to know?' }]
+  const [chat, setChat] = useState(INITIAL_CHAT)
+
+  // Reset Ask AI conversation when entity context switches
+  useEffect(() => {
+    setChat(INITIAL_CHAT)
+    setMessage('')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeEntityId])
 
   function sendMessage() {
     const trimmed = message.trim()

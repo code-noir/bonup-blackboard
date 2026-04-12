@@ -440,6 +440,26 @@ export default function Contracts() {
   const [showHelp, setShowHelp] = useState(false)
   const [showAskAI, setShowAskAI] = useState(false)
   const [askAiCollapsed, setAskAiCollapsed] = useState(false)
+  const [askAiPos, setAskAiPos] = useState({ x: 0, y: 0 })
+  const askAiDrag = useRef({ active: false, offsetX: 0, offsetY: 0 })
+
+  function handleAskAiDragStart(e: React.MouseEvent<HTMLDivElement>) {
+    // Only drag on the header bar itself, not its buttons
+    if ((e.target as HTMLElement).closest('button')) return
+    e.preventDefault()
+    askAiDrag.current = { active: true, offsetX: e.clientX - askAiPos.x, offsetY: e.clientY - askAiPos.y }
+    function onMove(ev: MouseEvent) {
+      if (!askAiDrag.current.active) return
+      setAskAiPos({ x: ev.clientX - askAiDrag.current.offsetX, y: ev.clientY - askAiDrag.current.offsetY })
+    }
+    function onUp() {
+      askAiDrag.current.active = false
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
 
   const tutorialVideos = [
     'How to create a contract',
@@ -489,7 +509,11 @@ export default function Contracts() {
         displayName={displayName}
         entities={entities}
         onSelect={setEntityFilter}
-        onAskAI={() => { setShowAskAI(true); setAskAiCollapsed(false) }}
+        onAskAI={() => {
+          setShowAskAI(true)
+          setAskAiCollapsed(false)
+          setAskAiPos({ x: Math.max(0, window.innerWidth / 2 - 260), y: Math.max(0, window.innerHeight / 2 - 180) })
+        }}
         onHelp={() => setShowHelp(true)}
       />
 
@@ -1206,57 +1230,78 @@ export default function Contracts() {
         </>
       )}
 
-      {/* ── ASK AI PANEL ── */}
+      {/* ── ASK AI FLOATING WIDGET ── */}
       {showAskAI && (
-        <>
-          <div onClick={() => setShowAskAI(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 200 }} />
-          <div style={{
-            position: 'fixed', top: '50%', left: '50%',
-            transform: 'translate(-50%, -50%)',
-            width: 'min(520px, 48vw)', minWidth: 360,
-            background: '#ffffff', borderRadius: 12, zIndex: 201,
-            display: 'flex', flexDirection: 'column',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.18)',
-          }}>
-            {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #E5E7EB', flexShrink: 0 }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: '#0F1F3D' }}>Ask AI about contracts</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button onClick={() => setAskAiCollapsed((v) => !v)} style={{ background: 'transparent', border: '1px solid #E5E7EB', borderRadius: 5, cursor: 'pointer', fontSize: 11, color: '#6B7280', padding: '2px 8px', lineHeight: 1.4 }}
-                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#9CA3AF')}
-                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#E5E7EB')}>
-                  {askAiCollapsed ? '⤢ Expand' : '⤡ Collapse'}
-                </button>
-                <button onClick={() => setShowAskAI(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 22, color: '#9CA3AF', lineHeight: 1, padding: '0 2px' }}
-                  onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
-                  onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}>×</button>
-              </div>
+        <div style={{
+          position: 'fixed',
+          left: askAiPos.x,
+          top: askAiPos.y,
+          width: 'min(500px, 48vw)', minWidth: 340,
+          background: '#ffffff', borderRadius: 12, zIndex: 300,
+          display: 'flex', flexDirection: 'column',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+          userSelect: 'none',
+        }}>
+          {/* Drag handle / Header */}
+          <div
+            onMouseDown={handleAskAiDragStart}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '12px 16px', borderBottom: '1px solid #E5E7EB', flexShrink: 0,
+              cursor: 'move', borderRadius: '12px 12px 0 0',
+              background: '#F9FAFB',
+            }}
+          >
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#0F1F3D', pointerEvents: 'none' }}>
+              ✦ Ask AI about contracts
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button
+                onClick={() => setAskAiCollapsed((v) => !v)}
+                style={{ background: 'transparent', border: '1px solid #E5E7EB', borderRadius: 5, cursor: 'pointer', fontSize: 11, color: '#6B7280', padding: '2px 8px', lineHeight: 1.4 }}
+                onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#9CA3AF')}
+                onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#E5E7EB')}
+              >
+                {askAiCollapsed ? '⤢ Expand' : '⤡ Collapse'}
+              </button>
+              <button
+                onClick={() => setShowAskAI(false)}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 20, color: '#9CA3AF', lineHeight: 1, padding: '0 2px' }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
+              >×</button>
             </div>
-            {/* Body — hidden when collapsed */}
-            {!askAiCollapsed && (
-              <>
-                <div style={{ height: 260, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 8, background: '#F9FAFB' }}>
-                  {chat.map((msg, i) =>
-                    msg.role === 'ai' ? (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                        <span style={{ background: '#E8F4FD', color: '#0F1F3D', borderRadius: 8, padding: '9px 13px', fontSize: 13, maxWidth: '85%', lineHeight: 1.5 }}>{msg.text}</span>
-                      </div>
-                    ) : (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                        <span style={{ background: '#0F1F3D', color: '#fff', borderRadius: 8, padding: '9px 13px', fontSize: 13, maxWidth: '85%', lineHeight: 1.5 }}>{msg.text}</span>
-                      </div>
-                    )
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: 8, padding: '10px 14px', borderTop: '1px solid #E5E7EB', flexShrink: 0 }}>
-                  <input type="text" value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={handleKeyDown} placeholder="Ask a question…"
-                    style={{ flex: 1, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 7, fontSize: 13, padding: '7px 11px', outline: 'none', color: '#374151' }} />
-                  <button onClick={sendMessage} style={{ background: '#0F1F3D', color: '#fff', border: 'none', borderRadius: 7, padding: '0 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}>Send</button>
-                </div>
-              </>
-            )}
           </div>
-        </>
+
+          {/* Body — hidden when collapsed */}
+          {!askAiCollapsed && (
+            <>
+              <div style={{ height: 260, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 8, background: '#F9FAFB', userSelect: 'text' }}>
+                {chat.map((msg, i) =>
+                  msg.role === 'ai' ? (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                      <span style={{ background: '#E8F4FD', color: '#0F1F3D', borderRadius: 8, padding: '9px 13px', fontSize: 13, maxWidth: '85%', lineHeight: 1.5 }}>{msg.text}</span>
+                    </div>
+                  ) : (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <span style={{ background: '#0F1F3D', color: '#fff', borderRadius: 8, padding: '9px 13px', fontSize: 13, maxWidth: '85%', lineHeight: 1.5 }}>{msg.text}</span>
+                    </div>
+                  )
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 8, padding: '10px 14px', borderTop: '1px solid #E5E7EB', flexShrink: 0, background: '#ffffff', borderRadius: '0 0 12px 12px', userSelect: 'text' }}>
+                <input
+                  type="text" value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Ask a question…"
+                  style={{ flex: 1, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 7, fontSize: 13, padding: '7px 11px', outline: 'none', color: '#374151' }}
+                />
+                <button onClick={sendMessage} style={{ background: '#0F1F3D', color: '#fff', border: 'none', borderRadius: 7, padding: '0 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}>Send</button>
+              </div>
+            </>
+          )}
+        </div>
       )}
     </div>
   )

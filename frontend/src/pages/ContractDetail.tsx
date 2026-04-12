@@ -4,6 +4,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import api from '@/api/client'
+import { useAuth } from '@/context/AuthContext'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -122,9 +123,11 @@ export default function ContractDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const location = useLocation()
+  const { user } = useAuth()
 
-  // entity context passed from NewContract so the back button returns to the right tab
-  const entityFilter = (location.state as { entityFilter?: string } | null)?.entityFilter ?? null
+  // entity context passed from NewContract via navigation state
+  const locationState = location.state as { entityName?: string; entityType?: string } | null
+  const stateEntityName = locationState?.entityName ?? null
 
   const [contract, setContract] = useState<ContractData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -139,11 +142,7 @@ export default function ContractDetail() {
   }, [id])
 
   function handleBack() {
-    if (entityFilter) {
-      navigate('/contracts', { state: { entityFilter } })
-    } else {
-      navigate('/contracts')
-    }
+    navigate('/contracts')
   }
 
   // ── Loading ──
@@ -185,6 +184,11 @@ export default function ContractDetail() {
     ? `${contract.currency} ${Number(contract.contract_value).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
     : '—'
 
+  const isPersonal = contract.entity_type === 'personal'
+  const entityDisplayName = isPersonal
+    ? ([user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.username || 'Personal')
+    : (stateEntityName ?? 'Business')
+
   return (
     <div style={{
       fontFamily: "'Outfit', sans-serif",
@@ -206,6 +210,29 @@ export default function ContractDetail() {
         >
           ← Back to contracts
         </button>
+
+        {/* ── Entity indicator ── */}
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8,
+          background: isPersonal ? 'rgba(15,31,61,0.05)' : 'rgba(245,166,35,0.1)',
+          borderRadius: 8, padding: '7px 14px', marginBottom: 16,
+        }}>
+          <span style={{
+            fontSize: 13, fontWeight: 600,
+            color: isPersonal ? NAVY : '#D4900A',
+            fontFamily: "'Outfit', sans-serif",
+          }}>
+            {entityDisplayName}
+          </span>
+          <span style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            color: isPersonal ? '#6B7280' : '#D4900A',
+            fontFamily: "'Outfit', sans-serif",
+          }}>
+            {isPersonal ? 'Personal' : 'Business'}
+          </span>
+        </div>
 
         {/* ── Header ── */}
         <div style={{ marginBottom: 20 }}>
@@ -237,14 +264,6 @@ export default function ContractDetail() {
             </span>
             <span style={{ fontSize: 12, color: '#8892A0', fontFamily: "'Outfit', sans-serif" }}>
               Created {formatDate(contract.created_at)}
-            </span>
-            <span style={{
-              fontSize: 11, fontWeight: 600, color: contract.entity_type === 'business' ? AMBER : '#8892A0',
-              background: contract.entity_type === 'business' ? 'rgba(245,166,35,0.1)' : 'rgba(0,0,0,0.04)',
-              borderRadius: 12, padding: '2px 10px',
-              fontFamily: "'Outfit', sans-serif",
-            }}>
-              {contract.entity_type === 'business' ? entityFilter ?? 'Business' : 'Personal'}
             </span>
           </div>
         </div>

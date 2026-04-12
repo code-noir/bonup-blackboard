@@ -467,10 +467,12 @@ export default function NewContract() {
 
     try {
       const { data: created } = await api.post('/contracts/', payload)
-      console.log('[NewContract] full API response:', created)
-      // Verify by refetching
-      const { data: full } = await api.get(`/contracts/${created.id}/`)
-      console.log('[NewContract] verified GET /contracts/:id/ response:', full)
+      navigate(`/contracts/${created.id}`, {
+        state: {
+          entityName: entity.type === 'business' ? entity.name : null,
+          entityType: entity.type,
+        },
+      })
     } catch (err: unknown) {
       const errData = (err as { response?: { data?: unknown } })?.response?.data
       const msg = errData

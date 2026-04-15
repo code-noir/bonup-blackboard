@@ -20,7 +20,7 @@ export default function Dashboard() {
   const isPayg = user?.subscription_tier === 'per_contract'
   const [viewingAs, setViewingAs] = useState<string>('personal')
 
-  const firstName = user?.first_name || user?.username || 'You'
+  const firstName = user?.first_name || 'You'
   const lastName = user?.last_name || ''
   const displayName = [firstName, lastName].filter(Boolean).join(' ')
 

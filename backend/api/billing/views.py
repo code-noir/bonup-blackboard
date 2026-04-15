@@ -1,11 +1,20 @@
 # backend/api/billing/views.py
 
+import logging
+
+from django.conf import settings
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
+from rest_framework.authentication import BasicAuthentication
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from backend.billing.models import Invoice, SubscriptionPlan, UserSubscription
+from backend.billing.stripe_client import stripe_configured
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -78,7 +87,7 @@ class PlanListAPIView(APIView):
 class SubscriptionAPIView(APIView):
     """
     GET    — current user's subscription and usage stats
-    POST   — create or change subscription plan
+    POST   — create or change subscription plan (dev/test only when Stripe not configured)
     DELETE — cancel subscription
     """
 
@@ -90,6 +99,17 @@ class SubscriptionAPIView(APIView):
         return Response(_serialize_subscription(sub))
 
     def post(self, request):
+        # When Stripe is configured, direct DB plan changes are disabled.
+        # Clients should use POST /api/billing/checkout/ instead.
+        if stripe_configured():
+            return Response(
+                {
+                    "error": "Direct plan changes are disabled. Use POST /api/billing/checkout/ to start a Stripe Checkout session.",
+                    "checkout_url": "/api/billing/checkout/",
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         plan_slug = request.data.get("plan_slug", "").strip()
         billing_period = request.data.get("billing_period", "monthly").strip()
 
@@ -230,3 +250,172 @@ class TrialStatusAPIView(APIView):
             "plan": sub.plan.slug,
             "status": sub.status,
         })
+
+
+# ---------------------------------------------------------------------------
+# POST /api/billing/checkout/
+# ---------------------------------------------------------------------------
+
+class CheckoutSessionAPIView(APIView):
+    """
+    Create a Stripe Checkout Session for a new or upgraded subscription.
+
+    Required body fields:
+      plan_slug    — one of: starter, professional, business, anchor
+      success_url  — absolute URL Stripe redirects to on success
+      cancel_url   — absolute URL Stripe redirects to on cancel
+    """
+
+    def post(self, request):
+        if not stripe_configured():
+            return Response(
+                {"error": "Stripe is not configured. Set STRIPE_SECRET_KEY in the environment."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        from backend.billing.services import CHECKOUT_ALLOWED_PLANS, create_checkout_session
+        import stripe as _stripe
+
+        plan_slug = request.data.get("plan_slug", "").strip()
+        success_url = request.data.get("success_url", "").strip()
+        cancel_url = request.data.get("cancel_url", "").strip()
+
+        if not plan_slug:
+            return Response({"error": "plan_slug is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not success_url or not cancel_url:
+            return Response(
+                {"error": "success_url and cancel_url are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if plan_slug not in CHECKOUT_ALLOWED_PLANS:
+            return Response(
+                {"error": f"plan_slug must be one of: {', '.join(sorted(CHECKOUT_ALLOWED_PLANS))}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            session = create_checkout_session(
+                user=request.user,
+                plan_slug=plan_slug,
+                success_url=success_url,
+                cancel_url=cancel_url,
+            )
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except _stripe.error.StripeError as exc:
+            logger.error("Stripe error creating checkout session: %s", exc)
+            return Response(
+                {"error": "Payment provider error. Please try again later."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        return Response({"checkout_url": session["url"]}, status=status.HTTP_201_CREATED)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/billing/portal/
+# ---------------------------------------------------------------------------
+
+class BillingPortalAPIView(APIView):
+    """
+    Create a Stripe Billing Portal Session so the user can manage or cancel
+    their subscription.
+
+    Required body field:
+      return_url — absolute URL to redirect back to after the portal session
+    """
+
+    def post(self, request):
+        if not stripe_configured():
+            return Response(
+                {"error": "Stripe is not configured."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        from backend.billing.services import create_portal_session
+        import stripe as _stripe
+
+        return_url = request.data.get("return_url", "").strip()
+        if not return_url:
+            return Response({"error": "return_url is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            session = create_portal_session(user=request.user, return_url=return_url)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except _stripe.error.StripeError as exc:
+            logger.error("Stripe error creating portal session: %s", exc)
+            return Response(
+                {"error": "Payment provider error. Please try again later."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        return Response({"portal_url": session["url"]}, status=status.HTTP_201_CREATED)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/billing/webhook/
+# ---------------------------------------------------------------------------
+
+class WebhookAPIView(APIView):
+    """
+    Stripe webhook endpoint.
+
+    Authentication is intentionally bypassed — Stripe signs the payload with
+    STRIPE_WEBHOOK_SECRET and we verify the signature before processing.
+    CSRF is also bypassed because Stripe sends raw POST bodies.
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    @csrf_exempt
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
+
+    def post(self, request):
+        import stripe as _stripe
+        from backend.billing import services
+
+        webhook_secret = getattr(settings, "STRIPE_WEBHOOK_SECRET", "")
+        payload = request.body
+        sig_header = request.META.get("HTTP_STRIPE_SIGNATURE", "")
+
+        if webhook_secret:
+            stripe_mod = services.get_stripe()
+            try:
+                event = stripe_mod.Webhook.construct_event(payload, sig_header, webhook_secret)
+            except ValueError:
+                return Response({"error": "Invalid payload."}, status=status.HTTP_400_BAD_REQUEST)
+            except _stripe.error.SignatureVerificationError:
+                return Response({"error": "Invalid signature."}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            # No webhook secret configured — accept raw JSON (local dev only)
+            import json
+            try:
+                event = json.loads(payload)
+            except (json.JSONDecodeError, ValueError):
+                return Response({"error": "Invalid JSON."}, status=status.HTTP_400_BAD_REQUEST)
+
+        event_type = event.get("type", "")
+        data_object = (event.get("data") or {}).get("object") or {}
+
+        _HANDLERS = {
+            "checkout.session.completed":       services.handle_checkout_completed,
+            "customer.subscription.updated":    services.handle_subscription_updated,
+            "customer.subscription.deleted":    services.handle_subscription_deleted,
+            "invoice.paid":                     services.handle_invoice_paid,
+            "invoice.payment_failed":           services.handle_invoice_payment_failed,
+        }
+
+        handler = _HANDLERS.get(event_type)
+        if handler:
+            try:
+                handler(data_object)
+            except Exception as exc:
+                logger.exception("Webhook handler error for %s: %s", event_type, exc)
+                # Return 200 to prevent Stripe from retrying for application errors
+        else:
+            logger.debug("Unhandled Stripe event: %s", event_type)
+
+        return Response({"received": True})

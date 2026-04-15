@@ -8,7 +8,7 @@ export default function Login() {
   const location = useLocation()
   const from = (location.state as { from?: Location })?.from?.pathname ?? '/dashboard'
 
-  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -24,7 +24,7 @@ export default function Login() {
     setError('')
     setLoading(true)
     try {
-      await login(username.trim(), password)
+      await login(email.trim(), password)
       navigate(from, { replace: true })
     } catch (err: unknown) {
       const msg =
@@ -57,20 +57,20 @@ export default function Login() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label
-                htmlFor="username"
+                htmlFor="email"
                 className="mb-1.5 block text-sm font-medium text-slate-700"
               >
-                Username or email
+                Email address
               </label>
               <input
-                id="username"
-                type="text"
-                autoComplete="username"
+                id="email"
+                type="email"
+                autoComplete="email"
                 required
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                placeholder="your_username"
+                placeholder="you@example.com"
               />
             </div>
 

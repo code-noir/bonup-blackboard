@@ -114,15 +114,21 @@ def can_access_template(user, template):
 def can_create_sol(user):
     """
     Returns (allowed: bool, message: str).
-    Sol group management requires a plan with has_sol=True (Business or Anchor tier).
+    Sol group management requires a paid Pro or higher subscription (has_sol=True).
+    Trialing and sol_member plan users do not qualify — trialing is not a paid plan,
+    and sol_member is a member tier, not a manager tier.
     """
     sub = get_user_subscription(user)
     if sub is None:
-        return False, _("A Business or Anchor subscription is required to manage a Sol group.")
+        return False, _("A Pro or higher subscription is required to manage a Sol group.")
     if sub.status not in _ACTIVE_STATUSES:
         return False, _("Your subscription is not active.")
+    if sub.status == "trialing":
+        return False, _("Sol group management requires a paid Pro or higher subscription.")
+    if sub.plan.slug == "sol_member":
+        return False, _("Sol group management requires a Pro or higher subscription.")
     if not sub.plan.has_sol:
-        return False, _("Sol group management requires a Business or Anchor subscription.")
+        return False, _("Sol group management requires a Pro or higher subscription.")
     return True, ""
 
 

@@ -38,13 +38,11 @@ export default function Header() {
     navigate('/login')
   }
 
-  const firstName = user?.first_name || user?.username || ''
+  const firstName = user?.first_name || ''
   const bonId = user?.bon_id ?? '—'
-  const displayName =
-    user?.first_name ? `${user.first_name} ${user.last_name}`.trim() : user?.username ?? ''
+  const displayName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.email || ''
   const initials =
     [user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join('').toUpperCase() ||
-    user?.username?.[0]?.toUpperCase() ||
     '?'
 
   return (

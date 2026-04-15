@@ -32,7 +32,6 @@ interface UserResult {
   first_name: string
   last_name: string
   email: string
-  username: string
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -219,7 +218,7 @@ function ContactSearch({ onSelect }: { onSelect: (name: string, email: string) =
   }
 
   function handleSelect(u: UserResult) {
-    const name = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username
+    const name = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.email
     onSelect(name, u.email)
     setQuery(name)
     setOpen(false)
@@ -267,7 +266,7 @@ function ContactSearch({ onSelect }: { onSelect: (name: string, email: string) =
           zIndex: 200, overflow: 'hidden',
         }}>
           {results.map((u) => {
-            const name = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username
+            const name = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.email
             return (
               <div
                 key={u.bon_id || u.email}
@@ -485,12 +484,11 @@ export default function NewContract() {
 
     try {
       const { data: created } = await api.post('/contracts/', payload)
-      navigate(`/contracts/${created.id}`, {
-        state: {
-          entityName: activeEntityName,
-          entityType: activeEntityType,
-        },
-      })
+      const entityParam = activeEntityType === 'business' ? activeEntityId : 'personal'
+      const nameParam = activeEntityType === 'business' && activeEntityName
+        ? `&name=${encodeURIComponent(activeEntityName)}`
+        : ''
+      navigate(`/contracts/create?id=${created.id}&entity=${entityParam}${nameParam}`)
     } catch (err: unknown) {
       const errData = (err as { response?: { data?: unknown } })?.response?.data
       const msg = errData

@@ -186,7 +186,7 @@ export default function ContractDetail() {
 
   const isPersonal = contract.entity_type === 'personal'
   const entityDisplayName = isPersonal
-    ? ([user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.username || 'Personal')
+    ? ([user?.first_name, user?.last_name].filter(Boolean).join(' ') || 'Personal')
     : (stateEntityName ?? 'Business')
 
   return (

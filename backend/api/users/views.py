@@ -61,7 +61,6 @@ class RegisterAPIView(APIView):
         return Response(
             {
                 "id": user.pk,
-                "username": user.username,
                 "email": user.email,
                 "bon_id": profile.bon_id,
                 "email_verification_token": str(profile.email_verification_token),
@@ -206,23 +205,14 @@ class MeAPIView(APIView):
 
     def patch(self, request):
         user = request.user
-        allowed_fields = {"username", "first_name", "last_name"}
+        allowed_fields = {"first_name", "last_name"}
         updates = {k: v for k, v in request.data.items() if k in allowed_fields}
 
         if not updates:
             return Response(
-                {"error": "No updatable fields provided. Allowed: username, first_name, last_name."},
+                {"error": "No updatable fields provided. Allowed: first_name, last_name."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-        if "username" in updates:
-            new_username = updates["username"]
-            if User.objects.filter(username=new_username).exclude(pk=user.pk).exists():
-                return Response(
-                    {"error": "Username already taken."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            user.username = new_username
 
         if "first_name" in updates:
             user.first_name = updates["first_name"]
@@ -484,7 +474,6 @@ class InvitationAcceptAPIView(APIView):
         return Response(
             {
                 "id": user.pk,
-                "username": user.username,
                 "email": user.email,
                 "bon_id": profile.bon_id,
             },

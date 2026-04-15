@@ -43,7 +43,6 @@ class ContractViewSet(ViewSet):
                 entity_id=entity_param
             )
 
-        print(f"[DEBUG] entity_param={entity_param!r} qs_count_after_filter={qs.count()}")
         serializer = ContractSerializer(qs, many=True)
         return Response(serializer.data)
 

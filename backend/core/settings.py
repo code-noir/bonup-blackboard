@@ -219,6 +219,21 @@ CELERY_RESULT_BACKEND = "redis://127.0.0.1:6379/0"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 
+# ----------------------------------------
+# Stripe
+# ----------------------------------------
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+
+# Price IDs map plan slug → Stripe Price ID.
+# Set one env var per plan. Leave empty to keep Stripe disabled for that plan.
+STRIPE_PRICE_IDS = {
+    "starter":      os.environ.get("STRIPE_PRICE_ID_STARTER_MONTHLY", ""),
+    "professional": os.environ.get("STRIPE_PRICE_ID_PRO_MONTHLY", ""),
+    "business":     os.environ.get("STRIPE_PRICE_ID_BUSINESS_MONTHLY", ""),
+    "anchor":       os.environ.get("STRIPE_PRICE_ID_ENTERPRISE_MONTHLY", ""),
+}
+
 
 # ----------------------------------------
 # Django REST Framework

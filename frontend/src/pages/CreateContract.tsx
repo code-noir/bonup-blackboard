@@ -1,3 +1,22 @@
+// ============================================================
+// PROTECTED FILE — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
+// ============================================================
+// This is the contract editor/workspace — the highest priority
+// asset in the bonUP Blackboard frontend.
+//
+// NO refactoring, cleanup, splitting, renaming, bug fixes, or
+// logic changes are permitted without explicit written approval
+// from the project owner.
+//
+// This file is intentionally preserved exactly as-is.
+// Known issues (wrong AI endpoint URLs, hardcoded USER_TIER,
+// static ACTIVITY data, no content persistence) are documented
+// in EDITOR_PROTECTION.md and are NOT to be fixed here without
+// a dedicated, scoped approval.
+//
+// Reference: EDITOR_PROTECTION.md
+// ============================================================
+
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'

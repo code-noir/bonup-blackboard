@@ -102,7 +102,7 @@ export default function Profile() {
     }
   }
 
-  const initials = ([firstName[0], lastName[0]].filter(Boolean).join('') || user?.username?.[0] || '?').toUpperCase()
+  const initials = ([firstName[0], lastName[0]].filter(Boolean).join('') || '?').toUpperCase()
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -163,11 +163,11 @@ export default function Profile() {
             </div>
           </div>
 
-          {/* Row 2: Username / Occupation */}
+          {/* Row 2: Bond ID / Occupation */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
-              <label style={LABEL}>Username</label>
-              <input value={user?.username ?? ''} readOnly style={FIELD_RO} />
+              <label style={LABEL}>Bond ID</label>
+              <input value={user?.bon_id ?? ''} readOnly style={{ ...FIELD_RO, fontFamily: 'DM Mono, monospace', letterSpacing: '0.04em' }} />
             </div>
             <div>
               <label style={LABEL}>Occupation</label>

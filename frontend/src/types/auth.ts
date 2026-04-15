@@ -14,7 +14,7 @@ export interface TokenPair {
 
 export interface AuthUser {
   id: number
-  username: string
+  username?: string
   email: string
   first_name: string
   last_name: string
@@ -22,6 +22,7 @@ export interface AuthUser {
   subscription_tier?: SubscriptionTier
   trial_ends_at?: string | null
   trial_expired?: boolean
+  is_staff?: boolean
 }
 
 export interface AuthState {

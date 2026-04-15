@@ -1,6 +1,26 @@
 // src/lib/contacts.ts
+// ============================================================
+// PROTECTED FILE — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
+// ============================================================
+// This module is a direct dependency of the contract editor
+// (CreateContract.tsx). The exported function signatures —
+// loadContacts, saveContactFromParty, addContact, deleteContact,
+// getContactInitials, getContactDisplayName — and the Contact
+// interface are stable contracts that the editor relies on.
+//
+// DO NOT rename exports, change signatures, or alter the Contact
+// interface shape without coordinating with CreateContract.tsx.
+//
+// A backend contacts API exists at /api/contacts/ but the editor
+// currently reads from localStorage via this module. Migration to
+// the API is a planned, scoped task — not an ad-hoc cleanup.
+//
+// Reference: EDITOR_PROTECTION.md
+// ============================================================
+//
 // localStorage-backed contacts store.
-// No API endpoint exists yet; swap implementations here when one is added.
+// A backend contacts API exists at /api/contacts/ but the editor consumes
+// this module directly. Migration to the API must be intentional and scoped.
 
 export interface Contact {
   id: string

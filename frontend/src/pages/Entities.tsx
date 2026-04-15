@@ -72,12 +72,11 @@ export default function Entities() {
 
   const atLimit = entities.length >= maxAllowed
 
-  const firstName = user?.first_name || user?.username || ''
+  const firstName = user?.first_name || ''
   const lastName = user?.last_name || ''
   const displayName = [firstName, lastName].filter(Boolean).join(' ') || 'You'
   const initials =
-    [user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join('').toUpperCase() ||
-    user?.username?.[0]?.toUpperCase() || '?'
+    [user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join('').toUpperCase() || '?'
   const bonId = user?.bon_id ?? '—'
 
   function openAdd() {

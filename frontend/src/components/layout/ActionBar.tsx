@@ -234,8 +234,8 @@ function MyEntitiesBtn() {
     navigate('/contracts', { state: { entityFilter: name } })
   }
 
-  const displayName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.username || 'You'
-  const initials = ([user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join('') || user?.username?.[0] || '?').toUpperCase()
+  const displayName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || 'You'
+  const initials = ([user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join('') || '?').toUpperCase()
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
@@ -388,9 +388,8 @@ export default function ActionBar() {
         zIndex: 30,
       }}
     >
-      <MyEntitiesBtn />
       <GhostBtn label="▶  Book a Live Session" />
-      <GhostBtnLink label="+ New Contract" to="/contracts/new" />
+      <GhostBtn label="+ New Contract" />
 
       <GhostBtn label="⚡ Negotiation Prep" />
       <button

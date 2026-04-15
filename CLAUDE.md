@@ -80,6 +80,8 @@ The infrastructure layer bridges the two via repositories.
 | `lifecycle_core/scheduler/obligation_scheduler.py` | Safe scheduler. The only scheduler to use. |
 | `contracts/domain/contract.py` | Core aggregate. Changes break many things downstream. |
 | `contracts/models.py` (ContractVersion) | Immutable — its `save()` enforces this at the ORM level. |
+| `frontend/src/pages/CreateContract.tsx` | **PROTECTED EDITOR** — highest-priority frontend asset. No refactor, rename, cleanup, or logic change without explicit written approval. See `EDITOR_PROTECTION.md`. |
+| `frontend/src/lib/contacts.ts` | **PROTECTED EDITOR DEPENDENCY** — exported signatures are stable contracts consumed by CreateContract.tsx. Do not rename exports or alter the Contact interface without coordinating with the editor. |
 
 ### Dead / Deprecated Files
 

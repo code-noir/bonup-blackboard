@@ -1,4 +1,4 @@
-#backend/users/models.py
+# backend/users/models.py
 import uuid
 
 from django.conf import settings
@@ -7,10 +7,12 @@ from django.db import models, transaction
 
 class ReservedBonId(models.Model):
     """
-    Stores reserved/special bonID values that must never be assigned
-    to regular users.
+    Stores bonID values that must never be assigned to users.
 
-    For now, this includes binary-only numbers made entirely of 0 and 1.
+    Scope: binary-only numbers (strings consisting entirely of the digits
+    0 and 1).  Examples: 0000000000000, 0000000000001, 0000000000010.
+
+    Do NOT add retired/historical bonIDs here.  Those belong in AssignedBonId.
     """
 
     bon_id = models.CharField(
@@ -34,12 +36,125 @@ class ReservedBonId(models.Model):
         return f"{self.bon_id} ({self.reason})"
 
 
+class AssignedBonId(models.Model):
+    """
+    Permanent historical ledger of every bonID ever assigned to a person.
+
+    PURPOSE
+    -------
+    This table is the authoritative source of sequence truth for bonID
+    generation.  generate_next_bon_id() reads the highest bon_id here (rather
+    than from BonUserProfile) so that deleting a user can never reset the
+    sequence and cause a previously-used bonID to be reissued.
+
+    LIFETIME RULE
+    -------------
+    Once a bonID appears in this table it is permanent.  Rows are never
+    deleted.  When an account is closed or hard-deleted the row is updated
+    to status="retired"; it is never removed.
+
+    DELETION BEHAVIOUR
+    ------------------
+    A pre_delete signal on BonUserProfile marks the corresponding ledger row
+    as retired before the profile row is destroyed by CASCADE.  The bonID
+    is therefore permanently retired even if the original User row no longer
+    exists.
+
+    PREFERRED CLOSURE PATH
+    ----------------------
+    Prefer soft-delete (User.is_active=False) over hard deletion.
+    Soft-delete keeps BonUserProfile intact, preserves the bonID attachment
+    to the account, and enables trivial restoration with the same bonID.
+    Hard deletion triggers the pre_delete signal and retires the bonID.
+
+    IDENTITY SNAPSHOT
+    -----------------
+    Email, first name, and last name are captured at assignment time.
+    These fields have no foreign-key dependency on User so they survive
+    deletion.  email_snapshot is the primary anchor for account restoration:
+    a returning user who re-registers with the same email can be matched back
+    to their historical bonID.
+
+    GDPR / ERASURE
+    --------------
+    If a legal erasure request requires removing personal data, scrub
+    email_snapshot / first_name_snapshot / last_name_snapshot and set
+    user_id_at_assignment=None.  The bon_id, assigned_at, and status columns
+    must be retained as they are sequencing records, not personal data.
+    """
+
+    STATUS_ACTIVE = "active"
+    STATUS_RETIRED = "retired"
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, "Active"),
+        (STATUS_RETIRED, "Retired"),
+    ]
+
+    REASON_HARD_DELETED = "hard_deleted"
+    REASON_SOFT_DEACTIVATED = "soft_deactivated"
+    REASON_ADMIN_ACTION = "admin_action"
+
+    bon_id = models.CharField(
+        max_length=13,
+        unique=True,
+        db_index=True,
+        editable=False,
+        help_text="The 13-digit bonID. Immutable once written.",
+    )
+
+    status = models.CharField(
+        max_length=10,
+        choices=STATUS_CHOICES,
+        default=STATUS_ACTIVE,
+    )
+
+    # ── Identity snapshot (no FK — must survive User deletion) ────────────
+    user_id_at_assignment = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Django User PK at assignment time.  Nullable because the user "
+            "may be hard-deleted later; this record must outlive them."
+        ),
+    )
+    email_snapshot = models.EmailField(
+        null=True,
+        blank=True,
+        help_text="Email at assignment. Primary anchor for account restoration.",
+    )
+    first_name_snapshot = models.CharField(max_length=150, null=True, blank=True)
+    last_name_snapshot = models.CharField(max_length=150, null=True, blank=True)
+
+    # ── Timestamps ────────────────────────────────────────────────────────
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    retired_at = models.DateTimeField(null=True, blank=True)
+    retirement_reason = models.CharField(max_length=30, null=True, blank=True)
+
+    class Meta:
+        ordering = ["bon_id"]
+        verbose_name = "Assigned bonID"
+        verbose_name_plural = "Assigned bonIDs"
+
+    def __str__(self):
+        return f"{self.bon_id} ({self.status})"
+
+
 class BonUserProfile(models.Model):
     """
     Shared bonUP identity profile.
 
-    - user: internal Django auth user
-    - bon_id: external 13-digit bonUP ID
+    - user:   internal Django auth user (one-to-one)
+    - bon_id: external 13-digit bonID assigned at signup, permanent
+
+    bonID generation
+    ----------------
+    Assigned in save() via generate_next_bon_id() the first time a profile
+    is created.  The assignment is also written into AssignedBonId (the
+    permanent historical ledger) inside the same atomic transaction, so the
+    bonID is recorded even if the profile row is later deleted.
+
+    Once set, bon_id is never changed.  The editable=False field flag and
+    the `if not self.bon_id` guard in save() both enforce this.
     """
 
     LANGUAGE_CHOICES = [
@@ -95,8 +210,36 @@ class BonUserProfile(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.bon_id:
-            self.bon_id = self.generate_next_bon_id()
+            # Wrap generation + ledger write + profile save in one atomic block
+            # so all three commit together or all roll back together.
+            with transaction.atomic():
+                self.bon_id = self.generate_next_bon_id()
+
+                # Snapshot the user's identity at the moment of assignment.
+                # Accessed via the FK while the data is available; falls back
+                # gracefully if the user hasn't been saved yet.
+                try:
+                    user = self.user
+                    email_snap = user.email
+                    first_snap = user.first_name
+                    last_snap = user.last_name
+                except Exception:
+                    email_snap = first_snap = last_snap = None
+
+                AssignedBonId.objects.create(
+                    bon_id=self.bon_id,
+                    status=AssignedBonId.STATUS_ACTIVE,
+                    user_id_at_assignment=self.user_id,
+                    email_snapshot=email_snap,
+                    first_name_snapshot=first_snap,
+                    last_name_snapshot=last_snap,
+                )
+
+                return super().save(*args, **kwargs)
+
         return super().save(*args, **kwargs)
+
+    # ── bonID generation helpers ──────────────────────────────────────────
 
     @classmethod
     def format_bon_id(cls, number: int) -> str:
@@ -105,36 +248,54 @@ class BonUserProfile(models.Model):
     @classmethod
     def is_reserved_bon_id(cls, bon_id: str) -> bool:
         """
-        Reserved if the full 13-digit bon_id contains only 0 and 1.
-        Examples:
-        0000000000000
-        0000000000001
-        0000000000010
-        0000000000011
-        0000000000100
+        True if the candidate contains only the digits 0 and 1 (binary-only).
+
+        Examples of reserved values:
+            0000000000000
+            0000000000001
+            0000000000010
+            0000000000011
+            0000000000100
         """
         return set(bon_id).issubset({"0", "1"})
 
     @classmethod
     def generate_next_bon_id(cls) -> str:
         """
-        Generate the next valid 13-digit bon_id in strict sequence.
+        Generate the next valid 13-digit bonID in strict ascending sequence.
 
-        Rules:
-        - Numbers are checked one by one in order.
-        - Binary-only numbers (0/1 only) are reserved.
-        - Reserved numbers are stored in ReservedBonId.
-        - The first valid non-reserved number is assigned to the next user.
+        Source of truth
+        ---------------
+        Reads the maximum bon_id from AssignedBonId (permanent historical
+        ledger), not from BonUserProfile.  This ensures the sequence never
+        goes backwards after a user is hard-deleted: the ledger retains
+        retired entries, so deleted bonIDs are permanently excluded from
+        future assignments.
+
+        Binary reservations
+        -------------------
+        Candidates whose digits are exclusively 0 and 1 are reserved and
+        written to ReservedBonId, then skipped.  On a completely clean
+        system (empty ledger, empty reserved table), the first valid bonID
+        produced is 0000000000002.
+
+        Concurrency
+        -----------
+        Both tables are locked with select_for_update() inside transaction.atomic()
+        so concurrent registrations produce strictly distinct values.
         """
-
         with transaction.atomic():
-            last_profile = cls.objects.select_for_update().order_by("-bon_id").first()
-            last_reserved = ReservedBonId.objects.select_for_update().order_by("-bon_id").first()
+            last_ledger = (
+                AssignedBonId.objects.select_for_update().order_by("-bon_id").first()
+            )
+            last_reserved = (
+                ReservedBonId.objects.select_for_update().order_by("-bon_id").first()
+            )
 
-            last_assigned_number = int(last_profile.bon_id) if last_profile else -1
+            last_ledger_number = int(last_ledger.bon_id) if last_ledger else -1
             last_reserved_number = int(last_reserved.bon_id) if last_reserved else -1
 
-            next_number = max(last_assigned_number, last_reserved_number) + 1
+            next_number = max(last_ledger_number, last_reserved_number) + 1
 
             while True:
                 candidate = cls.format_bon_id(next_number)
@@ -181,7 +342,7 @@ class UserBillingInfo(models.Model):
 
 
 # ============================================================
-# USER INVITATION
+# BUSINESS ENTITY
 # ============================================================
 
 class BusinessEntity(models.Model):
@@ -269,14 +430,3 @@ class UserInvitation(models.Model):
 
     def __str__(self):
         return f"Invitation({self.invitee_email}, {self.status})"
-
-
-
-
-
-
-
-
-
-
-

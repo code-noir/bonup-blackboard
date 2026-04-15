@@ -7,7 +7,7 @@ interface AuthContextValue {
   user: AuthUser | null
   isAuthenticated: boolean
   isLoading: boolean
-  login: (username: string, password: string) => Promise<void>
+  login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
   isOnTrial: () => boolean
@@ -48,10 +48,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [fetchMe])
 
-  const login = async (username: string, password: string) => {
+  const login = async (email: string, password: string) => {
     const { data } = await api.post<{ access: string; refresh: string }>(
       '/auth/token/',
-      { username, password },
+      { username: email, password },  // simplejwt expects field named "username"; we send email as the value
     )
     tokenStorage.set(data.access, data.refresh)
     await fetchMe()

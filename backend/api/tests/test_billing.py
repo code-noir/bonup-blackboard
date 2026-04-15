@@ -17,11 +17,14 @@ from backend.billing.gates import (
     can_create_contract,
     can_create_session,
     can_access_template,
+    can_create_sol,
+    can_create_business_entity,
     consume_trial_contract,
     get_ai_tier,
     has_feature,
     increment_contracts_used,
     increment_sessions_used,
+    max_businesses,
     start_trial,
 )
 from backend.contract_templates.models import ContractTemplate
@@ -118,25 +121,31 @@ class PlanSeedingTests(TestCase):
 
     def test_starter_plan(self):
         plan = SubscriptionPlan.objects.get(slug="starter")
+        self.assertEqual(plan.display_name, "Blackboard Starter")
         self.assertEqual(plan.price_monthly, Decimal("19.00"))
         self.assertEqual(plan.price_yearly, Decimal("100.00"))
         self.assertFalse(plan.all_templates)
         self.assertEqual(plan.templates_per_category, 1)
-        self.assertEqual(plan.max_active_contracts, 3)
+        # Unlimited personal contracts — confirmed commercial rule
+        self.assertIsNone(plan.max_active_contracts)
         self.assertEqual(plan.max_live_sessions_per_month, 1)
         self.assertTrue(plan.has_lifecycle)
         self.assertTrue(plan.has_notifications)
         self.assertTrue(plan.has_negotiation_prep)
         self.assertEqual(plan.ai_tier, "none")
+        self.assertFalse(plan.has_sol)
 
     def test_professional_plan(self):
         plan = SubscriptionPlan.objects.get(slug="professional")
+        self.assertEqual(plan.display_name, "Blackboard Pro")
         self.assertEqual(plan.price_monthly, Decimal("149.00"))
         self.assertTrue(plan.all_templates)
         self.assertEqual(plan.excluded_categories, [])
         self.assertIsNone(plan.max_active_contracts)
         self.assertEqual(plan.max_live_sessions_per_month, 20)
         self.assertEqual(plan.ai_tier, "basic")
+        # Sol manager starts at Pro — confirmed commercial rule
+        self.assertTrue(plan.has_sol)
 
     def test_business_plan(self):
         plan = SubscriptionPlan.objects.get(slug="business")
@@ -148,6 +157,7 @@ class PlanSeedingTests(TestCase):
 
     def test_anchor_plan(self):
         plan = SubscriptionPlan.objects.get(slug="anchor")
+        self.assertEqual(plan.display_name, "Blackboard Enterprise")
         self.assertEqual(plan.price_monthly, Decimal("999.00"))
         self.assertTrue(plan.all_templates)
         self.assertIsNone(plan.max_active_contracts)
@@ -155,6 +165,7 @@ class PlanSeedingTests(TestCase):
         self.assertEqual(plan.ai_tier, "full")
         self.assertTrue(plan.has_priority_support)
         self.assertTrue(plan.has_early_access)
+        self.assertTrue(plan.has_sol)
 
 
 # ---------------------------------------------------------------------------
@@ -196,12 +207,13 @@ class CanCreateContractTests(TestCase):
         allowed, _ = can_create_contract(self.user)
         self.assertTrue(allowed)
 
-    def test_starter_at_limit_blocked(self):
+    def test_starter_unlimited_contracts(self):
+        """Starter has unlimited contracts — contracts_used never triggers a block."""
         sub = subscribe(self.user, "starter")
-        sub.contracts_used_this_period = 3
+        sub.contracts_used_this_period = 100
         sub.save()
         allowed, _ = can_create_contract(self.user)
-        self.assertFalse(allowed)
+        self.assertTrue(allowed)
 
 
 # ---------------------------------------------------------------------------
@@ -539,16 +551,17 @@ class ContractGateIntegrationTests(TestCase):
         )
         self.assertEqual(r.status_code, 201)
 
-    def test_starter_at_limit_blocks_contract_creation(self):
+    def test_starter_allows_contracts_past_old_limit(self):
+        """Starter is unlimited — the old limit of 3 no longer applies."""
         sub = subscribe(self.user, "starter")
-        sub.contracts_used_this_period = 3
+        sub.contracts_used_this_period = 10
         sub.save()
         r = self.client.post(
             "/api/contracts/",
             {"counterparty_email": "other@example.com", "structure_type": "ONE_TIME"},
             format="json",
         )
-        self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.status_code, 201)
 
     def test_contract_creation_increments_counter(self):
         sub = subscribe(self.user, "business")
@@ -733,9 +746,10 @@ class TrialRegistrationTests(TestCase):
         r = authed_client(make_user("dummy_reg", "dummy_reg@example.com")).post(
             "/api/users/register/",
             {
-                "username": "trialuser",
                 "email": "trialuser@example.com",
                 "password": "StrongPass123!",
+                "first_name": "Trial",
+                "last_name": "User",
             },
             format="json",
         )
@@ -745,16 +759,17 @@ class TrialRegistrationTests(TestCase):
         r = client.post(
             "/api/users/register/",
             {
-                "username": "trialuser2",
                 "email": "trialuser2@example.com",
                 "password": "StrongPass123!",
+                "first_name": "Trial",
+                "last_name": "User2",
             },
             format="json",
         )
         self.assertEqual(r.status_code, 201)
         from django.contrib.auth import get_user_model
         User = get_user_model()
-        user = User.objects.get(username="trialuser2")
+        user = User.objects.get(email="trialuser2@example.com")
         sub = UserSubscription.objects.get(user=user)
         self.assertEqual(sub.status, "trialing")
         self.assertEqual(sub.plan.slug, "business")
@@ -766,15 +781,16 @@ class TrialRegistrationTests(TestCase):
         client.post(
             "/api/users/register/",
             {
-                "username": "trialcreate",
                 "email": "trialcreate@example.com",
                 "password": "StrongPass123!",
+                "first_name": "Trial",
+                "last_name": "Create",
             },
             format="json",
         )
         from django.contrib.auth import get_user_model
         User = get_user_model()
-        user = User.objects.get(username="trialcreate")
+        user = User.objects.get(email="trialcreate@example.com")
         authed = authed_client(user)
         r = authed.post(
             "/api/contracts/",
@@ -789,15 +805,16 @@ class TrialRegistrationTests(TestCase):
         client.post(
             "/api/users/register/",
             {
-                "username": "trialexpiry",
                 "email": "trialexpiry@example.com",
                 "password": "StrongPass123!",
+                "first_name": "Trial",
+                "last_name": "Expiry",
             },
             format="json",
         )
         from django.contrib.auth import get_user_model
         User = get_user_model()
-        user = User.objects.get(username="trialexpiry")
+        user = User.objects.get(email="trialexpiry@example.com")
         authed = authed_client(user)
         # First contract uses the trial
         authed.post(
@@ -819,15 +836,16 @@ class TrialRegistrationTests(TestCase):
         client.post(
             "/api/users/register/",
             {
-                "username": "trialstatus",
                 "email": "trialstatus@example.com",
                 "password": "StrongPass123!",
+                "first_name": "Trial",
+                "last_name": "Status",
             },
             format="json",
         )
         from django.contrib.auth import get_user_model
         User = get_user_model()
-        user = User.objects.get(username="trialstatus")
+        user = User.objects.get(email="trialstatus@example.com")
         authed = authed_client(user)
         # Use the trial contract
         authed.post(
@@ -885,3 +903,198 @@ class TrialAPITests(TestCase):
         self.assertFalse(r.data["is_trial"])
         self.assertFalse(r.data["trial_expired"])
         self.assertEqual(r.data["plan"], "business")
+
+
+# ---------------------------------------------------------------------------
+# Sol Manager Eligibility — confirmed commercial rule: Pro or higher
+# ---------------------------------------------------------------------------
+
+class SolManagerEligibilityTests(TestCase):
+    """
+    Sol manager creation requires a paid Pro or higher subscription.
+    Confirmed plan eligibility:
+      professional (Pro)     ✅
+      business               ✅
+      anchor (Enterprise)    ✅
+      starter                ❌
+      sol_member             ❌
+      per_contract (PAYG)    ❌
+      trialing               ❌  (free trial — not a paid subscription)
+      no subscription        ❌
+    """
+
+    SOL_URL = "/api/sol/"
+    SOL_PAYLOAD = {
+        "name": "Test Sol",
+        "frequency": "monthly",
+        "contribution_amount": "100.00",
+        "start_date": "2026-06-01",
+    }
+
+    def _make_manager(self, slug, status="active", billing_period="monthly"):
+        user = make_user(f"mgr_{slug}", f"mgr_{slug}@example.com")
+        plan = SubscriptionPlan.objects.get(slug=slug)
+        UserSubscription.objects.create(
+            user=user,
+            plan=plan,
+            status=status,
+            billing_period=billing_period,
+            current_period_start=timezone.now(),
+        )
+        return user
+
+    def test_professional_can_create_sol(self):
+        user = self._make_manager("professional")
+        r = authed_client(user).post(self.SOL_URL, self.SOL_PAYLOAD, format="json")
+        self.assertEqual(r.status_code, 201)
+
+    def test_business_can_create_sol(self):
+        user = self._make_manager("business")
+        r = authed_client(user).post(self.SOL_URL, self.SOL_PAYLOAD, format="json")
+        self.assertEqual(r.status_code, 201)
+
+    def test_anchor_can_create_sol(self):
+        user = self._make_manager("anchor")
+        r = authed_client(user).post(self.SOL_URL, self.SOL_PAYLOAD, format="json")
+        self.assertEqual(r.status_code, 201)
+
+    def test_starter_cannot_create_sol(self):
+        user = self._make_manager("starter")
+        r = authed_client(user).post(self.SOL_URL, self.SOL_PAYLOAD, format="json")
+        self.assertEqual(r.status_code, 403)
+
+    def test_sol_member_cannot_create_sol(self):
+        user = self._make_manager("sol_member")
+        r = authed_client(user).post(self.SOL_URL, self.SOL_PAYLOAD, format="json")
+        self.assertEqual(r.status_code, 403)
+
+    def test_per_contract_cannot_create_sol(self):
+        user = self._make_manager("per_contract", status="per_contract",
+                                  billing_period="per_contract")
+        r = authed_client(user).post(self.SOL_URL, self.SOL_PAYLOAD, format="json")
+        self.assertEqual(r.status_code, 403)
+
+    def test_trialing_cannot_create_sol(self):
+        """Free trial (trialing status) does not qualify as a paid Pro+ subscription."""
+        user = make_user("mgr_trial", "mgr_trial@example.com")
+        start_trial(user)  # puts user on business plan, trialing status
+        r = authed_client(user).post(self.SOL_URL, self.SOL_PAYLOAD, format="json")
+        self.assertEqual(r.status_code, 403)
+
+    def test_no_subscription_cannot_create_sol(self):
+        user = make_user("mgr_nosub", "mgr_nosub@example.com")
+        r = authed_client(user).post(self.SOL_URL, self.SOL_PAYLOAD, format="json")
+        self.assertEqual(r.status_code, 403)
+
+
+# ---------------------------------------------------------------------------
+# Business Entity Limits — confirmed commercial model
+# ---------------------------------------------------------------------------
+
+class BusinessEntityLimitTests(TestCase):
+    """
+    Confirmed per-plan business entity limits:
+      starter       → 0
+      professional  → 1
+      business      → 4
+      anchor        → 35
+    """
+
+    def _user_on_plan(self, slug, status="active"):
+        user = make_user(f"biz_{slug}", f"biz_{slug}@example.com")
+        plan = SubscriptionPlan.objects.get(slug=slug)
+        UserSubscription.objects.create(
+            user=user,
+            plan=plan,
+            status=status,
+            billing_period="monthly",
+            current_period_start=timezone.now(),
+        )
+        return user
+
+    def test_starter_entity_limit_is_zero(self):
+        user = self._user_on_plan("starter")
+        self.assertEqual(max_businesses(user), 0)
+        allowed, _ = can_create_business_entity(user)
+        self.assertFalse(allowed)
+
+    def test_professional_entity_limit_is_one(self):
+        user = self._user_on_plan("professional")
+        self.assertEqual(max_businesses(user), 1)
+        allowed, _ = can_create_business_entity(user)
+        self.assertTrue(allowed)
+
+    def test_business_entity_limit_is_four(self):
+        user = self._user_on_plan("business")
+        self.assertEqual(max_businesses(user), 4)
+        allowed, _ = can_create_business_entity(user)
+        self.assertTrue(allowed)
+
+    def test_anchor_entity_limit_is_thirty_five(self):
+        user = self._user_on_plan("anchor")
+        self.assertEqual(max_businesses(user), 35)
+        allowed, _ = can_create_business_entity(user)
+        self.assertTrue(allowed)
+
+    def test_sol_member_entity_limit_is_zero(self):
+        user = self._user_on_plan("sol_member")
+        self.assertEqual(max_businesses(user), 0)
+        allowed, _ = can_create_business_entity(user)
+        self.assertFalse(allowed)
+
+
+# ---------------------------------------------------------------------------
+# Free/Trial Contract Limit — confirmed: 1 contract, global per user
+# ---------------------------------------------------------------------------
+
+class FreeTierContractLimitTests(TestCase):
+    """
+    Free/trial experience = exactly 1 contract, enforced globally per user.
+    The limit is tracked via trial_contracts_remaining on UserSubscription,
+    not per entity — a user cannot get 1 personal + 1 business contract.
+    """
+
+    def test_trial_limit_is_one_not_per_entity(self):
+        """
+        The trial contract counter is a single global counter — there is no
+        separate personal vs. business allowance.
+        """
+        user = make_user("free_entity", "free_entity@example.com")
+        start_trial(user)
+        sub = UserSubscription.objects.get(user=user)
+        # Only 1 remaining regardless of entity context
+        self.assertEqual(sub.trial_contracts_remaining, 1)
+
+    def test_trial_second_contract_blocked_regardless_of_entity(self):
+        """After the 1 free contract is used, no further contracts are allowed."""
+        user = make_user("free_second", "free_second@example.com")
+        start_trial(user)
+        client = authed_client(user)
+        # First contract (personal context)
+        r1 = client.post(
+            "/api/contracts/",
+            {"counterparty_email": "a@example.com", "structure_type": "ONE_TIME",
+             "entity_type": "personal"},
+            format="json",
+        )
+        self.assertEqual(r1.status_code, 201)
+        # Second contract (different entity_type — still blocked globally)
+        r2 = client.post(
+            "/api/contracts/",
+            {"counterparty_email": "b@example.com", "structure_type": "ONE_TIME",
+             "entity_type": "personal"},
+            format="json",
+        )
+        self.assertEqual(r2.status_code, 403)
+
+    def test_trial_gate_checks_before_entity_context(self):
+        """
+        can_create_contract is called before any entity resolution.
+        After the trial is consumed, status transitions to no_subscription and
+        all further contract creation is blocked regardless of entity context.
+        """
+        user = make_user("free_bypass", "free_bypass@example.com")
+        start_trial(user)
+        consume_trial_contract(user)  # exhausts trial → status becomes no_subscription
+        allowed, _ = can_create_contract(user)
+        self.assertFalse(allowed)

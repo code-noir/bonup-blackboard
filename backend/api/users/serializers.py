@@ -10,20 +10,16 @@ User = get_user_model()
 
 
 class RegisterSerializer(serializers.Serializer):
-    username = serializers.CharField(max_length=150)
+    # No username — email is the external identity anchor.
+    # Username is an internal Django field; we set it to email automatically.
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
-    first_name = serializers.CharField(max_length=150, required=False, default="")
-    last_name = serializers.CharField(max_length=150, required=False, default="")
-
-    def validate_username(self, value):
-        if User.objects.filter(username=value).exists():
-            raise serializers.ValidationError("A user with this username already exists.")
-        return value
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150)
 
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
-            raise serializers.ValidationError("A user with this email already exists.")
+            raise serializers.ValidationError("An account with this email already exists.")
         return value
 
     def validate_password(self, value):
@@ -31,12 +27,15 @@ class RegisterSerializer(serializers.Serializer):
         return value
 
     def create(self, validated_data):
+        email = validated_data["email"]
+        # Username is an internal field — set it to email so Django's auth layer
+        # is satisfied. It is never shown or used by the product experience.
         return User.objects.create_user(
-            username=validated_data["username"],
-            email=validated_data["email"],
+            username=email,
+            email=email,
             password=validated_data["password"],
-            first_name=validated_data.get("first_name", ""),
-            last_name=validated_data.get("last_name", ""),
+            first_name=validated_data["first_name"],
+            last_name=validated_data["last_name"],
         )
 
 
@@ -48,11 +47,11 @@ class UserProfileSerializer(serializers.Serializer):
 
     # From User
     id = serializers.IntegerField(read_only=True)
-    username = serializers.CharField(read_only=True)
     email = serializers.EmailField(read_only=True)
     first_name = serializers.CharField(read_only=True)
     last_name = serializers.CharField(read_only=True)
     date_joined = serializers.DateTimeField(read_only=True)
+    is_staff = serializers.BooleanField(read_only=True)
 
     # From BonUserProfile
     bon_id = serializers.SerializerMethodField()

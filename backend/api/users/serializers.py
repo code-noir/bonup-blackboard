@@ -1,15 +1,62 @@
 # backend/api/users/serializers.py
 
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import make_password
 from django.contrib.auth.password_validation import validate_password
+from django.utils import timezone
 from rest_framework import serializers
 
-from backend.users.models import BonUserProfile, BusinessEntity, UserBillingInfo, UserInvitation
+from backend.users.models import BonUserProfile, BusinessEntity, PendingSignup, UserBillingInfo, UserInvitation
 
 User = get_user_model()
 
 
+class PendingSignupSerializer(serializers.Serializer):
+    """
+    Validates a signup form submission and creates a PendingSignup record.
+
+    No User, BonUserProfile, or bonID is created here.  The real account is
+    created only after the user clicks the verification link (VerifyPendingEmailAPIView).
+    """
+
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150)
+
+    def validate_email(self, value):
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("An account with this email already exists.")
+        if PendingSignup.objects.filter(email=value).exists():
+            raise serializers.ValidationError(
+                "A verification email was already sent to this address. "
+                "Check your inbox or request a new verification link."
+            )
+        return value
+
+    def validate_password(self, value):
+        validate_password(value)
+        return value
+
+    def create(self, validated_data):
+        return PendingSignup.objects.create(
+            first_name=validated_data["first_name"],
+            last_name=validated_data["last_name"],
+            email=validated_data["email"],
+            password_hash=make_password(validated_data["password"]),
+            expires_at=timezone.now() + timedelta(hours=PendingSignup.EXPIRY_HOURS),
+        )
+
+
 class RegisterSerializer(serializers.Serializer):
+    """
+    Direct user creation — used only by the invitation acceptance flow.
+    The inviter's email is implicitly verified by the invitation token,
+    so no PendingSignup staging is needed.
+    """
+
     # No username — email is the external identity anchor.
     # Username is an internal Django field; we set it to email automatically.
     email = serializers.EmailField()

@@ -4,7 +4,7 @@ import uuid
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
-from django.db import models
+from django.db import models, transaction
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
@@ -15,10 +15,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from backend.users.models import BonUserProfile, UserBillingInfo, UserInvitation
+from backend.users.models import BonUserProfile, PendingSignup, UserBillingInfo, UserInvitation
 
 from .serializers import (
     ChangePasswordSerializer,
+    PendingSignupSerializer,
     PublicUserSerializer,
     RegisterSerializer,
     UpdateEmailSerializer,
@@ -40,33 +41,110 @@ INVITATION_TTL_DAYS = 7
 # ============================================================
 
 class RegisterAPIView(APIView):
+    """
+    Stage 1 of signup: validate form data and create a PendingSignup record.
+
+    NO User, BonUserProfile, or bonID is created here.
+    NO Blackboard subscription is assigned.
+
+    The real account is created only after the user verifies their email via
+    VerifyPendingEmailAPIView (POST /users/verify-pending/).
+    """
+
     permission_classes = [AllowAny]
 
     def post(self, request):
-        serializer = RegisterSerializer(data=request.data)
+        serializer = PendingSignupSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.save()
+        pending = serializer.save()
 
-        # Set initial email verification token on the auto-created profile
-        profile = user.bon_profile
-        profile.email_verification_token = uuid.uuid4()
-        profile.save(update_fields=["email_verification_token"])
-
-        # Start free trial on the business tier
-        from backend.billing.gates import start_trial
-        start_trial(user)
-
-        # In production: send verification email with the token.
-        # In dev: return the token in the response so it can be used directly.
+        # In production: send verification email to pending.email with pending.token.
+        # In dev: return the token directly so it can be used without an email server.
         return Response(
             {
-                "id": user.pk,
-                "email": user.email,
-                "bon_id": profile.bon_id,
-                "email_verification_token": str(profile.email_verification_token),
+                "detail": "Account pending. Check your email to verify and complete signup.",
+                "email_verification_token": str(pending.token),  # dev only
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class VerifyPendingEmailAPIView(APIView):
+    """
+    Stage 2 of signup: consume the verification token, create the real account.
+
+    On success:
+      - User is created (triggers post_save signal → BonUserProfile + bonID)
+      - email_verified is set to True on the profile
+      - PendingSignup record is deleted
+      - Returns 200 with "sign in now" message; does NOT issue JWT tokens
+
+    The caller (frontend) must redirect the user to the sign-in page.
+    Auto-login after verification is intentionally not supported.
+    """
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        token_str = request.data.get("token", "")
+        if not token_str:
+            return Response(
+                {"error": "token is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            token_uuid = uuid.UUID(token_str)
+        except ValueError:
+            return Response(
+                {"error": "Invalid token format."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            pending = PendingSignup.objects.get(token=token_uuid)
+        except PendingSignup.DoesNotExist:
+            return Response(
+                {"error": "Invalid or already used verification link."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if pending.expires_at < timezone.now():
+            pending.delete()
+            return Response(
+                {"error": "Verification link has expired. Please sign up again."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Guard against race: another request already created this account
+        if User.objects.filter(email=pending.email).exists():
+            pending.delete()
+            return Response(
+                {"error": "An account with this email already exists. Please sign in."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            # Create User — password_hash is already hashed; bypass create_user()
+            # so it isn't double-hashed.
+            user = User(
+                username=pending.email,
+                email=pending.email,
+                first_name=pending.first_name,
+                last_name=pending.last_name,
+                password=pending.password_hash,
+                is_active=True,
+            )
+            user.save()  # triggers post_save → BonUserProfile creation + bonID assignment
+
+            # Mark email as verified immediately (the link IS the verification)
+            profile = user.bon_profile
+            profile.email_verified = True
+            profile.save(update_fields=["email_verified"])
+
+            pending.delete()
+
+        return Response({"detail": "Email verified. You can now sign in."})
 
 
 class LogoutAPIView(APIView):
@@ -399,7 +477,24 @@ class ResendVerificationAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Always return 200 — do not reveal whether the email exists
+        # Check PendingSignup first — handles the initial signup verification case
+        try:
+            pending = PendingSignup.objects.get(email=email)
+            pending.token = uuid.uuid4()
+            pending.expires_at = timezone.now() + timedelta(hours=PendingSignup.EXPIRY_HOURS)
+            pending.save(update_fields=["token", "expires_at"])
+            # In production: resend verification email with new token.
+            # In dev: return the token directly.
+            return Response(
+                {
+                    "detail": "If that email is awaiting verification, a new link has been sent.",
+                    "email_verification_token": str(pending.token),  # dev only
+                }
+            )
+        except PendingSignup.DoesNotExist:
+            pass
+
+        # Fall through: email-change verification for an existing verified user
         try:
             user = User.objects.get(email=email)
             profile = user.bon_profile

@@ -22,6 +22,7 @@ from .views import (
     UpdatePhoneAPIView,
     UserSearchAPIView,
     VerifyEmailAPIView,
+    VerifyPendingEmailAPIView,
 )
 
 urlpatterns = [
@@ -35,6 +36,7 @@ urlpatterns = [
     path("password-reset/", PasswordResetRequestAPIView.as_view(), name="users-password-reset"),
     path("password-reset/confirm/", PasswordResetConfirmAPIView.as_view(), name="users-password-reset-confirm"),
     path("verify-email/", VerifyEmailAPIView.as_view(), name="users-verify-email"),
+    path("verify-pending/", VerifyPendingEmailAPIView.as_view(), name="users-verify-pending"),
     path("resend-verification/", ResendVerificationAPIView.as_view(), name="users-resend-verification"),
 
     # --------------------------------------------------

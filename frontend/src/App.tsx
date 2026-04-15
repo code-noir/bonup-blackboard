@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
 import RequireAuth from '@/components/RequireAuth'
 import RequireAdmin from '@/components/admin/RequireAdmin'
@@ -7,6 +7,8 @@ import Login from '@/pages/Login'
 import Register from '@/pages/Register'
 import ForgotPassword from '@/pages/ForgotPassword'
 import ResetPassword from '@/pages/ResetPassword'
+import VerifyEmail from '@/pages/VerifyEmail'
+import BonupHub from '@/pages/BonupHub'
 import Dashboard from '@/pages/Dashboard'
 import CreateContract from '@/pages/CreateContract'
 import Analysis from '@/pages/Analysis'
@@ -78,11 +80,11 @@ function PaygLock({ name }: { name: string }) {
   )
 }
 
-// Smart root redirect: staff → /admin, everyone else → /dashboard
+// Smart root redirect: staff → /admin, everyone else → /hub
 function RootRedirect() {
   const { user, isLoading } = useAuth()
   if (isLoading) return null
-  return <Navigate to={user?.is_staff ? '/admin' : '/dashboard'} replace />
+  return <Navigate to={user?.is_staff ? '/admin' : '/hub'} replace />
 }
 
 export default function App() {
@@ -95,7 +97,19 @@ export default function App() {
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/" element={<RootRedirect />} />
+
+          {/* bonUP Hub — authenticated, no AppShell */}
+          <Route
+            element={
+              <RequireAuth>
+                <Outlet />
+              </RequireAuth>
+            }
+          >
+            <Route path="/hub" element={<BonupHub />} />
+          </Route>
 
           {/* Protected — wrapped in the app shell */}
           <Route

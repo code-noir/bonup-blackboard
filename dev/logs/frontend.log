@@ -66,3 +66,9 @@ Port 5173 is in use, trying another one...
 1:34:52 AM [vite] (client) hmr update /src/index.css, /src/pages/admin/AdminEntities.tsx
 1:34:55 AM [vite] (client) hmr update /src/index.css, /src/pages/admin/AdminContracts.tsx
 1:34:58 AM [vite] (client) hmr update /src/index.css, /src/pages/admin/AdminContracts.tsx
+10:02:58 AM [vite] (client) hmr update /src/index.css, /src/pages/Register.tsx
+10:03:03 AM [vite] (client) hmr update /src/index.css, /src/pages/Login.tsx
+10:03:06 AM [vite] (client) hmr update /src/index.css, /src/pages/Login.tsx
+10:03:48 AM [vite] (client) hmr update /src/App.tsx, /src/index.css
+10:03:53 AM [vite] (client) hmr update /src/App.tsx, /src/index.css
+10:04:01 AM [vite] (client) hmr update /src/App.tsx, /src/index.css

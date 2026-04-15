@@ -6,7 +6,7 @@ export default function Login() {
   const { login, isAuthenticated } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const from = (location.state as { from?: Location })?.from?.pathname ?? '/dashboard'
+  const from = (location.state as { from?: Location })?.from?.pathname ?? '/hub'
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -43,9 +43,6 @@ export default function Login() {
         <div className="mb-8 text-center">
           <p className="text-3xl font-bold tracking-tight text-[#1E3A6E]">
             bon<span className="text-[#F5A623]">UP</span>
-          </p>
-          <p className="mt-1 text-sm text-[#1E3A6E] uppercase tracking-widest">
-            Blackboard
           </p>
         </div>
 

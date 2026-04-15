@@ -1,8 +1,46 @@
 # backend/users/models.py
 import uuid
+from datetime import timedelta
 
 from django.conf import settings
 from django.db import models, transaction
+
+
+class PendingSignup(models.Model):
+    """
+    Temporary record created when a user submits the signup form.
+
+    A real User account, BonUserProfile, and bonID are NOT created until the
+    user clicks the verification link in their email.  After successful
+    verification this record is deleted.
+
+    LIFETIME
+    --------
+    Expires after 24 hours.  A new token can be requested via the
+    resend-verification endpoint.
+
+    SECURITY
+    --------
+    The password is stored hashed (Django's PBKDF2 by default).  The
+    verification token is a UUID; it is single-use — the row is deleted on
+    success.
+    """
+
+    EXPIRY_HOURS = 24
+
+    first_name = models.CharField(max_length=150)
+    last_name = models.CharField(max_length=150)
+    email = models.EmailField(unique=True)
+    password_hash = models.CharField(max_length=128)
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"PendingSignup({self.email})"
 
 
 class ReservedBonId(models.Model):

@@ -49,11 +49,32 @@ class RegisterAPIView(APIView):
 
     The real account is created only after the user verifies their email via
     VerifyPendingEmailAPIView (POST /users/verify-pending/).
+
+    DUPLICATE PENDING HANDLING
+    --------------------------
+    If a PendingSignup already exists for the submitted email, this endpoint
+    returns 409 Conflict with {"pending_verification": true, "email": ...}
+    instead of a field validation error.  This gives the frontend a clean,
+    detectable signal to show a "Resend verification email" CTA rather than
+    a generic error the user cannot act on.
     """
 
     permission_classes = [AllowAny]
 
     def post(self, request):
+        # Preempt serializer validation: if a PendingSignup already exists for
+        # this email, return a structured 409 so the frontend can offer resend.
+        email_raw = (request.data.get("email") or "").strip()
+        if email_raw and PendingSignup.objects.filter(email__iexact=email_raw).exists():
+            return Response(
+                {
+                    "pending_verification": True,
+                    "email": email_raw,
+                    "detail": "A verification email was already sent to this address.",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
         serializer = PendingSignupSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         pending = serializer.save()

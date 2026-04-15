@@ -5,40 +5,61 @@
 //
 // On mount: reads the token from the URL and calls POST /api/users/verify-pending/
 // On success: shows "verified — go sign in" message. Does NOT auto-login.
-// On failure: shows the error with a link back to /register.
+// On error/expired: shows error + resend form so the user can request a new link.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import api from '@/api/client'
 
-type State = 'loading' | 'success' | 'error'
+type VerifyState = 'loading' | 'success' | 'error'
+type ResendState = 'idle' | 'sending' | 'sent' | 'error'
 
 export default function VerifyEmail() {
   const [searchParams] = useSearchParams()
-  const [state, setState] = useState<State>('loading')
+  const [verifyState, setVerifyState] = useState<VerifyState>('loading')
   const [errorMessage, setErrorMessage] = useState('')
+
+  // Resend sub-state (only active when verifyState === 'error')
+  const [resendEmail, setResendEmail] = useState('')
+  const [resendState, setResendState] = useState<ResendState>('idle')
+  const [resendError, setResendError] = useState('')
 
   useEffect(() => {
     const token = searchParams.get('token')
     if (!token) {
       setErrorMessage('No verification token found in the link. Please check your email and try again.')
-      setState('error')
+      setVerifyState('error')
       return
     }
 
     api
       .post('/users/verify-pending/', { token })
       .then(() => {
-        setState('success')
+        setVerifyState('success')
       })
       .catch((err: unknown) => {
         const data = (err as { response?: { data?: { error?: string; detail?: string } } })?.response?.data
         setErrorMessage(
           data?.error ?? data?.detail ?? 'Verification failed. The link may have expired or already been used.'
         )
-        setState('error')
+        setVerifyState('error')
       })
   }, []) // run once on mount
+
+  async function handleResend(e: FormEvent) {
+    e.preventDefault()
+    if (!resendEmail.trim()) return
+    setResendState('sending')
+    setResendError('')
+    try {
+      await api.post('/users/resend-verification/', { email: resendEmail.trim() })
+      setResendState('sent')
+    } catch (err: unknown) {
+      const data = (err as { response?: { data?: { detail?: string; error?: string } } })?.response?.data
+      setResendError(data?.detail ?? data?.error ?? 'Failed to send. Please try again.')
+      setResendState('error')
+    }
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#F7F8FA] px-4">
@@ -50,7 +71,8 @@ export default function VerifyEmail() {
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm text-center">
-          {state === 'loading' && (
+          {/* ── Loading ── */}
+          {verifyState === 'loading' && (
             <>
               <div className="mb-4 flex justify-center">
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
@@ -59,7 +81,8 @@ export default function VerifyEmail() {
             </>
           )}
 
-          {state === 'success' && (
+          {/* ── Success ── */}
+          {verifyState === 'success' && (
             <>
               <div className="mb-4 flex justify-center">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-50">
@@ -81,7 +104,8 @@ export default function VerifyEmail() {
             </>
           )}
 
-          {state === 'error' && (
+          {/* ── Error ── */}
+          {verifyState === 'error' && (
             <>
               <div className="mb-4 flex justify-center">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
@@ -92,6 +116,53 @@ export default function VerifyEmail() {
               </div>
               <h2 className="mb-2 text-xl font-semibold text-slate-800">Verification failed</h2>
               <p className="mb-6 text-sm text-slate-500">{errorMessage}</p>
+
+              {/* Resend form — shown while idle or after a resend error */}
+              {(resendState === 'idle' || resendState === 'error') && (
+                <form onSubmit={handleResend} className="mb-4 text-left">
+                  <p className="mb-3 text-center text-sm text-slate-600">
+                    Need a new verification link?
+                  </p>
+                  <label htmlFor="resend-email" className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Email address
+                  </label>
+                  <input
+                    id="resend-email"
+                    type="email"
+                    required
+                    value={resendEmail}
+                    onChange={(e) => setResendEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                  {resendState === 'error' && resendError && (
+                    <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+                      {resendError}
+                    </p>
+                  )}
+                  <button
+                    type="submit"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                  >
+                    Send new verification link
+                  </button>
+                </form>
+              )}
+
+              {/* Sending spinner */}
+              {resendState === 'sending' && (
+                <div className="mb-4 flex justify-center">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
+                </div>
+              )}
+
+              {/* Resend success */}
+              {resendState === 'sent' && (
+                <div className="mb-4 rounded-lg bg-green-50 px-3 py-3 text-sm text-green-700">
+                  New verification link sent. Check your inbox.
+                </div>
+              )}
+
               <Link
                 to="/register"
                 className="text-sm font-medium text-[#2563EB] hover:text-[#1D4ED8]"

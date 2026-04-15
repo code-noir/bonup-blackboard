@@ -4,11 +4,17 @@
 // POST /api/users/register/ which creates a PendingSignup record.
 // NO account or bonID is created here.
 // NO auto-login. User is redirected to sign in only after email verification.
+//
+// Post-submit states:
+//   submitted — fresh 201: "Check your email" + resend option
+//   duplicate — 409 conflict: "Already sent" + resend CTA
 
 import { useState, FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import api from '@/api/client'
 import { useAuth } from '@/context/AuthContext'
+
+// ── Reusable form field components ────────────────────────────────────────────
 
 function PasswordField({
   id,
@@ -118,11 +124,23 @@ function TextField({
   )
 }
 
+// ── Types ──────────────────────────────────────────────────────────────────────
+
 type FieldErrors = {
   email?: string
   password?: string
   first_name?: string
   last_name?: string
+}
+
+// submitted — fresh 201: user just signed up
+// duplicate — 409: a verification email was already sent to this address
+type PostState = {
+  kind: 'submitted' | 'duplicate'
+  email: string
+  resending: boolean
+  resent: boolean
+  resendError: string
 }
 
 function extractFieldErrors(data: Record<string, unknown>): FieldErrors {
@@ -134,6 +152,91 @@ function extractFieldErrors(data: Record<string, unknown>): FieldErrors {
   }
   return out
 }
+
+// ── Shared post-submit card ────────────────────────────────────────────────────
+
+function PendingCard({ state, onResend }: { state: PostState; onResend: () => void }) {
+  const isDuplicate = state.kind === 'duplicate'
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[#F7F8FA] px-4 py-10">
+      <div className="w-full max-w-sm">
+        <div className="mb-8 text-center">
+          <p className="text-3xl font-bold tracking-tight text-[#1E3A6E]">
+            bon<span className="text-[#F5A623]">UP</span>
+          </p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm text-center">
+          <div className="mb-4 flex justify-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-50">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="#4F46E5" className="h-6 w-6">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+              </svg>
+            </div>
+          </div>
+
+          {state.resent ? (
+            <>
+              <h2 className="mb-2 text-xl font-semibold text-slate-800">New link sent</h2>
+              <p className="mb-1 text-sm text-slate-600">We sent a new verification link to</p>
+              <p className="mb-6 text-sm font-medium text-slate-900">{state.email}</p>
+              <p className="mb-6 text-sm text-slate-500">
+                Click the link in the email to verify your address and complete your bonUP account setup.
+              </p>
+            </>
+          ) : isDuplicate ? (
+            <>
+              <h2 className="mb-2 text-xl font-semibold text-slate-800">Check your email</h2>
+              <p className="mb-1 text-sm text-slate-600">
+                A verification email was already sent to
+              </p>
+              <p className="mb-4 text-sm font-medium text-slate-900">{state.email}</p>
+              <p className="mb-4 text-sm text-slate-500">
+                Check your inbox (and spam folder). If you need a new link, click below.
+              </p>
+            </>
+          ) : (
+            <>
+              <h2 className="mb-2 text-xl font-semibold text-slate-800">Check your email</h2>
+              <p className="mb-1 text-sm text-slate-600">We sent a verification link to</p>
+              <p className="mb-4 text-sm font-medium text-slate-900">{state.email}</p>
+              <p className="mb-4 text-sm text-slate-500">
+                Click the link in the email to verify your address and complete your bonUP account setup.
+              </p>
+            </>
+          )}
+
+          {!state.resent && (
+            <>
+              {state.resendError && (
+                <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+                  {state.resendError}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={onResend}
+                disabled={state.resending}
+                className="mb-4 w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60 transition-colors"
+              >
+                {state.resending ? 'Sending…' : 'Resend verification email'}
+              </button>
+            </>
+          )}
+
+          <Link
+            to="/login"
+            className="text-sm font-medium text-[#2563EB] hover:text-[#1D4ED8]"
+          >
+            Back to sign in
+          </Link>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
 
 export default function Register() {
   const { isAuthenticated } = useAuth()
@@ -150,51 +253,36 @@ export default function Register() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [confirmError, setConfirmError] = useState('')
 
-  // Pending state: shown after successful form submission
-  const [pendingEmail, setPendingEmail] = useState<string | null>(null)
+  const [postState, setPostState] = useState<PostState | null>(null)
 
   if (isAuthenticated) {
     navigate('/hub', { replace: true })
     return null
   }
 
-  // After form submission: show "check your email" screen
-  if (pendingEmail !== null) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#F7F8FA] px-4 py-10">
-        <div className="w-full max-w-sm">
-          <div className="mb-8 text-center">
-            <p className="text-3xl font-bold tracking-tight text-[#1E3A6E]">
-              bon<span className="text-[#F5A623]">UP</span>
-            </p>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm text-center">
-            <div className="mb-4 flex justify-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-50">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="#4F46E5" className="h-6 w-6">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
-                </svg>
-              </div>
-            </div>
-            <h2 className="mb-2 text-xl font-semibold text-slate-800">Check your email</h2>
-            <p className="mb-1 text-sm text-slate-600">
-              We sent a verification link to
-            </p>
-            <p className="mb-4 text-sm font-medium text-slate-900">{pendingEmail}</p>
-            <p className="mb-6 text-sm text-slate-500">
-              Click the link in the email to verify your address and complete your bonUP account setup.
-            </p>
-            <Link
-              to="/login"
-              className="text-sm font-medium text-[#2563EB] hover:text-[#1D4ED8]"
-            >
-              Back to sign in
-            </Link>
-          </div>
-        </div>
-      </div>
-    )
+  // ── Post-submit / duplicate screens ─────────────────────────────────────────
+
+  if (postState !== null) {
+    async function handleResend() {
+      if (!postState) return
+      setPostState((s) => s && { ...s, resending: true, resendError: '' })
+      try {
+        await api.post('/users/resend-verification/', { email: postState.email })
+        setPostState((s) => s && { ...s, resending: false, resent: true })
+      } catch (err: unknown) {
+        const data = (err as { response?: { data?: Record<string, unknown> } })?.response?.data
+        const msg =
+          (data?.detail as string) ??
+          (data?.error as string) ??
+          'Failed to resend. Please try again.'
+        setPostState((s) => s && { ...s, resending: false, resendError: msg })
+      }
+    }
+
+    return <PendingCard state={postState} onResend={handleResend} />
   }
+
+  // ── Signup form ──────────────────────────────────────────────────────────────
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -223,10 +311,30 @@ export default function Register() {
         first_name: firstName.trim(),
         last_name: lastName.trim(),
       })
-      // Show "check your email" state — do NOT auto-login
-      setPendingEmail(email.trim())
+      // Fresh submission — show "check your email" with resend option
+      setPostState({
+        kind: 'submitted',
+        email: email.trim(),
+        resending: false,
+        resent: false,
+        resendError: '',
+      })
     } catch (err: unknown) {
-      const data = (err as { response?: { data?: Record<string, unknown> } })?.response?.data
+      const res = err as { response?: { status?: number; data?: Record<string, unknown> } }
+      const data = res?.response?.data
+
+      // 409 = a verification email was already sent to this address
+      if (res?.response?.status === 409 && data?.pending_verification) {
+        setPostState({
+          kind: 'duplicate',
+          email: (data.email as string) || email.trim(),
+          resending: false,
+          resent: false,
+          resendError: '',
+        })
+        return
+      }
+
       if (data) {
         const fe = extractFieldErrors(data)
         if (Object.keys(fe).length > 0) {

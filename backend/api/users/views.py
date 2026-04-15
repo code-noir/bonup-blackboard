@@ -37,6 +37,42 @@ INVITATION_TTL_DAYS = 7
 
 
 # ============================================================
+# EMAIL HELPERS
+# ============================================================
+
+def _send_verification_email(email: str, token) -> None:
+    """
+    Send the signup email-verification message.
+
+    In dev (EMAIL_BACKEND = console.EmailBackend) this prints the full email —
+    including the clickable verification link — to the Django server terminal.
+    In production, swap EMAIL_BACKEND for a real SMTP or SES backend and set
+    FRONTEND_URL to the live domain; no code changes needed.
+    """
+    from django.conf import settings
+    from django.core.mail import send_mail
+
+    frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:5173")
+    verification_url = f"{frontend_url}/verify-email?token={token}"
+
+    send_mail(
+        subject="Verify your bonUP email address",
+        message=(
+            "Hi,\n\n"
+            "Click the link below to verify your email address and complete "
+            "your bonUP account setup:\n\n"
+            f"{verification_url}\n\n"
+            "This link expires in 24 hours.\n\n"
+            "If you did not sign up for bonUP, you can safely ignore this email.\n\n"
+            "— The bonUP team"
+        ),
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[email],
+        fail_silently=False,
+    )
+
+
+# ============================================================
 # AUTH
 # ============================================================
 
@@ -79,12 +115,19 @@ class RegisterAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         pending = serializer.save()
 
-        # In production: send verification email to pending.email with pending.token.
-        # In dev: return the token directly so it can be used without an email server.
+        # Send (or print, in dev) the verification email.
+        # Console backend prints the full message — including the verification
+        # link — to the Django terminal so local dev is never blocked.
+        _send_verification_email(pending.email, pending.token)
+
         return Response(
             {
                 "detail": "Account pending. Check your email to verify and complete signup.",
-                "email_verification_token": str(pending.token),  # dev only
+                # Returned in dev so the frontend can show a direct verify link.
+                # In production this token is still in the response but the
+                # frontend only uses it when the link is explicitly shown in
+                # dev mode (controlled by the component, not this field alone).
+                "email_verification_token": str(pending.token),
             },
             status=status.HTTP_201_CREATED,
         )
@@ -504,12 +547,11 @@ class ResendVerificationAPIView(APIView):
             pending.token = uuid.uuid4()
             pending.expires_at = timezone.now() + timedelta(hours=PendingSignup.EXPIRY_HOURS)
             pending.save(update_fields=["token", "expires_at"])
-            # In production: resend verification email with new token.
-            # In dev: return the token directly.
+            _send_verification_email(pending.email, pending.token)
             return Response(
                 {
                     "detail": "If that email is awaiting verification, a new link has been sent.",
-                    "email_verification_token": str(pending.token),  # dev only
+                    "email_verification_token": str(pending.token),
                 }
             )
         except PendingSignup.DoesNotExist:

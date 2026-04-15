@@ -190,6 +190,10 @@ LIVEKIT_API_SECRET = "ogIL0Jv7yr4fwHt6SDaPgIMcQ3Q4YV6QOR7VFrgc"
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 DEFAULT_FROM_EMAIL = "noreply@bonup.cloud"
 
+# Base URL of the frontend — used to construct verification links in emails.
+# Override via FRONTEND_URL env var in production.
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+
 # ----------------------------------------
 # Digital Ocean Spaces (S3-compatible)
 # ----------------------------------------

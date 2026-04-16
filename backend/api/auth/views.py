@@ -1,6 +1,7 @@
 # backend/api/auth/views.py
 
 from django.contrib.auth import get_user_model
+from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
 
@@ -9,13 +10,13 @@ User = get_user_model()
 
 class EmailOrUsernameTokenSerializer(TokenObtainPairSerializer):
     """
-    Extends the default simplejwt serializer to accept either a username
-    or an email address in the username field.
+    Extends the default simplejwt serializer to:
+    1. Accept either a username or an email address in the username field.
+    2. Enforce the email-verification gate: sign-in is blocked for any account
+       whose BonUserProfile.email_verified is False.
 
-    If the submitted value contains '@', we look up the corresponding
-    username and swap it in before the normal validation runs.
-    The rest of the JWT pipeline — password check, token generation,
-    blacklist checking — is unchanged.
+    Admin/superuser accounts that have no BonUserProfile are exempt — they
+    are considered verified by definition (created outside the signup flow).
     """
 
     def validate(self, attrs):
@@ -26,7 +27,24 @@ class EmailOrUsernameTokenSerializer(TokenObtainPairSerializer):
                 attrs[self.username_field] = user.username
             except User.DoesNotExist:
                 pass  # fall through — parent validate() will produce the standard error
-        return super().validate(attrs)
+
+        data = super().validate(attrs)  # sets self.user; raises AuthenticationFailed on bad creds
+
+        # Email-verification gate.
+        # self.user is the authenticated User object set by the parent validate().
+        try:
+            email_verified = self.user.bon_profile.email_verified
+        except Exception:
+            email_verified = True  # no BonUserProfile → admin/superuser → allow
+
+        if not email_verified:
+            raise AuthenticationFailed(
+                "Email address not verified. "
+                "Check your email (or the server terminal in development) "
+                "for the verification link."
+            )
+
+        return data
 
 
 class EmailOrUsernameTokenView(TokenObtainPairView):

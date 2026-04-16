@@ -3,17 +3,11 @@
 // Stage 1 of signup: submits { email, password, first_name, last_name } to
 // POST /api/users/register/ which creates a PendingSignup record.
 // NO account or bonID is created here.
-// NO auto-login. User is redirected to sign in only after email verification.
+// NO auto-login. User must verify their email, then sign in explicitly.
 //
 // Post-submit states:
-//   submitted — fresh 201: "Check your email" + verify link + resend option
-//   duplicate — 409 conflict: "Already sent" + verify link + resend CTA
-//
-// The API always returns email_verification_token in the response.
-// The frontend constructs a direct /verify-email?token=... link from it.
-// In dev this is the primary way to verify (console email also prints the link).
-// In production the link arrives via real email; the on-screen link is still
-// shown as a fallback so users are never blocked.
+//   submitted — fresh 201: tell user to check email (or terminal in dev)
+//   duplicate — 409 conflict: tell user to resend
 
 import { useState, FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -144,10 +138,8 @@ type FieldErrors = {
 type PostState = {
   kind: 'submitted' | 'duplicate'
   email: string
-  verifyToken: string | null  // from API response — used to build the direct link
   resending: boolean
   resent: boolean
-  resentToken: string | null  // updated token after a successful resend
   resendError: string
 }
 
@@ -172,13 +164,6 @@ function PendingCard({
 }) {
   const isDuplicate = state.kind === 'duplicate'
 
-  // The most current token: use resentToken if we have one (reflects the
-  // latest resend), otherwise fall back to the original verifyToken.
-  const activeToken = state.resentToken ?? state.verifyToken
-  const verifyUrl = activeToken
-    ? `${window.location.origin}/verify-email?token=${activeToken}`
-    : null
-
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#F7F8FA] px-4 py-10">
       <div className="w-full max-w-sm">
@@ -198,68 +183,32 @@ function PendingCard({
             </div>
           </div>
 
-          {/* Heading */}
           <h2 className="mb-2 text-xl font-semibold text-slate-800">
-            {verifyUrl
-              ? 'Verify your email'
-              : isDuplicate
-              ? 'Verification pending'
-              : 'Check your email'}
+            {isDuplicate ? 'Verification pending' : 'Check your email'}
           </h2>
 
-          {/*
-            Copy is conditional on whether the on-screen verify button is
-            available (verifyUrl present).
-
-            When verifyUrl IS present — the button is the primary path.
-            Do not imply Gmail delivery; the button works regardless of
-            whether a real email arrived.
-
-            When verifyUrl is NOT present (409 duplicate, no token yet) —
-            direct the user to resend to get a working link.
-          */}
-          {verifyUrl ? (
-            // On-screen button is available — lead with it
-            <>
-              <p className="mb-5 text-sm text-slate-600">
-                Click the button below to verify{' '}
-                <span className="font-medium text-slate-800">{state.email}</span>{' '}
-                and complete your bonUP account setup.
-                {!state.resent && (
-                  <span className="block mt-2 text-xs text-slate-400">
-                    A link was also sent to the server console (check your terminal).
-                  </span>
-                )}
-              </p>
-
-              {/* Primary action */}
-              <a
-                href={verifyUrl}
-                className="mb-4 block w-full rounded-lg bg-[#1E3A6E] px-4 py-2.5 text-center text-sm font-semibold text-white shadow-sm hover:bg-[#16305a] transition-colors"
-              >
-                Verify my email
-              </a>
-            </>
-          ) : isDuplicate ? (
-            // 409 duplicate, no token available yet — prompt resend
+          {isDuplicate ? (
             <>
               <p className="mb-1 text-sm text-slate-600">
-                A verification link was previously requested for
+                A verification link was previously sent to
               </p>
               <p className="mb-4 text-sm font-medium text-slate-900">{state.email}</p>
               <p className="mb-4 text-sm text-slate-500">
-                No link is available on screen. Click{' '}
-                <strong>Resend verification email</strong> below to get a new one.
+                Click <strong>Resend</strong> below to get a new link.
               </p>
             </>
           ) : (
-            // Fallback: submitted but no token in response (should not happen in dev)
             <>
-              <p className="mb-1 text-sm text-slate-600">We sent a verification link to</p>
+              <p className="mb-1 text-sm text-slate-600">
+                A verification link was sent to
+              </p>
               <p className="mb-4 text-sm font-medium text-slate-900">{state.email}</p>
               <p className="mb-4 text-sm text-slate-500">
-                Click the link in the email to verify your address and complete
+                Click the link in that email to verify your address and complete
                 your bonUP account setup.
+              </p>
+              <p className="mb-4 text-xs text-slate-400">
+                In development, the link is also printed to the Django server terminal.
               </p>
             </>
           )}
@@ -281,6 +230,12 @@ function PendingCard({
                 {state.resending ? 'Sending…' : 'Resend verification email'}
               </button>
             </div>
+          )}
+
+          {state.resent && (
+            <p className="mb-4 rounded-lg bg-green-50 px-3 py-3 text-sm text-green-700">
+              New link sent. Check the Django terminal for the URL.
+            </p>
           )}
 
           <Link
@@ -326,11 +281,8 @@ export default function Register() {
       if (!postState) return
       setPostState((s) => s && { ...s, resending: true, resendError: '' })
       try {
-        const resp = await api.post('/users/resend-verification/', { email: postState.email })
-        const newToken = (resp.data?.email_verification_token as string) ?? null
-        setPostState((s) =>
-          s && { ...s, resending: false, resent: true, resentToken: newToken }
-        )
+        await api.post('/users/resend-verification/', { email: postState.email })
+        setPostState((s) => s && { ...s, resending: false, resent: true })
       } catch (err: unknown) {
         const data = (err as { response?: { data?: Record<string, unknown> } })?.response?.data
         const msg =
@@ -376,10 +328,8 @@ export default function Register() {
       setPostState({
         kind: 'submitted',
         email: email.trim(),
-        verifyToken: (resp.data?.email_verification_token as string) ?? null,
         resending: false,
         resent: false,
-        resentToken: null,
         resendError: '',
       })
     } catch (err: unknown) {
@@ -391,10 +341,8 @@ export default function Register() {
         setPostState({
           kind: 'duplicate',
           email: (data.email as string) || email.trim(),
-          verifyToken: null,  // no token returned on 409 — user must resend
           resending: false,
           resent: false,
-          resentToken: null,
           resendError: '',
         })
         return

@@ -121,14 +121,7 @@ class RegisterAPIView(APIView):
         _send_verification_email(pending.email, pending.token)
 
         return Response(
-            {
-                "detail": "Account pending. Check your email to verify and complete signup.",
-                # Returned in dev so the frontend can show a direct verify link.
-                # In production this token is still in the response but the
-                # frontend only uses it when the link is explicitly shown in
-                # dev mode (controlled by the component, not this field alone).
-                "email_verification_token": str(pending.token),
-            },
+            {"detail": "Account pending. Check your email to verify and complete signup."},
             status=status.HTTP_201_CREATED,
         )
 
@@ -549,10 +542,7 @@ class ResendVerificationAPIView(APIView):
             pending.save(update_fields=["token", "expires_at"])
             _send_verification_email(pending.email, pending.token)
             return Response(
-                {
-                    "detail": "If that email is awaiting verification, a new link has been sent.",
-                    "email_verification_token": str(pending.token),
-                }
+                {"detail": "If that email is awaiting verification, a new link has been sent."}
             )
         except PendingSignup.DoesNotExist:
             pass
@@ -569,14 +559,8 @@ class ResendVerificationAPIView(APIView):
 
         profile.email_verification_token = uuid.uuid4()
         profile.save(update_fields=["email_verification_token"])
-
-        # In production: send verification email.
-        # In dev: return the token directly.
         return Response(
-            {
-                "detail": "If that email is registered and unverified, a new verification link has been sent.",
-                "email_verification_token": str(profile.email_verification_token),
-            }
+            {"detail": "If that email is registered and unverified, a new verification link has been sent."}
         )
 
 

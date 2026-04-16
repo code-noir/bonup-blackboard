@@ -198,42 +198,70 @@ function PendingCard({
             </div>
           </div>
 
-          {/* Heading + email address */}
+          {/* Heading */}
           <h2 className="mb-2 text-xl font-semibold text-slate-800">
-            {state.resent ? 'New link sent' : 'Check your email'}
-          </h2>
-          <p className="mb-1 text-sm text-slate-600">
-            {state.resent
-              ? 'We sent a new verification link to'
+            {verifyUrl
+              ? 'Verify your email'
               : isDuplicate
-              ? 'A verification email was already sent to'
-              : 'We sent a verification link to'}
-          </p>
-          <p className="mb-4 text-sm font-medium text-slate-900">{state.email}</p>
+              ? 'Verification pending'
+              : 'Check your email'}
+          </h2>
 
-          {isDuplicate && !state.resent && (
-            <p className="mb-4 text-sm text-slate-500">
-              Check your inbox (and spam folder).
-            </p>
-          )}
+          {/*
+            Copy is conditional on whether the on-screen verify button is
+            available (verifyUrl present).
 
-          {!isDuplicate && !state.resent && (
-            <p className="mb-4 text-sm text-slate-500">
-              Click the link in the email to verify your address and complete
-              your bonUP account setup.
-            </p>
-          )}
+            When verifyUrl IS present — the button is the primary path.
+            Do not imply Gmail delivery; the button works regardless of
+            whether a real email arrived.
 
-          {/* Direct verify link — always shown when token is available.
-              In dev this is the primary path. In production it acts as a
-              fallback if the email is delayed or lands in spam. */}
-          {verifyUrl && (
-            <a
-              href={verifyUrl}
-              className="mb-4 block w-full rounded-lg bg-[#1E3A6E] px-4 py-2.5 text-center text-sm font-semibold text-white shadow-sm hover:bg-[#16305a] transition-colors"
-            >
-              Verify my email
-            </a>
+            When verifyUrl is NOT present (409 duplicate, no token yet) —
+            direct the user to resend to get a working link.
+          */}
+          {verifyUrl ? (
+            // On-screen button is available — lead with it
+            <>
+              <p className="mb-5 text-sm text-slate-600">
+                Click the button below to verify{' '}
+                <span className="font-medium text-slate-800">{state.email}</span>{' '}
+                and complete your bonUP account setup.
+                {!state.resent && (
+                  <span className="block mt-2 text-xs text-slate-400">
+                    A link was also sent to the server console (check your terminal).
+                  </span>
+                )}
+              </p>
+
+              {/* Primary action */}
+              <a
+                href={verifyUrl}
+                className="mb-4 block w-full rounded-lg bg-[#1E3A6E] px-4 py-2.5 text-center text-sm font-semibold text-white shadow-sm hover:bg-[#16305a] transition-colors"
+              >
+                Verify my email
+              </a>
+            </>
+          ) : isDuplicate ? (
+            // 409 duplicate, no token available yet — prompt resend
+            <>
+              <p className="mb-1 text-sm text-slate-600">
+                A verification link was previously requested for
+              </p>
+              <p className="mb-4 text-sm font-medium text-slate-900">{state.email}</p>
+              <p className="mb-4 text-sm text-slate-500">
+                No link is available on screen. Click{' '}
+                <strong>Resend verification email</strong> below to get a new one.
+              </p>
+            </>
+          ) : (
+            // Fallback: submitted but no token in response (should not happen in dev)
+            <>
+              <p className="mb-1 text-sm text-slate-600">We sent a verification link to</p>
+              <p className="mb-4 text-sm font-medium text-slate-900">{state.email}</p>
+              <p className="mb-4 text-sm text-slate-500">
+                Click the link in the email to verify your address and complete
+                your bonUP account setup.
+              </p>
+            </>
           )}
 
           {/* Resend controls */}

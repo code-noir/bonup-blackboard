@@ -1,6 +1,21 @@
-
-
 # backend/engine/contracts/services/activation_service.py
+#
+# NOT ON THE LIVE API PATH — DO NOT BUILD ON THIS WITHOUT REVIEW.
+#
+# ContractActivationService is not imported by any live view or factory.
+# Its only callers are:
+#   - engine/contracts/services/contract_version_service.py  (marked dead, C5)
+#   - engine/contracts/tests/test_full_contract_cycle.py     (marked inert, C5)
+#
+# The live activation path is:
+#   backend/api/contracts/obligations_views.py (POST)
+#   → backend/api/contracts/services/contract_lifecycle_service.py
+#     ContractLifecycleService.create_obligation()
+#
+# NOTE: The repository interface used here (ContractRepository.get(),
+# ContractVersionRepository.get_latest(), ContractObligationRepository.create())
+# is compatible — this service would not crash if called. It is dead because
+# nothing live calls it, not because it is structurally broken.
 
 from django.utils import timezone
 

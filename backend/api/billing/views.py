@@ -381,21 +381,20 @@ class WebhookAPIView(APIView):
         payload = request.body
         sig_header = request.META.get("HTTP_STRIPE_SIGNATURE", "")
 
-        if webhook_secret:
-            stripe_mod = services.get_stripe()
-            try:
-                event = stripe_mod.Webhook.construct_event(payload, sig_header, webhook_secret)
-            except ValueError:
-                return Response({"error": "Invalid payload."}, status=status.HTTP_400_BAD_REQUEST)
-            except _stripe.error.SignatureVerificationError:
-                return Response({"error": "Invalid signature."}, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            # No webhook secret configured — accept raw JSON (local dev only)
-            import json
-            try:
-                event = json.loads(payload)
-            except (json.JSONDecodeError, ValueError):
-                return Response({"error": "Invalid JSON."}, status=status.HTTP_400_BAD_REQUEST)
+        if not webhook_secret:
+            logger.error("Webhook received but STRIPE_WEBHOOK_SECRET is not configured.")
+            return Response(
+                {"error": "Webhook secret is not configured."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        stripe_mod = services.get_stripe()
+        try:
+            event = stripe_mod.Webhook.construct_event(payload, sig_header, webhook_secret)
+        except ValueError:
+            return Response({"error": "Invalid payload."}, status=status.HTTP_400_BAD_REQUEST)
+        except _stripe.error.SignatureVerificationError:
+            return Response({"error": "Invalid signature."}, status=status.HTTP_400_BAD_REQUEST)
 
         event_type = event.get("type", "")
         data_object = (event.get("data") or {}).get("object") or {}

@@ -136,12 +136,6 @@ urlpatterns = [
     ),
 
     path(
-    "<str:obligation_type>/<uuid:obligation_id>/approval-requests/",
-    ObligationApprovalRequestListAPIView.as_view(),
-    name="obligation-approval-request-list",
-    ),
-
-    path(
     "<str:obligation_type>/<uuid:obligation_id>/value-adjustments/",
     ObligationValueAdjustmentListCreateAPIView.as_view(),
     name="obligation-value-adjustment-list",

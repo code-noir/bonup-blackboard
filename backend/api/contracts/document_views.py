@@ -54,7 +54,7 @@ class ContractDocumentListCreateAPIView(APIView):
         if not title:
             return Response({"error": "title is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        upload = get_object_or_404(Upload, pk=upload_id)
+        upload = get_object_or_404(Upload, pk=upload_id, user=request.user)
 
         description = request.data.get("description", "")
         is_proof = request.data.get("is_proof", False)

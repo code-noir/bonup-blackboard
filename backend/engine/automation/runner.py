@@ -46,7 +46,7 @@ class LifecycleAutomationRunner:
         if current_time is None:
             current_time = timezone.now()
 
-        result = self.lifecycle_runner.run(
+        result = self.lifecycle_runner.tick(
             contract_id=contract_id,
             limit=limit,
             current_time=current_time,

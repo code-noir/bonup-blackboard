@@ -1,3 +1,17 @@
+# backend/contracts/services/activation.py
+#
+# NOT ON THE LIVE API PATH — DO NOT BUILD ON THIS WITHOUT REVIEW.
+#
+# activate_contract_with_schedule() is not imported by any view, factory,
+# or other live code. It is a dead schedule-based bulk-activation function
+# that has never been wired to an API endpoint.
+#
+# The live activation path is:
+#   backend/api/contracts/obligations_views.py (POST)
+#   → backend/api/contracts/services/contract_lifecycle_service.py
+#     ContractLifecycleService.create_obligation()
+#
+# This creates obligations individually per request (not via schedule).
 
 from decimal import Decimal
 from django.utils import timezone

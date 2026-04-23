@@ -980,3 +980,69 @@ class FreeTierContractLimitTests(TestCase):
         consume_trial_contract(user)  # exhausts trial → status becomes no_subscription
         allowed, _ = can_create_contract(user)
         self.assertFalse(allowed)
+
+
+# ---------------------------------------------------------------------------
+# Webhook security
+# ---------------------------------------------------------------------------
+
+class WebhookSecurityTests(TestCase):
+    """
+    POST /api/billing/webhook/
+
+    Confirm that the webhook endpoint rejects requests safely when the Stripe
+    webhook secret is not configured, and rejects requests with an invalid
+    signature when it is configured.
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.url = "/api/billing/webhook/"
+
+    def test_webhook_rejected_when_secret_not_configured(self):
+        """
+        When STRIPE_WEBHOOK_SECRET is empty the endpoint must return 503 and
+        must not process any payload.
+        """
+        import json
+        from unittest.mock import patch
+
+        payload = json.dumps({
+            "type": "checkout.session.completed",
+            "data": {"object": {"metadata": {"bonup_user_id": "1", "plan_slug": "business"}}},
+        })
+
+        with patch("django.conf.settings.STRIPE_WEBHOOK_SECRET", ""):
+            r = self.client.post(
+                self.url,
+                data=payload,
+                content_type="application/json",
+            )
+
+        self.assertEqual(r.status_code, 503)
+        self.assertIn("error", r.json())
+
+    def test_webhook_rejected_on_invalid_signature(self):
+        """
+        When STRIPE_WEBHOOK_SECRET is set but the Stripe-Signature header is
+        missing or wrong, the endpoint must return 400.
+        """
+        import json
+        from unittest.mock import patch
+
+        payload = json.dumps({
+            "type": "checkout.session.completed",
+            "data": {"object": {}},
+        })
+
+        with patch("django.conf.settings.STRIPE_WEBHOOK_SECRET", "whsec_test_secret"):
+            r = self.client.post(
+                self.url,
+                data=payload,
+                content_type="application/json",
+                HTTP_STRIPE_SIGNATURE="bad_signature",
+            )
+
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("error", r.json())

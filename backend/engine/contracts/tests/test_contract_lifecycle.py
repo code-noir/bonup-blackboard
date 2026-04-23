@@ -4,6 +4,7 @@ from datetime import timedelta
 from django.utils import timezone
 
 from backend.engine.contracts.services.contract_coordinator import ContractCoordinator
+from backend.engine.contracts.services.lifecycle_runner_services import LifecycleRunnerService
 from backend.engine.lifecycle_core.obligations.primitives import PaymentObligation
 
 
@@ -76,3 +77,76 @@ class ContractLifecycleTest(TestCase):
         self.assertEqual(fake_contract.state, "fulfilled")
 
 
+class FakeTickObligationRepo:
+    """Minimal fake satisfying the LifecycleRunnerService.tick() interface."""
+
+    def __init__(self, obligations):
+        self._obligations = obligations
+        self.update_state_calls = []
+
+    def list_candidates(self, contract_id=None, limit=None):
+        return list(self._obligations)
+
+    def update_state(self, obligation, new_state, current_time):
+        obligation.state = new_state
+        self.update_state_calls.append((obligation, new_state))
+
+
+class LifecycleRunnerServiceTickTest(TestCase):
+
+    def test_tick_detects_state_change_and_calls_update_state(self):
+        now = timezone.now()
+
+        # Obligation 1: past due by 1 day, unpaid → should transition to "overdue"
+        overdue_ob = PaymentObligation(
+            obligor_id=1,
+            obligee_id=2,
+            amount_due=100,
+            due_date=now - timedelta(days=1),
+            state="active",
+        )
+
+        # Obligation 2: due in future, unpaid → state stays "active"
+        active_ob = PaymentObligation(
+            obligor_id=1,
+            obligee_id=2,
+            amount_due=50,
+            due_date=now + timedelta(days=10),
+            state="active",
+        )
+
+        fake_repo = FakeTickObligationRepo([overdue_ob, active_ob])
+        service = LifecycleRunnerService(obligation_repo=fake_repo)
+
+        result = service.tick(current_time=now)
+
+        self.assertEqual(result.scanned, 2)
+        self.assertEqual(result.updated, 1)
+        self.assertEqual(result.unchanged, 1)
+        # update_state was called exactly once — for the overdue obligation
+        self.assertEqual(len(fake_repo.update_state_calls), 1)
+        changed_ob, new_state = fake_repo.update_state_calls[0]
+        self.assertIs(changed_ob, overdue_ob)
+        self.assertEqual(new_state, "overdue")
+
+    def test_tick_returns_zero_updated_when_no_state_changes(self):
+        now = timezone.now()
+
+        # Obligation due in the future → stays "active"
+        ob = PaymentObligation(
+            obligor_id=1,
+            obligee_id=2,
+            amount_due=100,
+            due_date=now + timedelta(days=5),
+            state="active",
+        )
+
+        fake_repo = FakeTickObligationRepo([ob])
+        service = LifecycleRunnerService(obligation_repo=fake_repo)
+
+        result = service.tick(current_time=now)
+
+        self.assertEqual(result.scanned, 1)
+        self.assertEqual(result.updated, 0)
+        self.assertEqual(result.unchanged, 1)
+        self.assertEqual(fake_repo.update_state_calls, [])

@@ -1,4 +1,18 @@
 # backend/engine/payments/payment_service.py
+#
+# ENGINE-LEVEL ONLY — NOT WIRED TO THE LIVE API.
+#
+# PaymentService is a working pure-engine payment implementation.
+# Its tests (engine/payments/tests/test_payment_service.py) run and pass (5/5).
+# It operates on domain Contract and PaymentObligation objects via a gateway
+# interface (MockPaymentGateway in tests).
+#
+# It is NOT imported by any live API view. The live payment path is:
+#   backend/api/payments/views.py — direct ORM on the Payment model,
+#   with process_obligation_lifecycle() called inline on confirm/refund/reverse.
+#
+# This service represents a gateway-aware engine approach that could be
+# wired to the API layer in the future, but is not currently connected.
 
 from decimal import Decimal
 from django.utils import timezone

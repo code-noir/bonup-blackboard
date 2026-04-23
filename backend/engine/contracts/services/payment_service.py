@@ -1,4 +1,22 @@
 # backend/engine/contracts/services/payment_service.py
+#
+# NOT ON THE LIVE API PATH — DO NOT BUILD ON THIS WITHOUT REPAIR.
+#
+# ContractPaymentService is not imported by any live view or factory.
+# No tests exercise this class.
+#
+# KNOWN BREAKAGE:
+#   apply_payment() calls self.obligation_repo.get(obligation_id) and
+#   self.obligation_repo.save(obligation) — neither method exists on
+#   ContractObligationRepository → AttributeError at runtime if called.
+#
+# The live payment path is:
+#   backend/api/payments/views.py — direct ORM on the Payment model.
+#   PaymentConfirmAPIView / PaymentRefundAPIView / PaymentReverseAPIView
+#   call process_obligation_lifecycle() inline to sync obligation state.
+#
+# Before activating this path, ContractObligationRepository must be
+# extended with get() and save() methods.
 
 from django.utils import timezone
 

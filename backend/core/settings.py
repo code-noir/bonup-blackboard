@@ -28,10 +28,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-yw)3s4c3ipi^-323)_$)nnck=mbntc8ha9*rvu(#(#av__-)_#'
+SECRET_KEY = os.environ.get("SECRET_KEY", "")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get("DJANGO_DEBUG", "False") == "True"
 
 ALLOWED_HOSTS = ['104.236.204.51', 'localhost', '127.0.0.1']
 
@@ -181,13 +181,13 @@ CHANNEL_LAYERS = {
 # LiveKit
 # ----------------------------------------
 LIVEKIT_HOST = "https://live.bonup.cloud"
-LIVEKIT_API_KEY = "bonup-7218feb964d0c2e7"
-LIVEKIT_API_SECRET = "ogIL0Jv7yr4fwHt6SDaPgIMcQ3Q4YV6QOR7VFrgc"
+LIVEKIT_API_KEY = os.environ.get("LIVEKIT_API_KEY", "")
+LIVEKIT_API_SECRET = os.environ.get("LIVEKIT_API_SECRET", "")
 
 # ----------------------------------------
 # Email
 # ----------------------------------------
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
 DEFAULT_FROM_EMAIL = "noreply@bonup.cloud"
 
 # Base URL of the frontend — used to construct verification links in emails.

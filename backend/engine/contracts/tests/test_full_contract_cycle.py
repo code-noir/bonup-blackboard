@@ -1,4 +1,24 @@
 # backend/engine/contracts/tests/test_full_contract_cycle.py
+#
+# INERT — 0 TESTS RUN FROM THIS FILE.
+#
+# test_full_contract_cycle is defined at 4-space indent inside setUp
+# (which is at 3-space indent). It is a nested function, not a test
+# class method. Django's test runner never discovers it.
+#
+# ADDITIONAL BREAKAGE (would apply if indentation were fixed):
+#   - sign_version() calls version_repo.get(), which does not exist
+#     in ContractVersionRepository — AttributeError at runtime.
+#   - create_revision() is called with kwarg content_snapshot=,
+#     but the parameter name is content=.
+#
+# This file tests the engine-level ContractVersionService path, which
+# is not wired to the live API. See contract_version_service.py for
+# the full breakage description.
+#
+# Do not repair this file without first fixing the engine service and
+# wiring it to the API layer.
+
 from django.test import TestCase
 from datetime import timedelta
 from decimal import Decimal

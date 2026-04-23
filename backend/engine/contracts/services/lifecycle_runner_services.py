@@ -78,11 +78,11 @@ class LifecycleRunnerService:
         for ob in candidates:
             scanned += 1
 
+            old_state = getattr(ob, "state", None)
+
             # We evaluate and mutate state via engine logic.
             # process_obligation_lifecycle returns the NEW state string.
-            new_state = process_obligation_lifecycle(ob, current_time)
-
-            old_state = getattr(ob, "state", None)
+            new_state = process_obligation_lifecycle(ob, current_time=current_time)
 
             # Only persist if changed
             if old_state != new_state:

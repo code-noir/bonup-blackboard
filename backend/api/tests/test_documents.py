@@ -164,6 +164,17 @@ class AttachDocumentTests(TestCase):
         self.assertIn("file_name", r.data)
         self.assertIn("file_type", r.data)
 
+    def test_party_cannot_attach_upload_owned_by_other_user(self):
+        # counterparty is a valid contract party but self.upload belongs to the initiator
+        client = authed_client(self.counterparty)
+        r = client.post(
+            doc_url(self.contract.id),
+            {"upload_id": str(self.upload.id), "title": "Stolen Doc"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 404)
+        self.assertFalse(ContractDocument.objects.filter(contract=self.contract).exists())
+
     def test_unauthenticated_returns_401(self):
         from rest_framework.test import APIClient
         r = APIClient().post(

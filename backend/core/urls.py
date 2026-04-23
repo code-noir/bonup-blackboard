@@ -44,9 +44,6 @@ urlpatterns = [
 
     # existing API router
     path("api/", include(api_urls)),
-
-    # obligation domain
-    path("api/obligations/", include("backend.api.obligations.urls")),
 ]
 
 

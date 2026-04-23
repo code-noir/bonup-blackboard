@@ -239,15 +239,28 @@ class PasswordResetRequestAPIView(APIView):
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = _token_generator.make_token(user)
 
-        # In production: send email with reset link containing uid + token.
-        # In dev: return them directly.
-        return Response(
-            {
-                "detail": "If that email is registered, a reset link has been sent.",
-                "uid": uid,
-                "token": token,
-            }
+        from django.conf import settings
+        from django.core.mail import send_mail
+
+        frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:5173")
+        reset_url = f"{frontend_url}/reset-password?uid={uid}&token={token}"
+
+        send_mail(
+            subject="Reset your bonUP password",
+            message=(
+                "Hi,\n\n"
+                "Click the link below to reset your bonUP password:\n\n"
+                f"{reset_url}\n\n"
+                "This link expires after one use.\n\n"
+                "If you did not request a password reset, you can safely ignore this email.\n\n"
+                "— The bonUP team"
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=True,
         )
+
+        return Response({"detail": "If that email is registered, a reset link has been sent."})
 
 
 class PasswordResetConfirmAPIView(APIView):

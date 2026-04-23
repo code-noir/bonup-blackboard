@@ -1,4 +1,23 @@
 # backend/engine/contracts/services/contract_version_service.py
+#
+# NOT ON THE LIVE API PATH — DO NOT BUILD ON THIS WITHOUT REPAIR.
+#
+# The live contract version flow is in:
+#   backend/api/contracts/version_views.py
+#   (mounted at /api/contracts/<id>/versions/, .../sign/, .../reject/)
+#
+# This engine-level service is not imported by any live view or factory.
+# It is only referenced by test_full_contract_cycle.py, which itself
+# runs 0 tests due to an indentation bug (see that file).
+#
+# KNOWN BREAKAGE:
+#   transition_version() and sign_version() both call
+#   self.version_repo.get(version_id), but ContractVersionRepository
+#   has no get() method — this would raise AttributeError at runtime.
+#
+# Before activating this path, the repository interface must be extended
+# and the engine service must be wired to the API layer.
+
 from backend.engine.contracts.versioning import calculate_next_version
 
 from backend.engine.contracts.state_machine import validate_transition

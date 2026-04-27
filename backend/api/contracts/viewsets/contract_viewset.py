@@ -41,7 +41,7 @@ class ContractViewSet(ViewSet):
 
         data = request.data.copy()
         data.pop("initiator", None)
-        serializer = ContractSerializer(data=data)
+        serializer = ContractSerializer(data=data, context={'request': request})
         if serializer.is_valid():
             contract = serializer.save(initiator=request.user)
             increment_contracts_used(request.user)
@@ -114,7 +114,7 @@ class ContractViewSet(ViewSet):
         data = request.data.copy()
         data.pop("initiator", None)
 
-        serializer = ContractSerializer(contract, data=data, partial=True)
+        serializer = ContractSerializer(contract, data=data, partial=True, context={'request': request})
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)

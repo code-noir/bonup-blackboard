@@ -21,6 +21,14 @@ class ContractSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"entity": "A business entity must be set when entity_type is 'business'."}
             )
+        # Verify the caller owns the entity being attached.
+        entity = attrs.get('entity')
+        if entity is not None:
+            request = self.context.get('request')
+            if request is not None and entity.owner_id != request.user.pk:
+                raise serializers.ValidationError(
+                    {"entity": "You do not own this business entity."}
+                )
         return attrs
 
 

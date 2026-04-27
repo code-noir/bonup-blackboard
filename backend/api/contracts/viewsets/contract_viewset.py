@@ -8,6 +8,8 @@ from rest_framework.viewsets import ViewSet
 
 from backend.billing.gates import can_create_contract, consume_trial_contract, increment_contracts_used
 from backend.contracts.models import Contract
+from backend.contract_pro.models import ContractProOversightEvent
+from backend.contract_pro.services import ContractProEditingService, ContractProOversightService
 
 from backend.api.contracts.permissions import contract_party_response, is_party
 from backend.api.contracts.serializers import ContractSerializer
@@ -82,6 +84,24 @@ class ContractViewSet(ViewSet):
         if contract.initiator_id != request.user.pk:
             return Response(
                 {"error": "Only the contract initiator may modify the contract."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if not ContractProEditingService.owner_editing_allowed(contract, request.user):
+            if contract.entity_id is not None:
+                ContractProOversightService.record(
+                    event_type=ContractProOversightEvent.EVENT_OWNER_EDIT_BLOCKED,
+                    business=contract.entity,
+                    contract=contract,
+                    actor=request.user,
+                )
+            return Response(
+                {
+                    "error": (
+                        "Direct editing is not allowed while an active "
+                        "Contract Pro delegation controls this contract."
+                    )
+                },
                 status=status.HTTP_403_FORBIDDEN,
             )
 

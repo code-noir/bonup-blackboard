@@ -61,3 +61,24 @@
   - Minimum record structure requirements including the `event_payload` gap and the `grant` FK gap on `owner_edit_blocked` events
   - Explicitly deferred items (10 items with destination sprint/phase)
 - Fixed stale Summary section: removed false claim that no Contract Pro or business-level authority scoping exists in backend code
+
+---
+
+## Session: 2026-04-27 — A5 Counterparty Identity Model and Plan Naming Lock
+
+### Status: Complete
+
+### What was completed this session
+
+**A5 — Review counterparty identity model and lock plan naming**
+- Added Section 6 to `docs/current-state/BLACKBOARD_AUTHORITY_MODEL.md`
+- Updated document header: A5 complete
+- Section 6 covers:
+  - Current counterparty identity truth anchored to code: `counterparty_email` (EmailField, no user FK), `is_party()` email match, no `signed_by` FK on `ContractVersion`
+  - Why email-only is not acceptable as final contracting identity (5 specific problems)
+  - Phase-one rule: email = invite target; bonUP account = contracting identity
+  - Minimum counterparty participation requirements (must join bonUP; no paid plan required)
+  - Counterparty plan requirements: invited participation (no plan) vs management features (`starter` minimum)
+  - Four named implementation gaps: `counterparty_user` FK, `signed_by` FK, `contract_pro` plan seed, slug migration
+  - Locked plan naming / entitlement mapping (canonical slug and display name table for all plans)
+  - Explicit call-out of the `professional`/`Blackboard Pro` → `blackboard_core`/`Blackboard Core` rename and the `blackboard_basic` stale reference in `gates.py`

@@ -43,7 +43,7 @@ This tracker is the operational board for Blackboard phase one.
 | A2 | Authority / Delegated Access | Define negotiator vs signer distinction | P1 | Blocked | A1 | Negotiation rights and signing rights are explicitly separated |
 | A3 | Authority / Delegated Access | Define Contract Pro delegated-access model | P1 | Done | A1,A2 | Contract Pro grant/revoke/scope/permissions model is defined |
 | A4 | Authority / Delegated Access | Define delegated-access auditability requirements | P2 | Done | A3 | Contract Pro and other delegated actions have minimum audit expectations defined |
-| A5 | Authority / Delegated Access | Review counterparty identity model | P2 | Blocked | A1,A2 | Current email-based counterparty approach is accepted with safeguards or scheduled for change |
+| A5 | Authority / Delegated Access | Review counterparty identity model | P2 | Done | A1,A2 | Current email-based counterparty approach is accepted with safeguards or scheduled for change |
 | B1 | Boundary Confidence | Verify BusinessEntity isolation in multi-business scenarios | P1 | Blocked | C5,C6 | Multi-business owner tests confirm default business separation |
 | B2 | Boundary Confidence | Verify owner-wide aggregation is explicit, not default | P2 | Blocked | B1 | Aggregation behavior is explicit and tested if present |
 | B3 | Boundary Confidence | Harden uploads/documents boundaries | P1 | Blocked | S6,C6 | Upload/document ownership and contract-boundary behavior are tested and trusted |
@@ -64,16 +64,16 @@ This tracker is the operational board for Blackboard phase one.
 
 ## Now
 
-A4 (delegated-access auditability requirements) complete (2026-04-27).
-Minimum audit event coverage, record structure requirements, and deferred items documented in `docs/current-state/BLACKBOARD_AUTHORITY_MODEL.md` Section 5.
+A5 (counterparty identity model) complete (2026-04-27).
+Email-only identity named as insufficient final contracting identity. Invite target vs real identity rule defined. Plan naming locked. Four implementation gaps named. Documented in `docs/current-state/BLACKBOARD_AUTHORITY_MODEL.md` Section 6.
 
-Next scheduled work: A5 (Review counterparty identity model) and remaining Phase C items.
+Next scheduled work: Phase C Boundary Confidence items — B1 through B5.
 
 ---
 
 ## Next
 
-A5 (Review counterparty identity model) and remaining Phase C items are next.
+Phase C Boundary Confidence items (B1–B5) are next per the Suggested Working Order.
 
 See Suggested Working Order for the established sequencing. No items have been promoted or reprioritized here — that is a separate scheduling decision.
 
@@ -97,6 +97,7 @@ See Suggested Working Order for the established sequencing. No items have been p
 - **A2** Define negotiator vs signer distinction
 - **A3** Define Contract Pro delegated-access model
 - **A4** Define delegated-access auditability requirements
+- **A5** Review counterparty identity model
 
 ---
 
@@ -161,4 +162,5 @@ The backend is no longer carrying broken or misleading core paths.
 A1, A2, A3 (Phase C authority definitions) are complete.
 Contract Pro foundation implementation sprint complete (2026-04-27): backbone built, 59 tests passing.
 A4 (delegated-access auditability requirements) complete (2026-04-27): minimum audit coverage defined.
-Next: A5 (counterparty identity model review) and remaining Phase C items.
+A5 (counterparty identity model) complete (2026-04-27): email-only identity named insufficient; plan naming locked; four implementation gaps named.
+Next: Phase C Boundary Confidence items (B1–B5).

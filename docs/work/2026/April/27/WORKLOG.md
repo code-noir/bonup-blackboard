@@ -29,4 +29,17 @@ Contract Pro foundation implementation sprint complete. All backbone code in pla
 
 ### Session outcome
 
-A4 complete. Minimum delegated-access audit requirements defined. Next: A5 (counterparty identity model review).
+A4 complete. Minimum delegated-access audit requirements defined.
+
+---
+
+## 2026-04-27 — A5 Counterparty Identity Model and Plan Naming Lock
+
+### Doc changes
+
+- `docs/current-state/BLACKBOARD_AUTHORITY_MODEL.md` — Section 6 added (A5 complete); header updated
+- `docs/execution/# BLACKBOARD_PHASE1_BUILD_TRACKER.md` — A5 row → Done; Done list updated; Now/Next/Summary updated
+
+### Session outcome
+
+A5 complete. Email-only counterparty identity named as insufficient final truth. Phase-one identity rule defined. Plan naming locked. Four implementation gaps named. Next: B1 (BusinessEntity isolation verification).

@@ -1,6 +1,6 @@
 # BLACKBOARD_AUTHORITY_MODEL.md
 
-> Status: Working draft — A1 complete, A2 complete, A3 complete, A4 complete
+> Status: Working draft — A1 complete, A2 complete, A3 complete, A4 complete, A5 complete
 > Scope: Blackboard phase-one authority baseline — code truth only
 > Purpose: Record what the backend actually implements for contract authority today; separate from vision and from future design work
 
@@ -555,6 +555,199 @@ The following are out of scope for A4 and for phase-one minimum auditability. Th
 | Dispute review surface using audit records | Post-phase-one |
 | Retention policy and archive policy for oversight event records | Post-phase-one |
 | Auditability requirements for non-Contract Pro delegated actions | Post-phase-one |
+
+---
+
+## 6. A5 — Counterparty Identity Model and Plan Naming Lock
+
+### Purpose
+
+This section defines:
+1. The phase-one rule for counterparty identity — distinguishing the email invite target from the real contracting identity
+2. The minimum participation requirements for a counterparty
+3. The counterparty plan requirement distinction: participation vs management features
+4. The locked plan naming and entitlement mapping for Blackboard plans
+
+This review concludes that the current email-only counterparty identity is not acceptable as the final contracting identity and names the implementation gaps that must be closed.
+
+---
+
+### 6.1 Current counterparty identity — anchored to code
+
+Source: `backend/contracts/models.py`, `backend/api/contracts/permissions.py`
+
+**Contract model fields:**
+
+| Field | Type | Notes |
+|---|---|---|
+| `counterparty_email` | EmailField | The only counterparty identity field. No FK to a user record. |
+| `counterparty_name` | CharField | Free-text display string. Not an identity field. |
+
+No `counterparty_user` FK exists. No stable user PK or UUID is stored against the counterparty slot.
+
+**Party check — `is_party()` in `backend/api/contracts/permissions.py`:**
+
+```python
+return (
+    contract.initiator_id == user.pk
+    or contract.counterparty_email == user.email
+)
+```
+
+The existing comment in that file states: "email is unique across users, matching on user.email is safe and requires no schema change."
+
+**What this means in practice:**
+
+- A counterparty must be a registered and authenticated bonUP user to interact with any contract API. Unauthenticated email addresses cannot access contract endpoints.
+- The counterparty's identity is linked by email string match only — not by a stable user FK. The system stores the email address and checks it at request time. It does not store a reference to the user record itself.
+- If a user's email address changes, the link between their account and the contract breaks silently.
+- Signing identity is not stored as a FK on `ContractVersion`. When a version is signed, the only record is `status = "signed"` on the version row. Who signed is inferred from the activity log only. (Documented in Section 2 of this document.)
+
+---
+
+### 6.2 Why email-only is not acceptable as final contracting identity
+
+Email address is a mutable string. It is not a stable, tamper-evident identity anchor.
+
+Specific problems with the current model as a final identity solution:
+
+**1. Email addresses can change.** If a user updates their email after signing a contract, the historical link between their current account and the signed contract becomes ambiguous.
+
+**2. No stable PK reference.** The counterparty slot stores a string, not a user PK. "Who signed this contract" requires a join through the activity log, not a direct FK lookup on the signing record.
+
+**3. Signing is not identity-attributed on the record.** `ContractVersion` has no `signed_by` FK. The signing event records a status change only. The actor is in the activity log but not on the version row itself.
+
+**4. No tamper-evident chain.** There is no PK-linked chain from "this contract was signed" to "this specific user account signed it." The chain passes through a mutable string.
+
+**5. Future authority work requires stable identity.** Separating negotiator from signer (A2), Contract Pro delegation (A3), and any future authorized-representative model all require a stable user identity anchor, not a mutable email string.
+
+---
+
+### 6.3 Phase-one rule: invite target vs real contracting identity
+
+**Email is the invite target. The bonUP account is the contracting identity.**
+
+| Concept | What it is | Acceptable for phase one |
+|---|---|---|
+| **Invite target** | The email address the owner uses to invite the counterparty | Yes — email is how counterparties are addressed |
+| **Contracting identity** | The bonUP user account that holds that email at the time of contracting | Required — email match alone is not sufficient as final truth |
+
+**Phase-one rule:**
+
+A counterparty may be addressed by email as the invite mechanism. The actual contracting identity — the entity that signs, rejects, or otherwise acts as a party — must be a verified bonUP user account whose email matches at the time of the action.
+
+- The current `is_party()` check (email match on an authenticated user) is acceptable as a participation gate for phase one.
+- It is not acceptable as the final signing identity record. A signed contract must be attributable to a specific user FK, not just an email string that was present at request time.
+
+---
+
+### 6.4 Minimum counterparty participation requirements
+
+1. **Must join bonUP.** A counterparty must have a bonUP account. An email address alone is not a recognized contracting party.
+2. **No paid plan required to participate.** An invited counterparty may view, sign, and reject contract versions without a paid Blackboard subscription.
+3. **Participation is authenticated.** All counterparty actions go through authenticated API calls. Unauthenticated counterparty access is not supported.
+
+---
+
+### 6.5 Counterparty plan requirements: participation vs management features
+
+Two distinct tiers of counterparty involvement exist and must be kept separate:
+
+| Involvement level | What it covers | Plan required |
+|---|---|---|
+| **Invited participation** | View contract content, sign versions, reject versions, participate in negotiation as the counterparty role | None — bonUP account only |
+| **Management features** | Using Blackboard's contract management tools as a platform user: lifecycle, notifications, obligations, templates, sessions, creating own contracts | At minimum: `starter` (Blackboard Starter, $19/mo) |
+
+An invited counterparty is participating in a contract the initiator controls. They are not required to subscribe to Blackboard to fulfill that role.
+
+If the counterparty wants to use Blackboard for their own contract work — not just participate as the external party in another user's contract — they must enroll in at least the `starter` plan.
+
+This distinction also applies to temp/training eligibility: a temp must be on the low-tier personal Blackboard plan (`starter`) or above. This is consistent with the Contract Pro model defined in Section 3.
+
+---
+
+### 6.6 Named implementation gaps from this review
+
+These are gaps the A5 review identifies. None are resolved here. Each requires a dedicated implementation sprint.
+
+**Gap 1 — No `counterparty_user` FK on `Contract`**
+
+The contract has no stable FK reference to the counterparty's user record. When a counterparty engages with a contract, their user PK should be stored as a FK.
+
+Minimum change: add `counterparty_user = FK(AUTH_USER_MODEL, null=True, blank=True)` to `Contract`, populated when the counterparty first authenticates against the contract.
+
+**Gap 2 — No `signed_by` FK on `ContractVersion`**
+
+When a version is signed, no FK to the signing user is written to the version row. The signing actor is in the activity log only.
+
+Minimum change: add `signed_by = FK(AUTH_USER_MODEL, null=True, blank=True)` to `ContractVersion`, written at signing time in `ContractVersionSignAPIView`.
+
+**Gap 3 — `contract_pro` plan not seeded**
+
+The Contract Pro plan ($499) is required for full Contract Pro role activation (Section 3). It is absent from the seeded `SubscriptionPlan` records. Grant activation cannot be plan-gated until this plan exists.
+
+Minimum change: seed a `SubscriptionPlan` with slug `contract_pro`, display name "Contract Pro", price $499, and appropriate feature flags. Add a plan-gate check to `ContractProGrantService.activate_grant()`.
+
+**Gap 4 — Plan slug migration pending**
+
+`backend/billing/gates.py` `_MAX_BUSINESSES` dict contains both "legacy slugs" (`professional`, `business`, `anchor`) and anticipated "current slugs" (`blackboard_basic`, `blackboard_pro`, `blackboard_business`, `blackboard_enterprise`). This migration has not been executed. The canonical slugs from Section 6.7 must be applied in a future billing migration sprint.
+
+Note: `blackboard_basic` appears in `gates.py` as a future slug with 0 businesses allowed. Under the A5 naming lock, there is no `blackboard_basic` plan. The `starter` slug is the locked minimum tier. The `blackboard_basic` reference in gates.py is a stale forward reference that must be removed when the migration sprint runs.
+
+---
+
+### 6.7 Locked plan naming / entitlement mapping
+
+This is the canonical plan name and slug mapping for phase one. Backend work, billing configuration, and UI work must use these definitions. Backend internal slugs and frontend display names are distinct — both are locked here.
+
+| Slug (backend key) | Display name (frontend) | Monthly price | Notes |
+|---|---|---|---|
+| `trial` | Free Trial | $0 | Time-limited trial; not a permanent plan. Unchanged from current. |
+| `per_contract` | Pay as you go | $25/contract | Per-use; no recurring subscription. Unchanged from current. |
+| `starter` | Blackboard Starter | $19 | Minimum self-serve plan. Minimum plan for management features. Minimum for temp/training eligibility. Unchanged from current. |
+| `blackboard_core` | Blackboard Core | $149 | Single-business owner plan. **Current code slug is `professional`, display is "Blackboard Pro" — migration required.** |
+| `contract_pro` | Contract Pro | $499 | Required for full Contract Pro role activation. **Not yet seeded — must be added before plan-gating can be wired.** |
+| `blackboard_business` | Blackboard Business | $399 | Multi-business owner plan. Display name is already correct in code; slug migration required from `business`. |
+| `blackboard_enterprise` | Blackboard Enterprise | $999 | Enterprise tier. Display name is already correct in code; slug migration required from `anchor`. |
+| `sol_member` | Sol Member | $10 | SOL product plan. Unchanged from current. |
+
+**Counterparty participation and plan:**
+
+| Plan | May participate as counterparty | Has management features |
+|---|---|---|
+| No plan (bonUP account only) | Yes — invited participation only | No |
+| `trial` | Yes | Yes (trial period) |
+| `per_contract` | Yes | Limited |
+| `starter` and above | Yes | Yes |
+| `contract_pro` | Yes | Yes — plus Contract Pro role eligibility |
+
+**Current code state vs locked names — migration summary:**
+
+| Plan | Current slug | Current display | Locked slug | Locked display | Migration action |
+|---|---|---|---|---|---|
+| $149 single-business | `professional` | Blackboard Pro | `blackboard_core` | Blackboard Core | Rename slug; update display name |
+| $399 multi-business | `business` | Blackboard Business | `blackboard_business` | Blackboard Business | Rename slug; display already correct |
+| $999 enterprise | `anchor` | Blackboard Enterprise | `blackboard_enterprise` | Blackboard Enterprise | Rename slug; display already correct |
+| $499 Contract Pro | — not seeded — | — | `contract_pro` | Contract Pro | Seed new plan |
+
+---
+
+### 6.8 What this review concludes
+
+**On counterparty identity:**
+- The current email-only model is acceptable as a phase-one participation gate. It is not acceptable as the final contracting identity.
+- Email is the invite target. The bonUP user account is the contracting identity.
+- Two FK gaps must be closed before the model is fully trustworthy: `Contract.counterparty_user` and `ContractVersion.signed_by`.
+
+**On participation requirements:**
+- Counterparties must join bonUP. No paid plan is required to participate as a counterparty.
+- Management features require at least the `starter` plan.
+
+**On plan naming:**
+- The plan naming is now locked as defined in Section 6.7.
+- The `professional` / "Blackboard Pro" name for the $149 plan is implementation-stale. The locked name is "Blackboard Core" with slug `blackboard_core`.
+- The `contract_pro` plan at $499 must be seeded before Contract Pro grant activation can be plan-gated.
+- The `blackboard_basic` forward reference in `gates.py` does not correspond to any locked plan and must be removed in the billing migration sprint.
 
 ---
 

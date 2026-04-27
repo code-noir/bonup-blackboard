@@ -269,9 +269,9 @@ class SessionEndAPIView(APIView):
         if not is_party(request.user, session.contract):
             return contract_party_response()
 
-        if session.status == "ended":
+        if session.status in ("ended", "cancelled"):
             return Response(
-                {"error": "Session is already ended."},
+                {"error": "Session is already ended or cancelled."},
                 status=status.HTTP_409_CONFLICT,
             )
 

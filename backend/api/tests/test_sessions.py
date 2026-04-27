@@ -403,6 +403,11 @@ class SessionEndTests(__import__("django.test", fromlist=["TestCase"]).TestCase)
         r = authed_client(self.charlie).post(f"/api/sessions/{self.session_id}/end/")
         self.assertEqual(r.status_code, 403)
 
+    def test_end_cancelled_session_returns_409(self):
+        authed_client(self.alice).post(f"/api/sessions/{self.session_id}/cancel/")
+        r = authed_client(self.alice).post(f"/api/sessions/{self.session_id}/end/")
+        self.assertEqual(r.status_code, 409)
+
     def test_end_after_join_records_duration(self):
         authed_client(self.alice).post(f"/api/sessions/{self.session_id}/join/")
         authed_client(self.alice).post(f"/api/sessions/{self.session_id}/end/")

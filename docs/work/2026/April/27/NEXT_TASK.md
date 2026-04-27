@@ -1,19 +1,28 @@
-## Next Task: Phase C / B1 — Verify BusinessEntity isolation in multi-business scenarios
+## Next: Domain Strengthening (D-series)
 
-### Status: Ready to start
+### Status: Not yet scheduled
 
-### Dependencies
-- C5 complete: contract/version flow canonicalized
-- C6 complete: activation/payment/lifecycle paths canonicalized
-- A1–A5 complete: authority model fully defined
+### Context
 
-### B1 scope (from build tracker)
+Phase C (Authority and Boundary Confidence) is complete:
+- A1–A5 done
+- B1–B5 done
 
-Verify that BusinessEntity isolation holds correctly in multi-business scenarios:
-- confirm that contracts, obligations, and related records belonging to one business cannot bleed into another business owned by the same user
-- confirm that default queries do not aggregate across businesses unintentionally
-- confirm isolation is tested and trusted
+All D-series items (D1–D7) are currently Deferred in the build tracker. The next work is a scheduling decision: which D items to promote and in what order.
 
-### Done condition (from build tracker)
+### D-series items (from tracker)
 
-Multi-business owner tests confirm default business separation.
+| ID | Task | Priority |
+|---|---|---|
+| D1 | Verify template instantiation end to end | P2 |
+| D2 | Strengthen template family tests/confidence | P2 |
+| D3 | Strengthen notification maturity | P2 |
+| D4 | Strengthen activity/audit confidence | P2 |
+| D5 | Clarify Blackboard role of uploads/documents | P2 |
+| D6 | Decide whether workspace is truly phase-one scope | P2 |
+| D7 | Improve admin/internal oversight confidence | P3 |
+
+### Known follow-up items from B-lane inspection (not B-series scope, not yet scheduled)
+
+- `session.contract` null-safety: if a contract is hard-deleted, `is_party(user, None)` is unguarded (AttributeError). Low probability path; not currently a user-facing exposure. Named here for scheduling.
+- Four implementation gaps named in A5 (counterparty_user FK, signed_by FK, contract_pro plan seed, slug migration) — all deferred.

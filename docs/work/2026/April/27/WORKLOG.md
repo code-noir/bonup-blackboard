@@ -42,4 +42,21 @@ A4 complete. Minimum delegated-access audit requirements defined.
 
 ### Session outcome
 
-A5 complete. Email-only counterparty identity named as insufficient final truth. Phase-one identity rule defined. Plan naming locked. Four implementation gaps named. Next: B1 (BusinessEntity isolation verification).
+A5 complete. Email-only counterparty identity named as insufficient final truth. Phase-one identity rule defined. Plan naming locked. Four implementation gaps named.
+
+---
+
+## 2026-04-27 — Phase C Boundary Confidence Lane (B1–B5)
+
+### Code changes
+
+- **B1 tests** — 8 tests confirming same-owner multi-business isolation (`test_business_isolation.py`); commit `50e5883`
+- **Cross-owner entity fix** — `ContractSerializer.validate()` now checks entity FK ownership; viewset passes `context={'request': request}`; 4 tests (`test_contract_entity_ownership.py`); commit `96a925d`
+- **B2 tests** — 3 tests documenting owner-wide payment aggregation as explicit behavior (`test_payment_aggregation.py`); commit `4b630bb`
+- **B3 tests** — 1 test confirming upload contract-filter isolation (`test_upload_contract_filter_isolation.py`); commit `ab38458`
+- **B4 tests** — 1 test confirming activity scoping for non-party contract ID filter (`test_activity_scoping.py`); commit `0efde92`
+- **B5 fix + test** — `SessionEndAPIView` guard changed from `== "ended"` to `in ("ended", "cancelled")`; 1 regression test (`test_end_cancelled_session_returns_409`); commit `02edaba`
+
+### Session outcome
+
+Phase C Boundary Confidence lane complete. B1–B5 all done. Two real bugs found and fixed. All other boundary paths verified by targeted tests.

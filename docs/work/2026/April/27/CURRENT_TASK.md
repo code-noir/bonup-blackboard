@@ -82,3 +82,48 @@
   - Four named implementation gaps: `counterparty_user` FK, `signed_by` FK, `contract_pro` plan seed, slug migration
   - Locked plan naming / entitlement mapping (canonical slug and display name table for all plans)
   - Explicit call-out of the `professional`/`Blackboard Pro` → `blackboard_core`/`Blackboard Core` rename and the `blackboard_basic` stale reference in `gates.py`
+
+---
+
+## Session: 2026-04-27 — Phase C Boundary Confidence Lane (B1–B5)
+
+### Status: Complete
+
+### What was completed
+
+**B1 — Verify BusinessEntity isolation in multi-business scenarios**
+- Inspection: no same-owner multi-business bleed found
+- 8 tests added confirming isolation behavior (`test_business_isolation.py`)
+- Commit: `50e5883`
+
+**Cross-owner entity attachment bug (found during B1 inspection)**
+- `ContractSerializer.validate()` did not check entity FK ownership
+- Fix: ownership check added; `context={'request': request}` passed from `create()` and `update()` in `ContractViewSet`
+- 4 tests added (`test_contract_entity_ownership.py`)
+- Commit: `96a925d`
+
+**B2 — Verify owner-wide aggregation is explicit, not default**
+- Inspection: payment dashboard summary is intentionally owner-wide; no implicit bug
+- 3 tests added documenting confirmed behavior (`test_payment_aggregation.py`)
+- Commit: `4b630bb`
+
+**B3 — Harden uploads/documents boundaries**
+- Inspection: upload list always base-filtered by `user=request.user` before `?contract_id=`; no leakage path
+- 1 test added confirming isolation (`test_upload_contract_filter_isolation.py`)
+- Commit: `ab38458`
+
+**B4 — Verify notification and activity scoping**
+- Inspection: `?contract_id=` filter for non-party contract returns empty (200), not a leak or 403
+- 1 test added covering the untested edge case (`test_activity_scoping.py`)
+- Commit: `0efde92`
+
+**B5 — Review session edge and broadcast hardening**
+- Inspection: all HTTP party gates and WebSocket auth chain correct; broadcast correctly initiator-only
+- Bug found: `SessionEndAPIView` only guarded `status == "ended"`; cancelled session could be transitioned to ended
+- Fix: guard changed to `status in ("ended", "cancelled")`
+- 1 test added (`test_end_cancelled_session_returns_409` in `test_sessions.py`)
+- Commit: `02edaba`
+
+### Lane outcome
+
+Phase C Boundary Confidence lane complete. All B items done.

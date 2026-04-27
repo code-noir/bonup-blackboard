@@ -44,11 +44,11 @@ This tracker is the operational board for Blackboard phase one.
 | A3 | Authority / Delegated Access | Define Contract Pro delegated-access model | P1 | Done | A1,A2 | Contract Pro grant/revoke/scope/permissions model is defined |
 | A4 | Authority / Delegated Access | Define delegated-access auditability requirements | P2 | Done | A3 | Contract Pro and other delegated actions have minimum audit expectations defined |
 | A5 | Authority / Delegated Access | Review counterparty identity model | P2 | Done | A1,A2 | Current email-based counterparty approach is accepted with safeguards or scheduled for change |
-| B1 | Boundary Confidence | Verify BusinessEntity isolation in multi-business scenarios | P1 | Blocked | C5,C6 | Multi-business owner tests confirm default business separation |
-| B2 | Boundary Confidence | Verify owner-wide aggregation is explicit, not default | P2 | Blocked | B1 | Aggregation behavior is explicit and tested if present |
-| B3 | Boundary Confidence | Harden uploads/documents boundaries | P1 | Blocked | S6,C6 | Upload/document ownership and contract-boundary behavior are tested and trusted |
-| B4 | Boundary Confidence | Verify notification and activity scoping | P2 | Blocked | C6 | Notifications and activity flows are scoped safely and tested where needed |
-| B5 | Boundary Confidence | Review session edge and broadcast hardening | P2 | Blocked | C6 | Session broadcast/input edge cases are reviewed and tightened |
+| B1 | Boundary Confidence | Verify BusinessEntity isolation in multi-business scenarios | P1 | Done | C5,C6 | Multi-business owner tests confirm default business separation |
+| B2 | Boundary Confidence | Verify owner-wide aggregation is explicit, not default | P2 | Done | B1 | Aggregation behavior is explicit and tested if present |
+| B3 | Boundary Confidence | Harden uploads/documents boundaries | P1 | Done | S6,C6 | Upload/document ownership and contract-boundary behavior are tested and trusted |
+| B4 | Boundary Confidence | Verify notification and activity scoping | P2 | Done | C6 | Notifications and activity flows are scoped safely and tested where needed |
+| B5 | Boundary Confidence | Review session edge and broadcast hardening | P2 | Done | C6 | Session broadcast/input edge cases are reviewed and tightened |
 | D1 | Domain Strengthening | Verify template instantiation end to end | P2 | Deferred | C5,C6 | Template instantiation works end to end and launch-ready subset is known |
 | D2 | Domain Strengthening | Strengthen template family tests/confidence | P2 | Deferred | D1 | Template domains have enough confidence to count as real Blackboard launch surface |
 | D3 | Domain Strengthening | Strengthen notification maturity | P2 | Deferred | B4 | Launch-critical notification behavior is clear and tested |
@@ -64,18 +64,15 @@ This tracker is the operational board for Blackboard phase one.
 
 ## Now
 
-A5 (counterparty identity model) complete (2026-04-27).
-Email-only identity named as insufficient final contracting identity. Invite target vs real identity rule defined. Plan naming locked. Four implementation gaps named. Documented in `docs/current-state/BLACKBOARD_AUTHORITY_MODEL.md` Section 6.
-
-Next scheduled work: Phase C Boundary Confidence items — B1 through B5.
+Phase C Boundary Confidence items (B1–B5) complete (2026-04-27).
+Boundary layer verified. Two real bugs found and fixed: cross-owner BusinessEntity attachment (B1 inspection, separate commit) and cancelled-session-can-be-ended state machine gap (B5). All other paths verified by targeted tests.
 
 ---
 
 ## Next
 
-Phase C Boundary Confidence items (B1–B5) are next per the Suggested Working Order.
-
-See Suggested Working Order for the established sequencing. No items have been promoted or reprioritized here — that is a separate scheduling decision.
+Domain Strengthening (D-series) is the next phase per the Suggested Working Order.
+All D items are currently Deferred. No items promoted yet — that is a separate scheduling decision.
 
 ---
 
@@ -98,6 +95,11 @@ See Suggested Working Order for the established sequencing. No items have been p
 - **A3** Define Contract Pro delegated-access model
 - **A4** Define delegated-access auditability requirements
 - **A5** Review counterparty identity model
+- **B1** Verify BusinessEntity isolation in multi-business scenarios
+- **B2** Verify owner-wide aggregation is explicit, not default
+- **B3** Harden uploads/documents boundaries
+- **B4** Verify notification and activity scoping
+- **B5** Review session edge and broadcast hardening
 
 ---
 
@@ -163,4 +165,5 @@ A1, A2, A3 (Phase C authority definitions) are complete.
 Contract Pro foundation implementation sprint complete (2026-04-27): backbone built, 59 tests passing.
 A4 (delegated-access auditability requirements) complete (2026-04-27): minimum audit coverage defined.
 A5 (counterparty identity model) complete (2026-04-27): email-only identity named insufficient; plan naming locked; four implementation gaps named.
-Next: Phase C Boundary Confidence items (B1–B5).
+Phase C Boundary Confidence (B1–B5) complete (2026-04-27): boundary layer verified; cross-owner entity attachment bug fixed; cancelled-session end bug fixed; targeted tests added for all five items.
+Next: Domain Strengthening (D-series), all currently Deferred.

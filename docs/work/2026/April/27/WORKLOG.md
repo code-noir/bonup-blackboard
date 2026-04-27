@@ -16,4 +16,17 @@
 
 ### Session outcome
 
-Contract Pro foundation implementation sprint complete. All backbone code in place. Next: A4 (auditability requirements definition).
+Contract Pro foundation implementation sprint complete. All backbone code in place.
+
+---
+
+## 2026-04-27 — A4 Delegated-Access Auditability Definition
+
+### Doc changes
+
+- `docs/current-state/BLACKBOARD_AUTHORITY_MODEL.md` — Section 5 added (A4 complete); header updated; stale Summary fixed
+- `docs/execution/# BLACKBOARD_PHASE1_BUILD_TRACKER.md` — A4 row → Done; Done list updated; Now/Next/Summary updated
+
+### Session outcome
+
+A4 complete. Minimum delegated-access audit requirements defined. Next: A5 (counterparty identity model review).

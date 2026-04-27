@@ -42,7 +42,7 @@ This tracker is the operational board for Blackboard phase one.
 | A1 | Authority / Delegated Access | Define owner/signer/authorized representative model | P1 | Blocked | C5,C6 | Authority roles are explicitly defined for Blackboard |
 | A2 | Authority / Delegated Access | Define negotiator vs signer distinction | P1 | Blocked | A1 | Negotiation rights and signing rights are explicitly separated |
 | A3 | Authority / Delegated Access | Define Contract Pro delegated-access model | P1 | Done | A1,A2 | Contract Pro grant/revoke/scope/permissions model is defined |
-| A4 | Authority / Delegated Access | Define delegated-access auditability requirements | P2 | Blocked | A3 | Contract Pro and other delegated actions have minimum audit expectations defined |
+| A4 | Authority / Delegated Access | Define delegated-access auditability requirements | P2 | Done | A3 | Contract Pro and other delegated actions have minimum audit expectations defined |
 | A5 | Authority / Delegated Access | Review counterparty identity model | P2 | Blocked | A1,A2 | Current email-based counterparty approach is accepted with safeguards or scheduled for change |
 | B1 | Boundary Confidence | Verify BusinessEntity isolation in multi-business scenarios | P1 | Blocked | C5,C6 | Multi-business owner tests confirm default business separation |
 | B2 | Boundary Confidence | Verify owner-wide aggregation is explicit, not default | P2 | Blocked | B1 | Aggregation behavior is explicit and tested if present |
@@ -64,17 +64,16 @@ This tracker is the operational board for Blackboard phase one.
 
 ## Now
 
-Contract Pro foundation implementation sprint complete (2026-04-27).
-Backbone code committed: grants, permissions, editing exclusivity, oversight events, API enforcement.
-59 tests passing. Commit: e6e2173.
+A4 (delegated-access auditability requirements) complete (2026-04-27).
+Minimum audit event coverage, record structure requirements, and deferred items documented in `docs/current-state/BLACKBOARD_AUTHORITY_MODEL.md` Section 5.
 
-Next scheduled work: A4 (delegated-access auditability requirements) and remaining Phase C items.
+Next scheduled work: A5 (Review counterparty identity model) and remaining Phase C items.
 
 ---
 
 ## Next
 
-A4 (Define delegated-access auditability requirements) and remaining Phase C items are next.
+A5 (Review counterparty identity model) and remaining Phase C items are next.
 
 See Suggested Working Order for the established sequencing. No items have been promoted or reprioritized here — that is a separate scheduling decision.
 
@@ -97,6 +96,7 @@ See Suggested Working Order for the established sequencing. No items have been p
 - **A1** Define owner/signer/authorized representative model
 - **A2** Define negotiator vs signer distinction
 - **A3** Define Contract Pro delegated-access model
+- **A4** Define delegated-access auditability requirements
 
 ---
 
@@ -160,4 +160,5 @@ Sprint 02 (C1–C6) is complete and verified.
 The backend is no longer carrying broken or misleading core paths.
 A1, A2, A3 (Phase C authority definitions) are complete.
 Contract Pro foundation implementation sprint complete (2026-04-27): backbone built, 59 tests passing.
-Next: A4 (delegated-access auditability requirements) and remaining Phase C items.
+A4 (delegated-access auditability requirements) complete (2026-04-27): minimum audit coverage defined.
+Next: A5 (counterparty identity model review) and remaining Phase C items.

@@ -1,6 +1,6 @@
 # BLACKBOARD_AUTHORITY_MODEL.md
 
-> Status: Working draft — A1 complete, A2 complete, A3 complete, A4 pending
+> Status: Working draft — A1 complete, A2 complete, A3 complete, A4 complete
 > Scope: Blackboard phase-one authority baseline — code truth only
 > Purpose: Record what the backend actually implements for contract authority today; separate from vision and from future design work
 
@@ -385,10 +385,184 @@ These are not designed here. They are named so the implementation sprint starts 
 
 ---
 
+## 5. A4 — Delegated-Access Auditability Requirements
+
+### Purpose
+
+This section defines the minimum auditability requirements for Contract Pro delegated access in phase one. It does not implement new backend infrastructure. It defines what must be recorded, what scope and field expectations apply to audit records, and what is explicitly deferred.
+
+The goal: later implementation sprints have a clear audit target, not a vague requirement to "log things."
+
+---
+
+### 5.1 Current event implementation — anchored to code
+
+Source: `backend/contract_pro/models.py`, `backend/contract_pro/services.py`, `backend/api/contracts/viewsets/contract_viewset.py`, `backend/api/contracts/version_views.py`
+
+**Model: `ContractProOversightEvent`**
+
+Fields currently implemented:
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUID PK | auto-generated |
+| `business` | FK → BusinessEntity | always required; CASCADE |
+| `contract` | FK → Contract | nullable; CASCADE |
+| `grant` | FK → ContractProAccessGrant | nullable; SET_NULL |
+| `actor` | FK → AUTH_USER_MODEL | nullable; SET_NULL |
+| `event_type` | CharField (choices) | from defined constants only |
+| `created_at` | auto_now_add | never overridden |
+
+**Event types implemented:**
+
+| Event type | Trigger | Grant populated | Actor populated |
+|---|---|---|---|
+| `grant_activated` | `ContractProGrantService.activate_grant()` | Yes | No — service has no HTTP context |
+| `owner_edit_blocked` | `ContractViewSet.update()` and `ContractVersionCreateAPIView.post()` on 403 path | No — not populated at call sites | Yes — `request.user` |
+
+**Known gaps in the current implementation:**
+
+- `owner_edit_blocked` events do not populate the `grant` FK. The active grant is not fetched at the call site to avoid an extra query. This is a gap relative to the minimum field requirements defined below.
+- No `event_payload` or structured context field exists on the model. Events have scope (business, contract) but no content describing what specifically happened.
+- `grant_activated` does not record the actor. Any future audit of "who activated this grant" requires inferring from the grant's `accepted_at` field rather than reading the event record directly.
+
+---
+
+### 5.2 Required minimum event coverage
+
+The following event types are required at minimum for phase-one Contract Pro auditability. Not all are implemented today. The implementation status is noted for each.
+
+#### 5.2.1 Grant lifecycle events
+
+| Event | When | Implemented |
+|---|---|---|
+| Grant created (invite sent) | Owner creates a pending grant | No |
+| Grant activated | CP accepts; grant moves to active | Yes — `grant_activated` |
+| Grant declined | CP declines the pending invite | No |
+| Grant revoked | Owner revokes an active or pending grant | No |
+| Grant scope changed | Owner changes business-wide ↔ selected scope on an existing grant | No |
+| Grant permission rule changed | Owner adds, changes, or removes a permission rule on an existing grant | No |
+
+The grant created event is the origin record for the entire delegated-access lifecycle. It must record who created the grant, for which business, for which CP user, and at what time.
+
+Revocation is the critical safety event. It must be recorded regardless of the grant's prior state, and it must be visible in Oversight immediately.
+
+#### 5.2.2 Editing and control events
+
+| Event | When | Implemented |
+|---|---|---|
+| Owner edit blocked | Owner attempts to edit a contract while active delegation controls it | Yes — `owner_edit_blocked` |
+| Contract assigned to grant | A contract is explicitly assigned to a selected-scope grant | No |
+| Contract unassigned from grant | A contract is removed from a selected-scope grant | No |
+| Editing authority restored | Delegation revoked; owner regains direct editing access | No — derivable from revocation but must be surfaced |
+
+The editing authority restored event may be derived from the revocation record but should be surfaced as a distinct visible signal so the owner can confirm that editing control has returned.
+
+#### 5.2.3 Contract-work events
+
+These events record actions taken by the delegated CP on contracts under delegation.
+
+| Event | When | Implemented |
+|---|---|---|
+| Contract created under delegation | CP creates a contract on a business the grant covers | No |
+| Contract version created under delegation | CP creates a new version on a delegated contract | No |
+| Contract updated under delegation | CP makes a significant field update on a delegated contract | No |
+| Owner review requested | CP requests owner sign-off or review | No |
+| Counterparty signed — delegated contract | Counterparty signs a contract that is under active CP delegation | No |
+| Owner signed — delegated contract | Owner signs a contract that is under active CP delegation | No |
+
+"Significant update" in practice means a save that changes contract-level fields, not every keystroke. The implementation sprint will define the threshold. The requirement is that the owner can see what content changed and when.
+
+#### 5.2.4 Session events — requirements level
+
+Session infrastructure is not yet implemented. The following records are named at the requirements level. Implementation belongs to the session build sprint.
+
+| Event | When | Notes |
+|---|---|---|
+| Session started | CP or owner starts a Boardroom or External Session linked to a delegated contract | Must record session type, who started, linked contract |
+| Participant joined | Any participant joins the session | Must record role (owner / contract_pro / counterparty) |
+| Session extended | Any authorized participant extends the session | Must record who extended, by how much, extension policy at time |
+| Recording started | Recording is activated | Must record who triggered |
+| Recording stopped | Recording ends | Must record who triggered |
+| Signature occurred in session | A version is signed during a live session | Must link to version and contract |
+| Payment request triggered in session | A payment request is triggered during a live session | Must link to contract and amount |
+
+#### 5.2.5 Payment events
+
+| Event | When | Notes |
+|---|---|---|
+| Payment request triggered by CP | CP triggers a payment request (requires owner permission) | Must record actor, contract, amount, permission state at time |
+| Sensitive payment action blocked | CP attempts a blocked payment action | Must record actor, action attempted, contract |
+| Sensitive payment action used | CP uses a payment action that owner explicitly unlocked | Must record actor, action, contract, permission state at time |
+
+Payment events are high-trust events. They must always record the actor, the specific action, the contract context, and the permission state that allowed or blocked the action at the time the event occurred.
+
+#### 5.2.6 Compensation and relationship visibility
+
+The owner must be able to see the full compensation state for each Contract Pro relationship at any point.
+
+Minimum requirement: compensation state transitions must be recorded and visible through Oversight.
+
+| State transition | Must be visible |
+|---|---|
+| tracked → earned | Yes |
+| earned → held | Yes |
+| held → releasable | Yes |
+| releasable → paid | Yes |
+| Any state → reversed | Yes |
+| Any state → disputed | Yes |
+
+There is no hidden financial state between the owner and the delegated relationship. Any compensation that exists, is held, or has been paid must be visible to the owner. This is a hard requirement, not a nice-to-have.
+
+Compensation events may use the same audit record family as grant and editing events, or a linked compensation-specific record. The implementation sprint will decide the record placement. The requirement is visibility, not a specific schema.
+
+---
+
+### 5.3 Minimum record structure requirements
+
+These are the minimum field expectations for any delegated-access audit record.
+
+| Field | Required | Notes |
+|---|---|---|
+| `id` | Always | Stable unique identifier for each event; UUID preferred |
+| `business` | Always | Authority anchor; never null; identifies whose business context this event belongs to |
+| `event_type` | Always | From a defined constant list; no free-text event types |
+| `created_at` | Always | Set at insert time; never overridden by callers |
+| `actor` | When a human actor exists | Null only for purely system-generated events; must be populated for any event triggered by a request |
+| `contract` | When the event is contract-scoped | Null only for business-level events (e.g., scope changes, cardinality enforcement) |
+| `grant` | When the event is grant-related | Must be populated wherever the grant is the subject of the event or is naturally available at the call site; not optional when the grant is known |
+| `event_payload` | Always for minimum phase-one quality | Structured JSON context for the event. Content defined per event type. Minimum: what changed or was attempted, outcome, and enough context to support Oversight display and dispute review without reconstructing state from other tables |
+
+**Specific gap to close from current implementation:**
+
+The `grant` FK on `owner_edit_blocked` events is currently null because the call sites do not fetch the active grant before returning 403. This is below the minimum bar. The implementation sprint that adds `event_payload` should also populate the `grant` FK on this event type, even if it requires one additional query at the blocking call site.
+
+---
+
+### 5.4 Explicitly deferred beyond phase one
+
+The following are out of scope for A4 and for phase-one minimum auditability. They must not be assumed in implementation planning unless explicitly scheduled.
+
+| Item | Deferred to |
+|---|---|
+| Session event recording implementation (model, wiring, all call sites) | Session build sprint |
+| Payment event recording implementation | Payment build sprint |
+| Compensation event recording implementation | Compensation engine sprint |
+| `event_payload` schema standardization — field-level content spec per event type | Implementation sprint |
+| Oversight read API (owner-facing endpoint to query oversight events) | Oversight API sprint |
+| Oversight UI surface for owner event review | UI design sprint |
+| Notification delivery triggered by oversight events | Notification sprint |
+| Dispute review surface using audit records | Post-phase-one |
+| Retention policy and archive policy for oversight event records | Post-phase-one |
+| Auditability requirements for non-Contract Pro delegated actions | Post-phase-one |
+
+---
+
 ## Summary
 
 The current backend authority model is a two-role system: initiator and counterparty.
 Role assignment is by FK (initiator) and by email field (counterparty).
 The counterparty role conflates negotiation behavior (reject — non-binding) with signing authority (sign — binding, irreversible) under a single identity check.
 Separating these rights requires schema and permission changes deferred to a later implementation sprint.
-No authorized representative, no delegated signer, no Contract Pro, and no business-level authority scoping exists in backend code today.
+No authorized representative or delegated signer exists in backend code today.
+Contract Pro foundation code is implemented: access grants, permission matrix, editing exclusivity enforcement, and oversight event recording are in place. Business-level authority scoping exists via `ContractProAccessGrant` anchored to `BusinessEntity`. Full auditability coverage remains incomplete — minimum requirements are defined in Section 5.

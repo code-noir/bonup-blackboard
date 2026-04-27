@@ -43,3 +43,21 @@
 
 **Commit**
 - `e6e2173` — feat(contract-pro): build foundation backbone for grants, permissions, editing, oversight, and API enforcement
+
+---
+
+## Session: 2026-04-27 — A4 Delegated-Access Auditability Definition
+
+### Status: Complete
+
+### What was completed this session
+
+**A4 — Define delegated-access auditability requirements**
+- Added Section 5 to `docs/current-state/BLACKBOARD_AUTHORITY_MODEL.md`
+- Updated document header: A4 pending → A4 complete
+- Section 5 covers:
+  - Current event implementation anchored to code (2 event types, known gaps)
+  - Required minimum event coverage: grant lifecycle (6 events), editing/control (4 events), contract-work (6 events), session (7 events — requirements level only), payment (3 events), compensation visibility
+  - Minimum record structure requirements including the `event_payload` gap and the `grant` FK gap on `owner_edit_blocked` events
+  - Explicitly deferred items (10 items with destination sprint/phase)
+- Fixed stale Summary section: removed false claim that no Contract Pro or business-level authority scoping exists in backend code

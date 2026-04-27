@@ -1,20 +1,19 @@
-## Next Task: Phase C / A4 — Define delegated-access auditability requirements
+## Next Task: Phase C / A5 — Review counterparty identity model
 
 ### Status: Ready to start
 
 ### Dependencies
-- A3 complete: Contract Pro delegated-access model defined in `docs/current-state/BLACKBOARD_CONTRACT_PRO_SPEC.md`
-- Contract Pro foundation implementation sprint complete (2026-04-27): backbone code in place, 59 tests passing
+- A1 complete: authority baseline documented in `docs/current-state/BLACKBOARD_AUTHORITY_MODEL.md`
+- A2 complete: negotiator vs signer distinction documented in same file
+- A4 complete: delegated-access auditability requirements documented in same file Section 5
 
-### A4 scope (from build tracker)
+### A5 scope (from build tracker)
 
-Define the minimum audit expectations for Contract Pro delegated actions:
-- what Contract Pro actions must be recorded
-- what the oversight event record must contain
-- what the retention and review expectation is
-- how defined requirements map to the existing `ContractProOversightEvent` backbone
-- what gaps remain between the current oversight implementation and the defined requirements
+Review the current email-based counterparty approach:
+- assess whether the current `counterparty_email` identity model is acceptable for phase one with documented safeguards
+- or identify whether it needs to be scheduled for change
+- document the conclusion clearly so later implementation has a decided position to build from
 
 ### Done condition (from build tracker)
 
-Contract Pro and other delegated actions have minimum audit expectations defined.
+Current email-based counterparty approach is accepted with safeguards or scheduled for change.

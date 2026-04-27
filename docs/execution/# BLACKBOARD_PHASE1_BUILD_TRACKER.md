@@ -41,7 +41,7 @@ This tracker is the operational board for Blackboard phase one.
 | C6 | Core Stabilization | Canonicalize activation/payment/lifecycle paths | P1 | Done | C1,C3,C4,C5 | Live paths confirmed; four dead/misleading service files marked with isolation headers |
 | A1 | Authority / Delegated Access | Define owner/signer/authorized representative model | P1 | Blocked | C5,C6 | Authority roles are explicitly defined for Blackboard |
 | A2 | Authority / Delegated Access | Define negotiator vs signer distinction | P1 | Blocked | A1 | Negotiation rights and signing rights are explicitly separated |
-| A3 | Authority / Delegated Access | Define Contract Pro delegated-access model | P1 | Blocked | A1,A2 | Contract Pro grant/revoke/scope/permissions model is defined |
+| A3 | Authority / Delegated Access | Define Contract Pro delegated-access model | P1 | Done | A1,A2 | Contract Pro grant/revoke/scope/permissions model is defined |
 | A4 | Authority / Delegated Access | Define delegated-access auditability requirements | P2 | Blocked | A3 | Contract Pro and other delegated actions have minimum audit expectations defined |
 | A5 | Authority / Delegated Access | Review counterparty identity model | P2 | Blocked | A1,A2 | Current email-based counterparty approach is accepted with safeguards or scheduled for change |
 | B1 | Boundary Confidence | Verify BusinessEntity isolation in multi-business scenarios | P1 | Blocked | C5,C6 | Multi-business owner tests confirm default business separation |
@@ -64,16 +64,17 @@ This tracker is the operational board for Blackboard phase one.
 
 ## Now
 
-Sprint 02 code work (C1–C6) is complete and verified.
-Sprint 02 documentation has been updated to reflect completion.
+Contract Pro foundation implementation sprint complete (2026-04-27).
+Backbone code committed: grants, permissions, editing exclusivity, oversight events, API enforcement.
+59 tests passing. Commit: e6e2173.
 
-Next scheduled work is Phase C (Authority / Delegated Access) and Phase B (Boundary Confidence), per the Suggested Working Order below. Item prioritization and ordering for that work has not yet been scheduled.
+Next scheduled work: A4 (delegated-access auditability requirements) and remaining Phase C items.
 
 ---
 
 ## Next
 
-C1–C6 are complete. Phase C and Phase B work remains to be scheduled.
+A4 (Define delegated-access auditability requirements) and remaining Phase C items are next.
 
 See Suggested Working Order for the established sequencing. No items have been promoted or reprioritized here — that is a separate scheduling decision.
 
@@ -93,6 +94,9 @@ See Suggested Working Order for the established sequencing. No items have been p
 - **C4** Clean duplicate/confusing route registrations
 - **C5** Canonicalize contract/version flow
 - **C6** Canonicalize activation/payment/lifecycle paths
+- **A1** Define owner/signer/authorized representative model
+- **A2** Define negotiator vs signer distinction
+- **A3** Define Contract Pro delegated-access model
 
 ---
 
@@ -154,4 +158,6 @@ See Suggested Working Order for the established sequencing. No items have been p
 Sprint 01 (S1–S6) is complete and verified.
 Sprint 02 (C1–C6) is complete and verified.
 The backend is no longer carrying broken or misleading core paths.
-Next work is Phase C (Authority / Delegated Access) and Phase B (Boundary Confidence), to be scheduled.
+A1, A2, A3 (Phase C authority definitions) are complete.
+Contract Pro foundation implementation sprint complete (2026-04-27): backbone built, 59 tests passing.
+Next: A4 (delegated-access auditability requirements) and remaining Phase C items.

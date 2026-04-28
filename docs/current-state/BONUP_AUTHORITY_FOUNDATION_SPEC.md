@@ -145,9 +145,13 @@ BonUserProfile ──FK──> User (one-to-one, already exists)
 
 Full ruling:
 
-- `Entity` as a Django model supertype will be introduced in a dedicated migration sprint — not in the Soul introduction sprint.
-- The implementation approach for `Entity` as a Django model is an open design decision to be resolved at the Entity migration sprint. Two viable approaches exist — concrete base model with multi-table inheritance, or a content-type–linked abstract anchor — and they are not equivalent. They have different migration implications for existing FKs pointing to `BusinessEntity`. This spec does not choose between them. The Entity migration sprint must open with a design decision on this point before any model is written. `BusinessEntity` will be the first concrete entity subtype wired to whichever approach is chosen.
-- `soul_entity` (the personal operating surface for a `Soul`) will be the second subtype.
+- `Entity` as a Django model will be introduced in a dedicated migration sprint — not in the Soul introduction sprint.
+- **Implementation approach — decided (2026-04-28):** neither Django multi-table inheritance nor a ContentType/generic anchor. The chosen approach is an explicit additive pointer pattern:
+  - `Entity` is a standalone concrete model with a `entity_type` discriminator field. It does not use Django MTI (no subclass inheritance). MTI was rejected because `BusinessEntity` already has a UUID primary key, changing its parent class is a destructive migration, and the implicit JOIN overhead is unnecessary. ContentType/generic anchor was rejected because no existing model in this repo uses `GenericForeignKey`, it provides no DB-level referential integrity, and it would degrade the live permission traversal chain (`contract.entity.owner_id`, `grant.business.owner`).
+  - `SoulEntity` is a new model that holds a `OneToOneField` pointing *to* `Entity`. It is introduced alongside `Entity` in the same sprint.
+  - `BusinessEntity` will later gain a nullable `OneToOneField` pointing *to* `Entity` as a pure additive migration (AG2b). No existing FKs to `BusinessEntity` change at that point.
+  - All existing FK consumers (`Contract.entity`, `ContractProAccessGrant.business`) remain pointed at `BusinessEntity` until their own dedicated migration steps (AG3, AG6). The permission chain stays intact and untouched until those steps.
+- `soul_entity` (the personal operating surface for a `Soul`) will be introduced as `SoulEntity` in the same sprint as `Entity` (AG2a).
 - Until the `Entity` migration sprint runs: the current `Contract.entity_type = "personal" | "business"` flat field remains as-is. It is stale design but safe to leave until the entity layer exists.
 - Until the `Entity` migration sprint runs: Contract Pro grants continue to anchor to `BusinessEntity` directly.
 - `Trust` should become a `business_entity` subtype with a `legal_form = Trust` attribute — not a separate entity type. Its current position as a `business_type` choice value in `BusinessEntity` is consistent with this decision.
@@ -279,13 +283,14 @@ These gaps are named here for future sprint planning. None are to be worked in t
 | Gap ID | Description | Depends On |
 |---|---|---|
 | AG1 | Introduce `Soul` model in new bonUP-layer app | This spec |
-| AG2 | Introduce `Entity` supertype; migrate `BusinessEntity` as subtype | AG1 complete |
-| AG3 | Migrate `Contract.entity_type` flat field to `Contract.entity` FK pointing to `Entity` | AG2 complete |
-| AG4 | Introduce `AuthorityHolder` relation model | AG2 complete |
+| AG2a | Introduce `Entity` model + `SoulEntity` model in bonUP app (additive; no existing models touched) | AG1 complete |
+| AG2b | Add nullable `BusinessEntity.entity` OneToOneField + backfill data migration | AG2a complete |
+| AG3 | Migrate `Contract.entity_type` flat field to `Contract.entity` FK pointing to `Entity` | AG2b complete |
+| AG4 | Introduce `AuthorityHolder` relation model | AG2a complete |
 | AG5 | Migrate `BusinessEntity.owner` → `AuthorityHolder` record | AG4 complete |
-| AG6 | Migrate Contract Pro grant anchor from `BusinessEntity` to `Entity` | AG2, AG4 complete |
+| AG6 | Migrate Contract Pro grant anchor from `BusinessEntity` to `Entity` | AG2b, AG4 complete |
 | AG7 | Generalize `ContractProAccessGrant` as `AppointedAuthority` subtype or migrate it to anchor to `AuthorityHolder` + `Entity` | AG4, AG5, AG6 complete |
-| AG8 | Introduce `soul_entity` as the personal operating surface record | AG2 complete |
+| AG8 | Introduce `SoulEntity` as the personal operating surface record | AG2a complete — introduced in same sprint as Entity |
 | AG9 | Introduce `Operator` role model under `AuthorityHolder` / `AppointedAuthority` | AG4, AG7 complete |
 
 ---
@@ -304,13 +309,20 @@ Step 1 — Soul model introduction (AG1)
   - Tests: verify Soul can be created for an existing User; verify one-to-one constraint
   - Outcome: bonUP-layer identity anchor exists; nothing in Blackboard changes
 
-Step 2 — Entity supertype (AG2, AG8)
-  - Introduce Entity model with discriminated subtype field
-  - Wire BusinessEntity as a business_entity subtype
-  - Introduce soul_entity record for personal operating surface
-  - Migration: BusinessEntity gains a back-link to Entity; no FK changes yet
-  - Tests: verify entity subtype creation; verify BusinessEntity↔Entity link
-  - Outcome: Entity layer exists; Contract Pro and Blackboard continue using BusinessEntity FK unmodified
+Step 2a — Entity + SoulEntity introduction (AG2a, AG8)
+  - Approach: explicit additive pointer — no Django MTI, no ContentType/generic anchor
+  - Add Entity model to bonup/ app: UUID PK, entity_type discriminator field
+  - Add SoulEntity model to bonup/ app: OneToOneField → Entity, OneToOneField → Soul
+  - Purely additive — no existing models touched, no existing FKs changed
+  - Tests: verify Entity creation; verify SoulEntity ↔ Soul ↔ Entity chain; verify entity_type discriminator
+  - Outcome: Entity and SoulEntity exist in bonup/; nothing in Blackboard, Contract Pro, or BusinessEntity changes
+
+Step 2b — BusinessEntity pointer (AG2b)
+  - Add nullable OneToOneField BusinessEntity.entity → Entity (additive migration)
+  - Data migration: create one Entity row (entity_type='business_entity') for each existing BusinessEntity row and populate the pointer
+  - No existing FKs to BusinessEntity change; Contract.entity and ContractProAccessGrant.business still point to BusinessEntity
+  - Tests: verify existing BusinessEntity rows have a populated entity pointer; verify new BusinessEntity creation path populates the pointer
+  - Outcome: BusinessEntity is linked to the Entity layer; permission roots are still untouched
 
 Step 3 — AuthorityHolder model introduction (AG4)
   - Introduce AuthorityHolder model: Soul FK + Entity FK

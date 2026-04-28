@@ -409,6 +409,19 @@ class BusinessEntity(models.Model):
         related_name="business_entities",
     )
 
+    # bonUP Entity layer pointer (AG2b).
+    # Nullable: existing rows are backfilled by migration 0010.
+    # on_delete=SET_NULL: BusinessEntity is the primary record; losing the
+    # Entity pointer does not destroy the BusinessEntity.
+    # Do not change this FK target until AG6 migration is scheduled.
+    entity = models.OneToOneField(
+        "bonup.Entity",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="business_entity",
+    )
+
     name = models.CharField(max_length=200)
     business_type = models.CharField(max_length=30, choices=BUSINESS_TYPE_CHOICES)
     description = models.CharField(max_length=300, blank=True, default="")
@@ -423,6 +436,20 @@ class BusinessEntity(models.Model):
     class Meta:
         ordering = ["name"]
         verbose_name_plural = "business entities"
+
+    def save(self, *args, **kwargs):
+        if not self.entity_id:
+            # First save for this BusinessEntity — create the matching bonUP
+            # Entity row atomically so both commit or both roll back.
+            # Local import avoids circular dependency (bonup does not import users).
+            from backend.bonup.models import Entity
+            with transaction.atomic():
+                entity = Entity.objects.create(
+                    entity_type=Entity.ENTITY_TYPE_BUSINESS
+                )
+                self.entity_id = entity.pk
+                return super().save(*args, **kwargs)
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.name} ({self.business_type}) — {self.owner_id}"

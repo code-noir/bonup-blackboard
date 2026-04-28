@@ -1,12 +1,15 @@
 # backend/bonup/tests.py
 #
-# Focused tests for the Soul, Entity, and SoulEntity models.
+# Focused tests for the Soul, Entity, SoulEntity, and BusinessEntity.entity
+# pointer models.
 # Covers: creation, one-to-one constraints, cascade behaviour, reverse accessors.
 # No API layer, no routes, no authority relations (those belong to later sprints).
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 from django.test import TestCase
+
+from backend.users.models import BusinessEntity
 
 from .models import Entity, Soul, SoulEntity
 
@@ -233,3 +236,161 @@ class SoulEntityReverseAccessorTest(TestCase):
         entity = make_entity()
         with self.assertRaises(SoulEntity.DoesNotExist):
             _ = entity.soul_entity
+
+
+# ===========================================================================
+# BusinessEntity.entity pointer tests (AG2b)
+# ===========================================================================
+
+def make_business_entity(owner, name="Test Biz"):
+    return BusinessEntity.objects.create(
+        owner=owner,
+        name=name,
+        business_type="LLC",
+    )
+
+
+def make_biz_entity_row():
+    """Create a standalone Entity row of type business_entity."""
+    return Entity.objects.create(entity_type=Entity.ENTITY_TYPE_BUSINESS)
+
+
+class BusinessEntityPointerNullableTest(TestCase):
+    """BusinessEntity.entity is nullable at the schema level (backfill compat)
+    but is auto-populated on every new save() call."""
+
+    def test_business_entity_created_with_entity_pointer_auto_set(self):
+        user = make_user("biz1", "biz1@example.com")
+        biz = make_business_entity(user)
+        biz.refresh_from_db()
+        # save() hook must have created and linked an Entity row.
+        self.assertIsNotNone(biz.entity_id)
+
+    def test_business_entity_functions_normally_with_pointer(self):
+        user = make_user("biz2", "biz2@example.com")
+        biz = make_business_entity(user)
+        self.assertEqual(biz.owner, user)
+        self.assertEqual(biz.business_type, "LLC")
+
+
+class BusinessEntityPointerAssignTest(TestCase):
+    """An Entity (business_entity type) can be assigned to a BusinessEntity."""
+
+    def test_entity_pointer_can_be_set(self):
+        user = make_user("biz3", "biz3@example.com")
+        biz = make_business_entity(user)
+        entity = make_biz_entity_row()
+        biz.entity = entity
+        biz.save(update_fields=["entity"])
+        biz.refresh_from_db()
+        self.assertEqual(biz.entity_id, entity.pk)
+
+    def test_entity_type_is_business_entity(self):
+        entity = make_biz_entity_row()
+        self.assertEqual(entity.entity_type, Entity.ENTITY_TYPE_BUSINESS)
+
+
+class BusinessEntityPointerOneToOneConstraintTest(TestCase):
+    """Two BusinessEntities cannot share the same Entity pointer."""
+
+    def test_duplicate_entity_pointer_raises_integrity_error(self):
+        user = make_user("biz4", "biz4@example.com")
+        biz1 = make_business_entity(user, name="Biz A")
+        biz2 = make_business_entity(user, name="Biz B")
+        entity = make_biz_entity_row()
+        biz1.entity = entity
+        biz1.save(update_fields=["entity"])
+        biz2.entity = entity
+        with self.assertRaises(IntegrityError):
+            biz2.save(update_fields=["entity"])
+
+
+class BusinessEntityPointerSetNullTest(TestCase):
+    """Deleting an Entity sets BusinessEntity.entity to NULL (SET_NULL); row survives."""
+
+    def test_business_entity_survives_entity_deletion(self):
+        user = make_user("biz5", "biz5@example.com")
+        biz = make_business_entity(user)
+        entity = make_biz_entity_row()
+        biz.entity = entity
+        biz.save(update_fields=["entity"])
+        biz_pk = biz.pk
+        entity.delete()
+        biz.refresh_from_db()
+        self.assertTrue(BusinessEntity.objects.filter(pk=biz_pk).exists())
+        self.assertIsNone(biz.entity_id)
+
+
+class BusinessEntityPointerReverseAccessorTest(TestCase):
+    """entity.business_entity reverse accessor resolves to the correct BusinessEntity."""
+
+    def test_reverse_accessor_resolves(self):
+        user = make_user("biz6", "biz6@example.com")
+        biz = make_business_entity(user)
+        entity = make_biz_entity_row()
+        biz.entity = entity
+        biz.save(update_fields=["entity"])
+        self.assertEqual(entity.business_entity.pk, biz.pk)
+
+    def test_entity_without_business_entity_raises(self):
+        entity = make_biz_entity_row()
+        with self.assertRaises(BusinessEntity.DoesNotExist):
+            _ = entity.business_entity
+
+
+class BusinessEntityDeleteDoesNotCascadeToEntityTest(TestCase):
+    """Deleting a BusinessEntity does not delete the linked Entity row."""
+
+    def test_entity_survives_business_entity_deletion(self):
+        user = make_user("biz7", "biz7@example.com")
+        biz = make_business_entity(user)
+        entity_pk = biz.entity_id
+        biz.delete()
+        self.assertTrue(Entity.objects.filter(pk=entity_pk).exists())
+
+
+# ===========================================================================
+# BusinessEntity.entity auto-creation (save() hook) tests
+# ===========================================================================
+
+class BusinessEntityAutoEntityCreationTest(TestCase):
+    """save() hook creates a matching Entity for every new BusinessEntity."""
+
+    def test_new_business_entity_auto_creates_entity(self):
+        user = make_user("biz8", "biz8@example.com")
+        biz = make_business_entity(user)
+        biz.refresh_from_db()
+        self.assertIsNotNone(biz.entity_id)
+        self.assertTrue(Entity.objects.filter(pk=biz.entity_id).exists())
+
+    def test_auto_created_entity_has_correct_type(self):
+        user = make_user("biz9", "biz9@example.com")
+        biz = make_business_entity(user)
+        entity = Entity.objects.get(pk=biz.entity_id)
+        self.assertEqual(entity.entity_type, Entity.ENTITY_TYPE_BUSINESS)
+
+    def test_repeated_save_does_not_create_duplicate_entity(self):
+        user = make_user("biz10", "biz10@example.com")
+        biz = make_business_entity(user)
+        first_entity_id = biz.entity_id
+        # Save again — must not create a second Entity row.
+        biz.name = "Updated Name"
+        biz.save()
+        biz.refresh_from_db()
+        self.assertEqual(biz.entity_id, first_entity_id)
+        self.assertEqual(
+            Entity.objects.filter(entity_type=Entity.ENTITY_TYPE_BUSINESS).count(),
+            1,
+        )
+
+    def test_set_null_still_works_after_hook(self):
+        """DB-level SET_NULL on Entity deletion is unaffected by the save() hook."""
+        user = make_user("biz11", "biz11@example.com")
+        biz = make_business_entity(user)
+        biz_pk = biz.pk
+        # Delete the Entity at DB level — triggers SET_NULL.
+        Entity.objects.filter(pk=biz.entity_id).delete()
+        biz.refresh_from_db()
+        # BusinessEntity survives, pointer is NULL.
+        self.assertTrue(BusinessEntity.objects.filter(pk=biz_pk).exists())
+        self.assertIsNone(biz.entity_id)

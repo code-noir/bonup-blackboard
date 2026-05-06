@@ -1,8 +1,8 @@
 # Identity Architecture
 
-> Status: Draft  
-> Source of truth: current code first, docs second  
-> Scope: Django User, BonUserProfile, bonID system, signup, authentication, and identity flows
+> Status: Current
+> Source of truth: code first, this document second
+> Updated: 2026-05-06
 
 ---
 

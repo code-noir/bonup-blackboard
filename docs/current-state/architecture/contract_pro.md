@@ -1,8 +1,8 @@
 # Contract Pro Architecture
 
-> Status: Draft  
-> Source of truth: current code first, docs second  
-> Scope: Delegated authority system for business contracts (Contract Pro)
+> Status: Current
+> Source of truth: code first, this document second
+> Updated: 2026-05-06
 
 ---
 

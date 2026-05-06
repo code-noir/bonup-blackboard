@@ -1,8 +1,8 @@
 # Contract Lifecycle Architecture
 
-> Status: Draft  
-> Source of truth: current code first, docs second  
-> Scope: Contract creation, versioning, negotiation, signing, and role switching lifecycle
+> Status: Current
+> Source of truth: code first, this document second
+> Updated: 2026-05-06
 
 ---
 

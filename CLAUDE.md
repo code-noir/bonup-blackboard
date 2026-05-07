@@ -313,3 +313,97 @@ Use code inspection to determine what is actually real now.
 Your job is to leave the repository more correct, not more surprising.
 
 Small, accurate, controlled work is better than large, clever, risky work.
+
+---
+
+## 19. Workflow Conventions Established 2026-05-06 / 2026-05-07
+
+These conventions were established during the alignment phase and
+must be followed in future sessions.
+
+### 19.1 Repo Orientation
+
+When starting a session in this repository, read these files in order
+before doing any task:
+
+1. `CLAUDE.md` (this file) — operating contract
+2. `docs/current-task.md` — what is currently being worked on
+3. `docs/next-task.md` — what is queued
+4. `docs/current-state/architecture/README.md` — index of all 12
+   domain architecture documents
+5. `docs/current-state/tech-debt.md` — consolidated gap register
+6. `docs/work/<year>/<month>/<day>/WORKLOG.md` — most recent worklog
+   entry
+
+Do not start a substantive task without reading at least the first
+five. The architecture documents in `docs/current-state/architecture/`
+are the canonical reference for what each domain actually does —
+prefer them over inference from filenames.
+
+### 19.2 The Audit-and-Write Workflow
+
+When asked to generate or regenerate a documentation file from code,
+follow this two-step workflow:
+
+**Step 1 — Inventory.** Before writing any document, produce a
+read-only inventory report. Inspect the relevant code files. Report
+findings as a structured list. Do not write the target document yet.
+Do not commit. Wait for confirmation.
+
+**Step 2 — Audit-and-Write.** After the inventory is reviewed, write
+the target document from code with strict citation rules: every
+substantive claim must cite a file path and line number. Do not
+infer. Do not invent. Do not paraphrase findings without checking.
+If a concept appears in code but its purpose is unclear, say "purpose
+not established in code" rather than guessing.
+
+This workflow exists because earlier sessions in this project
+suffered fabrication: documents were written from incomplete inventory
+data without re-checking source code. The two-step separation is
+designed to make fabrication harder.
+
+### 19.3 Commit Discipline
+
+Do not commit to git from inside Claude Code or any agent. The user
+runs all `git add` and `git commit` commands manually in their own
+shell. The user writes the commit messages. The agent's job ends
+when the file is written or edited.
+
+This rule has two purposes:
+- The user retains full control of git history.
+- Commit messages are written by the human who understands what
+  happened, not by the agent that did the writing.
+
+If asked to commit, refuse and remind the user of this rule.
+
+### 19.4 Status Header Convention
+
+Every architecture document under `docs/current-state/architecture/`
+must have a top-of-file header block in this format:
+
+    > Status: Current
+    > Source of truth: code first, this document second
+    > Updated: YYYY-MM-DD
+
+Status values:
+- Current — file is generated from code with citations and is
+  trusted.
+- Draft — file is a stub or has unverified content; do not trust.
+- Stale — file was current but code has changed since; needs
+  regeneration.
+
+If a file's content is updated, its Updated: date must be updated
+in the same commit.
+
+### 19.5 Severity Language
+
+When surfacing gaps or issues, use the severity vocabulary defined
+in `docs/current-state/tech-debt.md`:
+
+- **Critical** — security, data integrity, or correctness issue.
+- **High** — production-readiness issue.
+- **Medium** — quality or unwired-feature issue.
+- **Low** — naming, cleanup, dead code.
+
+Do not invent new severity terms. New gaps surfaced during a session
+should be added to `tech-debt.md` with one of these four levels.

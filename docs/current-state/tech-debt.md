@@ -69,6 +69,16 @@ The Django `DATABASES` setting is configured to use SQLite rather than PostgreSQ
 
 ---
 
+### C6 — ImportContractView writes contract before checking billing gate; failed gate does not block the write
+
+`ImportContractView.post()` creates `Contract`, `ContractVersion`, and obligations inside a `transaction.atomic()` block, then commits. After the commit, `can_create_contract(request.user)` is called. If the gate returns `(False, _)`, the code only skips the usage counter increment — the contract is already written to the database and is not rolled back or deleted. A user whose plan does not allow another contract can use the import endpoint to create one anyway; the only consequence is that `contracts_used_this_period` is not incremented, which silently desyncs the usage counter from actual contract count.
+
+**Source:** `ai.md §10`, citing `backend/api/ai/views.py:643–727` (atomic block at 643; gate check at 723–727)
+
+**Why Critical:** Plan-limit bypass on a paid feature. Users on plans that should block contract creation can create contracts through the AI import path. Usage counter desync also breaks any downstream metering or billing logic that depends on `contracts_used_this_period`.
+
+---
+
 ## 4. High
 
 ### H1 — InMemoryChannelLayer breaks WebSocket broadcasts in multi-process deployment

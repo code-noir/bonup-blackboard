@@ -1,28 +1,14 @@
 # Current Task
 
-Status: Alignment phase complete.
+Status: Tech-debt phase complete.
 
-Branch: restore-before-break (multiple commits not yet pushed)
+Branch: restore-before-break (synced with origin)
 
-All 12 architecture files in docs/current-state/architecture/ are 
-current and code-grounded:
-- identity.md
-- entity_layer.md
-- authority.md
-- contract_lifecycle.md
-- contract_pro.md
-- obligations_lifecycle.md
-- payments.md
-- billing.md
-- audit_activity.md
-- documents_uploads.md
-- sessions.md
-- sol.md
+All architecture documentation work is done. tech-debt.md is written 
+and committed. CLAUDE.md updated with Section 19 (workflow 
+conventions). All work pushed to GitHub.
 
-README.md written as the folder index.
-
-Where to pick up: alignment is done. Decide between writing 
-tech-debt.md (consolidating gaps surfaced across all 12 files), 
-pushing to GitHub (auth expired, needs token regen), pasting the 
-project instructions template into Claude Project settings + CLAUDE.md, 
-or starting code-level fixes for the security gap on /api/users/login/.
+Where to pick up next session: choose between paste project 
+instructions into Claude.ai settings (15-20 min low brain), branch 
+cleanup (10 min low brain), or start the C1-C4 critical fixes from 
+tech-debt.md (real code, freshest brain).

@@ -2,32 +2,31 @@
 
 Outstanding work, in roughly the order Project Claude has recommended:
 
-1. Push to GitHub. Auth expired earlier in the project. Diagnose with 
-   `git remote -v`. If https → regenerate Personal Access Token. If 
-   ssh → check SSH key. Several commits sit on restore-before-break 
-   that have not been pushed.
+1. Paste project instructions into Claude.ai project settings. Template 
+   was drafted by ChatGPT earlier in the project. Not yet pasted into 
+   the web interface. Separate from CLAUDE.md (which is for Claude 
+   Code in the terminal); this one is for Project Claude in chat.
 
-2. Write tech-debt.md. Consolidate the gaps surfaced across all 12 
-   architecture files into one prioritized list. Project Claude will 
-   provide the prompt when ready.
+2. Branch cleanup. 6 branches exist. restore-before-break is truth and 
+   is now pushed. Run `git branch -a` to see what is there. Decide 
+   what to delete and whether to consolidate with main.
 
-3. Paste project instructions into Claude Project settings and create 
-   CLAUDE.md in repo root. Template was drafted earlier; not yet 
-   pasted.
-
-4. Branch cleanup. 6 branches exist. restore-before-break is truth. 
-   Consolidate with main when ready.
-
-5. Vision update. One or two features have been built that aren't yet 
+3. Vision update. One or two features have been built that are not yet 
    reflected in the founder's vision document. Reconcile.
 
-6. Code-level fixes from gaps. Triage AFTER tech-debt.md is written. 
-   Project Claude advised: small-scope security fixes during alignment 
-   (e.g., /api/users/login/ bypass), larger refactors (SQLite → 
-   Postgres restoration, silent except handlers, Contract Pro 
-   permission matrix wiring, file size limits, LiveKit token TTL, 
-   InMemoryChannelLayer → Redis) during pre-launch hardening phase. 
-   Pre-launch hardening estimated 2-3 weeks total work.
+4. Code-level fixes from tech-debt.md. Triage from the Suggested Order 
+   of Attack section. C1-C4 are the smallest-scope highest-priority 
+   items:
+   - C1: disable or patch /api/users/login/ verification bypass
+   - C2: make PATCH /api/payments/<id>/ status read-only
+   - C3: add obligation amount_paid recompute on DELETE payment
+   - C4: restore Postgres in DATABASES setting
+   
+   Then H-series items (file size limit, MIME validation, lifecycle 
+   gate on contract-scoped payment create, etc.).
 
-7. Founder's vision audit. Confirmed current; no feature creep 
-   detected.
+5. Document remaining secondary backend domains: ai, notifications, 
+   engine, search, negotiation_prep, infrastructure, admin. Same 
+   audit-and-write workflow as the 12 already done.
+
+6. Frontend audit. Separate beast.

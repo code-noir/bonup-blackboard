@@ -1,6 +1,6 @@
 # BLACKBOARD_CONTRACT_PRO_SPEC.md
 
-> Status: Approved phase-one model — not yet implemented
+> Status: Foundation backbone implemented (2026-04-27, commit e6e2173) — grant model, permissions, editing exclusivity, and oversight events are in place in `backend/contract_pro/`; remaining spec coverage (billing plan gate, oversight read API, compensation engine, session and payment events) not yet built
 > Source: BLACKBOARD_AUTHORITY_MODEL.md Section 3 (A3)
 > Purpose: Standalone implementation-ready reference for Contract Pro delegated-access design
 > Scope: Phase-one rules only; deferred items are listed explicitly at the end
@@ -9,11 +9,19 @@
 
 ## Current backend truth
 
-There is no Contract Pro concept in the backend today. No model, no permission class, no grant record, no route, and no schema field. The backend has no delegated-access mechanism of any kind.
+The Contract Pro foundation backbone was implemented on 2026-04-27 (commit `e6e2173`). The following are in place in `backend/contract_pro/`:
 
-The only authority model currently in code is the two-role initiator/counterparty system. See `BLACKBOARD_AUTHORITY_MODEL.md` Section 1 for the full code-level baseline.
+- `ContractProAccessGrant` — access grant model with scope, status, and cardinality enforcement
+- `ContractProContractAssignment` — selected-contract scope record
+- `ContractProGrantService.activate_grant()` — cardinality-enforced activation
+- `ContractProPermissionRule` + `ContractProPermissionService` — permission matrix backbone with ceiling enforcement
+- `ContractProEditingService` — editing exclusivity resolution
+- `ContractProOversightEvent` + `ContractProOversightService` — oversight event recording
+- API enforcement: `ContractViewSet.update()` and `ContractVersionCreateAPIView.post()` block owner editing while active delegation controls a contract
 
-Everything below is the approved phase-one model. None of it is implemented yet.
+59 tests passing (47 `backend.contract_pro`, 12 API enforcement).
+
+The sections below are the full approved phase-one spec. The grant lifecycle UI, oversight read API, billing plan gate, compensation engine, session events, and payment events are not yet built. For the two-role authority baseline this spec builds on, see `BLACKBOARD_AUTHORITY_MODEL.md` Section 1.
 
 ---
 
@@ -232,7 +240,7 @@ These are out of scope for phase one and must not be assumed in implementation p
 
 # BLACKBOARD_CONTRACT_PRO_SPEC.md
 
-> Status: Approved phase-one model — not yet implemented
+> Status: Foundation backbone implemented (2026-04-27, commit e6e2173) — grant model, permissions, editing exclusivity, and oversight events are in place in `backend/contract_pro/`; remaining spec coverage (billing plan gate, oversight read API, compensation engine, session and payment events) not yet built
 > Source: Detailed user-provided Contract Pro phase-one specification from this session, aligned with `BLACKBOARD_AUTHORITY_MODEL.md`
 > Purpose: Standalone implementation-ready reference for Contract Pro delegated-access design
 > Scope: Phase-one Contract Pro rules only; deferred items are listed explicitly at the end

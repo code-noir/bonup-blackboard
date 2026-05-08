@@ -39,8 +39,8 @@ This tracker is the operational board for Blackboard phase one.
 | C4 | Core Stabilization | Clean duplicate/confusing route registrations | P1 | Done | S1,S2,S3,S4,S5,S6 | Dead root URL config deleted; redundant obligations mount removed; duplicate route entry removed |
 | C5 | Core Stabilization | Canonicalize contract/version flow | P1 | Done | C3,C4 | Live version path confirmed; broken engine-level service and inert test file marked with isolation headers |
 | C6 | Core Stabilization | Canonicalize activation/payment/lifecycle paths | P1 | Done | C1,C3,C4,C5 | Live paths confirmed; four dead/misleading service files marked with isolation headers |
-| A1 | Authority / Delegated Access | Define owner/signer/authorized representative model | P1 | Blocked | C5,C6 | Authority roles are explicitly defined for Blackboard |
-| A2 | Authority / Delegated Access | Define negotiator vs signer distinction | P1 | Blocked | A1 | Negotiation rights and signing rights are explicitly separated |
+| A1 | Authority / Delegated Access | Define owner/signer/authorized representative model | P1 | Done | C5,C6 | Authority roles are explicitly defined for Blackboard |
+| A2 | Authority / Delegated Access | Define negotiator vs signer distinction | P1 | Done | A1 | Negotiation rights and signing rights are explicitly separated |
 | A3 | Authority / Delegated Access | Define Contract Pro delegated-access model | P1 | Done | A1,A2 | Contract Pro grant/revoke/scope/permissions model is defined |
 | A4 | Authority / Delegated Access | Define delegated-access auditability requirements | P2 | Done | A3 | Contract Pro and other delegated actions have minimum audit expectations defined |
 | A5 | Authority / Delegated Access | Review counterparty identity model | P2 | Done | A1,A2 | Current email-based counterparty approach is accepted with safeguards or scheduled for change |
@@ -62,10 +62,31 @@ This tracker is the operational board for Blackboard phase one.
 
 ---
 
+## bonUP Foundation Layer (AG sequence)
+
+The AG sequence is defined in `docs/current-state/BONUP_AUTHORITY_FOUNDATION_SPEC.md`. These steps are tracked separately from the S/C/A/B/D/F workstreams.
+
+| Step | Description | Status | Commit |
+|---|---|---|---|
+| AG1 | Introduce `Soul` model in new `bonup/` app | Done | `1cbfd11` |
+| AG2a | Introduce `Entity` + `SoulEntity` models — additive; AG8 folded into same commit | Done | `4768fe3` |
+| AG2b | Add nullable `BusinessEntity.entity` OneToOneField + data backfill | Done | `4e8261f` |
+| AG3 | Migrate `Contract.entity_type` flat field to `Contract.entity` FK pointing to `Entity` | Deferred | — |
+| AG4 | Introduce `AuthorityHolder` relation model | Deferred | — |
+| AG5 | Migrate `BusinessEntity.owner` → `AuthorityHolder` record | Deferred | — |
+| AG6 | Migrate Contract Pro grant anchor from `BusinessEntity` to `Entity` | Deferred | — |
+| AG7 | Generalize `ContractProAccessGrant` as `AppointedAuthority` subtype or migrate to `AuthorityHolder` + `Entity` anchor | Deferred | — |
+| AG8 | Introduce `SoulEntity` as personal operating surface record — introduced with AG2a | Done | `4768fe3` |
+| AG9 | Introduce `Operator` role model | Deferred | — |
+
+---
+
 ## Now
 
 Phase C Boundary Confidence items (B1–B5) complete (2026-04-27).
 Boundary layer verified. Two real bugs found and fixed: cross-owner BusinessEntity attachment (B1 inspection, separate commit) and cancelled-session-can-be-ended state machine gap (B5). All other paths verified by targeted tests.
+
+bonUP Foundation Layer: AG1 (Soul), AG2a/AG8 (Entity/SoulEntity), and AG2b (BusinessEntity→Entity pointer) complete (2026-04-28). See AG sequence section above.
 
 ---
 
@@ -100,6 +121,9 @@ All D items are currently Deferred. No items promoted yet — that is a separate
 - **B3** Harden uploads/documents boundaries
 - **B4** Verify notification and activity scoping
 - **B5** Review session edge and broadcast hardening
+- **AG1** Introduce Soul model in new `bonup/` app
+- **AG2a/AG8** Introduce Entity and SoulEntity models (additive; same commit)
+- **AG2b** Add BusinessEntity→Entity OneToOneField pointer with data backfill
 
 ---
 
@@ -166,4 +190,5 @@ Contract Pro foundation implementation sprint complete (2026-04-27): backbone bu
 A4 (delegated-access auditability requirements) complete (2026-04-27): minimum audit coverage defined.
 A5 (counterparty identity model) complete (2026-04-27): email-only identity named insufficient; plan naming locked; four implementation gaps named.
 Phase C Boundary Confidence (B1–B5) complete (2026-04-27): boundary layer verified; cross-owner entity attachment bug fixed; cancelled-session end bug fixed; targeted tests added for all five items.
+bonUP Foundation Layer AG sequence begun (2026-04-28): AG1 (Soul), AG2a/AG8 (Entity/SoulEntity), and AG2b (BusinessEntity→Entity pointer) complete. AG3–AG9 deferred. See `docs/current-state/BONUP_AUTHORITY_FOUNDATION_SPEC.md` for full sequence.
 Next: Domain Strengthening (D-series), all currently Deferred.

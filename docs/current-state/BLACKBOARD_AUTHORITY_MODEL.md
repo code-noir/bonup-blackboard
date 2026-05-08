@@ -118,7 +118,7 @@ The system does not distinguish "the person who signs" from "the person who owns
 `BusinessEntity` has one owner FK. There is no authorized-signers list and no mechanism to grant signing rights to another user on behalf of the entity.
 
 **Contract Pro role**
-Not started as a backend concept. No model, no permission class, no route, no schema field.
+Foundation backbone implemented (2026-04-27, commit `e6e2173`). Grant model, permission matrix, editing exclusivity, and oversight events are in place in `backend/contract_pro/`. See Section 3 for full current-state detail.
 
 **Negotiator role as distinct from signer**
 Not separated from counterparty. See section 4.
@@ -131,9 +131,19 @@ Not separated from counterparty. See section 4.
 
 ### Current backend truth
 
-There is no Contract Pro concept in the backend today. No model, no permission class, no grant record, no route, and no schema field. The backend has no delegated-access mechanism of any kind. The only authority model in code is the two-role initiator/counterparty system described in Section 1.
+The Contract Pro foundation backbone was implemented on 2026-04-27 (commit `e6e2173`). The following are in place in `backend/contract_pro/`:
 
-Everything in this section is the approved phase-one model definition. None of it is implemented yet. Implementation belongs to a later sprint.
+- `ContractProAccessGrant` — access grant model with scope, status, cardinality enforcement
+- `ContractProContractAssignment` — selected-contract scope record
+- `ContractProGrantService.activate_grant()` — cardinality-enforced activation
+- `ContractProPermissionRule` + `ContractProPermissionService` — permission matrix backbone with ceiling enforcement
+- `ContractProEditingService` — editing exclusivity resolution
+- `ContractProOversightEvent` + `ContractProOversightService` — oversight event recording
+- API enforcement: `ContractViewSet.update()` and `ContractVersionCreateAPIView.post()` block owner editing while active delegation controls a contract; oversight event recorded on blocked path
+
+59 tests passing (47 `backend.contract_pro`, 12 API enforcement).
+
+The sections below describe the full approved phase-one model. The foundation backbone implements the core grant, permission, editing exclusivity, and oversight event structures. Remaining spec coverage (billing plan gate, full grant lifecycle UI, oversight read API, compensation engine, session events, payment events) is not yet built.
 
 ---
 

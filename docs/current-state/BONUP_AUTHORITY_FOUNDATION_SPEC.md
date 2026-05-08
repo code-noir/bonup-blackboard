@@ -1,11 +1,11 @@
 # BONUP_AUTHORITY_FOUNDATION_SPEC.md
 
-> Status: Active spec — answers locked, build sequence defined
+> Status: Active spec — answers locked, build sequence defined — AG1/AG2a/AG8/AG2b implemented (2026-04-28); AG3–AG9 deferred
 > Scope: bonUP-layer authority and governance foundation — pre-code design pass
 > Purpose: Answer the five unresolved design questions before any model work begins; establish safe build sequence; prevent Contract Pro authority root breakage during platform expansion
 
 This document is a spec, not a current-state description.
-Nothing in this document is implemented in code yet unless explicitly noted.
+AG1, AG2a, AG8, and AG2b are implemented in committed code (2026-04-28). All remaining steps (AG3–AG9) are not yet implemented.
 Implementation sprints must reference this document and must not diverge from it without a recorded design decision.
 
 ---

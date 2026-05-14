@@ -1,7 +1,9 @@
 # backend/api/users/urls.py
 
 from django.urls import path
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import TokenRefreshView
+
+from backend.api.auth.views import EmailOrUsernameTokenView
 
 from .views import (
     BillingInfoAPIView,
@@ -30,7 +32,7 @@ urlpatterns = [
     # Auth
     # --------------------------------------------------
     path("register/", RegisterAPIView.as_view(), name="users-register"),
-    path("login/", TokenObtainPairView.as_view(), name="users-login"),
+    path("login/", EmailOrUsernameTokenView.as_view(), name="users-login"),
     path("login/refresh/", TokenRefreshView.as_view(), name="users-login-refresh"),
     path("logout/", LogoutAPIView.as_view(), name="users-logout"),
     path("password-reset/", PasswordResetRequestAPIView.as_view(), name="users-password-reset"),

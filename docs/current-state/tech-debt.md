@@ -24,12 +24,22 @@ This file consolidates known gaps, bugs, and deferred work across the bonUP Blac
 
 ## 3. Critical
 
-### C1 — /api/users/login/ bypasses email_verified gate
+### C1 — RESOLVED: /api/users/login/ bypassed email_verified gate
 
-The system exposes two login endpoints. `/api/auth/token/` enforces `email_verified = True` before issuing a JWT. `/api/users/login/` is unmodified SimpleJWT and issues tokens to any user regardless of verification status. A user who registers but never completes email verification can authenticate through the second endpoint and access the full API.
+Fixed in commit `e51615f` (`Fix users login email verification bypass`).
+
+The fix kept `/api/users/login/` available but changed it to reuse `EmailOrUsernameTokenView`, the same verified login view used by `/api/auth/token/`.
+
+Verified by owner:
+
+```bash
+python manage.py test backend.api.tests.test_auth_login_verification
+```
+
+Result: Ran 4 tests in 11.304s, OK.
 
 **Source:** `identity.md §7`  
-**Why Critical:** Verification bypass is a security control failure that allows unverified accounts to act as authenticated users.
+**Original severity:** Critical.
 
 ---
 
@@ -397,7 +407,7 @@ Items that are not definitive gaps but are unresolved questions surfaced across 
 
 ### Identity
 
-- **Duplicate login endpoint intent** — Is `/api/users/login/` kept deliberately (e.g., for admin tooling or a legacy integration) or is it a forgotten artifact? If it has a real use case, the verification bypass (C1) may need a different fix than simply removing the endpoint. (`identity.md §4`)
+- **Duplicate login endpoint intent — resolved for C1** — `/api/users/login/` was kept available and patched in commit `e51615f` to reuse `EmailOrUsernameTokenView`, matching `/api/auth/token/`.
 
 ### Payments
 
@@ -448,7 +458,7 @@ Items that are not definitive gaps but are unresolved questions surfaced across 
 This ordering follows: small-scope security fixes first → data integrity bugs → production-readiness items → everything else.
 
 1. **[C4] Restore Postgres** — Restore `DATABASES` to Postgres. SQLite's `select_for_update()` no-op breaks payment concurrency guarantees. Settings-level change; no code changes required.
-2. **[C1] Disable or patch /api/users/login/** — Remove or redirect the unverified login endpoint before any real users can register. One-line URL removal or endpoint deletion.
+2. **[C1] Complete** — `/api/users/login/` now reuses `EmailOrUsernameTokenView`; fixed in commit `e51615f`.
 3. **[C2] Make PATCH /api/payments/\<id\>/ status read-only** — Add `status` to `read_only_fields` in `PaymentSerializer` to close the state machine bypass.
 4. **[C3] Add obligation recompute to DELETE /api/payments/\<id\>/** — Replicate the `select_for_update()` + `amount_paid` recompute pattern from `PaymentConfirmAPIView` before deleting a payment.
 5. **[H10] Fix PaymentResolutionService to call process_obligation_lifecycle** — Make the resolve path consistent with the confirm/refund/reverse pattern; add recompute before writing `state="resolved"`.

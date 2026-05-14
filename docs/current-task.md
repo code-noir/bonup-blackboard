@@ -1,14 +1,21 @@
 # Current Task
 
-Status: Tech-debt phase complete.
+Status: C1 critical fix complete.
 
 Branch: restore-before-break (synced with origin)
 
-All architecture documentation work is done. tech-debt.md is written 
-and committed. CLAUDE.md updated with Section 19 (workflow 
-conventions). All work pushed to GitHub.
+C1 (`/api/users/login/` bypassed `email_verified`) was fixed and
+committed as `e51615f` (`Fix users login email verification bypass`).
+The endpoint remains available and now reuses `EmailOrUsernameTokenView`,
+the same verified login view used by `/api/auth/token/`.
 
-Where to pick up next session: choose between paste project 
-instructions into Claude.ai settings (15-20 min low brain), branch 
-cleanup (10 min low brain), or start the C1-C4 critical fixes from 
-tech-debt.md (real code, freshest brain).
+Verified by owner:
+
+```bash
+python manage.py test backend.api.tests.test_auth_login_verification
+```
+
+Result: Ran 4 tests in 11.304s, OK.
+
+Where to pick up next session: continue the remaining critical fixes
+from tech-debt.md. C2-C4 remain open.

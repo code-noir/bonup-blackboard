@@ -15,9 +15,9 @@ Outstanding work, in roughly the order Project Claude has recommended:
    reflected in the founder's vision document. Reconcile.
 
 4. Code-level fixes from tech-debt.md. Triage from the Suggested Order 
-   of Attack section. C1-C4 are the smallest-scope highest-priority 
-   items:
-   - C1: disable or patch /api/users/login/ verification bypass
+   of Attack section. C1 is complete in commit `e51615f` (`Fix users 
+   login email verification bypass`). C2-C4 remain the smallest-scope 
+   highest-priority open items:
    - C2: make PATCH /api/payments/<id>/ status read-only
    - C3: add obligation amount_paid recompute on DELETE payment
    - C4: restore Postgres in DATABASES setting

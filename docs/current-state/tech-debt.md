@@ -43,12 +43,24 @@ Result: Ran 4 tests in 11.304s, OK.
 
 ---
 
-### C2 — PATCH /api/payments/\<id\>/ bypasses state machine
+### C2 — RESOLVED: PATCH /api/payments/\<id\>/ bypassed state machine
 
-`PaymentDetailAPIView.patch()` accepts a partial update via `PaymentSerializer` with `partial=True`. The `status` field is not in `read_only_fields`, so a PATCH request can set `status` to any value — e.g., directly from `draft` to `confirmed` — without going through the `ALLOWED_FROM` transition checks enforced by the dedicated action endpoints (`/pending/`, `/confirm/`, etc.). No `amount_paid` recompute or `process_obligation_lifecycle()` call occurs on this path.
+Fixed in commit `5aeddd0` (`Prevent payment status patch bypass`).
+
+The fix made `PaymentSerializer.status` read-only so `PATCH /api/payments/<id>/`
+cannot directly mutate payment status. Status changes must go through the
+dedicated transition endpoints.
+
+Verified by owner:
+
+```bash
+python manage.py test backend.api.tests.test_payment_transitions
+```
+
+Result: Ran 22 tests in 67.261s, OK.
 
 **Source:** `payments.md §7`, citing `backend/api/payments/views.py:170` and `backend/api/payments/serializers.py:32`  
-**Why Critical:** Corrupts payment state and obligation `amount_paid` without going through the designed state machine, enabling incorrect financial state.
+**Original severity:** Critical.
 
 ---
 

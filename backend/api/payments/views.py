@@ -186,7 +186,36 @@ class PaymentDetailAPIView(APIView):
         if not is_party(request.user, payment.contract):
             return contract_party_response()
 
-        payment.delete()
+        now = timezone.now()
+
+        with transaction.atomic():
+            if payment.payment_obligation_id:
+                obligation = ContractObligation.objects.select_for_update().get(
+                    id=payment.payment_obligation_id
+                )
+
+                payment.delete()
+
+                confirmed_total = (
+                    Payment.objects
+                    .filter(payment_obligation_id=obligation.id, status="confirmed")
+                    .aggregate(total=Sum("amount"))["total"]
+                ) or Decimal("0")
+
+                obligation.amount_paid = confirmed_total
+                process_obligation_lifecycle(
+                    obligation,
+                    obligation_repo=None,
+                    current_time=now,
+                )
+                obligation.is_defaulted = obligation.state in ("defaulted", "breached")
+                obligation.updated_at = now
+                obligation.save(
+                    update_fields=["amount_paid", "state", "is_defaulted", "updated_at"]
+                )
+            else:
+                payment.delete()
+
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

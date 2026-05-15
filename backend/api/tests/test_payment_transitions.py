@@ -13,9 +13,11 @@
 #
 # Every other combination must return 409 Conflict.
 
+from decimal import Decimal
+
 from django.test import TestCase
 
-from .helpers import authed_client, make_contract, make_payment, make_user
+from .helpers import authed_client, make_contract, make_obligation, make_payment, make_user, make_version
 
 
 class PaymentTransitionTests(TestCase):
@@ -24,9 +26,17 @@ class PaymentTransitionTests(TestCase):
         self.alice = make_user("alice", "alice@example.com")
         self.bob = make_user("bob", "bob@example.com")
         self.contract = make_contract(self.alice, counterparty_email="bob@example.com")
+        self.version = make_version(self.contract, created_by=self.alice)
 
     def _payment(self, status):
         return make_payment(self.contract, payer=self.alice, payee=self.bob, status=status)
+
+    def _linked_payment(self, obligation, amount, status):
+        payment = self._payment(status)
+        payment.amount = Decimal(amount)
+        payment.payment_obligation = obligation
+        payment.save(update_fields=["amount", "payment_obligation", "updated_at"])
+        return payment
 
     def _url(self, payment, action):
         return f"/api/payments/{payment.id}/{action}/"
@@ -183,3 +193,52 @@ class PaymentTransitionTests(TestCase):
         p.refresh_from_db()
         self.assertEqual(p.status, "draft")
         self.assertEqual(p.reference, "INV-001")
+
+    # ------------------------------------------------------------------
+    # Detail DELETE must keep linked obligation amount_paid in sync
+    # ------------------------------------------------------------------
+
+    def test_delete_confirmed_linked_payment_recomputes_amount_paid(self):
+        obligation = make_obligation(self.contract, self.version, self.alice, self.bob)
+        payment = self._linked_payment(obligation, "100.00", "confirmed")
+        obligation.amount_paid = Decimal("100.00")
+        obligation.save(update_fields=["amount_paid"])
+
+        r = authed_client(self.alice).delete(self._detail_url(payment))
+
+        self.assertEqual(r.status_code, 204)
+        obligation.refresh_from_db()
+        self.assertEqual(obligation.amount_paid, Decimal("0.00"))
+
+    def test_delete_one_confirmed_linked_payment_keeps_remaining_confirmed_total(self):
+        obligation = make_obligation(self.contract, self.version, self.alice, self.bob)
+        payment = self._linked_payment(obligation, "100.00", "confirmed")
+        self._linked_payment(obligation, "200.00", "confirmed")
+        obligation.amount_paid = Decimal("300.00")
+        obligation.save(update_fields=["amount_paid"])
+
+        r = authed_client(self.alice).delete(self._detail_url(payment))
+
+        self.assertEqual(r.status_code, 204)
+        obligation.refresh_from_db()
+        self.assertEqual(obligation.amount_paid, Decimal("200.00"))
+
+    def test_delete_non_confirmed_linked_payment_keeps_confirmed_total(self):
+        obligation = make_obligation(self.contract, self.version, self.alice, self.bob)
+        self._linked_payment(obligation, "100.00", "confirmed")
+        payment = self._linked_payment(obligation, "50.00", "pending")
+        obligation.amount_paid = Decimal("100.00")
+        obligation.save(update_fields=["amount_paid"])
+
+        r = authed_client(self.alice).delete(self._detail_url(payment))
+
+        self.assertEqual(r.status_code, 204)
+        obligation.refresh_from_db()
+        self.assertEqual(obligation.amount_paid, Decimal("100.00"))
+
+    def test_delete_unlinked_payment_returns_204(self):
+        payment = self._payment("confirmed")
+
+        r = authed_client(self.alice).delete(self._detail_url(payment))
+
+        self.assertEqual(r.status_code, 204)

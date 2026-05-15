@@ -17,9 +17,9 @@ Outstanding work, in roughly the order Project Claude has recommended:
 4. Code-level fixes from tech-debt.md. Triage from the Suggested Order 
    of Attack section. C1 is complete in commit `e51615f` (`Fix users 
    login email verification bypass`). C2 is complete in commit `5aeddd0`
-   (`Prevent payment status patch bypass`). C3-C4 remain the
-   smallest-scope highest-priority open items:
-   - C3: add obligation amount_paid recompute on DELETE payment
+   (`Prevent payment status patch bypass`). C3 is complete in commit
+   `09a467c` (`Recompute obligation amount on payment delete`). C4 remains
+   the smallest-scope highest-priority open item:
    - C4: restore Postgres in DATABASES setting
    
    Then H-series items (file size limit, MIME validation, lifecycle 

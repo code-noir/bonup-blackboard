@@ -1,6 +1,6 @@
 # Current Task
 
-Status: C1 and C2 critical fixes complete.
+Status: C1, C2, and C3 critical fixes complete.
 
 Branch: restore-before-break (synced with origin)
 
@@ -31,5 +31,19 @@ python manage.py test backend.api.tests.test_payment_transitions
 
 Result: Ran 22 tests in 67.261s, OK.
 
+C3 (`DELETE /api/payments/<id>/` left `ContractObligation.amount_paid`
+inflated) was fixed and committed as `09a467c` (`Recompute obligation
+amount on payment delete`). The fix makes `DELETE /api/payments/<id>/`
+recompute the linked obligation's `amount_paid` when a payment is deleted,
+so deleted confirmed payments cannot leave obligation totals inflated.
+
+Verified by owner:
+
+```bash
+python manage.py test backend.api.tests.test_payment_transitions
+```
+
+Result: Ran 26 tests in 73.930s, OK.
+
 Where to pick up next session: continue the remaining critical fixes
-from tech-debt.md. C3-C4 remain open.
+from tech-debt.md. C4 remains open.

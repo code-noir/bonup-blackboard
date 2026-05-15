@@ -64,12 +64,24 @@ Result: Ran 22 tests in 67.261s, OK.
 
 ---
 
-### C3 — DELETE /api/payments/\<id\>/ leaves amount_paid inflated
+### C3 — RESOLVED: DELETE /api/payments/\<id\>/ leaves amount_paid inflated
 
-`PaymentDetailAPIView.delete()` deletes the payment row and returns 204 with no further side effects. If the deleted payment was in `confirmed` status and was linked to a `ContractObligation`, `amount_paid` on that obligation will remain inflated — it is computed as the sum of confirmed payments and is not recomputed after deletion. The obligation's financial record becomes incorrect without any observable signal.
+Fixed in commit `09a467c` (`Recompute obligation amount on payment delete`).
+
+The fix makes `DELETE /api/payments/<id>/` recompute the linked obligation's
+`amount_paid` when a payment is deleted, so deleted confirmed payments cannot
+leave obligation totals inflated.
+
+Verified by owner:
+
+```bash
+python manage.py test backend.api.tests.test_payment_transitions
+```
+
+Result: Ran 26 tests in 73.930s, OK.
 
 **Source:** `payments.md §7`, citing `backend/api/payments/views.py:184`  
-**Why Critical:** Silent data integrity corruption: the obligation reflects paid amounts that no longer exist in the payments table.
+**Original severity:** Critical.
 
 ---
 

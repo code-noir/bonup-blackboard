@@ -7,6 +7,8 @@ bypass`).
 
 C2 is complete in commit `5aeddd0` (`Prevent payment status patch bypass`).
 
+C3 is complete in commit `09a467c` (`Recompute obligation amount on payment
+delete`).
+
 Remaining critical fixes:
-- C3: add obligation `amount_paid` recompute on DELETE payment
 - C4: restore Postgres in `DATABASES` setting

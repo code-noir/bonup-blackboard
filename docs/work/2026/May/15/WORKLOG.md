@@ -16,3 +16,21 @@ python manage.py test backend.api.tests.test_payment_transitions
 ```
 
 Result: Ran 22 tests in 67.261s, OK.
+
+## C3 Critical Fix
+
+C3 (`DELETE /api/payments/<id>/` left `ContractObligation.amount_paid`
+inflated) was fixed and committed as `09a467c` (`Recompute obligation
+amount on payment delete`).
+
+Fix approach: `DELETE /api/payments/<id>/` now recomputes the linked
+obligation's `amount_paid` when a payment is deleted, so deleted confirmed
+payments cannot leave obligation totals inflated.
+
+Verified by owner:
+
+```bash
+python manage.py test backend.api.tests.test_payment_transitions
+```
+
+Result: Ran 26 tests in 73.930s, OK.

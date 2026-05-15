@@ -34,6 +34,9 @@ class PaymentTransitionTests(TestCase):
     def _post(self, payment, action):
         return authed_client(self.alice).post(self._url(payment, action))
 
+    def _detail_url(self, payment):
+        return f"/api/payments/{payment.id}/"
+
     # ------------------------------------------------------------------
     # Valid transitions — should return 200
     # ------------------------------------------------------------------
@@ -149,3 +152,34 @@ class PaymentTransitionTests(TestCase):
         p = self._payment("draft")
         r = authed_client(self.bob).post(self._url(p, "pending"))
         self.assertEqual(r.status_code, 200)
+
+    # ------------------------------------------------------------------
+    # Detail PATCH must not bypass status transitions
+    # ------------------------------------------------------------------
+
+    def test_patch_cannot_change_status(self):
+        p = self._payment("draft")
+
+        r = authed_client(self.alice).patch(
+            self._detail_url(p),
+            {"status": "confirmed"},
+            format="json",
+        )
+
+        self.assertEqual(r.status_code, 200)
+        p.refresh_from_db()
+        self.assertEqual(p.status, "draft")
+
+    def test_patch_can_update_reference_without_changing_status(self):
+        p = self._payment("draft")
+
+        r = authed_client(self.alice).patch(
+            self._detail_url(p),
+            {"reference": "INV-001"},
+            format="json",
+        )
+
+        self.assertEqual(r.status_code, 200)
+        p.refresh_from_db()
+        self.assertEqual(p.status, "draft")
+        self.assertEqual(p.reference, "INV-001")

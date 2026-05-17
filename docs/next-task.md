@@ -14,21 +14,23 @@ Outstanding work, in roughly the order Project Claude has recommended:
 3. Vision update. One or two features have been built that are not yet 
    reflected in the founder's vision document. Reconcile.
 
-4. Code-level fixes from tech-debt.md. Triage from the Suggested Order 
-   of Attack section. C1 is complete in commit `e51615f` (`Fix users 
-   login email verification bypass`). C2 is complete in commit `5aeddd0`
-   (`Prevent payment status patch bypass`). C3 is complete in commit
-   `09a467c` (`Recompute obligation amount on payment delete`). C4 is in
-   progress, not complete.
-   - C4.1 complete: `requirements.txt` exists with curated Python requirements.
-   - C4.2 complete: `psycopg` installed in the venv and import verified.
-   - C4.3 complete: `.env.example` documents Postgres variables and was
-     committed as `f2b6146` (`Document Postgres environment variables`).
-   - C4.4 started: `backend/core/settings.py` uses PostgreSQL env vars
-     instead of SQLite, but this is not verified yet.
-   - Next session: owner confirms real `.env` Postgres values privately,
-     verify env booleans, run `python manage.py check`, inspect the
-     `settings.py` diff, then commit or adjust C4.4.
+4. Finish C4 Postgres stabilization and app-level verification. C1 is
+   complete in commit `e51615f` (`Fix users login email verification
+   bypass`). C2 is complete in commit `5aeddd0` (`Prevent payment status
+   patch bypass`). C3 is complete in commit `09a467c` (`Recompute obligation
+   amount on payment delete`). C4 is substantially progressed:
+   - `requirements.txt` was added in commit `8ea3737` (`Add curated Python
+     requirements`).
+   - `psycopg` was installed in the venv and import verified.
+   - `.env.example` documents Postgres variables and was committed as
+     `f2b6146` (`Document Postgres environment variables`).
+   - `backend/core/settings.py` now uses PostgreSQL env vars and was
+     committed as `92e8310` (`Use Postgres database settings`).
+   - `python manage.py check` passed.
+   - `python manage.py migrate --plan` succeeded against PostgreSQL.
+   - Real migrations have not been applied yet.
+   - Immediate next sequence: make the real migration decision, then verify
+     backend/frontend/admin/auth workflows against PostgreSQL.
    
    Then H-series items (file size limit, MIME validation, lifecycle 
    gate on contract-scoped payment create, etc.).

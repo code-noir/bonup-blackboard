@@ -1,6 +1,8 @@
 # Current Task
 
-Status: C1, C2, and C3 critical fixes complete.
+Status: C1, C2, and C3 critical fixes complete. C4 stabilization is nearly
+complete and substantially progressed, but real migrations have not been
+applied yet.
 
 Branch: restore-before-break (synced with origin)
 
@@ -45,20 +47,20 @@ python manage.py test backend.api.tests.test_payment_transitions
 
 Result: Ran 26 tests in 73.930s, OK.
 
-C4 (`DATABASES` hardcoded to SQLite instead of PostgreSQL) is in progress,
-not complete.
+C4 (`DATABASES` hardcoded to SQLite instead of PostgreSQL) is substantially
+progressed.
 
-Completed C4 prerequisites:
-- C4.1: `requirements.txt` exists with curated Python requirements.
-- C4.2: `psycopg` was installed in the venv and import verified.
-- C4.3: `.env.example` documents Postgres variables and was committed as
+Completed C4 stabilization work:
+- `requirements.txt` was added in commit `8ea3737` (`Add curated Python
+  requirements`).
+- `psycopg` was installed in the venv and import verified.
+- `.env.example` documents Postgres variables and was committed as
   `f2b6146` (`Document Postgres environment variables`).
+- `backend/core/settings.py` now uses PostgreSQL env vars and was committed
+  as `92e8310` (`Use Postgres database settings`).
+- `python manage.py check` passed.
+- `python manage.py migrate --plan` succeeded against PostgreSQL.
 
-C4.4 has started: `backend/core/settings.py` has been edited to use
-PostgreSQL env vars instead of SQLite, but it has not been verified yet.
-The owner still needs to set or confirm real `.env` Postgres values
-privately.
-
-Where to pick up next session: finish C4.4 safely. Verify Postgres env
-booleans, run `python manage.py check`, inspect the `settings.py` diff,
-then commit or adjust C4.4. Do not claim C4 complete until verified.
+Do not claim migrations were applied yet. The next session should begin with
+the real migration decision, then backend/frontend/admin/auth workflow
+verification against PostgreSQL.

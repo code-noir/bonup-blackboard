@@ -34,3 +34,25 @@ python manage.py test backend.api.tests.test_payment_transitions
 ```
 
 Result: Ran 26 tests in 73.930s, OK.
+
+## C4 Postgres Restore Prep
+
+C4 (`DATABASES` hardcoded to SQLite instead of PostgreSQL) is in progress,
+not complete.
+
+Completed:
+- C4.1: `requirements.txt` exists with curated Python requirements.
+- C4.2: `psycopg` was installed in the venv and import verified.
+- C4.3: `.env.example` documents Postgres variables and was committed as
+  `f2b6146` (`Document Postgres environment variables`).
+
+Started but not verified:
+- C4.4: `backend/core/settings.py` has been edited to use PostgreSQL env
+  vars instead of SQLite.
+
+Remaining:
+- The owner still needs to set or confirm real `.env` Postgres values
+  privately.
+- Next session should verify Postgres env booleans, run
+  `python manage.py check`, inspect the `settings.py` diff, then commit or
+  adjust C4.4.

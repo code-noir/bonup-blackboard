@@ -6,7 +6,9 @@ export default function Login() {
   const { login, isAuthenticated } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const from = (location.state as { from?: Location })?.from?.pathname ?? '/hub'
+  const locationState = location.state as { from?: Location; verified?: boolean } | null
+  const from = locationState?.from?.pathname ?? '/hub'
+  const showVerifiedMessage = locationState?.verified === true
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -50,6 +52,12 @@ export default function Login() {
           <h2 className="mb-6 text-xl font-semibold text-slate-800">
             Sign in to your account
           </h2>
+
+          {showVerifiedMessage && (
+            <p className="mb-4 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
+              Email verified. Sign in to continue.
+            </p>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>

@@ -165,7 +165,8 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 
 # ----------------------------------------
@@ -186,7 +187,7 @@ CHANNEL_LAYERS = {
 # ----------------------------------------
 # LiveKit
 # ----------------------------------------
-LIVEKIT_HOST = "https://live.bonup.cloud"
+LIVEKIT_HOST = os.environ.get("LIVEKIT_HOST", "https://live.bonup.cloud")
 LIVEKIT_API_KEY = os.environ.get("LIVEKIT_API_KEY", "")
 LIVEKIT_API_SECRET = os.environ.get("LIVEKIT_API_SECRET", "")
 
@@ -194,7 +195,17 @@ LIVEKIT_API_SECRET = os.environ.get("LIVEKIT_API_SECRET", "")
 # Email
 # ----------------------------------------
 EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
-DEFAULT_FROM_EMAIL = "noreply@bonup.cloud"
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587") or 587)
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "False") == "True"
+EMAIL_USE_SSL = os.environ.get("EMAIL_USE_SSL", "False") == "True"
+EMAIL_TIMEOUT = int(os.environ.get("EMAIL_TIMEOUT", "10") or 10)
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@bonup.cloud")
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+RESEND_API_URL = os.environ.get("RESEND_API_URL", "https://api.resend.com/emails")
+RESEND_TIMEOUT = int(os.environ.get("RESEND_TIMEOUT", "10") or 10)
 
 # Base URL of the frontend — used to construct verification links in emails.
 # Override via FRONTEND_URL env var in production.

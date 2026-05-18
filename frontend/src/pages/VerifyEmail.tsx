@@ -4,11 +4,11 @@
 // URL: /verify-email?token=<uuid>
 //
 // On mount: reads the token from the URL and calls POST /api/users/verify-pending/
-// On success: shows "verified — go sign in" message. Does NOT auto-login.
+// On success: redirects to sign in with a verified-account message.
 // On error/expired: shows error + resend form so the user can request a new link.
 
 import { useEffect, useState, FormEvent } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import api from '@/api/client'
 
 type VerifyState = 'loading' | 'success' | 'error'
@@ -16,6 +16,7 @@ type ResendState = 'idle' | 'sending' | 'sent' | 'error'
 
 export default function VerifyEmail() {
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const [verifyState, setVerifyState] = useState<VerifyState>('loading')
   const [errorMessage, setErrorMessage] = useState('')
 
@@ -35,7 +36,10 @@ export default function VerifyEmail() {
     api
       .post('/users/verify-pending/', { token })
       .then(() => {
-        setVerifyState('success')
+        navigate('/login', {
+          replace: true,
+          state: { verified: true },
+        })
       })
       .catch((err: unknown) => {
         const data = (err as { response?: { data?: { error?: string; detail?: string } } })?.response?.data
@@ -44,7 +48,7 @@ export default function VerifyEmail() {
         )
         setVerifyState('error')
       })
-  }, []) // run once on mount
+  }, [navigate, searchParams])
 
   async function handleResend(e: FormEvent) {
     e.preventDefault()

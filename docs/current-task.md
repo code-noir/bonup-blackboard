@@ -1,66 +1,28 @@
 # Current Task
 
-Status: C1, C2, and C3 critical fixes complete. C4 stabilization is nearly
-complete and substantially progressed, but real migrations have not been
-applied yet.
+Status: May 18 active session.
 
-Branch: restore-before-break (synced with origin)
+Branch: restore-before-break
 
-C1 (`/api/users/login/` bypassed `email_verified`) was fixed and
-committed as `e51615f` (`Fix users login email verification bypass`).
-The endpoint remains available and now reuses `EmailOrUsernameTokenView`,
-the same verified login view used by `/api/auth/token/`.
+May 17 work is closed. PostgreSQL migrations were applied successfully,
+the superuser was created, and the signup email verification flow was
+completed. Resend HTTPS email delivery replaced SMTP for production email
+because SMTP timed out from the VPS. A fresh signup email was sent
+successfully, the verification link worked, the account became verified,
+and sign-in worked.
 
-Verified by owner:
+Verified flow was committed as:
 
-```bash
-python manage.py test backend.api.tests.test_auth_login_verification
+```text
+a819051 Complete signup email verification flow
 ```
 
-Result: Ran 4 tests in 11.304s, OK.
+May 18 starting focus: continue app workflow verification after
+auth/signup. Do not claim May 18 verification is complete yet.
 
-C2 (`PATCH /api/payments/<id>/` bypassed the payment state machine) was
-fixed and committed as `5aeddd0` (`Prevent payment status patch bypass`).
-The fix made `PaymentSerializer.status` read-only so payment status cannot
-be directly mutated through PATCH; status changes must go through the
-dedicated transition endpoints.
-
-Verified by owner:
-
-```bash
-python manage.py test backend.api.tests.test_payment_transitions
-```
-
-Result: Ran 22 tests in 67.261s, OK.
-
-C3 (`DELETE /api/payments/<id>/` left `ContractObligation.amount_paid`
-inflated) was fixed and committed as `09a467c` (`Recompute obligation
-amount on payment delete`). The fix makes `DELETE /api/payments/<id>/`
-recompute the linked obligation's `amount_paid` when a payment is deleted,
-so deleted confirmed payments cannot leave obligation totals inflated.
-
-Verified by owner:
-
-```bash
-python manage.py test backend.api.tests.test_payment_transitions
-```
-
-Result: Ran 26 tests in 73.930s, OK.
-
-C4 (`DATABASES` hardcoded to SQLite instead of PostgreSQL) is substantially
-progressed.
-
-Completed C4 stabilization work:
-- `requirements.txt` was added in commit `8ea3737` (`Add curated Python
-  requirements`).
-- `psycopg` was installed in the venv and import verified.
-- `.env.example` documents Postgres variables and was committed as
-  `f2b6146` (`Document Postgres environment variables`).
-- `backend/core/settings.py` now uses PostgreSQL env vars and was committed
-  as `92e8310` (`Use Postgres database settings`).
-- `python manage.py check` passed.
-- `python manage.py migrate --plan` succeeded against PostgreSQL.
-
-Do not claim migrations were applied yet. The next session should begin with
-the real migration decision, then backend/frontend/admin/auth workflow
-verification against PostgreSQL.
+Next checks for this active session:
+- login/logout
+- password reset/change
+- BON ID
+- admin/operator console
+- desktop Blackboard workflow audit

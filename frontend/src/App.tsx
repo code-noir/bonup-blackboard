@@ -11,12 +11,16 @@ import VerifyEmail from '@/pages/VerifyEmail'
 import BonupHub from '@/pages/BonupHub'
 import Dashboard from '@/pages/Dashboard'
 import CreateContract from '@/pages/CreateContract'
+import NewContract from '@/pages/NewContract'
+import ContractDetail from '@/pages/ContractDetail'
+import ContractDocumentView from '@/pages/ContractDocumentView'
 import Analysis from '@/pages/Analysis'
 import Counter from '@/pages/Counter'
 import Contacts from '@/pages/Contacts'
 import Entities from '@/pages/Entities'
 import Profile from '@/pages/Profile'
 import Billing from '@/pages/Billing'
+import LifecycleManagement from '@/pages/LifecycleManagement'
 import NotFound from '@/pages/NotFound'
 import AdminLayout from '@/pages/admin/AdminLayout'
 import AdminHome from '@/pages/admin/AdminHome'
@@ -120,10 +124,12 @@ export default function App() {
             }
           >
             <Route path="/dashboard" element={<Dashboard />} />
-            {/* Contract list and intake decommissioned — redirected to dashboard */}
+            {/* Contract list decommissioned — creation uses metadata intake first */}
             <Route path="/contracts" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/contracts/new" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/contracts/new" element={<NewContract />} />
             <Route path="/contracts/create" element={<CreateContract />} />
+            <Route path="/contracts/:id/view" element={<ContractDocumentView />} />
+            <Route path="/contracts/:id" element={<ContractDetail />} />
             <Route path="/obligations/*" element={<PaygLock name="Obligations" />} />
             <Route path="/payments/*" element={<PaygLock name="Payments" />} />
             <Route path="/sessions/*" element={<PaygLock name="Live Sessions" />} />
@@ -139,6 +145,7 @@ export default function App() {
             <Route path="/notifications" element={<PaygLock name="Notifications" />} />
             <Route path="/settings" element={<Placeholder name="Settings" />} />
             <Route path="/billing" element={<Billing />} />
+            <Route path="/lifecycle" element={<LifecycleManagement />} />
 
             {/* Admin — staff only, nested inside the AppShell */}
             <Route

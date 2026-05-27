@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import { type CSSProperties, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
+import api from '@/api/client'
 
 // Tier slugs matching DB: 'trial' | 'sol_member' | 'per_contract' | 'starter' | 'professional' | 'business' | 'anchor'
 const USER_TIER = 'business'
@@ -8,17 +9,158 @@ const USER_TIER = 'business'
 // Mock business entities — replace with API data when connected
 const MOCK_ENTITIES: { id: string; name: string }[] = []
 
-const PAYG_LOCK_STYLE: React.CSSProperties = {
-  display: 'flex', flexDirection: 'column', alignItems: 'center',
-  justifyContent: 'center', padding: '24px 16px', textAlign: 'center',
-  gap: 4,
+interface ContractVersionPayload {
+  content_snapshot?: string
 }
+
+interface PreparedTerm {
+  description?: string
+  amount?: string | null
+  due_date?: string | null
+  deadline?: string | null
+}
+
+interface PreparedTerms {
+  payment_terms?: PreparedTerm[]
+  service_obligations?: PreparedTerm[]
+  delivery_obligations?: PreparedTerm[]
+  milestones?: PreparedTerm[]
+  deadlines?: string[]
+  trigger_conditions?: string[]
+  extraction_method?: string
+}
+
+interface ContractRecord {
+  id: string
+  title: string
+  contract_type?: string
+  counterparty_name?: string
+  counterparty_email?: string
+  entity_type?: string
+  entity?: string | null
+  status: string
+  state?: string
+  created_at?: string
+  latest_version?: ContractVersionPayload | null
+}
+
+function contractStatusLabel(contract: ContractRecord): string {
+  if (contract.state === 'created') return 'Created'
+  if (contract.state === 'prepared') return 'Prepared'
+  if (contract.state === 'ready_to_send') return 'Ready to Send'
+  if (contract.status === 'draft') return 'Drafting'
+  if (contract.status === 'sent') return 'Sent / Awaiting Signature'
+  if (contract.status === 'active') return 'Active'
+  if (contract.status === 'completed') return 'Completed / Closed'
+  if (contract.status === 'archived') return 'Archived'
+  return contract.status || 'Created'
+}
+
+function statusStyle(label: string): CSSProperties {
+  if (label === 'Active') return { background: '#ECFDF5', color: '#047857' }
+  if (label === 'Prepared' || label === 'Ready to Send') return { background: '#E0F2FE', color: '#0369A1' }
+  if (label === 'Sent / Awaiting Signature') return { background: '#FEF3C7', color: '#B45309' }
+  if (label === 'Completed / Closed') return { background: '#EEF2FF', color: '#4F46E5' }
+  if (label === 'Archived') return { background: '#F3F4F6', color: '#6B7280' }
+  return { background: '#F8FAFC', color: '#475569' }
+}
+
+function formatDate(value?: string): string {
+  if (!value) return '—'
+  return new Date(value).toLocaleDateString()
+}
+
+function preparedTermsFor(contract: ContractRecord): PreparedTerms | null {
+  const raw = contract.latest_version?.content_snapshot
+  if (!raw) return null
+  try {
+    const snapshot = JSON.parse(raw) as { prepared_terms?: PreparedTerms }
+    return snapshot.prepared_terms ?? null
+  } catch {
+    return null
+  }
+}
+
+function preparedCount(terms: PreparedTerms | null): number {
+  if (!terms) return 0
+  return (terms.payment_terms?.length ?? 0)
+    + (terms.service_obligations?.length ?? 0)
+    + (terms.delivery_obligations?.length ?? 0)
+    + (terms.milestones?.length ?? 0)
+}
+
+function contractSummary(contract: ContractRecord): string {
+  const terms = preparedTermsFor(contract)
+  const preparedSnippet = terms?.payment_terms?.[0]?.description
+    || terms?.service_obligations?.[0]?.description
+    || terms?.delivery_obligations?.[0]?.description
+    || terms?.milestones?.[0]?.description
+  if (preparedSnippet) return preparedSnippet
+  if (contract.counterparty_name || contract.counterparty_email) {
+    return `${contract.counterparty_name || contract.counterparty_email} · ${contract.entity_type === 'business' ? 'Business' : 'Personal'} · Created ${formatDate(contract.created_at)}`
+  }
+  return `${contract.entity_type === 'business' ? 'Business' : 'Personal'} contract record · Created ${formatDate(contract.created_at)}`
+}
+
+function contractPhase(contract: ContractRecord): 'draft' | 'negotiation' | 'lifecycle' {
+  const state = (contract.state || '').toLowerCase()
+  const status = (contract.status || '').toLowerCase()
+
+  if (['created', 'drafting'].includes(state)) return 'draft'
+  if (['created', 'draft', 'drafting'].includes(status) && !['prepared', 'ready', 'ready_to_send', 'ready_for_negotiation'].includes(state)) return 'draft'
+
+  if (['prepared', 'ready', 'ready_to_send', 'ready_for_negotiation', 'sent', 'awaiting_signature', 'countered', 'in_negotiation', 'negotiating'].includes(state)) return 'negotiation'
+  if (['prepared', 'ready', 'ready_to_send', 'sent', 'awaiting_signature', 'countered', 'in_negotiation', 'negotiating'].includes(status)) return 'negotiation'
+
+  return 'lifecycle'
+}
+
+function hasLifecycleAccess(contract: ContractRecord): boolean {
+  const state = (contract.state || '').toLowerCase()
+  const status = (contract.status || '').toLowerCase()
+  return ['signed', 'active', 'completed', 'closed', 'archived'].includes(state)
+    || ['signed', 'active', 'completed', 'closed', 'archived'].includes(status)
+}
+
+const actionButtonStyle = (variant: 'primary' | 'secondary' | 'disabled'): CSSProperties => ({
+  height: 30,
+  padding: '0 11px',
+  borderRadius: 7,
+  border: variant === 'secondary' ? '1px solid #CBD5E1' : 'none',
+  background: variant === 'primary' ? '#0F1F3D' : variant === 'secondary' ? 'white' : '#E5E7EB',
+  color: variant === 'primary' ? 'white' : variant === 'secondary' ? '#334155' : '#64748B',
+  fontSize: 11,
+  fontWeight: 700,
+  cursor: variant === 'disabled' ? 'default' : 'pointer',
+  whiteSpace: 'nowrap',
+})
 
 export default function Dashboard() {
   const navigate = useNavigate()
   const { user, isOnTrial, trialDaysRemaining, hasTrialExpired } = useAuth()
   const isPayg = user?.subscription_tier === 'per_contract'
   const [viewingAs, setViewingAs] = useState<string>('personal')
+  const [contracts, setContracts] = useState<ContractRecord[]>([])
+  const [contractsLoading, setContractsLoading] = useState(true)
+  const [contractsError, setContractsError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    setContractsLoading(true)
+    api.get<ContractRecord[]>('/contracts/')
+      .then(({ data }) => {
+        if (!cancelled) {
+          setContracts(data)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setContractsError('Unable to load contracts.')
+      })
+      .finally(() => {
+        if (!cancelled) setContractsLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [])
 
   const firstName = user?.first_name || 'You'
   const lastName = user?.last_name || ''
@@ -31,16 +173,13 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <p style={{ fontSize: 13, color: '#9CA3AF', paddingTop: 14, paddingBottom: 14 }}>
-        Here's what's happening across your contracts and obligations.
+        Here's what's happening across your contracts.
       </p>
 
       {/* Stat cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          { label: 'Active Contracts', value: '—' },
-          { label: 'Obligations Due', value: '—' },
-          { label: 'Pending Payments', value: '—' },
-          { label: 'Upcoming Sessions', value: '—' },
+          { label: 'Contracts', value: contractsLoading ? '—' : String(contracts.length) },
         ].map(({ label, value }) => (
           <div
             key={label}
@@ -165,248 +304,205 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Contract Records */}
+      <section>
+        <h3 className="mb-3 text-base font-semibold text-slate-800">Contract Records</h3>
+
+        {contractsLoading ? (
+          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" style={{ maxWidth: 520 }}>
+            <p className="text-sm text-slate-500">Loading contracts...</p>
+          </div>
+        ) : contractsError ? (
+          <div className="rounded-lg border border-red-100 bg-white p-4 shadow-sm" style={{ maxWidth: 520 }}>
+            <p className="text-sm text-red-600">{contractsError}</p>
+          </div>
+        ) : contracts.length === 0 ? (
+          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" style={{ maxWidth: 520 }}>
+            <p className="text-sm text-slate-500">No contract records yet.</p>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 420px))', gap: 12, justifyContent: 'start' }}>
+            {contracts.map((contract) => {
+              const label = contractStatusLabel(contract)
+              const summary = contractSummary(contract)
+              const phase = contractPhase(contract)
+              const showEditor = phase === 'draft'
+              const showNegotiation = phase === 'negotiation'
+              const showLifecycle = hasLifecycleAccess(contract)
+
+              return (
+                <article
+                  key={contract.id}
+                  className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+                  style={{ maxWidth: 420 }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: '#0F1F3D', margin: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {contract.title || 'Untitled Contract'}
+                    </p>
+                    <span style={{ flexShrink: 0, borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 700, ...statusStyle(label) }}>
+                      {label}
+                    </span>
+                  </div>
+
+                  <p style={{ fontSize: 11, color: '#94A3B8', margin: '6px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {contract.contract_type || 'Contract'} · Created {formatDate(contract.created_at)}
+                  </p>
+
+                  <p style={{
+                    fontSize: 12,
+                    color: '#64748B',
+                    margin: '10px 0 14px',
+                    lineHeight: 1.45,
+                    overflow: 'hidden',
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                  }}>
+                    {summary}
+                  </p>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/contracts/${contract.id}`)}
+                      style={actionButtonStyle('secondary')}
+                    >
+                      Contract Summary
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/contracts/${contract.id}/view`)}
+                      style={actionButtonStyle('secondary')}
+                    >
+                      View Contract
+                    </button>
+
+                    {showEditor && (
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/contracts/create?id=${contract.id}`)}
+                        style={actionButtonStyle('primary')}
+                      >
+                        Open Editor
+                      </button>
+                    )}
+
+                    {showNegotiation && (
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/negotiation/${contract.id}`)}
+                        style={actionButtonStyle('primary')}
+                      >
+                        Open Negotiation
+                      </button>
+                    )}
+
+                    {showLifecycle && (
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/lifecycle?contract=${contract.id}`)}
+                        style={actionButtonStyle('primary')}
+                      >
+                        Lifecycle Management
+                      </button>
+                    )}
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
       {/* Power Tools */}
       <div>
         <p style={{ fontSize: 14, fontWeight: 600, color: '#0F1F3D', marginBottom: 14 }}>Power Tools</p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          {/* Contract Analysis card */}
-          <div style={{
-            background: 'white', borderRadius: 11, padding: 20,
-            border: '1px solid rgba(0,0,0,0.05)',
-          }}>
-            <div style={{ fontSize: 24, marginBottom: 8 }}>🔍</div>
-            <p style={{ fontSize: 14, fontWeight: 600, color: '#0F1F3D', margin: 0 }}>Contract Analysis</p>
-            <p style={{ fontSize: 12, color: '#6B7280', margin: '8px 0 16px' }}>
-              Get a full AI-powered breakdown of any contract before you sign.
-            </p>
-            {isPayg && (
-              <div style={{ marginBottom: 12 }}>
-                <span style={{
-                  display: 'inline-block', fontSize: 11, color: '#065F46',
-                  background: '#ECFDF5', borderRadius: 4, padding: '2px 8px',
-                  marginBottom: 4,
-                }}>
-                  ✓ $25 per contract · analysis & counter included
-                </span>
-              </div>
-            )}
-            <button
-              onClick={() => navigate('/analysis')}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+          {[
+            {
+              icon: '🔍',
+              title: 'Analyze a Contract',
+              description: 'Get a full AI-powered breakdown of any contract before you sign.',
+              action: 'Analyze a Contract',
+              onClick: () => navigate('/analysis'),
+              available: true,
+              badge: isPayg ? '$25 per contract · analysis & counter included' : '',
+            },
+            {
+              icon: '⚡',
+              title: 'Counter a Contract',
+              description: 'Respond to any contract with a professional AI-powered counter.',
+              action: USER_TIER === 'starter' || USER_TIER === 'sol_member'
+                ? 'Upgrade to Blackboard Pro — $149/month'
+                : 'Counter a Contract',
+              onClick: () => navigate('/counter'),
+              available: true,
+              badge: isPayg ? '$25 per contract · analysis & counter included' : '',
+            },
+            {
+              icon: '🤝',
+              title: 'Negotiation',
+              description: 'Review prepared contracts and negotiation activity.',
+              action: 'Open Negotiation',
+              onClick: () => navigate('/negotiation'),
+              available: true,
+              badge: '',
+            },
+            {
+              icon: '📈',
+              title: 'Lifecycle Management',
+              description: 'Manage lifecycle obligations and payments after contract activation.',
+              action: 'Lifecycle Management',
+              onClick: () => navigate('/lifecycle'),
+              available: true,
+              badge: '',
+            },
+          ].map((tool) => (
+            <div
+              key={tool.title}
               style={{
-                display: 'block', height: 32, padding: '0 16px',
-                background: '#0F1F3D', color: 'white',
-                border: 'none', borderRadius: 8,
-                fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                background: 'white', borderRadius: 8, padding: 20,
+                border: '1px solid rgba(0,0,0,0.05)',
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
-              onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
             >
-              Analyze a Contract
-            </button>
-          </div>
-
-          {/* Contract Counter card */}
-          <div style={{
-            background: 'white', borderRadius: 11, padding: 20,
-            border: '1px solid rgba(0,0,0,0.05)',
-          }}>
-            <div style={{ fontSize: 24, marginBottom: 8 }}>⚡</div>
-            <p style={{ fontSize: 14, fontWeight: 600, color: '#0F1F3D', margin: 0 }}>Contract Counter</p>
-            <p style={{ fontSize: 12, color: '#6B7280', margin: '8px 0 16px' }}>
-              Respond to any contract with a professional AI-powered counter.
-            </p>
-            {isPayg && (
-              <div style={{ marginBottom: 12 }}>
-                <span style={{
-                  display: 'inline-block', fontSize: 11, color: '#065F46',
-                  background: '#ECFDF5', borderRadius: 4, padding: '2px 8px',
-                  marginBottom: 4,
-                }}>
-                  ✓ $25 per contract · analysis & counter included
-                </span>
-              </div>
-            )}
-            {(USER_TIER === 'starter' || USER_TIER === 'sol_member') ? (
-              <>
-                <div style={{ fontSize: 20, marginBottom: 8 }}>🔒</div>
-                <button
-                  onClick={() => navigate('/counter')}
-                  style={{
-                    display: 'block', height: 32, padding: '0 16px',
-                    background: '#F5A623', color: '#0F1F3D',
-                    border: 'none', borderRadius: 8,
-                    fontSize: 12, fontWeight: 500, cursor: 'pointer',
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
-                  onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-                >
-                  Upgrade to Blackboard Pro — $149/month
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={() => navigate('/counter')}
-                style={{
-                  display: 'block', height: 32, padding: '0 16px',
-                  background: '#0F1F3D', color: 'white',
-                  border: 'none', borderRadius: 8,
-                  fontSize: 12, fontWeight: 500, cursor: 'pointer',
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
-                onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-              >
-                Counter a Contract
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Recent Activity */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="mb-4 text-base font-semibold text-slate-800">Recent Activity</h3>
-        {isPayg ? (
-          <div style={PAYG_LOCK_STYLE}>
-            <span style={{ fontSize: 24 }}>🔒</span>
-            <p style={{ fontSize: 13, fontWeight: 600, color: '#374151', margin: 0 }}>Requires a monthly plan</p>
-            <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>Upgrade to Blackboard Basic — $19/month</p>
-          </div>
-        ) : (
-          <p className="text-sm text-slate-500">Activity feed coming soon.</p>
-        )}
-      </div>
-
-      {/* Contracts Overview */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="mb-4 text-base font-semibold text-slate-800">Contracts Overview</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
-                <th className="pb-3 pr-6">Contract ID</th>
-                <th className="pb-3 pr-6">Party</th>
-                <th className="pb-3 pr-6">Status</th>
-                <th className="pb-3 pr-6">Amount</th>
-                <th className="pb-3">Due Date</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {[
-                { id: 'CON-00091', party: 'Meridian Labs', status: 'Active',    amount: '$12,500', due: '2026-05-01' },
-                { id: 'CON-00087', party: 'Vanta Digital', status: 'Pending',   amount: '$4,200',  due: '2026-04-18' },
-                { id: 'CON-00083', party: 'Orin Staffing', status: 'Active',    amount: '$8,750',  due: '2026-06-15' },
-                { id: 'CON-00079', party: 'Clearpath Inc', status: 'Completed', amount: '$3,000',  due: '2026-03-30' },
-                { id: 'CON-00072', party: 'Fenix Creative', status: 'Active',   amount: '$21,000', due: '2026-07-01' },
-              ].map((row) => (
-                <tr key={row.id} className="text-slate-700">
-                  <td className="py-3 pr-6 font-mono text-xs text-slate-500">{row.id}</td>
-                  <td className="py-3 pr-6 font-medium">{row.party}</td>
-                  <td className="py-3 pr-6">
-                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                      row.status === 'Active'    ? 'bg-green-50 text-green-700' :
-                      row.status === 'Pending'   ? 'bg-yellow-50 text-yellow-700' :
-                                                   'bg-slate-100 text-slate-500'
-                    }`}>
-                      {row.status}
-                    </span>
-                  </td>
-                  <td className="py-3 pr-6">{row.amount}</td>
-                  <td className="py-3 text-slate-500">{row.due}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Upcoming Obligations */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="mb-4 text-base font-semibold text-slate-800">Upcoming Obligations</h3>
-        {isPayg ? (
-          <div style={PAYG_LOCK_STYLE}>
-            <span style={{ fontSize: 24 }}>🔒</span>
-            <p style={{ fontSize: 13, fontWeight: 600, color: '#374151', margin: 0 }}>Requires a monthly plan</p>
-            <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>Upgrade to Blackboard Basic — $19/month</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              { type: 'Payment',  status: 'ACTIVE', due: '2026-04-10' },
-              { type: 'Delivery', status: 'ACTIVE', due: '2026-04-14' },
-              { type: 'Review',   status: 'ACTIVE', due: '2026-04-20' },
-              { type: 'Sign-off', status: 'ACTIVE', due: '2026-04-28' },
-            ].map((ob, i) => (
-              <div key={i} className="rounded-lg border border-slate-200 p-4">
-                <p className="text-sm font-semibold text-slate-800">{ob.type}</p>
-                <span className="mt-1 inline-flex rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
-                  {ob.status}
-                </span>
-                <p className="mt-2 text-xs text-slate-400">Due {ob.due}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Recent Payments */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="mb-4 text-base font-semibold text-slate-800">Recent Payments</h3>
-        {isPayg ? (
-          <div style={PAYG_LOCK_STYLE}>
-            <span style={{ fontSize: 24 }}>🔒</span>
-            <p style={{ fontSize: 13, fontWeight: 600, color: '#374151', margin: 0 }}>Requires a monthly plan</p>
-            <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>Upgrade to Blackboard Basic — $19/month</p>
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {[
-              { amount: '$4,200',  from: 'Vanta Digital',  to: 'bonUP Sol',     date: '2026-04-01', status: 'Settled'  },
-              { amount: '$1,500',  from: 'Orin Staffing',  to: 'Clearpath Inc', date: '2026-03-28', status: 'Settled'  },
-              { amount: '$12,500', from: 'Meridian Labs',  to: 'bonUP Sol',     date: '2026-03-22', status: 'Pending'  },
-            ].map((pmt, i) => (
-              <div key={i} className="flex items-center justify-between py-3 text-sm">
-                <div>
-                  <p className="font-semibold text-slate-800">{pmt.amount}</p>
-                  <p className="text-xs text-slate-400">{pmt.from} → {pmt.to}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-slate-500">{pmt.date}</p>
-                  <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                    pmt.status === 'Settled' ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'
-                  }`}>
-                    {pmt.status}
+              <div style={{ fontSize: 24, marginBottom: 8 }}>{tool.icon}</div>
+              <p style={{ fontSize: 14, fontWeight: 600, color: '#0F1F3D', margin: 0 }}>{tool.title}</p>
+              <p style={{ fontSize: 12, color: '#6B7280', margin: '8px 0 16px', minHeight: 48 }}>
+                {tool.description}
+              </p>
+              {tool.badge && (
+                <div style={{ marginBottom: 12 }}>
+                  <span style={{
+                    display: 'inline-block', fontSize: 11, color: '#065F46',
+                    background: '#ECFDF5', borderRadius: 4, padding: '2px 8px',
+                  }}>
+                    ✓ {tool.badge}
                   </span>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+              )}
+              <button
+                onClick={tool.available ? tool.onClick : undefined}
+                disabled={!tool.available}
+                style={{
+                  display: 'block', height: 32, padding: '0 16px',
+                  background: tool.available ? '#0F1F3D' : '#E5E7EB',
+                  color: tool.available ? 'white' : '#64748B',
+                  border: 'none', borderRadius: 8,
+                  fontSize: 12, fontWeight: 600,
+                  cursor: tool.available ? 'pointer' : 'default',
+                }}
+                onMouseEnter={(e) => { if (tool.available) e.currentTarget.style.opacity = '0.85' }}
+                onMouseLeave={(e) => { if (tool.available) e.currentTarget.style.opacity = '1' }}
+              >
+                {tool.action}
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* Upcoming Live Sessions */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="mb-4 text-base font-semibold text-slate-800">Upcoming Live Sessions</h3>
-        {isPayg ? (
-          <div style={PAYG_LOCK_STYLE}>
-            <span style={{ fontSize: 24 }}>🔒</span>
-            <p style={{ fontSize: 13, fontWeight: 600, color: '#374151', margin: 0 }}>Requires a monthly plan</p>
-            <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>Upgrade to Blackboard Basic — $19/month</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {[
-              { name: 'Q2 Contract Review',    date: '2026-04-12', time: '2:00 PM', participants: 'You, Meridian Labs' },
-              { name: 'Onboarding — Fenix Co', date: '2026-04-17', time: '10:30 AM', participants: 'You, Fenix Creative' },
-            ].map((session, i) => (
-              <div key={i} className="rounded-lg border border-slate-200 p-4">
-                <p className="font-semibold text-slate-800">{session.name}</p>
-                <p className="mt-1 text-xs text-slate-500">{session.date} at {session.time}</p>
-                <p className="mt-1 text-xs text-slate-400">{session.participants}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   )
 }

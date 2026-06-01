@@ -95,6 +95,68 @@ interface PaymentTemplateItem {
   contract_template_id: string | null
 }
 
+interface ContractVersionPayload {
+  id: string
+  content_snapshot: string
+  status: string
+  version_number: number
+}
+
+interface ContractRetrievePayload {
+  id: string
+  title?: string
+  status?: string
+  state?: string
+  counterparty_name?: string
+  counterparty_email?: string
+  structure_type?: string
+  entity_type?: string
+  entity?: string | null
+  contract_type?: string
+  language?: string
+  start_date?: string | null
+  end_date?: string | null
+  contract_value?: string | null
+  currency?: string
+  jurisdiction?: string
+  governing_law?: string
+  confidentiality?: string
+  dispute_resolution?: string
+  description?: string
+  latest_version?: ContractVersionPayload | null
+}
+
+interface PreparedTerm {
+  description?: string
+  amount?: string | null
+  due_date?: string | null
+  deadline?: string | null
+  responsible_party?: string
+  trigger_condition?: string
+}
+
+interface PreparedTerms {
+  payment_terms?: PreparedTerm[]
+  service_obligations?: PreparedTerm[]
+  delivery_obligations?: PreparedTerm[]
+  milestones?: PreparedTerm[]
+  deadlines?: string[]
+  trigger_conditions?: string[]
+  extraction_method?: string
+}
+
+interface PersistedTemplateDraft {
+  source?: string
+  template_id?: string
+  template_name?: string
+  category?: string
+  editor_html?: string
+  sections?: ContractSection[]
+  clauses?: { body?: string }[]
+  prepared_terms?: PreparedTerms
+  final_editor_html?: string
+}
+
 const DEFAULT_SECTIONS: ContractSection[] = [
   { id: 's1',  number: 1,  name: 'Introduction' },
   { id: 's2',  number: 2,  name: 'Parties' },
@@ -457,6 +519,7 @@ export default function CreateContract() {
   ])
   const [contractTitle, setContractTitle] = useState('')
   const [contractStatus, setContractStatus] = useState('Draft')
+  const [contractLifecycleState, setContractLifecycleState] = useState('created')
   const [contractVersion] = useState(1)
   const [hoverDescription] = useState('')
   const [fontFamily, setFontFamily] = useState('Arial')
@@ -485,6 +548,9 @@ export default function CreateContract() {
   const [templateCategoryFilter, setTemplateCategoryFilter] = useState<string>('All')
   const [templateToast, setTemplateToast] = useState('')
   const [previewTemplate, setPreviewTemplate] = useState<TemplateItem | null>(null)
+  const [preparedTerms, setPreparedTerms] = useState<PreparedTerms | null>(null)
+  const [isPreparingContract, setIsPreparingContract] = useState(false)
+  const [isSendingInvite, setIsSendingInvite] = useState(false)
 
   // Obligations panel state
   const [obligationTemplates, setObligationTemplates] = useState<ObligationTemplateItem[]>([])
@@ -515,12 +581,18 @@ export default function CreateContract() {
   const [detailsConfidentiality, setDetailsConfidentiality] = useState('Not confidential')
   const [detailsDispute, setDetailsDispute] = useState('Negotiation')
   const [detailsDescription, setDetailsDescription] = useState('')
+  const [detailsCounterpartyName, setDetailsCounterpartyName] = useState('')
+  const [detailsCounterpartyEmail, setDetailsCounterpartyEmail] = useState('')
 
-  // Created contract identity (set after POST /api/contracts/)
+  // Current contract identity loaded from the URL or saved editor state
   const [createdContractId, setCreatedContractId] = useState<string | null>(null)
   const [createdContractTitle, setCreatedContractTitle] = useState<string>('')
-  const [contractCreating, setContractCreating] = useState(false)
-  const [contractCreateError, setContractCreateError] = useState('')
+  const [contractLoaded, setContractLoaded] = useState(false)
+  const [detailsSaving, setDetailsSaving] = useState(false)
+  const [detailsSaveError, setDetailsSaveError] = useState('')
+  const [detailsSaveMessage, setDetailsSaveMessage] = useState('')
+  const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [autosaveError, setAutosaveError] = useState('')
 
   // Contacts state (shared with Contacts page via localStorage)
   const [contacts, setContacts] = useState<Contact[]>([])
@@ -534,6 +606,8 @@ export default function CreateContract() {
   const [searchParams] = useSearchParams()
   const entityParam = searchParams.get('entity')
   const contractIdParam = searchParams.get('id')
+  const currentContractId = createdContractId || contractIdParam
+  const draftEditingAllowed = !!currentContractId && contractLoaded && ['created', 'draft', 'drafting'].includes((contractLifecycleState || '').toLowerCase())
   const entityNameParam = searchParams.get('name')
   const entityLabel = entityParam === 'personal'
     ? 'Personal'
@@ -587,6 +661,13 @@ export default function CreateContract() {
   const leftEditorRef = useRef<HTMLDivElement>(null)
   const rightEditorRef = useRef<HTMLDivElement>(null)
   const editorsRowRef = useRef<HTMLDivElement>(null)
+  const autosaveTimerRef = useRef<number | null>(null)
+  const sectionRegenTimerRef = useRef<number | null>(null)
+  const lastSectionSyncHtmlRef = useRef('')
+  const autosaveGuardRef = useRef(false)
+  const lastSavedMetadataRef = useRef('')
+  const lastSavedDraftRef = useRef('')
+  const draftSnapshotBaseRef = useRef<Record<string, unknown>>({})
 
 
   function getActiveRef() {
@@ -653,14 +734,60 @@ export default function CreateContract() {
     if (state.description) setDetailsDescription(state.description)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // If arriving with a contract id param, persist it and set the title from localStorage
+  // If arriving with a contract id param, load the persisted contract and latest draft version.
   useEffect(() => {
     if (!contractIdParam) return
+    let cancelled = false
+    autosaveGuardRef.current = true
+    setContractLoaded(false)
     setCreatedContractId(contractIdParam)
     const stored = localStorage.getItem('bb_wip_contract_title')
     if (stored) setCreatedContractTitle(stored)
-    // Title may already be set by the nav-state effect above; only fall back if empty
     setContractTitle((prev) => prev || stored || '')
+
+    api.get<ContractRetrievePayload>(`/contracts/${contractIdParam}/`)
+      .then(({ data }) => {
+        if (cancelled) return
+        applyContractMetadata(data, stored || '')
+        lastSavedMetadataRef.current = JSON.stringify({
+          title: data.title || stored || '',
+          contract_type: data.contract_type || '',
+          language: data.language || 'English',
+          start_date: data.start_date || null,
+          end_date: data.end_date || null,
+          contract_value: data.contract_value ? String(data.contract_value) : null,
+          currency: data.currency || 'USD',
+          jurisdiction: data.jurisdiction || '',
+          governing_law: data.governing_law || '',
+          confidentiality: data.confidentiality || 'Not confidential',
+          dispute_resolution: data.dispute_resolution || 'Negotiation',
+          description: data.description || '',
+          counterparty_name: data.counterparty_name || '',
+          counterparty_email: data.counterparty_email || '',
+          structure_type: data.structure_type || 'ONE_TIME',
+          entity_type: data.entity_type || 'personal',
+          entity: data.entity || null,
+        })
+        if (data.latest_version?.content_snapshot) {
+          restoreDraftSnapshot(data.latest_version.content_snapshot)
+          lastSavedDraftRef.current = data.latest_version.content_snapshot
+        } else {
+          lastSavedDraftRef.current = ''
+          draftSnapshotBaseRef.current = {}
+        }
+        setContractLoaded(true)
+      })
+      .catch(() => {
+        if (!cancelled) setTemplateToast('Unable to load saved draft')
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setTimeout(() => {
+            autosaveGuardRef.current = false
+          }, 0)
+        }
+      })
+    return () => { cancelled = true }
   }, [contractIdParam]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -695,44 +822,701 @@ export default function CreateContract() {
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   }
 
+  function isAddressLikeSectionTitle(value: string) {
+    const title = value.trim()
+    return /^\d+\s+[\w\s.'-]+,\s*[A-Z]{2}\b/.test(title) || /\b(street|st\.|avenue|ave\.|road|rd\.|boulevard|blvd\.|suite|unit|zip)\b/i.test(title)
+  }
+
+  function isSignatureOnlySectionTitle(value: string) {
+    return /^(provider|client|party|signature|signed|date)\s*:?\s*_*$/i.test(value.trim())
+  }
+
+  function templateSectionHeadingMatch(line: string) {
+    return line.match(/^(\d+)\.\s+([A-Z][A-Z\s/&,().-]+)$/)
+  }
+
+  function sectionHeadingMatch(line: string) {
+    const trimmed = line.trim()
+    return trimmed.match(/^(?:(\d+)\.\s+([A-Z][A-Z0-9\s/&,().-]+|[A-Z][a-zA-Z0-9\s/&,().-]{2,80})|SECTION\s+(\d+)\s*[-:]\s*([A-Z][A-Z0-9\s/&,().-]+|[A-Z][a-zA-Z0-9\s/&,().-]{2,80})|([A-Z][A-Z0-9\s/&,().-]{3,80}))$/)
+  }
+
+  function sectionMatchTitle(match: RegExpMatchArray) {
+    return (match[2] || match[4] || match[5] || '').trim()
+  }
+
+  function sectionMatchNumber(match: RegExpMatchArray, fallback: number) {
+    return parseInt(match[1] || match[3] || String(fallback), 10)
+  }
+
+  function parsedSectionsFromMatches(matches: RegExpMatchArray[], prefix = 'ts'): ContractSection[] {
+    return matches.map((m, i) => ({
+      id: `${prefix}${i + 1}`,
+      number: sectionMatchNumber(m, i + 1),
+      name: toTitleCase(sectionMatchTitle(m)),
+    }))
+  }
+
+  function parseCompatibleSections(content: string): ContractSection[] | null {
+    const rawMatches = content.split(/\r?\n/)
+      .map((line) => sectionHeadingMatch(line))
+      .filter((m): m is RegExpMatchArray => Boolean(m))
+      .filter((m) => {
+        const title = sectionMatchTitle(m)
+        return Boolean(title) && !isAddressLikeSectionTitle(title) && !isSignatureOnlySectionTitle(title)
+      })
+
+    const numbered = rawMatches.filter((m) => m[1] || m[3])
+    const matches = numbered.length >= 2 ? numbered : rawMatches
+    if (matches.length < 2) return null
+    return parsedSectionsFromMatches(matches)
+  }
+
   function parseTemplateSections(content: string): ContractSection[] {
     const regex = /^(\d+)\.\s+([A-Z][A-Z\s/&,().-]+)$/gm
     const matches = [...content.matchAll(regex)]
-    if (matches.length < 2) return DEFAULT_SECTIONS
-    return matches.map((m, i) => ({
-      id: `ts${i + 1}`,
-      number: parseInt(m[1], 10),
-      name: toTitleCase(m[2].trim()),
-    }))
+    if (matches.length >= 2) return parsedSectionsFromMatches(matches)
+    return parseCompatibleSections(content) || []
+  }
+
+  function parseDraftEditorSections(content: string): ContractSection[] | null {
+    return parseCompatibleSections(content)
   }
 
   function buildTemplateHtml(content: string, parsedSections: ContractSection[]): string {
     const byNum = new Map(parsedSections.map((s) => [s.number, s]))
+    const byName = new Map(parsedSections.map((s) => [normalizeSectionHeadingText(s.name), s]))
+    const usedAnchors = new Set<string>()
     return content.split('\n').map((line) => {
-      const m = line.match(/^(\d+)\.\s+([A-Z][A-Z\s/&,().-]+)$/)
-      if (m) {
-        const num = parseInt(m[1], 10)
-        const sec = byNum.get(num)
-        const id = sec ? sec.id : `ts${num}`
-        return `<h2 id="section-${id}" style="margin:20px 0 4px;font-size:14px;font-weight:700;color:#0F1F3D;">${escapeHtml(line)}</h2>`
+      const strictMatch = templateSectionHeadingMatch(line)
+      const broadMatch = strictMatch || sectionHeadingMatch(line)
+      if (broadMatch) {
+        const title = sectionMatchTitle(broadMatch)
+        const num = sectionMatchNumber(broadMatch, 0)
+        const sec = (num ? byNum.get(num) : null) || byName.get(normalizeSectionHeadingText(title))
+        if (sec && !usedAnchors.has(sec.id)) {
+          usedAnchors.add(sec.id)
+          return `<h2 id="section-${sec.id}" style="margin:20px 0 4px;font-size:14px;font-weight:700;color:#0F1F3D;">${escapeHtml(line)}</h2>`
+        }
       }
       if (line.trim() === '') return '<div style="height:6px"></div>'
       return `<div style="font-size:14px;line-height:1.6;color:#374151;margin-bottom:2px;">${escapeHtml(line)}</div>`
     }).join('')
   }
 
-  function loadTemplate(tmpl: TemplateItem) {
-    const parsed = parseTemplateSections(tmpl.content)
-    if (leftEditorRef.current) {
-      leftEditorRef.current.innerHTML = buildTemplateHtml(tmpl.content, parsed)
-      setLeftEmpty(false)
-    }
-    setSections(parsed)
-    setPreviewTemplate(null)
-    setActiveTool(null)
-    setTemplateToast('Template loaded')
-    setTimeout(() => setTemplateToast(''), 2000)
+  function sectionsEqual(a: ContractSection[], b: ContractSection[]) {
+    return a.length === b.length && a.every((section, index) => {
+      const other = b[index]
+      return other && section.id === other.id && section.number === other.number && section.name === other.name
+    })
   }
+
+  function clearDraftSectionRegenTimer() {
+    if (sectionRegenTimerRef.current !== null) {
+      window.clearTimeout(sectionRegenTimerRef.current)
+      sectionRegenTimerRef.current = null
+    }
+  }
+
+  function queueDraftSectionRegeneration(delay = 450) {
+    if (!draftEditingAllowed || autosaveGuardRef.current) return
+    clearDraftSectionRegenTimer()
+    sectionRegenTimerRef.current = window.setTimeout(() => {
+      sectionRegenTimerRef.current = null
+      regenerateDraftSectionsFromEditor()
+    }, delay)
+  }
+
+  function normalizeSectionHeadingText(value: string) {
+    return value.replace(/\s+/g, ' ').trim().toLowerCase()
+  }
+
+  function findDraftScrollContainer(target: HTMLElement, editorEl: HTMLDivElement): HTMLElement {
+    let node: HTMLElement | null = target
+    while (node && node !== document.body) {
+      const style = window.getComputedStyle(node)
+      const canScroll = /(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight
+      if (canScroll) return node
+      node = node.parentElement
+    }
+    return editorEl
+  }
+
+  function scrollDraftSectionIntoView(target: HTMLElement, editorEl: HTMLDivElement) {
+    const container = findDraftScrollContainer(target, editorEl)
+    const containerRect = container.getBoundingClientRect()
+    const targetRect = target.getBoundingClientRect()
+    const nextTop = container.scrollTop + targetRect.top - containerRect.top - 16
+    container.scrollTo({ top: Math.max(nextTop, 0), behavior: 'smooth' })
+  }
+
+  function draftEditorSectionText(editorEl: HTMLDivElement) {
+    const blockTexts = Array.from(editorEl.querySelectorAll<HTMLElement>('h1,h2,h3,h4,p,div,li'))
+      .map((el) => (el.textContent || '').trim())
+      .filter(Boolean)
+    return blockTexts.length > 1 ? blockTexts.join('\n') : (editorEl.textContent || '')
+  }
+
+  function annotateDraftSectionAnchors(editorEl: HTMLDivElement, parsedSections: ContractSection[]) {
+    const candidates = Array.from(editorEl.querySelectorAll<HTMLElement>('h1,h2,h3,h4,p,div,li'))
+    const used = new Set<string>()
+    parsedSections.forEach((section) => {
+      const targetText = normalizeSectionHeadingText(`${section.number}. ${section.name}`)
+      const targetName = normalizeSectionHeadingText(section.name)
+      const match = candidates.find((el) => {
+        if (used.has(el.dataset.sectionAnchorCandidate || '')) return false
+        const rawText = el.textContent || ''
+        const heading = sectionHeadingMatch(rawText)
+        if (heading) {
+          const headingNumber = sectionMatchNumber(heading, section.number)
+          const headingName = normalizeSectionHeadingText(sectionMatchTitle(heading))
+          if (headingNumber === section.number && headingName === targetName) return true
+        }
+        const text = normalizeSectionHeadingText(rawText)
+        return text === targetText || text === targetName || text.startsWith(`${section.number}. ${targetName}`)
+      })
+      if (match) {
+        match.id = `section-${section.id}`
+        match.dataset.sectionAnchorCandidate = section.id
+        used.add(section.id)
+      }
+    })
+  }
+
+  function regenerateDraftSectionsFromEditor(force = false) {
+    const editorEl = leftEditorRef.current
+    if (!editorEl) return
+    const currentHtml = editorEl.innerHTML || ''
+    if (!force && currentHtml === lastSectionSyncHtmlRef.current) return
+    lastSectionSyncHtmlRef.current = currentHtml
+
+    const text = draftEditorSectionText(editorEl)
+    const parsed = parseDraftEditorSections(text)
+    if (!parsed) return
+    annotateDraftSectionAnchors(editorEl, parsed)
+    setSections((prev) => sectionsEqual(prev, parsed) ? prev : parsed)
+  }
+
+  function syncDraftSectionsAfterMutation(delay = 0) {
+    window.setTimeout(() => {
+      regenerateDraftSectionsFromEditor()
+      queueAutosave()
+    }, delay)
+  }
+
+  function handleDraftEditorFocus() {
+    setActiveEditor('left')
+  }
+
+  function handleDraftEditorInput(e: React.FormEvent<HTMLDivElement>) {
+    setLeftEmpty((e.currentTarget.textContent ?? '') === '')
+    queueDraftSectionRegeneration()
+    queueAutosave()
+  }
+
+  function handleDraftEditorPaste(e: React.ClipboardEvent<HTMLDivElement>) {
+    if (!draftEditingAllowed) return
+    const pastedText = e.clipboardData.getData('text/plain')
+    const parsed = pastedText ? parseDraftEditorSections(pastedText) : null
+    if (!parsed) {
+      queueDraftSectionRegeneration(80)
+      return
+    }
+
+    e.preventDefault()
+    const html = buildTemplateHtml(pastedText, parsed)
+    document.execCommand('insertHTML', false, html)
+    lastSectionSyncHtmlRef.current = leftEditorRef.current?.innerHTML || ''
+    setSections(parsed)
+    setLeftEmpty(false)
+    queueAutosave()
+  }
+
+  useEffect(() => () => clearDraftSectionRegenTimer(), []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function normalizePersistedSections(value: unknown): ContractSection[] | null {
+    if (!Array.isArray(value)) return null
+    const parsed = value
+      .map((item, index) => {
+        if (!item || typeof item !== 'object') return null
+        const section = item as Partial<ContractSection>
+        if (typeof section.name !== 'string') return null
+        return {
+          id: typeof section.id === 'string' ? section.id : `ps${index + 1}`,
+          number: typeof section.number === 'number' ? section.number : index + 1,
+          name: section.name,
+        }
+      })
+      .filter((section): section is ContractSection => section !== null)
+    return parsed.length > 0 ? parsed : null
+  }
+
+  function structureTypeFromContractType(contractType: string): string {
+    if (contractType === 'Employment Contract') return 'ONGOING'
+    if (contractType === 'Partnership Agreement' || contractType === 'Joint Venture Agreement') return 'COLLABORATIVE'
+    if (contractType === 'Settlement Agreement') return 'RESOLUTION'
+    return 'ONE_TIME'
+  }
+
+  function apiErrorMessage(err: unknown, fallback: string): string {
+    const data = (err as { response?: { data?: unknown } })?.response?.data
+    if (data && typeof data === 'object') {
+      return String(Object.values(data as Record<string, unknown>).flat().join(' '))
+    }
+    return fallback
+  }
+
+  function buildContractMetadataPayload() {
+    return {
+      title: contractTitle.trim(),
+      contract_type: detailsType,
+      language: detailsLanguage,
+      start_date: detailsStartDate || null,
+      end_date: detailsEndDate || null,
+      contract_value: detailsValue === '' ? null : detailsValue,
+      currency: detailsCurrency || 'USD',
+      jurisdiction: detailsJurisdiction,
+      governing_law: detailsGoverningLaw,
+      confidentiality: detailsConfidentiality,
+      dispute_resolution: detailsDispute,
+      description: detailsDescription,
+      counterparty_name: detailsCounterpartyName.trim(),
+      counterparty_email: detailsCounterpartyEmail.trim(),
+      structure_type: structureTypeFromContractType(detailsType),
+      entity_type: selectedEntity ? 'business' : 'personal',
+      entity: selectedEntity || null,
+    }
+  }
+
+  function serializeDraftSnapshot(snapshot: Record<string, unknown>) {
+    return JSON.stringify(snapshot)
+  }
+
+  function buildDraftSnapshot() {
+    const base = draftSnapshotBaseRef.current && typeof draftSnapshotBaseRef.current === 'object'
+      ? { ...draftSnapshotBaseRef.current }
+      : {}
+    const leftHtml = leftEditorRef.current?.innerHTML || ''
+    const rightHtml = rightEditorRef.current?.innerHTML || ''
+    const snapshot = {
+      ...base,
+      source: String(base.source || 'editor_autosave'),
+      editor_html: leftHtml,
+      sections,
+    } as Record<string, unknown>
+    if (rightHtml.trim()) {
+      snapshot.final_editor_html = rightHtml
+    } else {
+      delete snapshot.final_editor_html
+    }
+    if (preparedTerms) {
+      snapshot.prepared_terms = preparedTerms
+    }
+    return snapshot
+  }
+
+  function clearAutosaveTimer() {
+    if (autosaveTimerRef.current !== null) {
+      window.clearTimeout(autosaveTimerRef.current)
+      autosaveTimerRef.current = null
+    }
+  }
+
+  function queueAutosave() {
+    if (!draftEditingAllowed || !currentContractId || autosaveGuardRef.current) return
+    clearAutosaveTimer()
+    setAutosaveStatus('idle')
+    setAutosaveError('')
+    autosaveTimerRef.current = window.setTimeout(() => {
+      autosaveTimerRef.current = null
+      void flushAutosave()
+    }, 900)
+  }
+
+  async function flushAutosave() {
+    if (!draftEditingAllowed || !currentContractId || autosaveGuardRef.current) return
+
+    const metadataPayload = buildContractMetadataPayload()
+    const metadataPayloadKey = JSON.stringify(metadataPayload)
+    const draftSnapshot = buildDraftSnapshot()
+    const draftSnapshotKey = serializeDraftSnapshot(draftSnapshot)
+
+    const metadataChanged = metadataPayloadKey !== lastSavedMetadataRef.current
+    const draftChanged = draftSnapshotKey !== lastSavedDraftRef.current
+
+    if (!metadataChanged && !draftChanged) return
+
+    clearAutosaveTimer()
+    setAutosaveStatus('saving')
+    setAutosaveError('')
+
+    const errors: string[] = []
+
+    try {
+      if (metadataChanged) {
+        const { data } = await api.patch<ContractRetrievePayload>(`/contracts/${currentContractId}/`, metadataPayload)
+        autosaveGuardRef.current = true
+        applyContractMetadata(data, metadataPayload.title)
+        lastSavedMetadataRef.current = JSON.stringify({
+          title: data.title || metadataPayload.title,
+          contract_type: data.contract_type || '',
+          language: data.language || '',
+          start_date: data.start_date || null,
+          end_date: data.end_date || null,
+          contract_value: data.contract_value ? String(data.contract_value) : null,
+          currency: data.currency || 'USD',
+          jurisdiction: data.jurisdiction || '',
+          governing_law: data.governing_law || '',
+          confidentiality: data.confidentiality || '',
+          dispute_resolution: data.dispute_resolution || '',
+          description: data.description || '',
+          counterparty_name: data.counterparty_name || '',
+          counterparty_email: data.counterparty_email || '',
+          structure_type: data.structure_type || '',
+          entity_type: data.entity_type || 'personal',
+          entity: data.entity || null,
+        })
+      }
+    } catch (err) {
+      errors.push(apiErrorMessage(err, 'Failed to save contract details.'))
+    } finally {
+      autosaveGuardRef.current = false
+    }
+
+    try {
+      if (draftChanged) {
+        const { data } = await api.patch<{ version?: ContractVersionPayload; latest_version?: ContractVersionPayload; content_snapshot?: string }>(`/contracts/${currentContractId}/draft/`, {
+          content_snapshot: draftSnapshotKey,
+        })
+        const savedSnapshot = data.content_snapshot || data.version?.content_snapshot || data.latest_version?.content_snapshot || draftSnapshotKey
+        lastSavedDraftRef.current = savedSnapshot
+        const parsedSnapshot = JSON.parse(savedSnapshot) as Record<string, unknown>
+        draftSnapshotBaseRef.current = parsedSnapshot
+      }
+    } catch (err) {
+      errors.push(apiErrorMessage(err, 'Failed to save draft body.'))
+    }
+
+    if (errors.length > 0) {
+      setAutosaveStatus('error')
+      setAutosaveError(errors.join(' '))
+      return
+    }
+
+    setAutosaveStatus('saved')
+    setAutosaveError('')
+  }
+
+  function applyContractMetadata(data: ContractRetrievePayload, storedTitle = '') {
+    const title = data.title || storedTitle || ''
+    if (title) {
+      setCreatedContractTitle(title)
+      setContractTitle(title)
+      localStorage.setItem('bb_wip_contract_title', title)
+    }
+    setDetailsType(data.contract_type || '')
+    setDetailsLanguage(data.language || 'English')
+    setDetailsStartDate(data.start_date || '')
+    setDetailsEndDate(data.end_date || '')
+    setDetailsValue(data.contract_value ? String(data.contract_value) : '')
+    setDetailsCurrency(data.currency || 'USD')
+    setDetailsJurisdiction(data.jurisdiction || '')
+    setDetailsGoverningLaw(data.governing_law || '')
+    setDetailsConfidentiality(data.confidentiality || 'Not confidential')
+    setDetailsDispute(data.dispute_resolution || 'Negotiation')
+    setDetailsDescription(data.description || '')
+    setDetailsCounterpartyName(data.counterparty_name || '')
+    setDetailsCounterpartyEmail(data.counterparty_email || '')
+    setSelectedEntity(data.entity_type === 'business' && data.entity ? String(data.entity) : null)
+    setContractLifecycleState(data.state || 'created')
+    if (data.status) setContractStatus(toTitleCase(data.status))
+  }
+
+  useEffect(() => {
+    if (autosaveGuardRef.current || !currentContractId) return
+    const metadataKey = JSON.stringify(buildContractMetadataPayload())
+    const draftKey = serializeDraftSnapshot(buildDraftSnapshot())
+    if (metadataKey === lastSavedMetadataRef.current && draftKey === lastSavedDraftRef.current) return
+    queueAutosave()
+  }, [
+    contractTitle, detailsType, detailsLanguage, detailsStartDate, detailsEndDate, detailsValue,
+    detailsCurrency, detailsJurisdiction, detailsGoverningLaw, detailsConfidentiality, detailsDispute,
+    detailsDescription, detailsCounterpartyName, detailsCounterpartyEmail, selectedEntity, sections, preparedTerms, contractLoaded,
+  ]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleSaveContractDetails() {
+    const contractId = currentContractId
+    setDetailsSaveError('')
+    setDetailsSaveMessage('')
+
+    if (!contractId) {
+      setDetailsSaveError('Create the contract record from Contract Details intake before editing it here.')
+      return
+    }
+
+    const payload = buildContractMetadataPayload()
+
+    setDetailsSaving(true)
+    autosaveGuardRef.current = true
+    try {
+      const { data } = await api.patch<ContractRetrievePayload>(`/contracts/${contractId}/`, payload)
+      setCreatedContractId(contractId)
+      localStorage.setItem('bb_wip_contract_id', contractId)
+      applyContractMetadata(data, payload.title)
+      lastSavedMetadataRef.current = JSON.stringify({
+        title: data.title || payload.title,
+        contract_type: data.contract_type || '',
+        language: data.language || '',
+        start_date: data.start_date || null,
+        end_date: data.end_date || null,
+        contract_value: data.contract_value ? String(data.contract_value) : null,
+        currency: data.currency || 'USD',
+        jurisdiction: data.jurisdiction || '',
+        governing_law: data.governing_law || '',
+        confidentiality: data.confidentiality || '',
+        dispute_resolution: data.dispute_resolution || '',
+        description: data.description || '',
+        counterparty_name: data.counterparty_name || '',
+        counterparty_email: data.counterparty_email || '',
+        structure_type: data.structure_type || '',
+        entity_type: data.entity_type || 'personal',
+        entity: data.entity || null,
+      })
+      setDetailsSaveMessage('Contract details saved.')
+    } catch (err) {
+      setDetailsSaveError(apiErrorMessage(err, 'Failed to save contract details.'))
+    } finally {
+      autosaveGuardRef.current = false
+      setDetailsSaving(false)
+    }
+  }
+
+  function restoreDraftSnapshot(contentSnapshot: string) {
+    let snapshot: PersistedTemplateDraft | null = null
+    try {
+      snapshot = JSON.parse(contentSnapshot) as PersistedTemplateDraft
+    } catch (err) {
+      console.warn('Unable to parse saved draft snapshot', err)
+      snapshot = null
+    }
+
+    draftSnapshotBaseRef.current = snapshot ? { ...snapshot } : { raw_content: contentSnapshot }
+    if (draftSnapshotBaseRef.current && typeof draftSnapshotBaseRef.current === 'object') {
+      if (draftSnapshotBaseRef.current.final_editor_html === '') {
+        delete draftSnapshotBaseRef.current.final_editor_html
+      }
+    }
+    setPreparedTerms(snapshot?.prepared_terms ?? null)
+
+    const persistedSections = normalizePersistedSections(snapshot?.sections)
+    if (persistedSections) setSections(persistedSections)
+
+    let html = snapshot?.editor_html
+    const finalHtml = snapshot?.final_editor_html
+    if (!html && Array.isArray(snapshot?.clauses)) {
+      const content = snapshot.clauses.map((clause) => clause.body || '').join('\n\n')
+      const parsed = parseTemplateSections(content)
+      html = buildTemplateHtml(content, parsed)
+      setSections(parsed)
+    }
+    if (!html && contentSnapshot.trim().startsWith('<')) html = contentSnapshot
+
+    if (leftEditorRef.current) {
+      leftEditorRef.current.innerHTML = html || ''
+      lastSectionSyncHtmlRef.current = leftEditorRef.current.innerHTML || ''
+      setLeftEmpty((leftEditorRef.current.textContent ?? '').trim() === '')
+    }
+    if (rightEditorRef.current) {
+      rightEditorRef.current.innerHTML = finalHtml || ''
+      setRightEmpty((rightEditorRef.current.textContent ?? '').trim() === '')
+    }
+  }
+
+  async function loadTemplate(tmpl: TemplateItem) {
+    const contractId = currentContractId
+    if (!contractId) {
+      setTemplateToast('Create the contract record before applying a template')
+      setTimeout(() => setTemplateToast(''), 2500)
+      return
+    }
+    if (!draftEditingAllowed) {
+      setTemplateToast('Prepared contracts must use negotiation, not the normal editor')
+      setTimeout(() => setTemplateToast(''), 3000)
+      return
+    }
+
+    const currentText = (leftEditorRef.current?.textContent ?? '').trim()
+    if (currentText && !window.confirm('Replace the current draft content with this template?')) {
+      return
+    }
+
+    const parsed = parseTemplateSections(tmpl.content)
+    const html = buildTemplateHtml(tmpl.content, parsed)
+    const contentSnapshot = JSON.stringify({
+      source: 'editor_template_apply',
+      template_id: tmpl.id,
+      template_name: tmpl.name,
+      category: tmpl.category,
+      editor_html: html,
+      sections: parsed,
+    })
+
+    setTemplateToast('Saving template draft...')
+    autosaveGuardRef.current = true
+    try {
+      const { data } = await api.patch<{ version?: ContractVersionPayload; latest_version?: ContractVersionPayload; content_snapshot?: string; state?: string; status?: string }>(`/contracts/${contractId}/draft/`, {
+        content_snapshot: contentSnapshot,
+      })
+      if (leftEditorRef.current) {
+        leftEditorRef.current.innerHTML = html
+        lastSectionSyncHtmlRef.current = html
+        setLeftEmpty(false)
+      }
+      if (rightEditorRef.current) {
+        rightEditorRef.current.innerHTML = ''
+        setRightEmpty(true)
+      }
+      setSections(parsed)
+      syncDraftSectionsAfterMutation()
+      setPreparedTerms(null)
+      setCreatedContractId(contractId)
+      setContractLifecycleState(data.state || 'drafting')
+      setContractStatus(toTitleCase(data.status || 'draft'))
+      draftSnapshotBaseRef.current = {
+        source: 'editor_template_apply',
+        template_id: tmpl.id,
+        template_name: tmpl.name,
+        category: tmpl.category,
+        editor_html: html,
+        sections: parsed,
+      }
+      const savedSnapshot = data.content_snapshot || data.version?.content_snapshot || data.latest_version?.content_snapshot || contentSnapshot
+      lastSavedDraftRef.current = savedSnapshot
+      setPreviewTemplate(null)
+      setActiveTool(null)
+      setTemplateToast('Template saved to draft')
+    } catch (err) {
+      const data = (err as { response?: { data?: unknown } })?.response?.data
+      const msg = data && typeof data === 'object'
+        ? Object.values(data as Record<string, unknown>).flat().join(' ')
+        : 'Unable to save template draft'
+      setTemplateToast(String(msg))
+    } finally {
+      autosaveGuardRef.current = false
+      setTimeout(() => setTemplateToast(''), 3000)
+    }
+  }
+
+  async function handlePrepareContract() {
+    const contractId = currentContractId
+    if (!contractId) {
+      setTemplateToast('Create the contract record before preparing it')
+      setTimeout(() => setTemplateToast(''), 2500)
+      return
+    }
+    if (!draftEditingAllowed) {
+      setTemplateToast('Prepared contracts cannot be edited through the normal editor')
+      setTimeout(() => setTemplateToast(''), 3000)
+      return
+    }
+
+    const editorHtml = leftEditorRef.current?.innerHTML || ''
+    const draftText = (leftEditorRef.current?.textContent || '').trim()
+    if (!draftText) {
+      setTemplateToast('Add draft content before preparing the contract')
+      setTimeout(() => setTemplateToast(''), 2500)
+      return
+    }
+
+    setIsPreparingContract(true)
+    setTemplateToast('Preparing contract...')
+    try {
+      const { data } = await api.post<{
+        state: string
+        status: string
+        prepared_terms: PreparedTerms
+      }>(`/contracts/${contractId}/prepare/`, {
+        editor_html: editorHtml,
+        sections,
+        draft_text: draftText,
+      })
+      setPreparedTerms(data.prepared_terms)
+      setContractLifecycleState(data.state || 'prepared')
+      setContractStatus(data.state === 'prepared' ? 'Prepared' : toTitleCase(data.status || 'draft'))
+      setTemplateToast('Contract prepared for invite')
+    } catch (err) {
+      const data = (err as { response?: { data?: unknown } })?.response?.data
+      const msg = data && typeof data === 'object'
+        ? Object.values(data as Record<string, unknown>).flat().join(' ')
+        : 'Unable to prepare contract'
+      setTemplateToast(String(msg))
+    } finally {
+      setIsPreparingContract(false)
+      setTimeout(() => setTemplateToast(''), 3000)
+    }
+  }
+
+  async function handleShareInvite() {
+    const contractId = currentContractId
+    const counterpartyEmail = detailsCounterpartyEmail.trim()
+    if (!contractId) {
+      setTemplateToast('Create the contract record before sending an invite')
+      setTimeout(() => setTemplateToast(''), 2500)
+      return
+    }
+    if (!counterpartyEmail) {
+      setTemplateToast('Add a counterparty email before sending an invite')
+      setTimeout(() => setTemplateToast(''), 3000)
+      return
+    }
+    if (!draftEditingAllowed && contractLifecycleState !== 'prepared') {
+      setTemplateToast('Normal editor invites are disabled for this contract state')
+      setTimeout(() => setTemplateToast(''), 3000)
+      return
+    }
+    if (!preparedTerms) {
+      setTemplateToast('Prepare Contract before sending an invite')
+      setTimeout(() => setTemplateToast(''), 3000)
+      return
+    }
+
+    setIsSendingInvite(true)
+    setTemplateToast('Sending invite...')
+    try {
+      const { data } = await api.post<{
+        contract_id?: string
+        state?: string
+        status?: string
+        invite_url?: string
+        shared_workflow_url?: string
+        email_sent?: boolean
+        invite_email?: string
+        counterparty_email?: string
+      }>(`/contracts/${contractId}/invite/`, {
+        counterparty_email: counterpartyEmail,
+      })
+
+      if (data.state) setContractLifecycleState(data.state)
+      if (data.status) setContractStatus(toTitleCase(data.status))
+
+      if (data.email_sent) {
+        setTemplateToast(`Invite sent to ${data.invite_email || data.counterparty_email || counterpartyEmail}.`)
+      } else if (data.invite_url) {
+        setTemplateToast('Invite link created.')
+      } else {
+        setTemplateToast('Invite created.')
+      }
+    } catch (err) {
+      const data = (err as { response?: { data?: unknown } })?.response?.data
+      const msg = data && typeof data === 'object'
+        ? Object.values(data as Record<string, unknown>).flat().join(' ')
+        : 'Unable to send invite'
+      setTemplateToast(String(msg))
+    } finally {
+      setIsSendingInvite(false)
+      setTimeout(() => setTemplateToast(''), 3000)
+    }
+  }
+
 
   useEffect(() => {
     document.documentElement.style.setProperty('--sidebar-w', '48px')
@@ -751,6 +1535,9 @@ export default function CreateContract() {
         `<p style="margin:0 0 28px;color:#9CA3AF;font-size:14px;">[ Content for ${s.name} ]</p>`
       ).join('')
       setLeftEmpty(false)
+      if (!lastSavedDraftRef.current) {
+        lastSavedDraftRef.current = serializeDraftSnapshot(buildDraftSnapshot())
+      }
     }
   }, [])
 
@@ -1001,7 +1788,8 @@ export default function CreateContract() {
           display: 'flex', gap: 8,
         }}>
           <button
-            onClick={() => setAiPanelOpen((v) => !v)}
+            onClick={() => { if (draftEditingAllowed) setAiPanelOpen((v) => !v) }}
+            disabled={!draftEditingAllowed}
             style={{
               background: '#000000', color: 'white', border: 'none',
               borderRadius: 8, height: 34, padding: '0 16px',
@@ -1027,7 +1815,7 @@ export default function CreateContract() {
 
       {/* ── WORKSPACE: fixed below top bars, above status bar ── */}
       <div style={{
-        position: 'fixed', top: barsCollapsed ? 65 : 134, left: 48, right: 0, bottom: 32,
+        position: 'fixed', top: barsCollapsed ? 65 : 114, left: 48, right: 0, bottom: 32,
         display: 'flex', flexDirection: 'column', zIndex: 20, overflow: 'hidden',
         background: '#ffffff',
         transition: 'top 0.3s ease',
@@ -1066,178 +1854,245 @@ export default function CreateContract() {
 
         {/* ── TOOLBAR 1: Contract Actions ── */}
         <div style={{
-          height: 44, flexShrink: 0,
+          minHeight: 44, flexShrink: 0,
           background: '#172334',
-          display: 'flex', alignItems: 'center', padding: '0 16px', gap: 8,
+          display: 'flex', flexDirection: 'column',
+          padding: '8px 16px 10px', gap: 8,
         }}>
-          {/* Title */}
-          <input
-            type="text"
-            value={contractTitle}
-            onChange={(e) => setContractTitle(e.target.value)}
-            placeholder="Untitled Contract"
-            style={{
-              background: 'transparent',
-              border: 'none',
-              borderBottom: '1px solid rgba(255,255,255,0.2)',
-              color: 'white', fontSize: 14, fontWeight: 600,
-              width: 200, padding: '4px 8px', outline: 'none',
-              flexShrink: 0,
-            }}
-          />
-          {/* Version */}
-          <span style={{
-            background: 'rgba(255,255,255,0.1)',
-            color: 'rgba(255,255,255,0.6)',
-            fontSize: 11, padding: '2px 8px', borderRadius: 4, flexShrink: 0,
+          <div style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 8,
+            flexWrap: 'wrap',
+            minWidth: 0,
           }}>
-            v{contractVersion}
-          </span>
-
-          {/* Status dropdown */}
-          <select
-            value={contractStatus}
-            onChange={(e) => setContractStatus(e.target.value)}
-            style={{
-              background: 'rgba(255,255,255,0.08)',
-              color: 'rgba(255,255,255,0.7)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: 6, fontSize: 12, padding: '4px 10px',
-              cursor: 'pointer', outline: 'none', flexShrink: 0,
-            }}
-          >
-            <option>Draft</option>
-            <option>Active</option>
-            <option>Pending</option>
-            <option>Completed</option>
-          </select>
-
-          {/* Choose a Template — gold dropdown */}
-          <div style={{ position: 'relative', flexShrink: 0 }}>
-            <button
-              onClick={() => setTemplateDropdownOpen((v) => !v)}
-              style={{
-                height: 28, padding: '0 12px', borderRadius: 6,
-                fontSize: 12, fontWeight: 500, cursor: 'pointer',
-                background: 'rgba(245,166,35,0.12)',
-                border: '1px solid rgba(245,166,35,0.4)',
-                color: '#F5A623',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(245,166,35,0.2)'
-                e.currentTarget.style.borderColor = 'rgba(245,166,35,0.6)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(245,166,35,0.12)'
-                e.currentTarget.style.borderColor = 'rgba(245,166,35,0.4)'
-              }}
-            >
-              ⊟ Choose a Template ▾
-            </button>
-            {templateDropdownOpen && (
-              <div
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              flex: '1 1 560px',
+              minWidth: 0,
+              flexWrap: 'wrap',
+            }}>
+              {/* Title */}
+              <input
+                type="text"
+                value={contractTitle}
+                onChange={(e) => setContractTitle(e.target.value)}
+                readOnly={!draftEditingAllowed}
+                placeholder="Untitled Contract"
                 style={{
-                  position: 'absolute', top: '100%', left: 0, marginTop: 4,
-                  background: '#0F1F3D', border: '1px solid rgba(245,166,35,0.3)',
-                  borderRadius: 6, overflow: 'hidden', zIndex: 200, minWidth: 180,
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: '1px solid rgba(255,255,255,0.2)',
+                  color: 'white', fontSize: 14, fontWeight: 600,
+                  flex: '1 1 260px',
+                  minWidth: 220,
+                  maxWidth: '100%',
+                  padding: '4px 8px', outline: 'none',
+                }}
+              />
+              {/* Version */}
+              <span style={{
+                background: 'rgba(255,255,255,0.1)',
+                color: 'rgba(255,255,255,0.6)',
+                fontSize: 11, padding: '2px 8px', borderRadius: 4, flexShrink: 0,
+              }}>
+                v{contractVersion}
+              </span>
+
+              {/* Status dropdown */}
+              <select
+                value={contractStatus}
+                onChange={(e) => setContractStatus(e.target.value)}
+                disabled
+                style={{
+                  background: 'rgba(255,255,255,0.08)',
+                  color: 'rgba(255,255,255,0.7)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: 6, fontSize: 12, padding: '4px 10px',
+                  cursor: 'pointer', outline: 'none', flexShrink: 0,
                 }}
               >
-                {([
-                  { icon: '📄', label: 'Contract Templates', tool: 'Contract Templates' },
-                  { icon: '✓', label: 'Obligation Template', tool: 'Obligations' },
-                  { icon: '💰', label: 'Payment Template', tool: 'Payments' },
-                ] as { icon: string; label: string; tool: string }[]).map(({ icon, label, tool }) => (
-                  <button
-                    key={tool}
-                    onClick={() => { setActiveTool(tool); setTemplateDropdownOpen(false) }}
-                    style={{
-                      display: 'block', width: '100%', textAlign: 'left',
-                      padding: '7px 12px', fontSize: 12, cursor: 'pointer',
-                      background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.85)',
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(245,166,35,0.12)')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                  >
-                    {icon} {label}
-                  </button>
-                ))}
-              </div>
-            )}
+                <option>Draft</option>
+                <option>Active</option>
+                <option>Pending</option>
+                <option>Completed</option>
+              </select>
+
+              {(autosaveStatus !== 'idle' || autosaveError) && (
+                <div style={{
+                  display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0,
+                  flexShrink: 1, marginLeft: 6, maxWidth: 260,
+                }}>
+                  <span style={{
+                    fontSize: 11, fontWeight: 600,
+                    color: autosaveStatus === 'error' ? '#FCA5A5' : autosaveStatus === 'saving' ? '#FDE68A' : '#86EFAC',
+                    lineHeight: 1.2,
+                  }}>
+                    {autosaveStatus === 'saving' ? 'Saving...' : autosaveStatus === 'saved' ? 'Saved' : 'Save failed'}
+                  </span>
+                  {autosaveStatus === 'error' && autosaveError && (
+                    <span style={{
+                      fontSize: 10, color: '#FCA5A5', lineHeight: 1.2,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }} title={autosaveError}>
+                      {autosaveError}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Currently building indicator — shown once contract is created */}
+              {createdContractId && (
+                <span style={{
+                  fontSize: 11, color: 'rgba(255,255,255,0.5)',
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: 6, padding: '3px 10px',
+                  flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  maxWidth: 240,
+                }}>
+                  📄 {createdContractTitle ? createdContractTitle : 'In Progress'}
+                </span>
+              )}
+            </div>
+
+            {/* Right buttons */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: 8,
+              flex: '1 1 420px',
+              minWidth: 0,
+              flexWrap: 'wrap',
+            }}>
+              <GhostActionBtn label={isSendingInvite ? 'Sending...' : 'Share / Invite'} onClick={handleShareInvite} />
+              <GhostActionBtn label="🔍 Analyze" onClick={() => setActiveTool('Contract Analysis')} />
+              <GhostActionBtn label="⚡ Counter" onClick={() => setActiveTool('Contract Counter')} />
+              <button style={{
+                background: '#F5A623', color: '#0F1F3D',
+                fontSize: 12, fontWeight: 600, height: 28, padding: '0 14px',
+                borderRadius: 6, border: 'none', cursor: draftEditingAllowed ? 'pointer' : 'not-allowed', flexShrink: 0,
+                opacity: draftEditingAllowed ? 1 : 0.55,
+              }} disabled={!draftEditingAllowed}>
+                Sign
+              </button>
+              <GhostActionBtn label="Export" />
+              <button onClick={() => void flushAutosave()} style={{
+                background: '#000000', color: 'white',
+                fontSize: 12, fontWeight: 600, height: 28, padding: '0 14px',
+                borderRadius: 6, border: 'none', cursor: draftEditingAllowed ? 'pointer' : 'not-allowed', flexShrink: 0,
+                opacity: draftEditingAllowed ? 1 : 0.55,
+              }} disabled={!draftEditingAllowed || !currentContractId}>
+                Save
+              </button>
+            </div>
           </div>
 
-          {/* Start from Scratch */}
-          <button
-            onClick={() => {
-              if (leftEditorRef.current) {
-                leftEditorRef.current.innerHTML = ''
-                setLeftEmpty(true)
-              }
-            }}
-            style={{
-              height: 28, padding: '0 12px', borderRadius: 6,
-              fontSize: 12, cursor: 'pointer', flexShrink: 0,
-              background: 'transparent',
-              border: '1px solid rgba(255,255,255,0.15)',
-              color: 'rgba(255,255,255,0.7)',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-          >
-            ✎ Start from Scratch
-          </button>
-
-          {/* Ask AI */}
-          <button
-            onClick={() => setAiPanelOpen((v) => !v)}
-            style={{
-              height: 28, padding: '0 12px', borderRadius: 6,
-              fontSize: 12, cursor: 'pointer', flexShrink: 0,
-              background: 'transparent',
-              border: '1px solid rgba(255,255,255,0.15)',
-              color: 'rgba(255,255,255,0.7)',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-          >
-            ✦ Ask AI
-          </button>
-
-          {/* Currently building indicator — shown once contract is created */}
-          {createdContractId && (
-            <span style={{
-              fontSize: 11, color: 'rgba(255,255,255,0.5)',
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: 6, padding: '3px 10px',
-              flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              maxWidth: 240,
-            }}>
-              📄 {createdContractTitle ? createdContractTitle : 'In Progress'}
-            </span>
-          )}
-
-          {/* flex spacer */}
-          <div style={{ flex: 1 }} />
-
-          {/* Right buttons */}
-          <GhostActionBtn label="Share / Invite" />
-          <GhostActionBtn label="🔍 Analyze" onClick={() => setActiveTool('Contract Analysis')} />
-          <GhostActionBtn label="⚡ Counter" onClick={() => setActiveTool('Contract Counter')} />
-          <button style={{
-            background: '#F5A623', color: '#0F1F3D',
-            fontSize: 12, fontWeight: 600, height: 28, padding: '0 14px',
-            borderRadius: 6, border: 'none', cursor: 'pointer', flexShrink: 0,
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flexWrap: 'wrap',
+            minWidth: 0,
           }}>
-            Sign
-          </button>
-          <GhostActionBtn label="Export" />
-          <button style={{
-            background: '#000000', color: 'white',
-            fontSize: 12, fontWeight: 600, height: 28, padding: '0 14px',
-            borderRadius: 6, border: 'none', cursor: 'pointer', flexShrink: 0,
-          }}>
-            Save
-          </button>
+            {/* Choose a Template — gold dropdown */}
+            <div style={{ position: 'relative', flexShrink: 0 }}>
+              <button
+                onClick={() => { if (draftEditingAllowed) setTemplateDropdownOpen((v) => !v) }}
+                disabled={!draftEditingAllowed}
+                style={{
+                  height: 28, padding: '0 12px', borderRadius: 6,
+                  fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                  background: 'rgba(245,166,35,0.12)',
+                  border: '1px solid rgba(245,166,35,0.4)',
+                  color: '#F5A623',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(245,166,35,0.2)'
+                  e.currentTarget.style.borderColor = 'rgba(245,166,35,0.6)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(245,166,35,0.12)'
+                  e.currentTarget.style.borderColor = 'rgba(245,166,35,0.4)'
+                }}
+              >
+                ⊟ Choose a Template ▾
+              </button>
+              {templateDropdownOpen && (
+                <div
+                  style={{
+                    position: 'absolute', top: '100%', left: 0, marginTop: 4,
+                    background: '#0F1F3D', border: '1px solid rgba(245,166,35,0.3)',
+                    borderRadius: 6, overflow: 'hidden', zIndex: 200, minWidth: 180,
+                  }}
+                >
+                  {([
+                    { icon: '📄', label: 'Contract Templates', tool: 'Contract Templates' },
+                    { icon: '✓', label: 'Obligation Template', tool: 'Obligations' },
+                    { icon: '💰', label: 'Payment Template', tool: 'Payments' },
+                  ] as { icon: string; label: string; tool: string }[]).map(({ icon, label, tool }) => (
+                    <button
+                      key={tool}
+                      onClick={() => { setActiveTool(tool); setTemplateDropdownOpen(false) }}
+                      style={{
+                        display: 'block', width: '100%', textAlign: 'left',
+                        padding: '7px 12px', fontSize: 12, cursor: 'pointer',
+                        background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.85)',
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(245,166,35,0.12)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      {icon} {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Start from Scratch */}
+            <button
+              onClick={() => {
+                if (!draftEditingAllowed) return
+                if (leftEditorRef.current) {
+                  leftEditorRef.current.innerHTML = ''
+                  setLeftEmpty(true)
+                  queueAutosave()
+                }
+              }}
+              disabled={!draftEditingAllowed}
+              style={{
+                height: 28, padding: '0 12px', borderRadius: 6,
+                fontSize: 12, cursor: 'pointer', flexShrink: 0,
+                background: 'transparent',
+                border: '1px solid rgba(255,255,255,0.15)',
+                color: 'rgba(255,255,255,0.7)',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            >
+              ✎ Start from Scratch
+            </button>
+
+            {/* Ask AI */}
+            <button
+              onClick={() => { if (draftEditingAllowed) setAiPanelOpen((v) => !v) }}
+              disabled={!draftEditingAllowed}
+              style={{
+                height: 28, padding: '0 12px', borderRadius: 6,
+                fontSize: 12, cursor: 'pointer', flexShrink: 0,
+                background: 'transparent',
+                border: '1px solid rgba(255,255,255,0.15)',
+                color: 'rgba(255,255,255,0.7)',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            >
+              ✦ Ask AI
+            </button>
+          </div>
         </div>
 
         {/* ── TOOLBAR 2: Rich Text ── */}
@@ -1481,7 +2336,11 @@ export default function CreateContract() {
                   </div>
 
                   {/* Panel content */}
-                  <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+                  <div style={{
+                    flex: 1, overflowY: 'auto', padding: 16,
+                    pointerEvents: activeTool === 'Contract Details' && !draftEditingAllowed ? 'none' : 'auto',
+                    opacity: activeTool === 'Contract Details' && !draftEditingAllowed ? 0.55 : 1,
+                  }}>
                     {activeTool === 'Calculator' ? (
                       <>
                         {/* Display screen */}
@@ -2292,7 +3151,30 @@ export default function CreateContract() {
                             <option>Arbitration then Litigation</option>
                           </select>
 
-                          {/* 12. Description / Notes */}
+                          {/* 12. Counterparty */}
+                          <label style={LABEL}>Counterparty Name</label>
+                          <input
+                            type="text"
+                            value={detailsCounterpartyName}
+                            onChange={(e) => setDetailsCounterpartyName(e.target.value)}
+                            placeholder="Counterparty name"
+                            style={FIELD}
+                            onFocus={onFieldFocus}
+                            onBlur={onFieldBlur}
+                          />
+
+                          <label style={LABEL}>Counterparty Email</label>
+                          <input
+                            type="email"
+                            value={detailsCounterpartyEmail}
+                            onChange={(e) => setDetailsCounterpartyEmail(e.target.value)}
+                            placeholder="counterparty@example.com"
+                            style={FIELD}
+                            onFocus={onFieldFocus}
+                            onBlur={onFieldBlur}
+                          />
+
+                          {/* 13. Description / Notes */}
                           <label style={LABEL}>Description</label>
                           <textarea
                             value={detailsDescription}
@@ -2304,71 +3186,60 @@ export default function CreateContract() {
                             onBlur={onFieldBlur}
                           />
 
-                          {/* Create Contract button */}
-                          {contractCreateError && (
+                          {detailsSaveError && (
                             <div style={{ fontSize: 11, color: '#F87171', marginBottom: 8 }}>
-                              {contractCreateError}
+                              {detailsSaveError}
                             </div>
                           )}
-                          {createdContractId && (
+                          {detailsSaveMessage && (
                             <div style={{
                               fontSize: 11, color: '#34D399', marginBottom: 8,
                               display: 'flex', alignItems: 'center', gap: 4,
                             }}>
-                              ✓ Contract created — ID saved
+                              ✓ {detailsSaveMessage}
+                            </div>
+                          )}
+                          {!createdContractId && !contractIdParam && (
+                            <div style={{
+                              fontSize: 11, color: 'rgba(255,255,255,0.66)', marginBottom: 8,
+                              lineHeight: 1.4,
+                            }}>
+                              Create the contract record through full Contract Details intake before saving editor details.
                             </div>
                           )}
                           <button
-                            disabled={contractCreating}
+                            disabled={detailsSaving}
                             onClick={() => {
-                              setContractCreateError('')
-                              setContractCreating(true)
-                              const counterparty = party2SearchResult?.bonId
-                                ? `${party2SearchResult.bonId.replace('#', '').toLowerCase()}@bonup.placeholder`
-                                : 'unknown@bonup.placeholder'
-                              api.post<{ id: string; counterparty_email: string }>('/contracts/', {
-                                counterparty_email: counterparty,
-                                structure_type: detailsType || 'ONE_TIME',
-                                currency: detailsCurrency || 'USD',
-                              })
-                                .then(({ data }) => {
-                                  const title = detailsDescription.trim() || detailsType || 'Untitled Contract'
-                                  setCreatedContractId(data.id)
-                                  setCreatedContractTitle(title)
-                                  localStorage.setItem('bb_wip_contract_title', title)
-                                  localStorage.setItem('bb_wip_contract_id', data.id)
-                                  setActiveTool(null)
-                                })
-                                .catch((err) => {
-                                  const msg = err?.response?.data
-                                    ? Object.values(err.response.data).flat().join(' ')
-                                    : 'Failed to create contract.'
-                                  setContractCreateError(String(msg))
-                                })
-                                .finally(() => setContractCreating(false))
+                              if (!createdContractId && !contractIdParam) {
+                                navigate('/contracts/new')
+                                return
+                              }
+                              handleSaveContractDetails()
                             }}
                             style={{
                               width: '100%', height: 36,
-                              background: createdContractId ? '#064E3B' : '#0F1F3D',
+                              background: '#0F1F3D',
                               color: 'white', border: 'none', borderRadius: 8,
                               fontSize: 13, fontWeight: 600,
-                              cursor: contractCreating ? 'wait' : 'pointer', marginTop: 4,
-                              opacity: contractCreating ? 0.7 : 1,
+                              cursor: detailsSaving ? 'wait' : 'pointer', marginTop: 4,
+                              opacity: detailsSaving ? 0.7 : 1,
                             }}
-                            onMouseEnter={(e) => { if (!contractCreating) e.currentTarget.style.background = createdContractId ? '#065F46' : '#1a3460' }}
-                            onMouseLeave={(e) => { e.currentTarget.style.background = createdContractId ? '#064E3B' : '#0F1F3D' }}
+                            onMouseEnter={(e) => { if (!detailsSaving) e.currentTarget.style.background = '#1a3460' }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = '#0F1F3D' }}
                           >
-                            {contractCreating ? 'Creating…' : createdContractId ? '✓ Contract Created' : 'Create Contract'}
+                            {detailsSaving ? 'Saving...' : (!createdContractId && !contractIdParam) ? 'Open Contract Intake' : 'Save Details'}
                           </button>
                         </>
                       )
                     })() : activeTool === 'Contract Sections' ? (() => {
                       function scrollToSection(id: string) {
                         const editorEl = leftEditorRef.current
-                        if (editorEl) {
-                          const target = editorEl.querySelector(`#section-${id}`)
-                          target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                        const target = editorEl?.querySelector<HTMLElement>(`#section-${id}`)
+                        if (!editorEl || !target) {
+                          setActiveSection(null)
+                          return
                         }
+                        scrollDraftSectionIntoView(target, editorEl)
                         setActiveSection(id)
                       }
 
@@ -2385,6 +3256,7 @@ export default function CreateContract() {
                           // Update the heading in the editor
                           const el = document.getElementById(`section-${editingSection}`)
                           if (el) el.textContent = editingSectionName.trim()
+                          queueAutosave()
                         }
                         setEditingSection(null)
                         setEditingSectionName('')
@@ -2409,6 +3281,7 @@ export default function CreateContract() {
                             `<p style="margin:0 0 28px;color:#9CA3AF;font-size:14px;">[ Content for ${name} ]</p>`
                           setLeftEmpty(false)
                         }
+                        queueAutosave()
                         setNewSectionInput('')
                         setAddingSection(false)
                       }
@@ -2424,11 +3297,13 @@ export default function CreateContract() {
                           arr.splice(ti, 0, item)
                           return arr.map((s, i) => ({ ...s, number: i + 1 }))
                         })
+                        queueAutosave()
                       }
 
                       function deleteSection(id: string) {
                         setSections((prev) => prev.filter((s) => s.id !== id).map((s, i) => ({ ...s, number: i + 1 })))
                         if (activeSection === id) setActiveSection(null)
+                        queueAutosave()
                       }
 
                       return (
@@ -2466,6 +3341,11 @@ export default function CreateContract() {
                             </p>
 
                             {/* Sections list */}
+                            {sections.length === 0 && (
+                              <div style={{ fontSize: 12, color: '#6B7280', lineHeight: 1.5, background: 'white', borderRadius: 8, padding: 12, border: '1px solid #E5E7EB' }}>
+                                No contract sections found. Add clear section headings in the Draft Editor.
+                              </div>
+                            )}
                             {sections.map((s) => {
                               const isActive = activeSection === s.id
                               const isEditing = editingSection === s.id
@@ -2974,6 +3854,8 @@ export default function CreateContract() {
                         if (ref.current) {
                           ref.current.focus()
                           document.execCommand('insertText', false, '\n\n' + tmpl.content)
+                          if (activeEditor === 'left') syncDraftSectionsAfterMutation()
+                          else queueAutosave()
                         }
                         setInsertedObligations((prev) => prev.includes(tmpl.id) ? prev : [...prev, tmpl.id])
                       }
@@ -3065,6 +3947,8 @@ export default function CreateContract() {
                         if (ref.current) {
                           ref.current.focus()
                           document.execCommand('insertText', false, '\n\n' + tmpl.content)
+                          if (activeEditor === 'left') syncDraftSectionsAfterMutation()
+                          else queueAutosave()
                         }
                         setInsertedPayments((prev) => prev.includes(tmpl.id) ? prev : [...prev, tmpl.id])
                       }
@@ -3212,10 +4096,12 @@ export default function CreateContract() {
                     key={s.id}
                     onClick={() => {
                       const editorEl = leftEditorRef.current
-                      if (editorEl) {
-                        const target = editorEl.querySelector(`#section-${s.id}`)
-                        target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                      const target = editorEl?.querySelector<HTMLElement>(`#section-${s.id}`)
+                      if (!editorEl || !target) {
+                        setActiveSection(null)
+                        return
                       }
+                      scrollDraftSectionIntoView(target, editorEl)
                       setActiveSection(s.id)
                     }}
                     style={{
@@ -3373,10 +4259,11 @@ export default function CreateContract() {
                   <div style={{ flex: 1, overflowY: 'auto', background: '#F0F2F5', padding: 24 }}>
                     <div
                       ref={leftEditorRef}
-                      contentEditable
+                      contentEditable={draftEditingAllowed}
                       suppressContentEditableWarning
-                      onFocus={() => setActiveEditor('left')}
-                      onInput={(e) => setLeftEmpty((e.currentTarget.textContent ?? '') === '')}
+                      onFocus={handleDraftEditorFocus}
+                      onInput={handleDraftEditorInput}
+                      onPaste={handleDraftEditorPaste}
                       style={{
                         maxWidth: 760, margin: '0 auto', display: 'block',
                         background: 'white',
@@ -3392,10 +4279,11 @@ export default function CreateContract() {
                   <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 0 }}>
                     <div
                       ref={leftEditorRef}
-                      contentEditable
+                      contentEditable={draftEditingAllowed}
                       suppressContentEditableWarning
-                      onFocus={() => setActiveEditor('left')}
-                      onInput={(e) => setLeftEmpty((e.currentTarget.textContent ?? '') === '')}
+                      onFocus={handleDraftEditorFocus}
+                      onInput={handleDraftEditorInput}
+                      onPaste={handleDraftEditorPaste}
                       style={{
                         position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
                         background: 'white', borderRight: '1px solid #E5E7EB',
@@ -3437,10 +4325,13 @@ export default function CreateContract() {
                   <div style={{ flex: 1, overflowY: 'auto', background: '#F0F2F5', padding: 24 }}>
                     <div
                       ref={rightEditorRef}
-                      contentEditable
+                      contentEditable={draftEditingAllowed}
                       suppressContentEditableWarning
                       onFocus={() => setActiveEditor('right')}
-                      onInput={(e) => setRightEmpty((e.currentTarget.textContent ?? '') === '')}
+                      onInput={(e) => {
+                        setRightEmpty((e.currentTarget.textContent ?? '') === '')
+                        queueAutosave()
+                      }}
                       style={{
                         maxWidth: 760, margin: '0 auto', display: 'block',
                         background: 'white',
@@ -3456,10 +4347,13 @@ export default function CreateContract() {
                   <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 0 }}>
                     <div
                       ref={rightEditorRef}
-                      contentEditable
+                      contentEditable={draftEditingAllowed}
                       suppressContentEditableWarning
                       onFocus={() => setActiveEditor('right')}
-                      onInput={(e) => setRightEmpty((e.currentTarget.textContent ?? '') === '')}
+                      onInput={(e) => {
+                        setRightEmpty((e.currentTarget.textContent ?? '') === '')
+                        queueAutosave()
+                      }}
                       style={{
                         position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
                         background: 'white', borderLeft: '1px solid #E5E7EB',
@@ -3707,6 +4601,26 @@ export default function CreateContract() {
         </div>
       </div>
 
+      {createdContractId && (
+        <button
+          type="button"
+          onClick={handlePrepareContract}
+          disabled={isPreparingContract}
+          style={{
+            position: 'fixed', right: 24, bottom: 48, zIndex: 220,
+            height: 40, padding: '0 18px', borderRadius: 9,
+            border: '1px solid rgba(15,31,61,0.18)',
+            background: isPreparingContract ? '#94A3B8' : '#0F1F3D',
+            color: 'white', fontSize: 13, fontWeight: 700,
+            cursor: isPreparingContract ? 'default' : 'pointer',
+            boxShadow: '0 10px 24px rgba(15,31,61,0.22)',
+          }}
+        >
+          {isPreparingContract ? 'Preparing...' : 'Prepare Contract'}
+        </button>
+      )}
+
+
       {/* ── STATUS BAR ── */}
       <div style={{
         position: 'fixed', bottom: 0, left: 0, right: 0, height: 32,
@@ -3880,7 +4794,11 @@ export default function CreateContract() {
             <button
               onClick={() => {
                 const ref = activeEditor === 'left' ? leftEditorRef : rightEditorRef
-                if (ref.current) { ref.current.focus(); document.execCommand('insertText', false, '\n\n' + previewObligationTemplate.content) }
+                if (ref.current) {
+                  ref.current.focus(); document.execCommand('insertText', false, '\n\n' + previewObligationTemplate.content)
+                  if (activeEditor === 'left') syncDraftSectionsAfterMutation()
+                  else queueAutosave()
+                }
                 setInsertedObligations((prev) => prev.includes(previewObligationTemplate.id) ? prev : [...prev, previewObligationTemplate.id])
                 setPreviewObligationTemplate(null)
               }}
@@ -3962,7 +4880,11 @@ export default function CreateContract() {
             <button
               onClick={() => {
                 const ref = activeEditor === 'left' ? leftEditorRef : rightEditorRef
-                if (ref.current) { ref.current.focus(); document.execCommand('insertText', false, '\n\n' + previewPaymentTemplate.content) }
+                if (ref.current) {
+                  ref.current.focus(); document.execCommand('insertText', false, '\n\n' + previewPaymentTemplate.content)
+                  if (activeEditor === 'left') syncDraftSectionsAfterMutation()
+                  else queueAutosave()
+                }
                 setInsertedPayments((prev) => prev.includes(previewPaymentTemplate.id) ? prev : [...prev, previewPaymentTemplate.id])
                 setPreviewPaymentTemplate(null)
               }}

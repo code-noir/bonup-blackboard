@@ -835,9 +835,28 @@ export default function CreateContract() {
     return line.match(/^(\d+)\.\s+([A-Z][A-Z\s/&,().-]+)$/)
   }
 
+  function isManualSectionHeading(line: string) {
+    const trimmed = line.trim()
+    if (trimmed.length < 4 || trimmed.length > 80) return false
+    if (/[.!?]$/.test(trimmed)) return false
+    if (/^[-_*\s]+$/.test(trimmed)) return false
+    if (isAddressLikeSectionTitle(trimmed) || isSignatureOnlySectionTitle(trimmed)) return false
+    const words = trimmed.split(/\s+/).filter(Boolean)
+    if (words.length < 2 || words.length > 8) return false
+    const hasContractKeyword = /\b(service|services|obligation|obligations|clause|payment|payments|terms|termination|warranty|liability|damages|insurance|confidentiality|notice|notices|governing|law|dispute|resolution|change|order|scope|deliverable|deliverables|schedule|workmanship)\b/i.test(trimmed)
+    if (!hasContractKeyword) return false
+    return words.every((word) => /^[A-Z][a-zA-Z0-9/&().-]*$/.test(word) || /^(and|or|of|the|to|for|in)$/i.test(word))
+  }
+
   function sectionHeadingMatch(line: string) {
     const trimmed = line.trim()
-    return trimmed.match(/^(?:(\d+)\.\s+([A-Z][A-Z0-9\s/&,().-]+|[A-Z][a-zA-Z0-9\s/&,().-]{2,80})|SECTION\s+(\d+)\s*[-:]\s*([A-Z][A-Z0-9\s/&,().-]+|[A-Z][a-zA-Z0-9\s/&,().-]{2,80})|([A-Z][A-Z0-9\s/&,().-]{3,80}))$/)
+    const match = trimmed.match(/^(?:(\d+)\.\s+([A-Z][A-Z0-9\s/&,().-]+|[A-Z][a-zA-Z0-9\s/&,().-]{2,80})|SECTION\s+(\d+)\s*[-:]\s*([A-Z][A-Z0-9\s/&,().-]+|[A-Z][a-zA-Z0-9\s/&,().-]{2,80})|([A-Z][A-Z0-9\s/&,().-]{3,80}))$/)
+    if (match) return match
+    if (!isManualSectionHeading(trimmed)) return null
+    const manualMatch = [trimmed, undefined, undefined, undefined, undefined, trimmed] as unknown as RegExpMatchArray
+    manualMatch.index = 0
+    manualMatch.input = line
+    return manualMatch
   }
 
   function sectionMatchTitle(match: RegExpMatchArray) {
@@ -865,8 +884,7 @@ export default function CreateContract() {
         return Boolean(title) && !isAddressLikeSectionTitle(title) && !isSignatureOnlySectionTitle(title)
       })
 
-    const numbered = rawMatches.filter((m) => m[1] || m[3])
-    const matches = numbered.length >= 2 ? numbered : rawMatches
+    const matches = rawMatches
     if (matches.length < 2) return null
     return parsedSectionsFromMatches(matches)
   }
@@ -958,6 +976,10 @@ export default function CreateContract() {
 
   function annotateDraftSectionAnchors(editorEl: HTMLDivElement, parsedSections: ContractSection[]) {
     const candidates = Array.from(editorEl.querySelectorAll<HTMLElement>('h1,h2,h3,h4,p,div,li'))
+    candidates.forEach((el) => {
+      if (el.id.startsWith('section-')) el.removeAttribute('id')
+      delete el.dataset.sectionAnchorCandidate
+    })
     const used = new Set<string>()
     parsedSections.forEach((section) => {
       const targetText = normalizeSectionHeadingText(`${section.number}. ${section.name}`)
@@ -1778,38 +1800,6 @@ export default function CreateContract() {
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* ── FOCUS MODE FLOATING BUTTONS ── */}
-      {focusMode !== 'none' && (
-        <div style={{
-          position: 'fixed', right: 24, bottom: 48, zIndex: 300,
-          display: 'flex', gap: 8,
-        }}>
-          <button
-            onClick={() => { if (draftEditingAllowed) setAiPanelOpen((v) => !v) }}
-            disabled={!draftEditingAllowed}
-            style={{
-              background: '#000000', color: 'white', border: 'none',
-              borderRadius: 8, height: 34, padding: '0 16px',
-              fontSize: 12, fontWeight: 500, cursor: 'pointer',
-            }}
-          >
-            ✦ Ask AI
-          </button>
-          <button
-            onClick={exitFocus}
-            style={{
-              background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none',
-              borderRadius: 8, height: 34, padding: '0 16px',
-              fontSize: 12, cursor: 'pointer',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.8)')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.6)')}
-          >
-            ⛶ Exit Focus
-          </button>
         </div>
       )}
 
@@ -4203,7 +4193,7 @@ export default function CreateContract() {
                     onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
                     onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
                   >
-                    ⛶
+                    {focusMode === 'left' ? 'Exit Focus' : '⛶'}
                   </button>
                 </div>
               )}
@@ -4229,7 +4219,7 @@ export default function CreateContract() {
                     onMouseEnter={(e) => (e.currentTarget.style.color = '#374151')}
                     onMouseLeave={(e) => (e.currentTarget.style.color = '#9CA3AF')}
                   >
-                    ⛶
+                    {focusMode === 'right' ? 'Exit Focus' : '⛶'}
                   </button>
                 </div>
               )}

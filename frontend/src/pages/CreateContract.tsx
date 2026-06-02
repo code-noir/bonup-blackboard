@@ -664,6 +664,7 @@ export default function CreateContract() {
   const autosaveTimerRef = useRef<number | null>(null)
   const sectionRegenTimerRef = useRef<number | null>(null)
   const lastSectionSyncHtmlRef = useRef('')
+  const sectionsRef = useRef<ContractSection[]>(DEFAULT_SECTIONS)
   const autosaveGuardRef = useRef(false)
   const lastSavedMetadataRef = useRef('')
   const lastSavedDraftRef = useRef('')
@@ -921,11 +922,60 @@ export default function CreateContract() {
     }).join('')
   }
 
+  function buildInsertedSectionHtml(title: string, body: string, sectionId: string): string {
+    const bodyHtml = body.split('\n').map((line) => {
+      if (line.trim() === '') return '<div style="height:6px"></div>'
+      return `<div style="font-size:14px;line-height:1.6;color:#374151;margin-bottom:2px;">${escapeHtml(line)}</div>`
+    }).join('')
+    return `<h2 id="section-${sectionId}" style="margin:20px 0 4px;font-size:14px;font-weight:700;color:#0F1F3D;">${escapeHtml(title)}</h2>${bodyHtml}`
+  }
+
+  function appendDraftSectionFromTemplate(title: string, body: string, prefix: string) {
+    const editorEl = leftEditorRef.current
+    if (!editorEl) return false
+    const nextNumber = sectionsRef.current.length + 1
+    const sectionId = `${prefix}${Date.now()}`
+    const section: ContractSection = { id: sectionId, number: nextNumber, name: title }
+    const nextSections = [...sectionsRef.current, section]
+
+    editorEl.insertAdjacentHTML('beforeend', '<div style="height:10px"></div>' + buildInsertedSectionHtml(title, body, sectionId))
+    const target = editorEl.querySelector<HTMLElement>(`#section-${sectionId}`)
+    lastSectionSyncHtmlRef.current = editorEl.innerHTML || ''
+    updateSections(nextSections)
+    setActiveSection(sectionId)
+    setLeftEmpty(false)
+    if (target) window.requestAnimationFrame(() => scrollDraftSectionIntoView(target, editorEl))
+    queueAutosave()
+    return true
+  }
+
+  function insertDraftSectionFromTemplate(title: string, body: string, prefix: string) {
+    setActiveEditor('left')
+    if (focusMode === 'right') {
+      setFocusMode('left')
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => appendDraftSectionFromTemplate(title, body, prefix))
+      })
+      return true
+    }
+    return appendDraftSectionFromTemplate(title, body, prefix)
+  }
+
   function sectionsEqual(a: ContractSection[], b: ContractSection[]) {
     return a.length === b.length && a.every((section, index) => {
       const other = b[index]
       return other && section.id === other.id && section.number === other.number && section.name === other.name
     })
+  }
+
+  function updateSections(next: ContractSection[] | ((prev: ContractSection[]) => ContractSection[])) {
+    const nextSections = typeof next === 'function' ? next(sectionsRef.current) : next
+    sectionsRef.current = nextSections
+    setSections((prev) => sectionsEqual(prev, nextSections) ? prev : nextSections)
+  }
+
+  function commitParsedSections(parsed: ContractSection[]) {
+    updateSections(parsed)
   }
 
   function clearDraftSectionRegenTimer() {
@@ -940,7 +990,7 @@ export default function CreateContract() {
     clearDraftSectionRegenTimer()
     sectionRegenTimerRef.current = window.setTimeout(() => {
       sectionRegenTimerRef.current = null
-      regenerateDraftSectionsFromEditor()
+      window.requestAnimationFrame(() => regenerateDraftSectionsFromEditor())
     }, delay)
   }
 
@@ -971,7 +1021,16 @@ export default function CreateContract() {
     const blockTexts = Array.from(editorEl.querySelectorAll<HTMLElement>('h1,h2,h3,h4,p,div,li'))
       .map((el) => (el.textContent || '').trim())
       .filter(Boolean)
-    return blockTexts.length > 1 ? blockTexts.join('\n') : (editorEl.textContent || '')
+    if (blockTexts.length > 1) return blockTexts.join('\n')
+
+    const htmlWithBreaks = editorEl.innerHTML
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(h1|h2|h3|h4|p|div|li)>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+    const decoder = document.createElement('textarea')
+    decoder.innerHTML = htmlWithBreaks
+    const decodedText = decoder.value.replace(/\n{3,}/g, '\n\n').trim()
+    return decodedText || (editorEl.textContent || '')
   }
 
   function annotateDraftSectionAnchors(editorEl: HTMLDivElement, parsedSections: ContractSection[]) {
@@ -1009,13 +1068,13 @@ export default function CreateContract() {
     if (!editorEl) return
     const currentHtml = editorEl.innerHTML || ''
     if (!force && currentHtml === lastSectionSyncHtmlRef.current) return
-    lastSectionSyncHtmlRef.current = currentHtml
 
     const text = draftEditorSectionText(editorEl)
     const parsed = parseDraftEditorSections(text)
     if (!parsed) return
     annotateDraftSectionAnchors(editorEl, parsed)
-    setSections((prev) => sectionsEqual(prev, parsed) ? prev : parsed)
+    lastSectionSyncHtmlRef.current = editorEl.innerHTML || currentHtml
+    commitParsedSections(parsed)
   }
 
   function syncDraftSectionsAfterMutation(delay = 0) {
@@ -1048,12 +1107,16 @@ export default function CreateContract() {
     const html = buildTemplateHtml(pastedText, parsed)
     document.execCommand('insertHTML', false, html)
     lastSectionSyncHtmlRef.current = leftEditorRef.current?.innerHTML || ''
-    setSections(parsed)
+    commitParsedSections(parsed)
     setLeftEmpty(false)
     queueAutosave()
   }
 
   useEffect(() => () => clearDraftSectionRegenTimer(), []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    sectionsRef.current = sections
+  }, [sections])
 
   function normalizePersistedSections(value: unknown): ContractSection[] | null {
     if (!Array.isArray(value)) return null
@@ -1123,7 +1186,7 @@ export default function CreateContract() {
       ...base,
       source: String(base.source || 'editor_autosave'),
       editor_html: leftHtml,
-      sections,
+      sections: sectionsRef.current,
     } as Record<string, unknown>
     if (rightHtml.trim()) {
       snapshot.final_editor_html = rightHtml
@@ -1330,7 +1393,7 @@ export default function CreateContract() {
     setPreparedTerms(snapshot?.prepared_terms ?? null)
 
     const persistedSections = normalizePersistedSections(snapshot?.sections)
-    if (persistedSections) setSections(persistedSections)
+    if (persistedSections) updateSections(persistedSections)
 
     let html = snapshot?.editor_html
     const finalHtml = snapshot?.final_editor_html
@@ -1338,7 +1401,7 @@ export default function CreateContract() {
       const content = snapshot.clauses.map((clause) => clause.body || '').join('\n\n')
       const parsed = parseTemplateSections(content)
       html = buildTemplateHtml(content, parsed)
-      setSections(parsed)
+      commitParsedSections(parsed)
     }
     if (!html && contentSnapshot.trim().startsWith('<')) html = contentSnapshot
 
@@ -1397,7 +1460,7 @@ export default function CreateContract() {
         rightEditorRef.current.innerHTML = ''
         setRightEmpty(true)
       }
-      setSections(parsed)
+      commitParsedSections(parsed)
       syncDraftSectionsAfterMutation()
       setPreparedTerms(null)
       setCreatedContractId(contractId)
@@ -1557,6 +1620,7 @@ export default function CreateContract() {
         `<p style="margin:0 0 28px;color:#9CA3AF;font-size:14px;">[ Content for ${s.name} ]</p>`
       ).join('')
       setLeftEmpty(false)
+      sectionsRef.current = DEFAULT_SECTIONS
       if (!lastSavedDraftRef.current) {
         lastSavedDraftRef.current = serializeDraftSnapshot(buildDraftSnapshot())
       }
@@ -3240,7 +3304,7 @@ export default function CreateContract() {
 
                       function commitRename() {
                         if (editingSection && editingSectionName.trim()) {
-                          setSections((prev) => prev.map((s) =>
+                          updateSections((prev) => prev.map((s) =>
                             s.id === editingSection ? { ...s, name: editingSectionName.trim() } : s
                           ))
                           // Update the heading in the editor
@@ -3263,7 +3327,7 @@ export default function CreateContract() {
                         const newNum = sections.length + 1
                         const newId = `s${Date.now()}`
                         const newSec: ContractSection = { id: newId, number: newNum, name }
-                        setSections((prev) => [...prev, newSec])
+                        updateSections((prev) => [...prev, newSec])
                         // Append heading to editor
                         if (leftEditorRef.current) {
                           leftEditorRef.current.innerHTML +=
@@ -3278,7 +3342,7 @@ export default function CreateContract() {
 
                       function reorder(fromId: string, toId: string) {
                         if (fromId === toId) return
-                        setSections((prev) => {
+                        updateSections((prev) => {
                           const arr = [...prev]
                           const fi = arr.findIndex((s) => s.id === fromId)
                           const ti = arr.findIndex((s) => s.id === toId)
@@ -3291,7 +3355,7 @@ export default function CreateContract() {
                       }
 
                       function deleteSection(id: string) {
-                        setSections((prev) => prev.filter((s) => s.id !== id).map((s, i) => ({ ...s, number: i + 1 })))
+                        updateSections((prev) => prev.filter((s) => s.id !== id).map((s, i) => ({ ...s, number: i + 1 })))
                         if (activeSection === id) setActiveSection(null)
                         queueAutosave()
                       }
@@ -3840,13 +3904,7 @@ export default function CreateContract() {
                       )
                     })() : activeTool === 'Obligations' ? (() => {
                       function insertObligation(tmpl: ObligationTemplateItem) {
-                        const ref = activeEditor === 'left' ? leftEditorRef : rightEditorRef
-                        if (ref.current) {
-                          ref.current.focus()
-                          document.execCommand('insertText', false, '\n\n' + tmpl.content)
-                          if (activeEditor === 'left') syncDraftSectionsAfterMutation()
-                          else queueAutosave()
-                        }
+                        insertDraftSectionFromTemplate(tmpl.name, tmpl.content, 'ob')
                         setInsertedObligations((prev) => prev.includes(tmpl.id) ? prev : [...prev, tmpl.id])
                       }
                       return (
@@ -4783,12 +4841,7 @@ export default function CreateContract() {
             </div>
             <button
               onClick={() => {
-                const ref = activeEditor === 'left' ? leftEditorRef : rightEditorRef
-                if (ref.current) {
-                  ref.current.focus(); document.execCommand('insertText', false, '\n\n' + previewObligationTemplate.content)
-                  if (activeEditor === 'left') syncDraftSectionsAfterMutation()
-                  else queueAutosave()
-                }
+                insertDraftSectionFromTemplate(previewObligationTemplate.name, previewObligationTemplate.content, 'ob')
                 setInsertedObligations((prev) => prev.includes(previewObligationTemplate.id) ? prev : [...prev, previewObligationTemplate.id])
                 setPreviewObligationTemplate(null)
               }}

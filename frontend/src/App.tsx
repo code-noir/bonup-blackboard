@@ -14,13 +14,20 @@ import CreateContract from '@/pages/CreateContract'
 import NewContract from '@/pages/NewContract'
 import ContractDetail from '@/pages/ContractDetail'
 import ContractDocumentView from '@/pages/ContractDocumentView'
+import WorkflowDashboard from '@/pages/WorkflowDashboard'
+import WorkflowDetail from '@/pages/WorkflowDetail'
+import WorkflowInvite from '@/pages/WorkflowInvite'
+import CounterpartyWorkflow from '@/pages/CounterpartyWorkflow'
+import ContractReview from '@/pages/ContractReview'
 import Analysis from '@/pages/Analysis'
 import Counter from '@/pages/Counter'
 import Contacts from '@/pages/Contacts'
+import Resource from '@/pages/Resource'
 import Entities from '@/pages/Entities'
 import Profile from '@/pages/Profile'
 import Billing from '@/pages/Billing'
 import LifecycleManagement from '@/pages/LifecycleManagement'
+import Negotiation from '@/pages/Negotiation'
 import NotFound from '@/pages/NotFound'
 import AdminLayout from '@/pages/admin/AdminLayout'
 import AdminHome from '@/pages/admin/AdminHome'
@@ -102,6 +109,7 @@ export default function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/verify-email" element={<VerifyEmail />} />
+          <Route path="/workflow/invite/:token" element={<WorkflowInvite />} />
           <Route path="/" element={<RootRedirect />} />
 
           {/* bonUP Hub — authenticated, no AppShell */}
@@ -124,6 +132,11 @@ export default function App() {
             }
           >
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/workspace" element={<WorkflowDashboard />} />
+            <Route path="/workflows" element={<WorkflowDashboard />} />
+            <Route path="/workflows/:workflowId" element={<WorkflowDetail />} />
+            <Route path="/review" element={<ContractReview />} />
+            <Route path="/shared/workflows/:workflowId" element={<CounterpartyWorkflow />} />
             {/* Contract list decommissioned — creation uses metadata intake first */}
             <Route path="/contracts" element={<Navigate to="/dashboard" replace />} />
             <Route path="/contracts/new" element={<NewContract />} />
@@ -137,6 +150,7 @@ export default function App() {
             <Route path="/templates/*" element={<Placeholder name="Templates" />} />
             <Route path="/search" element={<Placeholder name="Search" />} />
             <Route path="/contacts" element={<Contacts />} />
+            <Route path="/resource" element={<Resource />} />
             <Route path="/ai" element={<Placeholder name="AI Assistant" />} />
             <Route path="/analysis" element={<Analysis />} />
             <Route path="/counter" element={<Counter />} />
@@ -146,6 +160,8 @@ export default function App() {
             <Route path="/settings" element={<Placeholder name="Settings" />} />
             <Route path="/billing" element={<Billing />} />
             <Route path="/lifecycle" element={<LifecycleManagement />} />
+            <Route path="/negotiation" element={<Negotiation />} />
+            <Route path="/negotiation/:contractId" element={<Negotiation />} />
 
             {/* Admin — staff only, nested inside the AppShell */}
             <Route

@@ -66,6 +66,7 @@ INSTALLED_APPS = [
     'backend.ai',
     'backend.sol',
     'backend.contract_pro',
+    'backend.agreement_exchange',
     'backend.bonup',
     'storages',
     'django_extensions',

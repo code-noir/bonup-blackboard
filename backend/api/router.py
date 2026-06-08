@@ -6,6 +6,7 @@ urlpatterns = [
     path("ai/", include("backend.api.ai.urls")),
     path("entities/", include("backend.api.entities.urls")),
     path("activity/", include("backend.api.activity.urls")),
+    path("agreement-exchange/", include("backend.api.agreement_exchange.urls")),
     path("auth/", include("backend.api.auth.urls")),
     path("billing/", include("backend.api.billing.urls")),
     path("contracts/", include("backend.api.contracts.urls")),

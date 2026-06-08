@@ -16,6 +16,7 @@ import ContractDetail from '@/pages/ContractDetail'
 import ContractDocumentView from '@/pages/ContractDocumentView'
 import WorkflowDashboard from '@/pages/WorkflowDashboard'
 import WorkflowDetail from '@/pages/WorkflowDetail'
+import AgreementExchange from '@/pages/AgreementExchange'
 import WorkflowInvite from '@/pages/WorkflowInvite'
 import CounterpartyWorkflow from '@/pages/CounterpartyWorkflow'
 import ContractReview from '@/pages/ContractReview'
@@ -135,6 +136,7 @@ export default function App() {
             <Route path="/workspace" element={<WorkflowDashboard />} />
             <Route path="/workflows" element={<WorkflowDashboard />} />
             <Route path="/workflows/:workflowId" element={<WorkflowDetail />} />
+            <Route path="/agreement-exchange/:exchangeId" element={<AgreementExchange />} />
             <Route path="/review" element={<ContractReview />} />
             <Route path="/shared/workflows/:workflowId" element={<CounterpartyWorkflow />} />
             {/* Contract list decommissioned — creation uses metadata intake first */}

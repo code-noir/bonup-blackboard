@@ -203,6 +203,8 @@ def viewer_role(exchange, user):
 
 
 def screen_state(exchange, role):
+    if exchange.status == AgreementExchange.STATUS_DRAFT:
+        return "initiator_send_initial_version" if role == "initiator" else "counterparty_not_sent"
     if exchange.status == AgreementExchange.STATUS_SIGNED:
         return "signed"
     if exchange.status == AgreementExchange.STATUS_REJECTED:
@@ -223,6 +225,8 @@ def screen_state(exchange, role):
 def available_actions(exchange, role):
     if exchange.status in {AgreementExchange.STATUS_SIGNED, AgreementExchange.STATUS_REJECTED}:
         return []
+    if exchange.status == AgreementExchange.STATUS_DRAFT:
+        return ["send_initial_version"] if role == "initiator" and exchange.current_actor == AgreementExchange.ACTOR_INITIATOR else []
     if role == "counterparty" and exchange.current_actor == AgreementExchange.ACTOR_COUNTERPARTY:
         return ["sign", "request_change", "reject"]
     if role == "initiator" and exchange.current_actor == AgreementExchange.ACTOR_INITIATOR:
@@ -414,8 +418,8 @@ def create_or_open_from_workflow(*, user, workflow_id):
             counterparty_email=counterparty_email,
             initiator=workflow.user,
             counterparty_user=counterparty_user,
-            status=AgreementExchange.STATUS_COUNTERPARTY_REVIEW,
-            current_actor=AgreementExchange.ACTOR_COUNTERPARTY,
+            status=AgreementExchange.STATUS_DRAFT,
+            current_actor=AgreementExchange.ACTOR_INITIATOR,
         )
     update_fields = []
     if exchange.initiator_id != workflow.user_id:
@@ -454,31 +458,60 @@ def create_or_open_exchange(*, user, contract_id, contract_version_id, counterpa
         defaults={
             "initiator": user,
             "counterparty_user": counterparty_user,
-            "status": AgreementExchange.STATUS_COUNTERPARTY_REVIEW,
-            "current_actor": AgreementExchange.ACTOR_COUNTERPARTY,
+            "status": AgreementExchange.STATUS_DRAFT,
+            "current_actor": AgreementExchange.ACTOR_INITIATOR,
         },
     )
     if created:
-        notification = notify_counterparty(
-            exchange,
-            f"You have been invited to review {contract.title or 'an agreement'} on bonUP: /agreement-exchange/{exchange.id}",
-            {"exchange_id": str(exchange.id)},
-        )
         create_event(
             exchange,
             actor_user=user,
             actor_email=getattr(user, "email", ""),
             actor_role="initiator",
-            event_type="exchange_sent",
-            message="Agreement Exchange was sent to the counterparty.",
-            metadata={"notification": notification},
+            event_type="exchange_created",
+            message="Agreement Exchange was created for initiator review before sending.",
+            metadata={"initial_state": AgreementExchange.STATUS_DRAFT},
         )
+    return load_exchange(exchange.id)
+
+
+@transaction.atomic
+def send_initial_version(*, exchange_id, user):
+    exchange = load_exchange(exchange_id, for_update=True)
+    if viewer_role(exchange, user) != "initiator":
+        raise PermissionError("Only the initiator can send the initial version.")
+    if exchange.status != AgreementExchange.STATUS_DRAFT or exchange.current_actor != AgreementExchange.ACTOR_INITIATOR:
+        raise ValueError("Initial version can only be sent from the pre-send initiator state.")
+
+    exchange.status = AgreementExchange.STATUS_COUNTERPARTY_REVIEW
+    exchange.current_actor = AgreementExchange.ACTOR_COUNTERPARTY
+    exchange.save(update_fields=["status", "current_actor", "updated_at"])
+    notification = notify_counterparty(
+        exchange,
+        f"You have been invited to review {exchange.contract.title or 'an agreement'} on bonUP: /agreement-exchange/{exchange.id}",
+        {"exchange_id": str(exchange.id), "contract_version_id": str(exchange.current_contract_version_id)},
+    )
+    create_event(
+        exchange,
+        actor_user=user,
+        actor_email=getattr(user, "email", ""),
+        actor_role="initiator",
+        event_type="initial_version_sent",
+        message="Initiator sent Version 1 to the counterparty.",
+        metadata={
+            "notification": notification,
+            "version_id": str(exchange.current_contract_version_id),
+            "version_number": exchange.current_contract_version.version_number,
+        },
+    )
     return load_exchange(exchange.id)
 
 
 @transaction.atomic
 def mark_viewed(*, exchange_id, user):
     exchange = load_exchange(exchange_id, for_update=True)
+    if exchange.status == AgreementExchange.STATUS_DRAFT:
+        return load_exchange(exchange.id)
     if exchange.status in {AgreementExchange.STATUS_SENT, AgreementExchange.STATUS_VIEWED}:
         exchange.status = AgreementExchange.STATUS_COUNTERPARTY_REVIEW
     exchange.current_actor = AgreementExchange.ACTOR_COUNTERPARTY
@@ -497,7 +530,11 @@ def mark_viewed(*, exchange_id, user):
 @transaction.atomic
 def create_change_request(*, exchange_id, user, validated_data):
     exchange = load_exchange(exchange_id, for_update=True)
+    if exchange.status == AgreementExchange.STATUS_DRAFT:
+        raise ValueError("The initial version has not been sent to the counterparty yet.")
     role = viewer_role(exchange, user)
+    if role != "counterparty" or exchange.current_actor != AgreementExchange.ACTOR_COUNTERPARTY:
+        raise PermissionError("Only the counterparty can request changes while it is their turn.")
     requester_email = getattr(user, "email", "") or exchange.counterparty_email
     change_request = AgreementExchangeRequest.objects.create(
         exchange=exchange,
@@ -532,6 +569,12 @@ def respond_to_request(*, exchange_id, request_id, user, decision, final_text=""
     change_request = get_object_or_404(AgreementExchangeRequest.objects.select_for_update(), pk=request_id, exchange=exchange)
     if decision not in {"accept", "edit", "reject"}:
         raise ValueError("decision must be accept, edit, or reject")
+    if viewer_role(exchange, user) != "initiator":
+        raise PermissionError("Only the initiator can respond to requested changes.")
+    if exchange.status != AgreementExchange.STATUS_INITIATOR_REVIEW or exchange.current_actor != AgreementExchange.ACTOR_INITIATOR:
+        raise PermissionError("Requested changes can only be answered while it is the initiator's turn.")
+    if change_request.status != AgreementExchangeRequest.STATUS_PENDING:
+        raise ValueError("Only pending requested changes can be answered.")
 
     metadata = {"request_id": str(change_request.id), "decision": decision, "version_creation": "not_wired_mvp"}
     if decision == "reject":
@@ -588,6 +631,8 @@ def respond_to_request(*, exchange_id, request_id, user, decision, final_text=""
 def reject_exchange(*, exchange_id, user, reason=""):
     exchange = load_exchange(exchange_id, for_update=True)
     role = viewer_role(exchange, user)
+    if exchange.status == AgreementExchange.STATUS_DRAFT:
+        raise PermissionError("The initial version has not been sent to the counterparty yet.")
     exchange.status = AgreementExchange.STATUS_REJECTED
     exchange.current_actor = AgreementExchange.ACTOR_NONE
     exchange.save(update_fields=["status", "current_actor", "updated_at"])
@@ -609,6 +654,8 @@ def reject_exchange(*, exchange_id, user, reason=""):
 def sign_exchange(*, exchange_id, user, typed_name="", signature_text="", ip_address=None, user_agent=""):
     exchange = load_exchange(exchange_id, for_update=True)
     role = viewer_role(exchange, user)
+    if exchange.status == AgreementExchange.STATUS_DRAFT:
+        raise PermissionError("The initial version has not been sent to the counterparty yet.")
     if role not in {"initiator", "counterparty"}:
         raise PermissionError("Only an exchange participant can sign.")
     signer_email = getattr(user, "email", "") or (exchange.counterparty_email if role == "counterparty" else "")

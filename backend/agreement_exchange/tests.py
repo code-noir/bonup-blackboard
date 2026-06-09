@@ -43,6 +43,9 @@ class AgreementExchangeMVPAPITests(TestCase):
         self.assertEqual(response.status_code, 201)
         return AgreementExchange.objects.get(id=response.data["exchange"]["id"]), response
 
+    def send_initial(self, exchange):
+        return self.initiator_client.post(f"/api/agreement-exchange/{exchange.id}/send-initial/", {}, format="json")
+
     def submit_request(self, exchange):
         return self.counterparty_client.post(
             f"/api/agreement-exchange/{exchange.id}/requests/",
@@ -61,12 +64,14 @@ class AgreementExchangeMVPAPITests(TestCase):
     def test_create_exchange(self):
         exchange, response = self.create_exchange()
 
-        self.assertEqual(exchange.status, AgreementExchange.STATUS_COUNTERPARTY_REVIEW)
-        self.assertEqual(exchange.current_actor, AgreementExchange.ACTOR_COUNTERPARTY)
+        self.assertEqual(exchange.status, AgreementExchange.STATUS_DRAFT)
+        self.assertEqual(exchange.current_actor, AgreementExchange.ACTOR_INITIATOR)
         self.assertEqual(response.data["viewer_role"], "initiator")
-        self.assertEqual(response.data["screen_state"], "initiator_waiting")
+        self.assertEqual(response.data["screen_state"], "initiator_send_initial_version")
+        self.assertEqual(response.data["available_actions"], ["send_initial_version"])
         self.assertEqual(response.data["current_contract"]["version_label"], "v1")
-        self.assertEqual(AgreementExchangeEvent.objects.filter(event_type="exchange_sent").count(), 1)
+        self.assertEqual(AgreementExchangeEvent.objects.filter(event_type="exchange_created").count(), 1)
+        self.assertEqual(AgreementExchangeEvent.objects.filter(event_type="exchange_sent").count(), 0)
 
     def test_detail_returns_viewer_role_screen_state_and_actions(self):
         exchange, _ = self.create_exchange()
@@ -76,14 +81,55 @@ class AgreementExchangeMVPAPITests(TestCase):
 
         self.assertEqual(initiator_response.status_code, 200)
         self.assertEqual(initiator_response.data["viewer_role"], "initiator")
-        self.assertEqual(initiator_response.data["screen_state"], "initiator_waiting")
+        self.assertEqual(initiator_response.data["screen_state"], "initiator_send_initial_version")
+        self.assertEqual(initiator_response.data["available_actions"], ["send_initial_version"])
         self.assertEqual(counterparty_response.data["viewer_role"], "counterparty")
+        self.assertEqual(counterparty_response.data["screen_state"], "counterparty_not_sent")
+        self.assertEqual(counterparty_response.data["available_actions"], [])
+        self.assertEqual(counterparty_response.data["current_contract"]["sections"][0]["id"], "payment")
+
+    def test_send_initial_changes_actor_to_counterparty_without_creating_v2(self):
+        exchange, _ = self.create_exchange()
+        original_version_count = ContractVersion.objects.count()
+        original_version_id = exchange.current_contract_version_id
+
+        response = self.send_initial(exchange)
+
+        self.assertEqual(response.status_code, 200)
+        exchange.refresh_from_db()
+        self.assertEqual(exchange.status, AgreementExchange.STATUS_COUNTERPARTY_REVIEW)
+        self.assertEqual(exchange.current_actor, AgreementExchange.ACTOR_COUNTERPARTY)
+        self.assertEqual(exchange.current_contract_version_id, original_version_id)
+        self.assertEqual(ContractVersion.objects.count(), original_version_count)
+        self.assertEqual(response.data["screen_state"], "initiator_waiting")
+        self.assertEqual(response.data["current_contract"]["version_label"], "v1")
+        self.assertEqual(AgreementExchangeEvent.objects.filter(exchange=exchange, event_type="initial_version_sent").count(), 1)
+
+    def test_after_send_counterparty_sees_review_actions(self):
+        exchange, _ = self.create_exchange()
+        self.send_initial(exchange)
+
+        initiator_response = self.initiator_client.get(f"/api/agreement-exchange/{exchange.id}/")
+        counterparty_response = self.counterparty_client.get(f"/api/agreement-exchange/{exchange.id}/")
+
+        self.assertEqual(initiator_response.data["screen_state"], "initiator_waiting")
+        self.assertEqual(initiator_response.data["available_actions"], [])
         self.assertEqual(counterparty_response.data["screen_state"], "counterparty_review")
         self.assertEqual(counterparty_response.data["available_actions"], ["sign", "request_change", "reject"])
-        self.assertEqual(counterparty_response.data["current_contract"]["sections"][0]["id"], "payment")
+
+    def test_non_initiator_cannot_send_initial_version(self):
+        exchange, _ = self.create_exchange()
+
+        response = self.counterparty_client.post(f"/api/agreement-exchange/{exchange.id}/send-initial/", {}, format="json")
+
+        self.assertEqual(response.status_code, 403)
+        exchange.refresh_from_db()
+        self.assertEqual(exchange.status, AgreementExchange.STATUS_DRAFT)
+        self.assertEqual(exchange.current_actor, AgreementExchange.ACTOR_INITIATOR)
 
     def test_counterparty_marks_viewed(self):
         exchange, _ = self.create_exchange()
+        self.send_initial(exchange)
 
         response = self.counterparty_client.post(f"/api/agreement-exchange/{exchange.id}/viewed/", {}, format="json")
 
@@ -94,6 +140,7 @@ class AgreementExchangeMVPAPITests(TestCase):
 
     def test_submit_request_saves_and_changes_current_actor_to_initiator(self):
         exchange, _ = self.create_exchange()
+        self.send_initial(exchange)
 
         response = self.submit_request(exchange)
 
@@ -111,6 +158,7 @@ class AgreementExchangeMVPAPITests(TestCase):
 
     def test_initiator_sees_request(self):
         exchange, _ = self.create_exchange()
+        self.send_initial(exchange)
         self.submit_request(exchange)
 
         response = self.initiator_client.get(f"/api/agreement-exchange/{exchange.id}/")
@@ -122,6 +170,7 @@ class AgreementExchangeMVPAPITests(TestCase):
 
     def test_initiator_reject_request_works(self):
         exchange, _ = self.create_exchange()
+        self.send_initial(exchange)
         self.submit_request(exchange)
         change = AgreementExchangeRequest.objects.get()
 
@@ -141,6 +190,7 @@ class AgreementExchangeMVPAPITests(TestCase):
 
     def test_initiator_accept_creates_next_contract_version_and_updates_exchange_pointer(self):
         exchange, _ = self.create_exchange()
+        self.send_initial(exchange)
         self.submit_request(exchange)
         change = AgreementExchangeRequest.objects.get()
         original_version_count = ContractVersion.objects.count()
@@ -177,6 +227,7 @@ class AgreementExchangeMVPAPITests(TestCase):
 
     def test_both_participants_see_same_current_version_after_accept(self):
         exchange, _ = self.create_exchange()
+        self.send_initial(exchange)
         self.submit_request(exchange)
         change = AgreementExchangeRequest.objects.get()
 
@@ -205,8 +256,133 @@ class AgreementExchangeMVPAPITests(TestCase):
         self.assertEqual(counterparty_response.data["screen_state"], "counterparty_review_updated_version")
         self.assertEqual(counterparty_response.data["available_actions"], ["sign", "request_change", "reject"])
 
+    def test_counterparty_cannot_sign_request_or_reject_before_initial_send(self):
+        exchange, _ = self.create_exchange()
+        original_version_count = ContractVersion.objects.count()
+        original_exchange_version_id = exchange.current_contract_version_id
+
+        sign_response = self.counterparty_client.post(
+            f"/api/agreement-exchange/{exchange.id}/sign/",
+            {"typed_name": "Counter Party", "signature_text": "Counter Party"},
+            format="json",
+        )
+        request_response = self.submit_request(exchange)
+        reject_response = self.counterparty_client.post(
+            f"/api/agreement-exchange/{exchange.id}/reject/",
+            {"reason": "Not acceptable."},
+            format="json",
+        )
+
+        self.assertEqual(sign_response.status_code, 403)
+        self.assertEqual(request_response.status_code, 409)
+        self.assertEqual(reject_response.status_code, 403)
+        exchange.refresh_from_db()
+        self.assertEqual(exchange.status, AgreementExchange.STATUS_DRAFT)
+        self.assertEqual(exchange.current_actor, AgreementExchange.ACTOR_INITIATOR)
+        self.assertEqual(exchange.current_contract_version_id, original_exchange_version_id)
+        self.assertEqual(AgreementExchangeRequest.objects.count(), 0)
+        self.assertEqual(AgreementExchangeSignature.objects.count(), 0)
+        self.assertEqual(ContractVersion.objects.count(), original_version_count)
+
+    def test_counterparty_cannot_respond_to_their_own_change_request(self):
+        exchange, _ = self.create_exchange()
+        self.send_initial(exchange)
+        self.submit_request(exchange)
+        change = AgreementExchangeRequest.objects.get()
+        original_version_count = ContractVersion.objects.count()
+        original_exchange_version_id = exchange.current_contract_version_id
+
+        response = self.counterparty_client.post(
+            f"/api/agreement-exchange/{exchange.id}/requests/{change.id}/respond/",
+            {"decision": "accept", "final_text": "Payment is due on the 15th."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        change.refresh_from_db()
+        exchange.refresh_from_db()
+        self.assertEqual(change.status, AgreementExchangeRequest.STATUS_PENDING)
+        self.assertEqual(exchange.status, AgreementExchange.STATUS_INITIATOR_REVIEW)
+        self.assertEqual(exchange.current_actor, AgreementExchange.ACTOR_INITIATOR)
+        self.assertEqual(exchange.current_contract_version_id, original_exchange_version_id)
+        self.assertEqual(ContractVersion.objects.count(), original_version_count)
+
+    def test_complete_turn_version_workflow_from_draft_to_v2(self):
+        exchange, create_response = self.create_exchange()
+        v1_id = exchange.current_contract_version_id
+        original_version_count = ContractVersion.objects.count()
+
+        self.assertEqual(exchange.status, AgreementExchange.STATUS_DRAFT)
+        self.assertEqual(exchange.current_actor, AgreementExchange.ACTOR_INITIATOR)
+        self.assertEqual(create_response.data["screen_state"], "initiator_send_initial_version")
+        self.assertEqual(create_response.data["available_actions"], ["send_initial_version"])
+        self.assertEqual(create_response.data["current_contract"]["version_label"], "v1")
+
+        send_response = self.send_initial(exchange)
+        self.assertEqual(send_response.status_code, 200)
+        exchange.refresh_from_db()
+        self.assertEqual(exchange.status, AgreementExchange.STATUS_COUNTERPARTY_REVIEW)
+        self.assertEqual(exchange.current_actor, AgreementExchange.ACTOR_COUNTERPARTY)
+        self.assertEqual(exchange.current_contract_version_id, v1_id)
+        self.assertEqual(ContractVersion.objects.count(), original_version_count)
+        self.assertEqual(send_response.data["current_contract"]["version_label"], "v1")
+
+        counterparty_review = self.counterparty_client.get(f"/api/agreement-exchange/{exchange.id}/")
+        self.assertEqual(counterparty_review.status_code, 200)
+        self.assertEqual(counterparty_review.data["screen_state"], "counterparty_review")
+        self.assertEqual(counterparty_review.data["available_actions"], ["sign", "request_change", "reject"])
+
+        request_response = self.submit_request(exchange)
+        self.assertEqual(request_response.status_code, 201)
+        self.assertEqual(AgreementExchangeRequest.objects.count(), 1)
+        self.assertEqual(ContractVersion.objects.count(), original_version_count)
+        change = AgreementExchangeRequest.objects.get()
+        self.assertEqual(change.status, AgreementExchangeRequest.STATUS_PENDING)
+        exchange.refresh_from_db()
+        self.assertEqual(exchange.status, AgreementExchange.STATUS_INITIATOR_REVIEW)
+        self.assertEqual(exchange.current_actor, AgreementExchange.ACTOR_INITIATOR)
+        self.assertEqual(exchange.current_contract_version_id, v1_id)
+
+        initiator_review = self.initiator_client.get(f"/api/agreement-exchange/{exchange.id}/")
+        self.assertEqual(initiator_review.status_code, 200)
+        self.assertEqual(initiator_review.data["screen_state"], "initiator_review_requested_change")
+        self.assertEqual(initiator_review.data["available_actions"], ["accept_request", "edit_request", "reject_request"])
+
+        accept_response = self.initiator_client.post(
+            f"/api/agreement-exchange/{exchange.id}/requests/{change.id}/respond/",
+            {
+                "decision": "accept",
+                "final_text": "Payment is due on the 15th.",
+                "initiator_response": "Accepted and sent back for review.",
+            },
+            format="json",
+        )
+        self.assertEqual(accept_response.status_code, 200)
+        exchange.refresh_from_db()
+        v2 = exchange.current_contract_version
+        self.assertNotEqual(v2.id, v1_id)
+        self.assertEqual(v2.version_number, 2)
+        self.assertEqual(v2.previous_version_id, v1_id)
+        self.assertEqual(exchange.status, AgreementExchange.STATUS_UPDATED_VERSION_SENT)
+        self.assertEqual(exchange.current_actor, AgreementExchange.ACTOR_COUNTERPARTY)
+        self.assertEqual(ContractVersion.objects.count(), original_version_count + 1)
+
+        initiator_v2 = self.initiator_client.get(f"/api/agreement-exchange/{exchange.id}/")
+        counterparty_v2 = self.counterparty_client.get(f"/api/agreement-exchange/{exchange.id}/")
+        self.assertEqual(initiator_v2.status_code, 200)
+        self.assertEqual(counterparty_v2.status_code, 200)
+        for response in [initiator_v2, counterparty_v2]:
+            self.assertEqual(response.data["exchange"]["current_contract_version_id"], str(v2.id))
+            self.assertEqual(response.data["current_contract"]["id"], str(v2.id))
+            self.assertEqual(response.data["current_contract"]["version_label"], "v2")
+        self.assertEqual(initiator_v2.data["screen_state"], "initiator_waiting")
+        self.assertEqual(initiator_v2.data["available_actions"], [])
+        self.assertEqual(counterparty_v2.data["screen_state"], "counterparty_review_updated_version")
+        self.assertEqual(counterparty_v2.data["available_actions"], ["sign", "request_change", "reject"])
+
     def test_initiator_edit_creates_next_contract_version_and_updates_exchange_pointer(self):
         exchange, _ = self.create_exchange()
+        self.send_initial(exchange)
         self.submit_request(exchange)
         change = AgreementExchangeRequest.objects.get()
         original_version_count = ContractVersion.objects.count()
@@ -233,6 +409,7 @@ class AgreementExchangeMVPAPITests(TestCase):
 
     def test_initiator_accept_respects_contract_version_cap(self):
         exchange, _ = self.create_exchange()
+        self.send_initial(exchange)
         make_version(self.contract, self.initiator, content_snapshot=self.snapshot, status="sent")
         make_version(self.contract, self.initiator, content_snapshot=self.snapshot, status="sent")
         self.submit_request(exchange)
@@ -255,6 +432,7 @@ class AgreementExchangeMVPAPITests(TestCase):
 
     def test_counterparty_sign_works(self):
         exchange, _ = self.create_exchange()
+        self.send_initial(exchange)
 
         response = self.counterparty_client.post(
             f"/api/agreement-exchange/{exchange.id}/sign/",
@@ -272,6 +450,7 @@ class AgreementExchangeMVPAPITests(TestCase):
 
     def test_reject_exchange_works(self):
         exchange, _ = self.create_exchange()
+        self.send_initial(exchange)
 
         response = self.counterparty_client.post(
             f"/api/agreement-exchange/{exchange.id}/reject/",
@@ -288,6 +467,7 @@ class AgreementExchangeMVPAPITests(TestCase):
 
     def test_request_creation_does_not_mutate_contract_or_version_or_lifecycle(self):
         exchange, _ = self.create_exchange()
+        self.send_initial(exchange)
         original_contract_status = self.contract.status
         original_contract_state = self.contract.state
         original_snapshot = self.version.content_snapshot
@@ -309,6 +489,7 @@ class AgreementExchangeMVPAPITests(TestCase):
 
     def test_missing_proposed_text_is_rejected(self):
         exchange, _ = self.create_exchange()
+        self.send_initial(exchange)
 
         response = self.counterparty_client.post(
             f"/api/agreement-exchange/{exchange.id}/requests/",
@@ -381,6 +562,12 @@ class AgreementExchangeFromWorkflowAPITests(TestCase):
         self.assertEqual(exchange.initiator, self.initiator)
         self.assertEqual(exchange.counterparty_email, self.counterparty.email)
         self.assertEqual(exchange.counterparty_user, self.counterparty)
+        self.assertEqual(exchange.status, AgreementExchange.STATUS_DRAFT)
+        self.assertEqual(exchange.current_actor, AgreementExchange.ACTOR_INITIATOR)
+        detail_response = self.client.get(f"/api/agreement-exchange/{exchange.id}/")
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.data["screen_state"], "initiator_send_initial_version")
+        self.assertEqual(detail_response.data["available_actions"], ["send_initial_version"])
 
     def test_from_workflow_reuses_existing_exchange(self):
         existing = AgreementExchange.objects.create(
@@ -389,8 +576,8 @@ class AgreementExchangeFromWorkflowAPITests(TestCase):
             initiator=self.initiator,
             counterparty_email=self.counterparty.email,
             counterparty_user=self.counterparty,
-            status=AgreementExchange.STATUS_COUNTERPARTY_REVIEW,
-            current_actor=AgreementExchange.ACTOR_COUNTERPARTY,
+            status=AgreementExchange.STATUS_DRAFT,
+            current_actor=AgreementExchange.ACTOR_INITIATOR,
         )
 
         response = self.post_from_workflow()

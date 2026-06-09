@@ -15,6 +15,7 @@ from backend.agreement_exchange.services import (
     mark_viewed,
     reject_exchange,
     respond_to_request,
+    send_initial_version,
     sign_exchange,
 )
 from backend.agreement_exchange.templates import AGREEMENT_EXCHANGE_TEMPLATES
@@ -87,6 +88,19 @@ class AgreementExchangeViewedAPIView(APIView):
         return Response(exchange_detail(exchange, request.user))
 
 
+class AgreementExchangeSendInitialAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, exchange_id):
+        try:
+            exchange = send_initial_version(exchange_id=exchange_id, user=request.user)
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response(exchange_detail(exchange, request.user))
+
+
 class AgreementExchangeRequestListCreateAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -94,11 +108,16 @@ class AgreementExchangeRequestListCreateAPIView(APIView):
     def post(self, request, exchange_id):
         serializer = AgreementExchangeRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        exchange, change_request = create_change_request(
-            exchange_id=exchange_id,
-            user=request.user,
-            validated_data=serializer.validated_data,
-        )
+        try:
+            exchange, change_request = create_change_request(
+                exchange_id=exchange_id,
+                user=request.user,
+                validated_data=serializer.validated_data,
+            )
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         return Response(
             {
                 "request": AgreementExchangeRequestSerializer(change_request).data,
@@ -123,6 +142,8 @@ class AgreementExchangeRequestRespondAPIView(APIView):
                 final_text=serializer.validated_data.get("final_text", ""),
                 initiator_response=serializer.validated_data.get("initiator_response", ""),
             )
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({
@@ -157,11 +178,14 @@ class AgreementExchangeRejectAPIView(APIView):
     def post(self, request, exchange_id):
         serializer = AgreementExchangeRejectSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        exchange = reject_exchange(
-            exchange_id=exchange_id,
-            user=request.user,
-            reason=serializer.validated_data.get("reason", ""),
-        )
+        try:
+            exchange = reject_exchange(
+                exchange_id=exchange_id,
+                user=request.user,
+                reason=serializer.validated_data.get("reason", ""),
+            )
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
         return Response(exchange_detail(exchange, request.user))
 
 

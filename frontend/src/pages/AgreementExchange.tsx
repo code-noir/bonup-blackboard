@@ -129,6 +129,12 @@ function getExchangeStateCopy(detail: AgreementExchangeDetail) {
   const status = detail.exchange.status
   const state = detail.screen_state
 
+  if (state === 'initiator_send_initial_version') {
+    return { mode: 'Ready to send', actor: role === 'initiator' ? 'You / Initiator' : 'Waiting on initiator', next: 'Send Version 1 to the counterparty.' }
+  }
+  if (state === 'counterparty_not_sent') {
+    return { mode: 'Not sent yet', actor: 'Waiting on initiator', next: 'The initiator has not sent Version 1 yet.' }
+  }
   if (state === 'signed' || status === 'signed') {
     return { mode: 'Signed', actor: 'No action required', next: 'The exchange is complete and visible to both parties.' }
   }
@@ -423,6 +429,35 @@ function DecisionPanel({ detail, onRefresh, smallScreen }: { detail: AgreementEx
       final_text: decision === 'reject' ? '' : finalText,
       initiator_response: responseText,
     })
+  }
+
+  if (detail.screen_state === 'initiator_send_initial_version') {
+    return (
+      <div style={CARD}>
+        <p style={LABEL}>Review Version 1</p>
+        <div style={{ display: 'grid', gap: 8 }}>
+          <p style={{ margin: 0, color: '#0F1F3D', fontSize: 14, fontWeight: 800 }}>Version {detail.current_contract.version_number} is ready for initiator review.</p>
+          <p style={{ margin: 0, color: '#64748B', fontSize: 13 }}>Send the initial version to {detail.exchange.counterparty_email} when it is ready for counterparty review.</p>
+          {detail.viewer_role === 'initiator' && detail.available_actions.includes('send_initial_version') ? (
+            <button type="button" style={{ ...PRIMARY_BUTTON, justifySelf: 'start', marginTop: 4 }} onClick={() => submit(`/agreement-exchange/${detail.exchange.id}/send-initial/`, {})} disabled={isSubmitting}>
+              {isSubmitting ? 'Sending...' : 'Send Initial Version'}
+            </button>
+          ) : (
+            <p style={{ margin: 0, color: '#64748B', fontSize: 13 }}>Waiting for the initiator to send Version 1.</p>
+          )}
+        </div>
+        {error && <p style={{ margin: '10px 0 0', color: '#B91C1C', fontSize: 12 }}>{error}</p>}
+      </div>
+    )
+  }
+
+  if (detail.screen_state === 'counterparty_not_sent') {
+    return (
+      <div style={CARD}>
+        <p style={LABEL}>Not Sent Yet</p>
+        <p style={{ margin: 0, color: '#64748B', fontSize: 13 }}>The initiator has not sent Version 1 for counterparty review yet.</p>
+      </div>
+    )
   }
 
   if (detail.screen_state === 'signed') {

@@ -15,6 +15,7 @@ from backend.agreement_exchange.services import (
     mark_viewed,
     reject_exchange,
     respond_to_request,
+    restart_exchange_from_version,
     send_initial_version,
     sign_exchange,
 )
@@ -26,6 +27,7 @@ from .serializers import (
     AgreementExchangeRejectSerializer,
     AgreementExchangeRequestResponseSerializer,
     AgreementExchangeRequestSerializer,
+    AgreementExchangeRestartSerializer,
     AgreementExchangeSignSerializer,
 )
 
@@ -150,6 +152,31 @@ class AgreementExchangeRequestRespondAPIView(APIView):
             "request": AgreementExchangeRequestSerializer(change_request).data,
             "exchange": exchange_detail(exchange, request.user),
         })
+
+
+class AgreementExchangeRestartAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, exchange_id):
+        serializer = AgreementExchangeRestartSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            exchange = restart_exchange_from_version(
+                exchange_id=exchange_id,
+                source_version_id=serializer.validated_data["source_version_id"],
+                user=request.user,
+                counterparty_email=serializer.validated_data.get("counterparty_email", ""),
+            )
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response({
+            "exchange_id": str(exchange.id),
+            "redirect_path": f"/agreement-exchange/{exchange.id}",
+            "status": exchange.status,
+            "current_contract": exchange_detail(exchange, request.user)["current_contract"],
+        }, status=status.HTTP_201_CREATED)
 
 
 class AgreementExchangeSignAPIView(APIView):

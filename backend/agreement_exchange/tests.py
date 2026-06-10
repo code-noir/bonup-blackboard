@@ -61,6 +61,36 @@ class AgreementExchangeMVPAPITests(TestCase):
             format="json",
         )
 
+    def restart_exchange(self, exchange, source_version=None, client=None):
+        return (client or self.initiator_client).post(
+            f"/api/agreement-exchange/{exchange.id}/restart/",
+            {"source_version_id": str((source_version or exchange.current_contract_version).id)},
+            format="json",
+        )
+
+    def make_rejected_exchange_at_v3(self, reject=True):
+        exchange, _ = self.create_exchange()
+        self.send_initial(exchange)
+        for text in ["Payment is due on the 15th.", "Payment is due on the 20th."]:
+            self.submit_request(exchange)
+            change = AgreementExchangeRequest.objects.filter(exchange=exchange).order_by("created_at").last()
+            response = self.initiator_client.post(
+                f"/api/agreement-exchange/{exchange.id}/requests/{change.id}/respond/",
+                {"decision": "accept", "final_text": text},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 200)
+            exchange.refresh_from_db()
+        if reject:
+            response = self.counterparty_client.post(
+                f"/api/agreement-exchange/{exchange.id}/reject/",
+                {"reason": "No agreement after final version."},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 200)
+            exchange.refresh_from_db()
+        return exchange
+
     def test_create_exchange(self):
         exchange, response = self.create_exchange()
 
@@ -407,19 +437,16 @@ class AgreementExchangeMVPAPITests(TestCase):
         self.assertEqual(response.data["exchange"]["current_contract"]["version_label"], "v2")
         self.assertIn("Payment is due on the 10th.", new_version.content_snapshot)
 
-    def test_initiator_accept_respects_contract_version_cap(self):
-        exchange, _ = self.create_exchange()
-        self.send_initial(exchange)
-        make_version(self.contract, self.initiator, content_snapshot=self.snapshot, status="sent")
-        make_version(self.contract, self.initiator, content_snapshot=self.snapshot, status="sent")
+    def test_initiator_accept_respects_exchange_local_version_cap(self):
+        exchange = self.make_rejected_exchange_at_v3(reject=False)
         self.submit_request(exchange)
-        change = AgreementExchangeRequest.objects.get()
+        change = AgreementExchangeRequest.objects.filter(exchange=exchange).order_by("created_at").last()
         original_version_count = ContractVersion.objects.count()
         original_exchange_version_id = exchange.current_contract_version_id
 
         response = self.initiator_client.post(
             f"/api/agreement-exchange/{exchange.id}/requests/{change.id}/respond/",
-            {"decision": "accept", "final_text": "Payment is due on the 15th."},
+            {"decision": "accept", "final_text": "Payment is due on the final date."},
             format="json",
         )
 
@@ -464,6 +491,110 @@ class AgreementExchangeMVPAPITests(TestCase):
         self.assertEqual(exchange.current_actor, AgreementExchange.ACTOR_NONE)
         self.assertEqual(response.data["screen_state"], "rejected")
         self.assertEqual(AgreementExchangeEvent.objects.filter(event_type="exchange_rejected").count(), 1)
+
+    def test_rejected_exchange_can_be_restarted_by_initiator(self):
+        old_exchange = self.make_rejected_exchange_at_v3()
+        old_version_id = old_exchange.current_contract_version_id
+        old_event_count = old_exchange.events.count()
+        old_request_count = old_exchange.requests.count()
+        original_version_count = ContractVersion.objects.count()
+
+        response = self.restart_exchange(old_exchange)
+
+        self.assertEqual(response.status_code, 201)
+        old_exchange.refresh_from_db()
+        new_exchange = AgreementExchange.objects.get(id=response.data["exchange_id"])
+        self.assertNotEqual(new_exchange.id, old_exchange.id)
+        self.assertEqual(old_exchange.status, AgreementExchange.STATUS_REJECTED)
+        self.assertEqual(old_exchange.current_actor, AgreementExchange.ACTOR_NONE)
+        self.assertEqual(old_exchange.current_contract_version_id, old_version_id)
+        self.assertEqual(old_exchange.requests.count(), old_request_count)
+        self.assertEqual(old_exchange.events.count(), old_event_count + 1)
+        self.assertEqual(new_exchange.restarted_from_exchange, old_exchange)
+        self.assertEqual(new_exchange.source_contract_version_id, old_version_id)
+        self.assertEqual(new_exchange.current_contract_version_id, old_version_id)
+        self.assertEqual(new_exchange.status, AgreementExchange.STATUS_DRAFT)
+        self.assertEqual(new_exchange.current_actor, AgreementExchange.ACTOR_INITIATOR)
+        self.assertEqual(ContractVersion.objects.count(), original_version_count)
+        self.assertEqual(response.data["redirect_path"], f"/agreement-exchange/{new_exchange.id}")
+        self.assertEqual(response.data["current_contract"]["version_label"], "v1")
+        self.assertEqual(AgreementExchangeEvent.objects.filter(exchange=old_exchange, event_type="exchange_restarted").count(), 1)
+        self.assertEqual(AgreementExchangeEvent.objects.filter(exchange=new_exchange, event_type="exchange_restarted_from_rejected").count(), 1)
+        self.assertEqual(AgreementExchangeEvent.objects.filter(exchange=new_exchange, event_type="initial_version_sent").count(), 0)
+
+    def test_counterparty_cannot_restart_rejected_exchange(self):
+        old_exchange = self.make_rejected_exchange_at_v3()
+        original_exchange_count = AgreementExchange.objects.count()
+
+        response = self.restart_exchange(old_exchange, client=self.counterparty_client)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(AgreementExchange.objects.count(), original_exchange_count)
+
+    def test_non_rejected_exchange_cannot_restart(self):
+        exchange, _ = self.create_exchange()
+
+        response = self.restart_exchange(exchange)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(AgreementExchange.objects.count(), 1)
+
+    def test_restart_requires_source_version_from_exchange_history(self):
+        old_exchange = self.make_rejected_exchange_at_v3()
+        other_contract = make_contract(self.initiator, counterparty_email=self.counterparty.email)
+        other_version = make_version(other_contract, self.initiator, content_snapshot=self.snapshot, status="sent")
+
+        response = self.restart_exchange(old_exchange, source_version=other_version)
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(AgreementExchange.objects.count(), 1)
+
+    def test_restarted_exchange_can_send_initial_version(self):
+        old_exchange = self.make_rejected_exchange_at_v3()
+        response = self.restart_exchange(old_exchange)
+        new_exchange = AgreementExchange.objects.get(id=response.data["exchange_id"])
+        original_version_count = ContractVersion.objects.count()
+
+        detail = self.initiator_client.get(f"/api/agreement-exchange/{new_exchange.id}/")
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.data["screen_state"], "initiator_send_initial_version")
+        self.assertEqual(detail.data["available_actions"], ["send_initial_version"])
+        self.assertEqual(detail.data["current_contract"]["version_label"], "v1")
+        counterparty_detail = self.counterparty_client.get(f"/api/agreement-exchange/{new_exchange.id}/")
+        self.assertEqual(counterparty_detail.data["available_actions"], [])
+
+        send_response = self.send_initial(new_exchange)
+
+        self.assertEqual(send_response.status_code, 200)
+        new_exchange.refresh_from_db()
+        self.assertEqual(new_exchange.status, AgreementExchange.STATUS_COUNTERPARTY_REVIEW)
+        self.assertEqual(new_exchange.current_actor, AgreementExchange.ACTOR_COUNTERPARTY)
+        self.assertEqual(new_exchange.current_contract_version_id, new_exchange.source_contract_version_id)
+        self.assertEqual(ContractVersion.objects.count(), original_version_count)
+        self.assertEqual(send_response.data["current_contract"]["version_label"], "v1")
+
+    def test_restarted_exchange_version_cap_is_independent(self):
+        old_exchange = self.make_rejected_exchange_at_v3()
+        response = self.restart_exchange(old_exchange)
+        new_exchange = AgreementExchange.objects.get(id=response.data["exchange_id"])
+        self.send_initial(new_exchange)
+        original_version_count = ContractVersion.objects.count()
+
+        self.submit_request(new_exchange)
+        change = AgreementExchangeRequest.objects.filter(exchange=new_exchange).order_by("created_at").last()
+        accept_response = self.initiator_client.post(
+            f"/api/agreement-exchange/{new_exchange.id}/requests/{change.id}/respond/",
+            {"decision": "accept", "final_text": "Restarted payment date is the 25th."},
+            format="json",
+        )
+
+        self.assertEqual(accept_response.status_code, 200)
+        new_exchange.refresh_from_db()
+        self.assertEqual(ContractVersion.objects.count(), original_version_count + 1)
+        self.assertEqual(new_exchange.current_contract_version.version_number, 4)
+        self.assertEqual(accept_response.data["exchange"]["current_contract"]["version_label"], "v2")
+        old_exchange.refresh_from_db()
+        self.assertEqual(old_exchange.status, AgreementExchange.STATUS_REJECTED)
 
     def test_request_creation_does_not_mutate_contract_or_version_or_lifecycle(self):
         exchange, _ = self.create_exchange()

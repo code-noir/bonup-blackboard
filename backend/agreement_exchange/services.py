@@ -130,9 +130,26 @@ def _reviewed_update_snapshot(previous_version, change_request, *, decision, fin
     return json.dumps(snapshot)
 
 
+def exchange_local_version_number(exchange, version=None):
+    current = version or exchange.current_contract_version
+    source_id = exchange.source_contract_version_id or exchange.current_contract_version_id
+    number = 1
+    seen = set()
+    while current and current.id != source_id and current.previous_version_id and current.id not in seen:
+        seen.add(current.id)
+        number += 1
+        current = current.previous_version
+    return number
+
+
+def next_contract_version_number(contract):
+    latest = contract.versions.order_by("-version_number").first()
+    return (latest.version_number if latest else 0) + 1
+
+
 def _create_exchange_version_from_request(exchange, change_request, *, decision, final_text, initiator_response, actor):
     contract = exchange.contract
-    existing_count = contract.versions.count()
+    existing_count = exchange_local_version_number(exchange)
     if existing_count >= contract.max_versions:
         raise ValueError(f"Maximum version limit reached ({contract.max_versions}).")
 
@@ -151,7 +168,7 @@ def _create_exchange_version_from_request(exchange, change_request, *, decision,
 
     new_version = ContractVersion.objects.create(
         contract=contract,
-        version_number=existing_count + 1,
+        version_number=next_contract_version_number(contract),
         created_by=actor if getattr(actor, "is_authenticated", False) else None,
         previous_version=previous,
         content_snapshot=content_snapshot,
@@ -179,12 +196,14 @@ def current_contract_payload(exchange):
         or version.content_snapshot
         or ""
     )
+    local_number = exchange_local_version_number(exchange, version)
     return {
         "id": str(version.id),
         "contract_id": str(exchange.contract_id),
         "title": exchange.contract.title or "Untitled agreement",
-        "version_label": f"v{version.version_number}",
-        "version_number": version.version_number,
+        "version_label": f"v{local_number}",
+        "version_number": local_number,
+        "source_version_number": version.version_number,
         "status": version.status,
         "content_html": content_html,
         "sections": sections,
@@ -291,6 +310,8 @@ def exchange_summary(exchange):
         "id": str(exchange.id),
         "contract_id": str(exchange.contract_id),
         "current_contract_version_id": str(exchange.current_contract_version_id),
+        "source_contract_version_id": str(exchange.source_contract_version_id) if exchange.source_contract_version_id else None,
+        "restarted_from_exchange_id": str(exchange.restarted_from_exchange_id) if exchange.restarted_from_exchange_id else None,
         "initiator": serialize_user(exchange.initiator),
         "counterparty_email": exchange.counterparty_email,
         "counterparty_user": serialize_user(exchange.counterparty_user),
@@ -350,7 +371,7 @@ def notify_counterparty(exchange, message, metadata=None):
 
 
 def load_exchange(exchange_id, for_update=False):
-    queryset = AgreementExchange.objects.select_related("contract", "current_contract_version", "initiator", "counterparty_user").prefetch_related("requests", "events", "signatures")
+    queryset = AgreementExchange.objects.select_related("contract", "current_contract_version", "source_contract_version", "restarted_from_exchange", "initiator", "counterparty_user").prefetch_related("requests", "events", "signatures")
     if for_update:
         queryset = queryset.select_for_update(of=("self",))
     return get_object_or_404(queryset, pk=exchange_id)
@@ -415,6 +436,7 @@ def create_or_open_from_workflow(*, user, workflow_id):
         exchange = AgreementExchange.objects.create(
             contract=workflow.contract,
             current_contract_version=version,
+            source_contract_version=version,
             counterparty_email=counterparty_email,
             initiator=workflow.user,
             counterparty_user=counterparty_user,
@@ -458,6 +480,7 @@ def create_or_open_exchange(*, user, contract_id, contract_version_id, counterpa
         defaults={
             "initiator": user,
             "counterparty_user": counterparty_user,
+            "source_contract_version": version,
             "status": AgreementExchange.STATUS_DRAFT,
             "current_actor": AgreementExchange.ACTOR_INITIATOR,
         },
@@ -625,6 +648,75 @@ def respond_to_request(*, exchange_id, request_id, user, decision, final_text=""
         metadata=metadata,
     )
     return load_exchange(exchange.id), change_request
+
+
+@transaction.atomic
+def restart_exchange_from_version(*, exchange_id, source_version_id, user, counterparty_email=""):
+    old_exchange = load_exchange(exchange_id, for_update=True)
+    if viewer_role(old_exchange, user) != "initiator":
+        raise PermissionError("Only the initiator can restart a rejected Agreement Exchange.")
+    if old_exchange.status != AgreementExchange.STATUS_REJECTED:
+        raise ValueError("Only rejected Agreement Exchanges can be restarted.")
+
+    source_version = get_object_or_404(
+        ContractVersion,
+        pk=source_version_id,
+        contract=old_exchange.contract,
+    )
+    if not _version_belongs_to_exchange_history(old_exchange, source_version):
+        raise ValueError("Selected source version is not part of this Agreement Exchange history.")
+
+    restart_counterparty_email = counterparty_email or old_exchange.counterparty_email
+    counterparty_user = old_exchange.counterparty_user or find_user_by_email(restart_counterparty_email)
+    new_exchange = AgreementExchange.objects.create(
+        contract=old_exchange.contract,
+        current_contract_version=source_version,
+        source_contract_version=source_version,
+        restarted_from_exchange=old_exchange,
+        counterparty_email=restart_counterparty_email,
+        initiator=old_exchange.initiator,
+        counterparty_user=counterparty_user,
+        status=AgreementExchange.STATUS_DRAFT,
+        current_actor=AgreementExchange.ACTOR_INITIATOR,
+    )
+    create_event(
+        old_exchange,
+        actor_user=user,
+        actor_email=getattr(user, "email", ""),
+        actor_role="initiator",
+        event_type="exchange_restarted",
+        message="Restarted as a new Agreement Exchange.",
+        metadata={
+            "new_exchange_id": str(new_exchange.id),
+            "source_version_id": str(source_version.id),
+            "source_version_number": source_version.version_number,
+        },
+    )
+    create_event(
+        new_exchange,
+        actor_user=user,
+        actor_email=getattr(user, "email", ""),
+        actor_role="initiator",
+        event_type="exchange_restarted_from_rejected",
+        message="Restarted from a rejected Agreement Exchange.",
+        metadata={
+            "source_exchange_id": str(old_exchange.id),
+            "source_version_id": str(source_version.id),
+            "source_version_number": source_version.version_number,
+        },
+    )
+    return load_exchange(new_exchange.id)
+
+
+def _version_belongs_to_exchange_history(exchange, source_version):
+    current = exchange.current_contract_version
+    seen = set()
+    while current and current.id not in seen:
+        if current.id == source_version.id:
+            return True
+        seen.add(current.id)
+        current = current.previous_version
+    return False
 
 
 @transaction.atomic

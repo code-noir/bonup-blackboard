@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '@/api/client'
 import { useAuth } from '@/context/AuthContext'
 import AgreementExchangeRequestBuilder, { type AgreementExchangeSavedRequest } from '@/components/agreementExchange/AgreementExchangeRequestBuilder'
@@ -11,6 +11,8 @@ type ExchangeSummary = {
   id: string
   contract_id: string
   current_contract_version_id: string
+  source_contract_version_id?: string | null
+  restarted_from_exchange_id?: string | null
   status: string
   current_actor: Actor
   counterparty_email: string
@@ -34,6 +36,7 @@ type CurrentContract = {
   title: string
   version_label: string
   version_number: number
+  source_version_number?: number
   status: string
   content_html: string
   sections: ContractSection[]
@@ -74,6 +77,13 @@ type AgreementExchangeDetail = {
   events: ExchangeEvent[]
   signatures: ExchangeSignature[]
   available_actions: string[]
+}
+
+type RestartResponse = {
+  exchange_id: string
+  redirect_path: string
+  status: string
+  current_contract: CurrentContract
 }
 
 const PAGE: React.CSSProperties = { display: 'grid', gap: 12, paddingBottom: 36 }
@@ -392,6 +402,7 @@ function decisionStatusCopy(detail: AgreementExchangeDetail) {
 
 function DecisionPanel({ detail, onRefresh, smallScreen }: { detail: AgreementExchangeDetail; onRefresh: () => void; smallScreen: boolean }) {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [mode, setMode] = useState<'idle' | 'request' | 'reject' | 'sign' | 'edit'>('idle')
   const [reason, setReason] = useState('')
   const [typedName, setTypedName] = useState(user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : '')
@@ -431,6 +442,21 @@ function DecisionPanel({ detail, onRefresh, smallScreen }: { detail: AgreementEx
     })
   }
 
+  async function restartFromCurrentVersion() {
+    setIsSubmitting(true)
+    setError('')
+    try {
+      const { data } = await api.post<RestartResponse>(`/agreement-exchange/${detail.exchange.id}/restart/`, {
+        source_version_id: detail.current_contract.id,
+      })
+      navigate(data.redirect_path || `/agreement-exchange/${data.exchange_id}`)
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Agreement Exchange could not be restarted.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   if (detail.screen_state === 'initiator_send_initial_version') {
     return (
       <div style={CARD}>
@@ -466,7 +492,20 @@ function DecisionPanel({ detail, onRefresh, smallScreen }: { detail: AgreementEx
 
   if (detail.screen_state === 'rejected') {
     const rejected = detail.events.find((event) => event.event_type === 'exchange_rejected')
-    return <div style={CARD}><p style={LABEL}>Rejected</p><p style={{ margin: 0, color: '#991B1B', fontWeight: 800 }}>{rejected?.message || 'This Agreement Exchange was rejected.'}</p></div>
+    return (
+      <div style={CARD}>
+        <p style={LABEL}>Rejected</p>
+        <div style={{ display: 'grid', gap: 10 }}>
+          <p style={{ margin: 0, color: '#991B1B', fontWeight: 800 }}>{rejected?.message || 'This Agreement Exchange was rejected.'}</p>
+          {detail.viewer_role === 'initiator' && (
+            <button type="button" style={{ ...PRIMARY_BUTTON, justifySelf: 'start' }} onClick={restartFromCurrentVersion} disabled={isSubmitting}>
+              {isSubmitting ? 'Starting...' : 'Start New Exchange From This Version'}
+            </button>
+          )}
+          {error && <p style={{ margin: 0, color: '#B91C1C', fontSize: 12 }}>{error}</p>}
+        </div>
+      </div>
+    )
   }
 
   if (detail.screen_state === 'counterparty_waiting') {

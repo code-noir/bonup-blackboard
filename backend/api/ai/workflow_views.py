@@ -16,6 +16,7 @@ from backend.ai.models import (
     WorkflowShareLink,
     WorkflowState,
 )
+from backend.agreement_exchange.services import exchange_redirect_url, resolve_active_exchange_for_contract_and_user
 from backend.api.contracts.permissions import contract_party_response, is_party
 from backend.contracts.models import Contract, ContractVersion
 
@@ -321,6 +322,18 @@ class WorkflowForContractAPIView(APIView):
         contract = get_object_or_404(Contract, pk=contract_id)
         if not is_party(request.user, contract):
             return contract_party_response()
+
+        active_exchange = resolve_active_exchange_for_contract_and_user(contract, request.user)
+        if active_exchange is not None:
+            return Response(
+                {
+                    "exchange_id": str(active_exchange.id),
+                    "contract_id": str(contract.id),
+                    "created": False,
+                    "redirect_url": exchange_redirect_url(active_exchange),
+                },
+                status=status.HTTP_200_OK,
+            )
 
         workflow, created, error_response = _get_or_create_workflow_for_contract(contract, request.user)
         if error_response:

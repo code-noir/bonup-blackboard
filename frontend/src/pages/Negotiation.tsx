@@ -3,7 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import api from '@/api/client'
 
 type WorkflowForContractResponse = {
-  workflow_id: string
+  workflow_id?: string
+  exchange_id?: string
   redirect_url?: string
 }
 

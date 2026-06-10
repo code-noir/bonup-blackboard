@@ -187,6 +187,14 @@ def bind_counterparty_user_for_viewer(exchange, user, role):
     exchange.save(update_fields=["counterparty_user", "updated_at"])
 
 
+def exchange_redirect_url(exchange):
+    return f"/agreement-exchange/{exchange.id}"
+
+
+def has_pending_request(exchange):
+    return exchange.requests.filter(status=AgreementExchangeRequest.STATUS_PENDING).exists()
+
+
 def screen_state(exchange, role):
     if exchange.status == AgreementExchange.STATUS_DRAFT:
         return "initiator_send_initial_version" if role == "initiator" else "counterparty_not_sent"
@@ -214,7 +222,12 @@ def available_actions(exchange, role):
         return ["send_initial_version"] if role == "initiator" and exchange.current_actor == AgreementExchange.ACTOR_INITIATOR else []
     if role == "counterparty" and exchange.current_actor == AgreementExchange.ACTOR_COUNTERPARTY:
         return ["sign", "request_change", "reject"]
-    if role == "initiator" and exchange.current_actor == AgreementExchange.ACTOR_INITIATOR:
+    if (
+        role == "initiator"
+        and exchange.current_actor == AgreementExchange.ACTOR_INITIATOR
+        and exchange.status == AgreementExchange.STATUS_INITIATOR_REVIEW
+        and has_pending_request(exchange)
+    ):
         return ["accept", "edit", "reject"]
     return []
 
@@ -365,6 +378,86 @@ def get_workflow_contract_version(workflow):
     return None
 
 
+ACTIVE_PENDING_STATUSES = {
+    AgreementExchange.STATUS_SENT,
+    AgreementExchange.STATUS_VIEWED,
+    AgreementExchange.STATUS_COUNTERPARTY_REVIEW,
+    AgreementExchange.STATUS_CHANGES_REQUESTED,
+    AgreementExchange.STATUS_INITIATOR_REVIEW,
+    AgreementExchange.STATUS_UPDATED_VERSION_SENT,
+    AgreementExchange.STATUS_READY_TO_SIGN,
+}
+
+TERMINAL_STATUSES = {
+    AgreementExchange.STATUS_SIGNED,
+    AgreementExchange.STATUS_REJECTED,
+}
+
+
+def _exchange_open_rank(exchange, version=None, user=None):
+    role = viewer_role(exchange, user) if user is not None else "unknown"
+    is_active_pending = exchange.status in ACTIVE_PENDING_STATUSES and exchange.current_actor in {
+        AgreementExchange.ACTOR_INITIATOR,
+        AgreementExchange.ACTOR_COUNTERPARTY,
+    }
+    if is_active_pending and role != "unknown" and exchange.current_actor == role:
+        status_rank = 0
+    elif is_active_pending and role != "unknown":
+        status_rank = 1
+    elif exchange.status == AgreementExchange.STATUS_DRAFT and role == "initiator":
+        status_rank = 2
+    elif exchange.status in TERMINAL_STATUSES and role != "unknown":
+        status_rank = 3
+    elif is_active_pending:
+        status_rank = 4
+    elif exchange.status == AgreementExchange.STATUS_DRAFT:
+        status_rank = 5
+    else:
+        status_rank = 6
+
+    version_id = getattr(version, "id", None)
+    if version_id is None or exchange.current_contract_version_id == version_id:
+        version_rank = 0
+    elif exchange.source_contract_version_id == version_id:
+        version_rank = 1
+    else:
+        version_rank = 2
+    updated_rank = -exchange.updated_at.timestamp() if exchange.updated_at else 0
+    return (status_rank, version_rank, updated_rank)
+
+
+def resolve_active_exchange_for_contract_and_user(contract, user):
+    if not user or not getattr(user, "is_authenticated", False):
+        return None
+    email = normalize_email(getattr(user, "email", ""))
+    filters = Q(contract=contract) & (Q(initiator=user) | Q(counterparty_user=user))
+    if email:
+        filters |= Q(contract=contract, counterparty_email__iexact=email)
+    candidates = list(
+        AgreementExchange.objects.filter(filters)
+        .select_related("current_contract_version", "source_contract_version", "initiator", "counterparty_user")
+        .prefetch_related("requests")
+    )
+    if not candidates:
+        return None
+    return sorted(candidates, key=lambda exchange: _exchange_open_rank(exchange, user=user))[0]
+
+
+def find_existing_exchange_for_open(*, contract, version, counterparty_email, user=None):
+    candidate = resolve_active_exchange_for_contract_and_user(contract, user) if user is not None else None
+    if candidate is not None:
+        return candidate
+    candidates = list(
+        AgreementExchange.objects.filter(
+            contract=contract,
+            counterparty_email__iexact=counterparty_email,
+        ).select_related("current_contract_version", "source_contract_version", "initiator", "counterparty_user")
+    )
+    if not candidates:
+        return None
+    return sorted(candidates, key=lambda exchange: _exchange_open_rank(exchange, version=version, user=user))[0]
+
+
 @transaction.atomic
 def create_or_open_from_workflow(*, user, workflow_id):
     try:
@@ -389,14 +482,11 @@ def create_or_open_from_workflow(*, user, workflow_id):
         raise AgreementExchangeResolveError("counterparty_missing", "Workflow does not have a counterparty email.")
 
     counterparty_user = workflow.counterparty_user or find_user_by_email(counterparty_email)
-    exchange = (
-        AgreementExchange.objects.filter(
-            contract=workflow.contract,
-            current_contract_version=version,
-            counterparty_email__iexact=counterparty_email,
-        )
-        .order_by("-updated_at", "-created_at")
-        .first()
+    exchange = find_existing_exchange_for_open(
+        contract=workflow.contract,
+        version=version,
+        counterparty_email=counterparty_email,
+        user=user,
     )
     created = exchange is None
     if created:
@@ -440,18 +530,27 @@ def create_or_open_exchange(*, user, contract_id, contract_version_id, counterpa
     contract = get_object_or_404(Contract, pk=contract_id)
     version = get_object_or_404(ContractVersion, pk=contract_version_id, contract=contract)
     counterparty_user = find_user_by_email(counterparty_email)
-    exchange, created = AgreementExchange.objects.get_or_create(
+    exchange = find_existing_exchange_for_open(
         contract=contract,
-        current_contract_version=version,
+        version=version,
         counterparty_email=counterparty_email,
-        defaults={
-            "initiator": user,
-            "counterparty_user": counterparty_user,
-            "source_contract_version": version,
-            "status": AgreementExchange.STATUS_DRAFT,
-            "current_actor": AgreementExchange.ACTOR_INITIATOR,
-        },
+        user=user,
     )
+    created = exchange is None
+    if created:
+        exchange = AgreementExchange.objects.create(
+            contract=contract,
+            current_contract_version=version,
+            counterparty_email=counterparty_email,
+            initiator=user,
+            counterparty_user=counterparty_user,
+            source_contract_version=version,
+            status=AgreementExchange.STATUS_DRAFT,
+            current_actor=AgreementExchange.ACTOR_INITIATOR,
+        )
+    elif counterparty_user and exchange.counterparty_user_id != counterparty_user.id:
+        exchange.counterparty_user = counterparty_user
+        exchange.save(update_fields=["counterparty_user", "updated_at"])
     if created:
         create_event(
             exchange,
@@ -476,10 +575,11 @@ def send_initial_version(*, exchange_id, user):
     exchange.status = AgreementExchange.STATUS_COUNTERPARTY_REVIEW
     exchange.current_actor = AgreementExchange.ACTOR_COUNTERPARTY
     exchange.save(update_fields=["status", "current_actor", "updated_at"])
+    redirect_url = exchange_redirect_url(exchange)
     notification = notify_counterparty(
         exchange,
-        f"You have been invited to review {exchange.contract.title or 'an agreement'} on bonUP: /agreement-exchange/{exchange.id}",
-        {"exchange_id": str(exchange.id), "contract_version_id": str(exchange.current_contract_version_id)},
+        f"You have been invited to review {exchange.contract.title or 'an agreement'} on bonUP: {redirect_url}",
+        {"exchange_id": str(exchange.id), "contract_version_id": str(exchange.current_contract_version_id), "redirect_url": redirect_url},
     )
     create_event(
         exchange,
@@ -502,15 +602,12 @@ def mark_viewed(*, exchange_id, user):
     exchange = load_exchange(exchange_id, for_update=True)
     if exchange.status == AgreementExchange.STATUS_DRAFT:
         return load_exchange(exchange.id)
-    if exchange.status in {AgreementExchange.STATUS_SENT, AgreementExchange.STATUS_VIEWED}:
-        exchange.status = AgreementExchange.STATUS_COUNTERPARTY_REVIEW
-    exchange.current_actor = AgreementExchange.ACTOR_COUNTERPARTY
-    exchange.save(update_fields=["status", "current_actor", "updated_at"])
+    role = viewer_role(exchange, user)
     create_event(
         exchange,
         actor_user=user,
         actor_email=getattr(user, "email", "") or exchange.counterparty_email,
-        actor_role=viewer_role(exchange, user) if viewer_role(exchange, user) != "unknown" else "counterparty",
+        actor_role=role if role != "unknown" else "counterparty",
         event_type="exchange_viewed",
         message="Agreement Exchange was viewed.",
     )
@@ -535,7 +632,7 @@ def create_change_request(*, exchange_id, user, validated_data):
     exchange.status = AgreementExchange.STATUS_INITIATOR_REVIEW
     exchange.current_actor = AgreementExchange.ACTOR_INITIATOR
     exchange.save(update_fields=["status", "current_actor", "updated_at"])
-    redirect_url = f"/agreement-exchange/{exchange.id}"
+    redirect_url = exchange_redirect_url(exchange)
     notification = notify_initiator(
         exchange,
         f"A counterparty requested changes to {exchange.contract.title or 'an agreement'}. Open it at {redirect_url}.",
@@ -603,7 +700,9 @@ def respond_to_request(*, exchange_id, request_id, user, decision, final_text=""
     if decision != "reject":
         update_fields.append("current_contract_version")
     exchange.save(update_fields=update_fields)
-    notification = notify_counterparty(exchange, message, {"exchange_id": str(exchange.id), "request_id": str(change_request.id)})
+    redirect_url = exchange_redirect_url(exchange)
+    notification = notify_counterparty(exchange, message, {"exchange_id": str(exchange.id), "request_id": str(change_request.id), "redirect_url": redirect_url})
+    metadata["redirect_url"] = redirect_url
     metadata["notification"] = notification
     create_event(
         exchange,
@@ -696,7 +795,9 @@ def reject_exchange(*, exchange_id, user, reason=""):
     exchange.current_actor = AgreementExchange.ACTOR_NONE
     exchange.save(update_fields=["status", "current_actor", "updated_at"])
     message = reason or "Agreement Exchange was rejected."
-    recipient_result = notify_initiator(exchange, message, {"exchange_id": str(exchange.id)}) if role == "counterparty" else notify_counterparty(exchange, message, {"exchange_id": str(exchange.id)})
+    redirect_url = exchange_redirect_url(exchange)
+    notification_metadata = {"exchange_id": str(exchange.id), "redirect_url": redirect_url}
+    recipient_result = notify_initiator(exchange, message, notification_metadata) if role == "counterparty" else notify_counterparty(exchange, message, notification_metadata)
     create_event(
         exchange,
         actor_user=user,
@@ -704,7 +805,7 @@ def reject_exchange(*, exchange_id, user, reason=""):
         actor_role=role if role in {"initiator", "counterparty"} else "system",
         event_type="exchange_rejected",
         message=message,
-        metadata={"reason": reason, "notification": recipient_result},
+        metadata={"reason": reason, "redirect_url": redirect_url, "notification": recipient_result},
     )
     return load_exchange(exchange.id)
 
@@ -732,7 +833,9 @@ def sign_exchange(*, exchange_id, user, typed_name="", signature_text="", ip_add
     exchange.status = AgreementExchange.STATUS_SIGNED
     exchange.current_actor = AgreementExchange.ACTOR_NONE
     exchange.save(update_fields=["status", "current_actor", "updated_at"])
-    notification = notify_initiator(exchange, f"{signer_email or 'A participant'} signed {exchange.contract.title or 'an agreement'}.", {"exchange_id": str(exchange.id), "signature_id": str(signature.id)}) if role == "counterparty" else notify_counterparty(exchange, "Agreement Exchange was signed.", {"exchange_id": str(exchange.id), "signature_id": str(signature.id)})
+    redirect_url = exchange_redirect_url(exchange)
+    notification_metadata = {"exchange_id": str(exchange.id), "signature_id": str(signature.id), "redirect_url": redirect_url}
+    notification = notify_initiator(exchange, f"{signer_email or 'A participant'} signed {exchange.contract.title or 'an agreement'}.", notification_metadata) if role == "counterparty" else notify_counterparty(exchange, "Agreement Exchange was signed.", notification_metadata)
     create_event(
         exchange,
         actor_user=user,
@@ -740,6 +843,6 @@ def sign_exchange(*, exchange_id, user, typed_name="", signature_text="", ip_add
         actor_role=role,
         event_type="signed",
         message="Agreement Exchange was signed using the Agreement Exchange MVP signature flow.",
-        metadata={"signature_id": str(signature.id), "mvp_signature": True, "notification": notification},
+        metadata={"signature_id": str(signature.id), "mvp_signature": True, "redirect_url": redirect_url, "notification": notification},
     )
     return load_exchange(exchange.id), signature

@@ -191,6 +191,21 @@ def exchange_redirect_url(exchange):
     return f"/agreement-exchange/{exchange.id}"
 
 
+def exchange_notification_metadata(exchange, *, action_type, source_event, extra=None):
+    metadata = {
+        "exchange_id": str(exchange.id),
+        "contract_id": str(exchange.contract_id),
+        "contract_version_id": str(exchange.current_contract_version_id),
+        "redirect_url": exchange_redirect_url(exchange),
+        "action_type": action_type,
+        "version_label": f"v{exchange_local_version_number(exchange)}",
+        "source_event": source_event,
+    }
+    if extra:
+        metadata.update(extra)
+    return metadata
+
+
 def has_pending_request(exchange):
     return exchange.requests.filter(status=AgreementExchangeRequest.STATUS_PENDING).exists()
 
@@ -328,22 +343,24 @@ def create_event(exchange, *, actor_user=None, actor_email="", actor_role="syste
     )
 
 
-def notify_initiator(exchange, message, metadata=None):
+def notify_initiator(exchange, message, metadata=None, title=""):
     return notify_exchange_recipient(
         user=exchange.initiator,
-        notification_type="contract_updated",
+        notification_type="agreement_exchange",
+        title=title,
         message=message,
         contract=exchange.contract,
         metadata=metadata or {},
     )
 
 
-def notify_counterparty(exchange, message, metadata=None):
+def notify_counterparty(exchange, message, metadata=None, title=""):
     recipient = exchange.counterparty_user or find_user_by_email(exchange.counterparty_email)
     return notify_exchange_recipient(
         user=recipient,
         email=exchange.counterparty_email,
-        notification_type="version_created",
+        notification_type="agreement_exchange",
+        title=title,
         message=message,
         contract=exchange.contract,
         metadata=metadata or {},
@@ -578,8 +595,9 @@ def send_initial_version(*, exchange_id, user):
     redirect_url = exchange_redirect_url(exchange)
     notification = notify_counterparty(
         exchange,
-        f"You have been invited to review {exchange.contract.title or 'an agreement'} on bonUP: {redirect_url}",
-        {"exchange_id": str(exchange.id), "contract_version_id": str(exchange.current_contract_version_id), "redirect_url": redirect_url},
+        "Version 1 is ready for review.",
+        exchange_notification_metadata(exchange, action_type="review_initial_version", source_event="initial_version_sent"),
+        title="Version 1 is ready for review",
     )
     create_event(
         exchange,
@@ -635,8 +653,14 @@ def create_change_request(*, exchange_id, user, validated_data):
     redirect_url = exchange_redirect_url(exchange)
     notification = notify_initiator(
         exchange,
-        f"A counterparty requested changes to {exchange.contract.title or 'an agreement'}. Open it at {redirect_url}.",
-        {"exchange_id": str(exchange.id), "request_id": str(change_request.id), "redirect_url": redirect_url},
+        "Counterparty requested a change.",
+        exchange_notification_metadata(
+            exchange,
+            action_type="respond_to_change_request",
+            source_event="counterparty_request_created",
+            extra={"request_id": str(change_request.id)},
+        ),
+        title="Counterparty requested a change",
     )
     create_event(
         exchange,
@@ -701,7 +725,17 @@ def respond_to_request(*, exchange_id, request_id, user, decision, final_text=""
         update_fields.append("current_contract_version")
     exchange.save(update_fields=update_fields)
     redirect_url = exchange_redirect_url(exchange)
-    notification = notify_counterparty(exchange, message, {"exchange_id": str(exchange.id), "request_id": str(change_request.id), "redirect_url": redirect_url})
+    notification = notify_counterparty(
+        exchange,
+        "Updated version is ready for review." if decision != "reject" else "Your change request was rejected.",
+        exchange_notification_metadata(
+            exchange,
+            action_type="review_updated_version" if decision != "reject" else "change_request_rejected",
+            source_event="request_response_sent",
+            extra={"request_id": str(change_request.id), "decision": decision},
+        ),
+        title="Updated version is ready for review" if decision != "reject" else "Change request rejected",
+    )
     metadata["redirect_url"] = redirect_url
     metadata["notification"] = notification
     create_event(
@@ -796,8 +830,8 @@ def reject_exchange(*, exchange_id, user, reason=""):
     exchange.save(update_fields=["status", "current_actor", "updated_at"])
     message = reason or "Agreement Exchange was rejected."
     redirect_url = exchange_redirect_url(exchange)
-    notification_metadata = {"exchange_id": str(exchange.id), "redirect_url": redirect_url}
-    recipient_result = notify_initiator(exchange, message, notification_metadata) if role == "counterparty" else notify_counterparty(exchange, message, notification_metadata)
+    notification_metadata = exchange_notification_metadata(exchange, action_type="exchange_rejected", source_event="exchange_rejected")
+    recipient_result = notify_initiator(exchange, "Agreement was rejected.", notification_metadata, title="Agreement was rejected") if role == "counterparty" else notify_counterparty(exchange, "Agreement was rejected.", notification_metadata, title="Agreement was rejected")
     create_event(
         exchange,
         actor_user=user,
@@ -834,8 +868,13 @@ def sign_exchange(*, exchange_id, user, typed_name="", signature_text="", ip_add
     exchange.current_actor = AgreementExchange.ACTOR_NONE
     exchange.save(update_fields=["status", "current_actor", "updated_at"])
     redirect_url = exchange_redirect_url(exchange)
-    notification_metadata = {"exchange_id": str(exchange.id), "signature_id": str(signature.id), "redirect_url": redirect_url}
-    notification = notify_initiator(exchange, f"{signer_email or 'A participant'} signed {exchange.contract.title or 'an agreement'}.", notification_metadata) if role == "counterparty" else notify_counterparty(exchange, "Agreement Exchange was signed.", notification_metadata)
+    notification_metadata = exchange_notification_metadata(
+        exchange,
+        action_type="exchange_signed",
+        source_event="signed",
+        extra={"signature_id": str(signature.id)},
+    )
+    notification = notify_initiator(exchange, "Agreement was signed.", notification_metadata, title="Agreement was signed") if role == "counterparty" else notify_counterparty(exchange, "Agreement was signed.", notification_metadata, title="Agreement was signed")
     create_event(
         exchange,
         actor_user=user,

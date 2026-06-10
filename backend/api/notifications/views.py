@@ -21,6 +21,7 @@ def _serialize(n):
         "is_read": n.is_read,
         "related_contract_id": str(n.related_contract_id) if n.related_contract_id else None,
         "metadata": n.metadata,
+        "redirect_url": (n.metadata or {}).get("redirect_url", ""),
         "created_at": n.created_at,
     }
 
@@ -64,6 +65,18 @@ class NotificationListAPIView(APIView):
             "page_size": page_size,
             "results": [_serialize(n) for n in results],
         })
+
+
+class NotificationUnreadListAPIView(APIView):
+    """
+    GET /api/notifications/unread/
+
+    Returns the authenticated user's unread notifications, newest first.
+    """
+
+    def get(self, request):
+        qs = Notification.objects.filter(user=request.user, is_read=False).order_by("-created_at")[:_MAX_PAGE_SIZE]
+        return Response({"results": [_serialize(n) for n in qs]})
 
 
 class NotificationUnreadCountAPIView(APIView):

@@ -1,7 +1,9 @@
 import json
+from unittest.mock import patch
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
+from backend.agreement_exchange.services import exchange_notification_metadata, notify_counterparty
 from backend.agreement_exchange.models import (
     AgreementExchange,
     AgreementExchangeEvent,
@@ -321,6 +323,86 @@ class AgreementExchangeMVPAPITests(TestCase):
         notification = self.notification_for(self.counterparty)
         self.assertEqual(notification.metadata["exchange_id"], str(exchange.id))
         self.assertEqual(notification.metadata["redirect_url"], f"/agreement-exchange/{exchange.id}")
+
+    def test_initial_send_creates_email_matched_counterparty_notification(self):
+        exchange, _ = self.create_exchange()
+        exchange.counterparty_user = None
+        exchange.save(update_fields=["counterparty_user", "updated_at"])
+
+        response = self.send_initial(exchange)
+
+        self.assertEqual(response.status_code, 200)
+        notification = self.notification_for(self.counterparty)
+        self.assertEqual(notification.notification_type, "agreement_exchange")
+        self.assertFalse(notification.is_read)
+        self.assertEqual(notification.title, "Version 1 is ready for review")
+        self.assertEqual(notification.metadata["exchange_id"], str(exchange.id))
+        self.assertEqual(notification.metadata["contract_id"], str(self.contract.id))
+        self.assertEqual(notification.metadata["action_type"], "review_initial_version")
+        self.assertEqual(notification.metadata["source_event"], "initial_version_sent")
+        self.assertEqual(notification.metadata["redirect_url"], f"/agreement-exchange/{exchange.id}")
+
+    @override_settings(DEFAULT_FROM_EMAIL="noreply@example.com")
+    @patch("backend.agreement_exchange.notifications.send_mail", side_effect=Exception("mail unavailable"))
+    def test_initial_send_creates_in_app_notification_when_email_fails(self, _send_mail):
+        exchange, _ = self.create_exchange()
+
+        response = self.send_initial(exchange)
+
+        self.assertEqual(response.status_code, 200)
+        notification = self.notification_for(self.counterparty)
+        self.assertEqual(notification.metadata["exchange_id"], str(exchange.id))
+        event = AgreementExchangeEvent.objects.get(exchange=exchange, event_type="initial_version_sent")
+        self.assertTrue(event.metadata["notification"]["in_app_created"])
+        self.assertIn("error", event.metadata["notification"])
+
+    def test_duplicate_notification_source_event_does_not_create_duplicate_unread(self):
+        exchange, _ = self.create_exchange()
+        metadata = exchange_notification_metadata(
+            exchange,
+            action_type="review_initial_version",
+            source_event="initial_version_sent",
+        )
+
+        first = notify_counterparty(exchange, "Version 1 is ready for review.", metadata, title="Version 1 is ready for review")
+        second = notify_counterparty(exchange, "Version 1 is ready for review.", metadata, title="Version 1 is ready for review")
+
+        self.assertTrue(first["in_app_created"])
+        self.assertTrue(second["in_app_created"])
+        self.assertTrue(second["deduplicated"])
+        self.assertEqual(Notification.objects.filter(user=self.counterparty, is_read=False, metadata__source_event="initial_version_sent").count(), 1)
+
+    def test_unread_notifications_endpoint_returns_only_current_user_notifications(self):
+        exchange, _ = self.create_exchange()
+        self.send_initial(exchange)
+        Notification.objects.create(
+            user=self.initiator,
+            notification_type="agreement_exchange",
+            title="Other notification",
+            message="Not for counterparty",
+            related_contract=self.contract,
+            metadata={"redirect_url": "/agreement-exchange/other"},
+        )
+
+        response = self.counterparty_client.get("/api/notifications/unread/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(response.data["results"][0]["metadata"]["exchange_id"], str(exchange.id))
+        self.assertEqual(response.data["results"][0]["redirect_url"], f"/agreement-exchange/{exchange.id}")
+
+    def test_mark_read_endpoint_marks_only_current_users_notification(self):
+        exchange, _ = self.create_exchange()
+        self.send_initial(exchange)
+        notification = self.notification_for(self.counterparty)
+
+        forbidden = self.initiator_client.post(f"/api/notifications/{notification.id}/read/")
+        allowed = self.counterparty_client.post(f"/api/notifications/{notification.id}/read/")
+
+        self.assertEqual(forbidden.status_code, 403)
+        self.assertEqual(allowed.status_code, 200)
+        notification.refresh_from_db()
+        self.assertTrue(notification.is_read)
 
     def test_after_send_role_action_matrix_is_viewer_specific(self):
         exchange, _ = self.create_exchange()
@@ -920,6 +1002,15 @@ class AgreementExchangeMVPAPITests(TestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertEqual(AgreementExchange.objects.count(), 1)
+
+    def test_restart_does_not_notify_counterparty_before_initial_send(self):
+        old_exchange = self.make_rejected_exchange_at_v3()
+        before_count = Notification.objects.filter(user=self.counterparty).count()
+
+        response = self.restart_exchange(old_exchange)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Notification.objects.filter(user=self.counterparty).count(), before_count)
 
     def test_restarted_exchange_can_send_initial_version(self):
         old_exchange = self.make_rejected_exchange_at_v3()

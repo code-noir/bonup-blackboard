@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { MagnifyingGlassIcon, ChevronDownIcon } from '@heroicons/react/24/outline'
 import { useAuth } from '@/context/AuthContext'
+import NotificationIndicator from './NotificationIndicator'
 
 const TODAY = new Date().toLocaleDateString('en-US', {
   weekday: 'long',
@@ -16,6 +17,24 @@ export default function Header() {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('bb_topbar_collapsed') === 'true')
+  const [isCompact, setIsCompact] = useState(false)
+  const [isNarrow, setIsNarrow] = useState(false)
+
+  useEffect(() => {
+    const compactQuery = window.matchMedia('(max-width: 1100px)')
+    const narrowQuery = window.matchMedia('(max-width: 760px)')
+    const update = () => {
+      setIsCompact(compactQuery.matches)
+      setIsNarrow(narrowQuery.matches)
+    }
+    update()
+    compactQuery.addEventListener('change', update)
+    narrowQuery.addEventListener('change', update)
+    return () => {
+      compactQuery.removeEventListener('change', update)
+      narrowQuery.removeEventListener('change', update)
+    }
+  }, [])
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -47,20 +66,23 @@ export default function Header() {
 
   return (
     <div
-      className="fixed right-0 z-40 flex h-[50px] items-center px-5"
+      className="app-header fixed right-0 z-40 flex items-center px-5"
       style={{
         top: 64,
         left: 'var(--sidebar-w, 216px)',
         background: '#172334',
         borderBottom: '1px solid rgba(255,255,255,0.06)',
-        maxHeight: collapsed ? 0 : 50,
+        maxHeight: collapsed ? 0 : isCompact ? 128 : 50,
+        minHeight: collapsed ? 0 : 50,
+        flexWrap: isCompact ? 'wrap' : 'nowrap',
+        gap: isCompact ? 10 : 0,
         overflow: collapsed ? 'hidden' : 'visible',
         opacity: collapsed ? 0 : 1,
         transition: 'max-height 0.3s ease, opacity 0.2s ease',
       }}
     >
       {/* Left — welcome + bonID */}
-      <div className="shrink-0 min-w-[160px]">
+      <div className="shrink-0" style={{ minWidth: isNarrow ? 0 : 160, maxWidth: isNarrow ? 180 : undefined }}>
         <p style={{ fontSize: 14, fontWeight: 500, color: 'rgba(255,255,255,0.9)', lineHeight: 1.25 }}>
           Welcome back, {firstName}
         </p>
@@ -71,7 +93,7 @@ export default function Header() {
       </div>
 
       {/* Tier label — centered between user info and search */}
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+      <div style={{ flex: isCompact ? '0 1 auto' : 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span
           style={{
             fontSize: 15,
@@ -106,7 +128,7 @@ export default function Header() {
       </div>
 
       {/* Center — search */}
-      <div className="flex flex-1 justify-center px-6">
+      <div className="flex flex-1 justify-center px-6" style={{ flexBasis: isCompact ? '100%' : undefined, order: isCompact ? 2 : undefined, paddingLeft: isCompact ? 0 : undefined, paddingRight: isCompact ? 0 : undefined }}>
         <div className="relative w-full" style={{ maxWidth: 440 }}>
           <MagnifyingGlassIcon
             className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
@@ -136,11 +158,13 @@ export default function Header() {
       </div>
 
       {/* Date */}
-      <div className="shrink-0 mr-4 flex items-center">
+      {!isCompact && <div className="shrink-0 mr-4 flex items-center">
         <span style={{ fontSize: 12, fontWeight: 400, color: 'rgba(255,255,255,0.45)', fontFamily: "'Outfit', sans-serif", whiteSpace: 'nowrap' }}>
           {TODAY}
         </span>
-      </div>
+      </div>}
+
+      <NotificationIndicator />
 
       {/* Right — avatar + dropdown */}
       <div className="relative shrink-0" ref={ref}>
@@ -161,7 +185,7 @@ export default function Header() {
           >
             {initials}
           </div>
-          <span style={{ fontSize: 13, maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ display: isNarrow ? 'none' : undefined, fontSize: 13, maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {displayName}
           </span>
           <ChevronDownIcon className="h-3 w-3 opacity-40" />

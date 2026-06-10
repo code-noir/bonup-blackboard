@@ -4,6 +4,7 @@ from django.urls import path
 from .views import (
     NotificationListAPIView,
     NotificationMarkReadAPIView,
+    NotificationUnreadListAPIView,
     NotificationReadAllAPIView,
     NotificationUnreadCountAPIView,
 )
@@ -11,6 +12,7 @@ from .views import (
 urlpatterns = [
     path("", NotificationListAPIView.as_view(), name="notification-list"),
     # Fixed paths must come before the UUID capture pattern.
+    path("unread/", NotificationUnreadListAPIView.as_view(), name="notification-unread"),
     path("unread-count/", NotificationUnreadCountAPIView.as_view(), name="notification-unread-count"),
     path("read-all/", NotificationReadAllAPIView.as_view(), name="notification-read-all"),
     path("<uuid:notification_id>/read/", NotificationMarkReadAPIView.as_view(), name="notification-mark-read"),

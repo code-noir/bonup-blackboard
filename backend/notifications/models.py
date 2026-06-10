@@ -17,6 +17,7 @@ class Notification(models.Model):
         ("contract_created", "Contract Created"),
         ("contract_updated", "Contract Updated"),
         # Version negotiation
+        ("agreement_exchange", "Agreement Exchange"),
         ("version_created", "Version Created"),
         ("version_signed", "Version Signed"),
         ("version_rejected", "Version Rejected"),

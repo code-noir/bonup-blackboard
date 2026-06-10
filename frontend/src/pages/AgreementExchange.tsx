@@ -670,6 +670,22 @@ export default function AgreementExchange() {
       .catch(() => {})
   }, [detail])
 
+  useEffect(() => {
+    if (!exchangeId) return
+    const interval = window.setInterval(() => {
+      const active = document.activeElement
+      const isEditing = active instanceof HTMLInputElement
+        || active instanceof HTMLTextAreaElement
+        || active instanceof HTMLSelectElement
+        || Boolean(active?.getAttribute('contenteditable') === 'true')
+      if (isEditing) return
+      api.get<AgreementExchangeDetail>(`/agreement-exchange/${exchangeId}/`)
+        .then(({ data }) => setDetail(data))
+        .catch(() => {})
+    }, 12000)
+    return () => window.clearInterval(interval)
+  }, [exchangeId])
+
   if (isLoading) return <div style={PAGE}><div style={HEADER}>Loading Agreement Exchange...</div></div>
   if (error || !detail) return <div style={PAGE}><div style={HEADER}><p style={{ color: '#B91C1C', margin: 0 }}>{error || 'Agreement Exchange unavailable.'}</p></div></div>
 

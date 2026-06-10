@@ -412,8 +412,15 @@ function DecisionPanel({ detail, onRefresh, smallScreen }: { detail: AgreementEx
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
   const request = useMemo(() => latestRequest(detail.requests), [detail.requests])
-  const canCounterpartyAct = detail.viewer_role === 'counterparty' && detail.exchange.current_actor === 'counterparty'
-  const canInitiatorAct = detail.viewer_role === 'initiator' && detail.exchange.current_actor === 'initiator'
+  const availableActions = detail.available_actions || []
+  const canSign = availableActions.includes('sign')
+  const canRequestChange = availableActions.includes('request_change')
+  const canRejectExchange = detail.viewer_role === 'counterparty' && availableActions.includes('reject')
+  const canAcceptRequest = availableActions.includes('accept') || availableActions.includes('accept_request')
+  const canEditRequest = availableActions.includes('edit') || availableActions.includes('edit_request')
+  const canRejectRequest = detail.viewer_role === 'initiator' && (availableActions.includes('reject') || availableActions.includes('reject_request'))
+  const canCounterpartyAct = canSign || canRequestChange || canRejectExchange
+  const canInitiatorAct = canAcceptRequest || canEditRequest || canRejectRequest
 
   useEffect(() => {
     if (request?.proposed_text) setFinalText(request.proposed_text)
@@ -513,18 +520,28 @@ function DecisionPanel({ detail, onRefresh, smallScreen }: { detail: AgreementEx
   }
 
   if (detail.screen_state === 'counterparty_review_updated_version') {
+    const statusCopy = decisionStatusCopy(detail)
     return (
       <div style={CARD}>
         <p style={LABEL}>Updated Version</p>
         <RequestSummary request={request} />
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-          <button type="button" style={PRIMARY_BUTTON} onClick={() => setMode('sign')}>Sign Contract</button>
-          <button type="button" style={BUTTON} onClick={() => setMode('request')}>Request Another Change</button>
-          <button type="button" style={DANGER_BUTTON} onClick={() => setMode('reject')}>Reject</button>
-        </div>
-        {mode === 'request' && <Builder detail={detail} onRefresh={onRefresh} />}
-        {mode === 'sign' && <SignForm typedName={typedName} signatureText={signatureText} setTypedName={setTypedName} setSignatureText={setSignatureText} onSubmit={() => submit(`/agreement-exchange/${detail.exchange.id}/sign/`, { typed_name: typedName, signature_text: signatureText })} isSubmitting={isSubmitting} />}
-        {mode === 'reject' && <RejectForm reason={reason} setReason={setReason} onSubmit={() => submit(`/agreement-exchange/${detail.exchange.id}/reject/`, { reason })} isSubmitting={isSubmitting} />}
+        {canCounterpartyAct ? (
+          <>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+              {canSign && <button type="button" style={PRIMARY_BUTTON} onClick={() => setMode('sign')}>Sign Contract</button>}
+              {canRequestChange && <button type="button" style={BUTTON} onClick={() => setMode('request')}>Request Another Change</button>}
+              {canRejectExchange && <button type="button" style={DANGER_BUTTON} onClick={() => setMode('reject')}>Reject</button>}
+            </div>
+            {mode === 'request' && canRequestChange && <Builder detail={detail} onRefresh={onRefresh} />}
+            {mode === 'sign' && canSign && <SignForm typedName={typedName} signatureText={signatureText} setTypedName={setTypedName} setSignatureText={setSignatureText} onSubmit={() => submit(`/agreement-exchange/${detail.exchange.id}/sign/`, { typed_name: typedName, signature_text: signatureText })} isSubmitting={isSubmitting} />}
+            {mode === 'reject' && canRejectExchange && <RejectForm reason={reason} setReason={setReason} onSubmit={() => submit(`/agreement-exchange/${detail.exchange.id}/reject/`, { reason })} isSubmitting={isSubmitting} />}
+          </>
+        ) : (
+          <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+            <p style={{ margin: 0, color: '#0F1F3D', fontSize: 14, fontWeight: 800 }}>{statusCopy.title}</p>
+            <p style={{ margin: 0, color: '#64748B', fontSize: 13 }}>{statusCopy.body}</p>
+          </div>
+        )}
         {error && <p style={{ margin: '10px 0 0', color: '#B91C1C', fontSize: 12 }}>{error}</p>}
       </div>
     )
@@ -536,11 +553,11 @@ function DecisionPanel({ detail, onRefresh, smallScreen }: { detail: AgreementEx
         <p style={LABEL}>Counterparty Request</p>
         <RequestSummary request={request} />
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-          <button type="button" style={PRIMARY_BUTTON} onClick={() => respond('accept')} disabled={!request?.id || isSubmitting}>Accept and Send Updated Version</button>
-          <button type="button" style={BUTTON} onClick={() => setMode(mode === 'edit' ? 'idle' : 'edit')} disabled={!request?.id}>Edit First</button>
-          <button type="button" style={DANGER_BUTTON} onClick={() => respond('reject')} disabled={!request?.id || isSubmitting}>Reject</button>
+          {canAcceptRequest && <button type="button" style={PRIMARY_BUTTON} onClick={() => respond('accept')} disabled={!request?.id || isSubmitting}>Accept and Send Updated Version</button>}
+          {canEditRequest && <button type="button" style={BUTTON} onClick={() => setMode(mode === 'edit' ? 'idle' : 'edit')} disabled={!request?.id}>Edit First</button>}
+          {canRejectRequest && <button type="button" style={DANGER_BUTTON} onClick={() => respond('reject')} disabled={!request?.id || isSubmitting}>Reject</button>}
         </div>
-        {mode === 'edit' && (
+        {mode === 'edit' && canEditRequest && (
           <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
             <textarea value={finalText} onChange={(event) => setFinalText(event.target.value)} style={TEXTAREA} />
             <textarea value={responseText} onChange={(event) => setResponseText(event.target.value)} placeholder="Message to counterparty" style={{ ...TEXTAREA, minHeight: 70 }} />
@@ -561,13 +578,13 @@ function DecisionPanel({ detail, onRefresh, smallScreen }: { detail: AgreementEx
         <>
           <p style={{ margin: '0 0 12px', color: '#475569', fontSize: 13 }}>Review the contract, then sign, request a structured change, or reject.</p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', width: smallScreen ? '100%' : undefined }}>
-            <button type="button" style={{ ...PRIMARY_BUTTON, minWidth: 130 }} onClick={() => setMode('sign')}>Sign Contract</button>
-            <button type="button" style={BUTTON} onClick={() => setMode(mode === 'request' ? 'idle' : 'request')}>Request Change</button>
-            <button type="button" style={DANGER_BUTTON} onClick={() => setMode('reject')}>Reject</button>
+            {canSign && <button type="button" style={{ ...PRIMARY_BUTTON, minWidth: 130 }} onClick={() => setMode('sign')}>Sign Contract</button>}
+            {canRequestChange && <button type="button" style={BUTTON} onClick={() => setMode(mode === 'request' ? 'idle' : 'request')}>Request Change</button>}
+            {canRejectExchange && <button type="button" style={DANGER_BUTTON} onClick={() => setMode('reject')}>Reject</button>}
           </div>
-          {mode === 'request' && <Builder detail={detail} onRefresh={onRefresh} />}
-          {mode === 'sign' && <SignForm typedName={typedName} signatureText={signatureText} setTypedName={setTypedName} setSignatureText={setSignatureText} onSubmit={() => submit(`/agreement-exchange/${detail.exchange.id}/sign/`, { typed_name: typedName, signature_text: signatureText })} isSubmitting={isSubmitting} />}
-          {mode === 'reject' && <RejectForm reason={reason} setReason={setReason} onSubmit={() => submit(`/agreement-exchange/${detail.exchange.id}/reject/`, { reason })} isSubmitting={isSubmitting} />}
+          {mode === 'request' && canRequestChange && <Builder detail={detail} onRefresh={onRefresh} />}
+          {mode === 'sign' && canSign && <SignForm typedName={typedName} signatureText={signatureText} setTypedName={setTypedName} setSignatureText={setSignatureText} onSubmit={() => submit(`/agreement-exchange/${detail.exchange.id}/sign/`, { typed_name: typedName, signature_text: signatureText })} isSubmitting={isSubmitting} />}
+          {mode === 'reject' && canRejectExchange && <RejectForm reason={reason} setReason={setReason} onSubmit={() => submit(`/agreement-exchange/${detail.exchange.id}/reject/`, { reason })} isSubmitting={isSubmitting} />}
         </>
       ) : (
         <div style={{ display: 'grid', gap: 8 }}>

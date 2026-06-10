@@ -1,11 +1,11 @@
 import json
-from html import escape
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 
+from backend.agreement_exchange.change_applicator import apply_request_to_snapshot
 from backend.agreement_exchange.models import (
     AgreementExchange,
     AgreementExchangeEvent,
@@ -69,64 +69,16 @@ def extract_contract_sections(content_snapshot):
     return normalized
 
 
-def _paragraph_html(value):
-    lines = [line.strip() for line in str(value or "").splitlines()]
-    blocks = []
-    current = []
-    for line in lines:
-        if line:
-            current.append(line)
-        elif current:
-            blocks.append(" ".join(current))
-            current = []
-    if current:
-        blocks.append(" ".join(current))
-    return "".join(f"<p>{escape(block)}</p>" for block in blocks)
-
-
 def _reviewed_update_snapshot(previous_version, change_request, *, decision, final_text, initiator_response):
-    snapshot = dict(extract_snapshot(previous_version))
     reviewed_text = final_text or change_request.proposed_text
-    update = {
-        "source": "agreement_exchange",
-        "request_id": str(change_request.id),
-        "decision": decision,
-        "target_section_id": change_request.target_section_id,
-        "target_section_title": change_request.target_section_title,
-        "request_category": change_request.request_category,
-        "action_type": change_request.action_type,
-        "proposed_text": reviewed_text,
-        "initiator_response": initiator_response or "",
-    }
-    existing_updates = snapshot.get("agreement_exchange_updates")
-    if not isinstance(existing_updates, list):
-        existing_updates = []
-    snapshot["agreement_exchange_updates"] = [*existing_updates, update]
-    snapshot["agreement_exchange_latest_update"] = update
-
-    base_html = (
-        snapshot.get("editor_html")
-        or snapshot.get("final_editor_html")
-        or snapshot.get("content_html")
-        or snapshot.get("html")
-        or previous_version.content_snapshot
-        or ""
-    )
-    if not str(base_html).lstrip().startswith("<"):
-        base_html = _paragraph_html(base_html)
-
-    update_html = (
-        '<section data-agreement-exchange-update="true" '
-        f'data-request-id="{escape(str(change_request.id))}" '
-        'style="margin-top:24px;padding-top:16px;border-top:1px solid #CBD5E1;">'
-        '<h2>Agreement Exchange Update</h2>'
-        f'<p><strong>Target section:</strong> {escape(change_request.target_section_title or "General")}</p>'
-        f'<p><strong>Action:</strong> {escape(change_request.action_type.replace("_", " "))}</p>'
-        f'{_paragraph_html(reviewed_text)}'
-        f'{_paragraph_html(initiator_response) if initiator_response else ""}'
-        '</section>'
-    )
-    snapshot["editor_html"] = f"{base_html}{update_html}"
+    snapshot = apply_request_to_snapshot(extract_snapshot(previous_version), change_request, accepted_text=reviewed_text)
+    latest_update = snapshot.get("agreement_exchange_latest_update")
+    if isinstance(latest_update, dict):
+        latest_update["decision"] = decision
+        latest_update["initiator_response"] = initiator_response or ""
+    updates = snapshot.get("agreement_exchange_updates")
+    if isinstance(updates, list) and updates:
+        updates[-1] = latest_update
     return json.dumps(snapshot)
 
 
@@ -210,15 +162,29 @@ def current_contract_payload(exchange):
     }
 
 
+def normalize_email(value):
+    return (value or "").strip().lower()
+
+
 def viewer_role(exchange, user):
     if not user or not getattr(user, "is_authenticated", False):
         return "unknown"
     if exchange.initiator_id == user.id:
         return "initiator"
-    user_email = (getattr(user, "email", "") or "").lower()
-    if exchange.counterparty_user_id == user.id or user_email == (exchange.counterparty_email or "").lower():
+    user_email = normalize_email(getattr(user, "email", ""))
+    counterparty_email = normalize_email(exchange.counterparty_email)
+    if exchange.counterparty_user_id == user.id or (user_email and user_email == counterparty_email):
         return "counterparty"
     return "unknown"
+
+
+def bind_counterparty_user_for_viewer(exchange, user, role):
+    if role != "counterparty" or exchange.counterparty_user_id:
+        return
+    if normalize_email(getattr(user, "email", "")) != normalize_email(exchange.counterparty_email):
+        return
+    exchange.counterparty_user = user
+    exchange.save(update_fields=["counterparty_user", "updated_at"])
 
 
 def screen_state(exchange, role):
@@ -249,7 +215,7 @@ def available_actions(exchange, role):
     if role == "counterparty" and exchange.current_actor == AgreementExchange.ACTOR_COUNTERPARTY:
         return ["sign", "request_change", "reject"]
     if role == "initiator" and exchange.current_actor == AgreementExchange.ACTOR_INITIATOR:
-        return ["accept_request", "edit_request", "reject_request"]
+        return ["accept", "edit", "reject"]
     return []
 
 
@@ -324,6 +290,7 @@ def exchange_summary(exchange):
 
 def exchange_detail(exchange, user):
     role = viewer_role(exchange, user)
+    bind_counterparty_user_for_viewer(exchange, user, role)
     return {
         "exchange": exchange_summary(exchange),
         "viewer_role": role,

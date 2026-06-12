@@ -24,10 +24,16 @@ type ExchangeSummary = {
 
 type ContractSection = {
   id: string
+  section_id?: string
   number: number
+  order?: number
   name: string
   title?: string
+  anchor_id?: string
+  body?: string
+  text?: string
   content_html?: string
+  html?: string
 }
 
 type CurrentContract = {
@@ -278,24 +284,47 @@ function normalizeAnchorText(value: string) {
   return value.replace(/\s+/g, ' ').trim().toLowerCase()
 }
 
+function sectionAnchorId(section: ContractSection) {
+  return section.anchor_id || `contract-section-${section.id}`
+}
+
+function sectionBody(section: ContractSection) {
+  return section.content_html || section.html || section.body || section.text || ''
+}
+
 function annotateContractBodyHtml(html: string, sections: ContractSection[]) {
-  if (!html || !sections.length || typeof document === 'undefined') return html
+  if (!sections.length) return html
+  if (typeof document === 'undefined') {
+    return `${html}${sections.map((section) => {
+      const body = sectionBody(section)
+      return body ? `<section id="${sectionAnchorId(section)}">${body}</section>` : ''
+    }).join('')}`
+  }
   const container = document.createElement('div')
   container.innerHTML = html
-  const candidates = Array.from(container.querySelectorAll<HTMLElement>('h1,h2,h3,h4,p,div,li'))
+  const candidates = Array.from(container.querySelectorAll<HTMLElement>('h1,h2,h3,h4,p,div,li,section'))
   const used = new Set<string>()
 
   sections.forEach((section) => {
+    const anchorId = sectionAnchorId(section)
     const title = normalizeAnchorText(section.name || section.title || '')
     const numberedTitle = normalizeAnchorText(`${section.number}. ${section.name || section.title || ''}`)
-    if (!title || container.querySelector(`#ae-section-${section.id}`)) return
+    if (container.querySelector(`#${CSS.escape(anchorId)}`)) return
     const match = candidates.find((element) => {
       const text = normalizeAnchorText(element.textContent || '')
-      return !used.has(text) && (text === title || text === numberedTitle || text.startsWith(numberedTitle) || text.startsWith(title))
+      return !used.has(text) && Boolean(title) && (text === title || text === numberedTitle || text.startsWith(numberedTitle) || text.startsWith(title))
     })
     if (match) {
-      match.id = `ae-section-${section.id}`
+      match.id = anchorId
       used.add(normalizeAnchorText(match.textContent || ''))
+      return
+    }
+    const body = sectionBody(section)
+    if (body) {
+      const wrapper = document.createElement('section')
+      wrapper.id = anchorId
+      wrapper.innerHTML = body.includes('<') ? body : plainTextToHtml(body)
+      container.appendChild(wrapper)
     }
   })
 
@@ -306,9 +335,9 @@ function ContractViewer({ contract }: { contract: CurrentContract }) {
   const previewRef = useRef<HTMLDivElement | null>(null)
   const stackContractLayout = useMediaQuery('(max-width: 900px)')
 
-  function scrollToSection(sectionId: string) {
+  function scrollToSection(section: ContractSection) {
     const container = previewRef.current
-    const target = container?.querySelector<HTMLElement>(`#ae-section-${sectionId}`)
+    const target = container?.querySelector<HTMLElement>(`#${CSS.escape(sectionAnchorId(section))}`)
     if (!container || !target) return
     const containerRect = container.getBoundingClientRect()
     const targetRect = target.getBoundingClientRect()
@@ -334,7 +363,7 @@ function ContractViewer({ contract }: { contract: CurrentContract }) {
             <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#64748B', fontWeight: 800, margin: '0 0 8px' }}>Sections</p>
             <div style={{ display: 'grid', gap: 6 }}>
               {contract.sections.map((section) => (
-                <button key={section.id} type="button" onClick={() => scrollToSection(section.id)} style={{ minHeight: 30, border: '1px solid #CBD5E1', borderRadius: 7, background: '#FFFFFF', color: '#0F1F3D', padding: '6px 8px', fontSize: 11, fontWeight: 750, cursor: 'pointer', textAlign: 'left', lineHeight: 1.3 }}>
+                <button key={section.id} type="button" onClick={() => scrollToSection(section)} style={{ minHeight: 30, border: '1px solid #CBD5E1', borderRadius: 7, background: '#FFFFFF', color: '#0F1F3D', padding: '6px 8px', fontSize: 11, fontWeight: 750, cursor: 'pointer', textAlign: 'left', lineHeight: 1.3 }}>
                   <span style={{ color: '#64748B', marginRight: 5 }}>{section.number}.</span>{section.name || section.title}
                 </button>
               ))}
@@ -652,8 +681,8 @@ export default function AgreementExchange() {
       .then(({ data }) => {
         if (!cancelled) setDetail(data)
       })
-      .catch(() => {
-        if (!cancelled) setError('Agreement Exchange could not be loaded.')
+      .catch((err) => {
+        if (!cancelled) setError(err?.response?.data?.detail || 'Agreement Exchange is not available.')
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false)

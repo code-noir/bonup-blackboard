@@ -42,6 +42,8 @@ class AgreementExchange(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     contract = models.ForeignKey("contracts.Contract", on_delete=models.CASCADE, related_name="agreement_exchanges")
     current_contract_version = models.ForeignKey("contracts.ContractVersion", on_delete=models.PROTECT, related_name="agreement_exchanges")
+    source_contract_version = models.ForeignKey("contracts.ContractVersion", on_delete=models.PROTECT, null=True, blank=True, related_name="agreement_exchange_restarts")
+    restarted_from_exchange = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="restarted_exchanges")
     initiator = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="initiated_agreement_exchanges")
     counterparty_email = models.EmailField()
     counterparty_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="counterparty_agreement_exchanges")

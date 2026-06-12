@@ -177,43 +177,45 @@ class CanCreateContractTests(TestCase):
     def setUp(self):
         self.user = make_user("u_cc", "u_cc@example.com")
 
-    def test_no_subscription_blocked(self):
+    def test_no_subscription_allowed_without_creating_subscription(self):
         allowed, msg = can_create_contract(self.user)
-        self.assertFalse(allowed)
-        self.assertIn("subscription", msg.lower())
-
-    def test_cancelled_subscription_blocked(self):
-        subscribe(self.user, "business", status="cancelled")
-        allowed, msg = can_create_contract(self.user)
-        self.assertFalse(allowed)
-
-    def test_unlimited_plan_allowed(self):
-        subscribe(self.user, "business")
-        allowed, _ = can_create_contract(self.user)
         self.assertTrue(allowed)
+        self.assertEqual(msg, "")
+        self.assertFalse(UserSubscription.objects.filter(user=self.user).exists())
 
-    def test_per_contract_at_limit_blocked(self):
+    def test_inactive_subscription_allowed_without_resetting_subscription(self):
+        sub = subscribe(self.user, "business", status="cancelled")
+        allowed, msg = can_create_contract(self.user)
+        self.assertTrue(allowed)
+        self.assertEqual(msg, "")
+        sub.refresh_from_db()
+        self.assertEqual(sub.status, "cancelled")
+
+    def test_existing_contract_with_inactive_subscription_still_allowed(self):
+        sub = subscribe(self.user, "business", status="cancelled")
+        make_contract(self.user, "counterparty@example.com")
+        allowed, msg = can_create_contract(self.user)
+        self.assertTrue(allowed)
+        self.assertEqual(msg, "")
+        sub.refresh_from_db()
+        self.assertEqual(sub.status, "cancelled")
+
+    def test_per_contract_at_limit_allowed_in_build_mode(self):
         sub = subscribe(self.user, "per_contract", billing_period="per_contract",
                         status="per_contract")
         sub.contracts_used_this_period = 1
         sub.save()
         allowed, msg = can_create_contract(self.user)
-        self.assertFalse(allowed)
-        self.assertIn("limit", msg.lower())
-
-    def test_per_contract_under_limit_allowed(self):
-        subscribe(self.user, "per_contract", billing_period="per_contract",
-                  status="per_contract")
-        allowed, _ = can_create_contract(self.user)
         self.assertTrue(allowed)
+        self.assertEqual(msg, "")
 
-    def test_starter_unlimited_contracts(self):
-        """Starter has unlimited contracts — contracts_used never triggers a block."""
+    def test_starter_usage_limit_not_enforced_in_build_mode(self):
         sub = subscribe(self.user, "starter")
         sub.contracts_used_this_period = 100
         sub.save()
-        allowed, _ = can_create_contract(self.user)
+        allowed, msg = can_create_contract(self.user)
         self.assertTrue(allowed)
+        self.assertEqual(msg, "")
 
 
 # ---------------------------------------------------------------------------
@@ -268,9 +270,14 @@ class CanAccessTemplateTests(TestCase):
         self.hw_template = make_template("health_wellness", "HW Template")
         self.cs_template = make_template("creative_services", "CS Template")
 
-    def test_no_subscription_blocked(self):
+    def test_no_subscription_allowed(self):
         allowed, _ = can_access_template(self.user, self.hw_template)
-        self.assertFalse(allowed)
+        self.assertTrue(allowed)
+
+    def test_inactive_subscription_status_allowed(self):
+        subscribe(self.user, "business", status="no_subscription")
+        allowed, _ = can_access_template(self.user, self.hw_template)
+        self.assertTrue(allowed)
 
     def test_professional_allows_creative_services(self):
         subscribe(self.user, "professional")
@@ -313,8 +320,9 @@ class MiscGateTests(TestCase):
         subscribe(self.user, "professional")
         self.assertEqual(get_ai_tier(self.user), "basic")
 
-    def test_has_feature_no_subscription(self):
-        self.assertFalse(has_feature(self.user, "lifecycle"))
+    def test_has_feature_no_subscription_allows_lifecycle_build_flow(self):
+        self.assertTrue(has_feature(self.user, "lifecycle"))
+        self.assertTrue(has_feature(self.user, "negotiation_prep"))
 
     def test_has_feature_starter_has_lifecycle(self):
         subscribe(self.user, "starter")
@@ -322,22 +330,23 @@ class MiscGateTests(TestCase):
         self.assertTrue(has_feature(self.user, "notifications"))
         self.assertTrue(has_feature(self.user, "negotiation_prep"))
 
-    def test_has_feature_per_contract_no_lifecycle(self):
+    def test_has_feature_per_contract_allows_lifecycle_build_flow(self):
         subscribe(self.user, "per_contract", billing_period="per_contract",
                   status="per_contract")
-        self.assertFalse(has_feature(self.user, "lifecycle"))
+        self.assertTrue(has_feature(self.user, "lifecycle"))
+        self.assertTrue(has_feature(self.user, "negotiation_prep"))
 
     def test_has_feature_anchor_priority_support(self):
         subscribe(self.user, "anchor")
         self.assertTrue(has_feature(self.user, "priority_support"))
         self.assertTrue(has_feature(self.user, "early_access"))
 
-    def test_increment_contracts_used(self):
+    def test_increment_contracts_used_noop_in_build_mode(self):
         sub = subscribe(self.user, "starter")
         self.assertEqual(sub.contracts_used_this_period, 0)
         increment_contracts_used(self.user)
         sub.refresh_from_db()
-        self.assertEqual(sub.contracts_used_this_period, 1)
+        self.assertEqual(sub.contracts_used_this_period, 0)
 
     def test_increment_sessions_used(self):
         sub = subscribe(self.user, "business")
@@ -533,14 +542,13 @@ class ContractGateIntegrationTests(TestCase):
         self.user = make_user("u_cgx", "u_cgx@example.com")
         self.client = authed_client(self.user)
 
-    def test_no_subscription_blocks_contract_creation(self):
+    def test_no_subscription_allows_contract_creation(self):
         r = self.client.post(
             "/api/contracts/",
             {"counterparty_email": "other@example.com", "structure_type": "ONE_TIME"},
             format="json",
         )
-        self.assertEqual(r.status_code, 403)
-        self.assertIn("subscription", r.data["error"].lower())
+        self.assertEqual(r.status_code, 201)
 
     def test_business_subscription_allows_contract_creation(self):
         subscribe(self.user, "business")
@@ -563,7 +571,7 @@ class ContractGateIntegrationTests(TestCase):
         )
         self.assertEqual(r.status_code, 201)
 
-    def test_contract_creation_increments_counter(self):
+    def test_contract_creation_does_not_mutate_billing_counter_in_build_mode(self):
         sub = subscribe(self.user, "business")
         self.client.post(
             "/api/contracts/",
@@ -571,7 +579,7 @@ class ContractGateIntegrationTests(TestCase):
             format="json",
         )
         sub.refresh_from_db()
-        self.assertEqual(sub.contracts_used_this_period, 1)
+        self.assertEqual(sub.contracts_used_this_period, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -637,12 +645,12 @@ class TemplateGateIntegrationTests(TestCase):
         self.hw = make_template("health_wellness", "HW Template Gate")
         self.cs = make_template("creative_services", "CS Template Gate")
 
-    def test_no_subscription_returns_empty_list(self):
+    def test_no_subscription_sees_all_templates(self):
         r = self.client.get("/api/templates/")
         self.assertEqual(r.status_code, 200)
         names = [t["name"] for t in r.data]
-        self.assertNotIn("HW Template Gate", names)
-        self.assertNotIn("CS Template Gate", names)
+        self.assertIn("HW Template Gate", names)
+        self.assertIn("CS Template Gate", names)
 
     def test_business_plan_sees_all_templates(self):
         subscribe(self.user, "business")
@@ -670,9 +678,9 @@ class TemplateGateIntegrationTests(TestCase):
         r = self.client.get(f"/api/templates/{self.hw.id}/")
         self.assertEqual(r.status_code, 200)
 
-    def test_detail_blocked_no_subscription(self):
+    def test_detail_allowed_no_subscription(self):
         r = self.client.get(f"/api/templates/{self.hw.id}/")
-        self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.status_code, 200)
 
 
 # ---------------------------------------------------------------------------
@@ -702,26 +710,26 @@ class TrialGateTests(TestCase):
         allowed, _ = can_create_contract(self.user)
         self.assertTrue(allowed)
 
-    def test_trial_blocks_when_remaining_zero(self):
+    def test_trial_remaining_zero_still_allows_contract_build_flow(self):
         start_trial(self.user)
         sub = UserSubscription.objects.get(user=self.user)
         sub.trial_contracts_remaining = 0
         sub.save()
         allowed, msg = can_create_contract(self.user)
-        self.assertFalse(allowed)
-        self.assertIn("trial", msg.lower())
+        self.assertTrue(allowed)
+        self.assertEqual(msg, "")
 
-    def test_consume_decrements_remaining(self):
+    def test_consume_does_not_decrement_remaining_in_build_mode(self):
         start_trial(self.user)
         consume_trial_contract(self.user)
         sub = UserSubscription.objects.get(user=self.user)
-        self.assertEqual(sub.trial_contracts_remaining, 0)
+        self.assertEqual(sub.trial_contracts_remaining, 1)
 
-    def test_consume_transitions_to_no_subscription(self):
+    def test_consume_does_not_transition_to_no_subscription_in_build_mode(self):
         start_trial(self.user)
         consume_trial_contract(self.user)
         sub = UserSubscription.objects.get(user=self.user)
-        self.assertEqual(sub.status, "no_subscription")
+        self.assertEqual(sub.status, "trialing")
 
     def test_consume_noop_for_non_trialing_user(self):
         subscribe(self.user, "business")
@@ -729,11 +737,14 @@ class TrialGateTests(TestCase):
         sub = UserSubscription.objects.get(user=self.user)
         self.assertEqual(sub.status, "active")
 
-    def test_no_subscription_status_blocks_contract(self):
+    def test_no_subscription_status_allows_contract_build_flow(self):
         start_trial(self.user)
-        consume_trial_contract(self.user)
-        allowed, _ = can_create_contract(self.user)
-        self.assertFalse(allowed)
+        sub = UserSubscription.objects.get(user=self.user)
+        sub.status = "no_subscription"
+        sub.save(update_fields=["status"])
+        allowed, msg = can_create_contract(self.user)
+        self.assertTrue(allowed)
+        self.assertEqual(msg, "")
 
 
 # ---------------------------------------------------------------------------
@@ -947,7 +958,7 @@ class FreeTierContractLimitTests(TestCase):
         # Only 1 remaining regardless of entity context
         self.assertEqual(sub.trial_contracts_remaining, 1)
 
-    def test_trial_second_contract_blocked_regardless_of_entity(self):
+    def test_trial_second_contract_allowed_in_build_mode(self):
         """After the 1 free contract is used, no further contracts are allowed."""
         user = make_user("free_second", "free_second@example.com")
         start_trial(user)
@@ -960,26 +971,22 @@ class FreeTierContractLimitTests(TestCase):
             format="json",
         )
         self.assertEqual(r1.status_code, 201)
-        # Second contract (different entity_type — still blocked globally)
+        # Second contract is allowed in Blackboard build mode.
         r2 = client.post(
             "/api/contracts/",
             {"counterparty_email": "b@example.com", "structure_type": "ONE_TIME",
              "entity_type": "personal"},
             format="json",
         )
-        self.assertEqual(r2.status_code, 403)
+        self.assertEqual(r2.status_code, 201)
 
-    def test_trial_gate_checks_before_entity_context(self):
-        """
-        can_create_contract is called before any entity resolution.
-        After the trial is consumed, status transitions to no_subscription and
-        all further contract creation is blocked regardless of entity context.
-        """
+    def test_trial_gate_does_not_block_entity_context_in_build_mode(self):
         user = make_user("free_bypass", "free_bypass@example.com")
         start_trial(user)
-        consume_trial_contract(user)  # exhausts trial → status becomes no_subscription
-        allowed, _ = can_create_contract(user)
-        self.assertFalse(allowed)
+        consume_trial_contract(user)
+        allowed, msg = can_create_contract(user)
+        self.assertTrue(allowed)
+        self.assertEqual(msg, "")
 
 
 # ---------------------------------------------------------------------------

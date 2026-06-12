@@ -20,6 +20,7 @@ from backend.agreement_exchange.services import (
     sign_exchange,
 )
 from backend.agreement_exchange.templates import AGREEMENT_EXCHANGE_TEMPLATES
+from backend.api.contracts.services.visibility_service import can_user_see_exchange
 
 from .serializers import (
     AgreementExchangeCreateSerializer,
@@ -79,6 +80,11 @@ class AgreementExchangeDetailAPIView(APIView):
 
     def get(self, request, exchange_id):
         exchange = load_exchange(exchange_id)
+        if not can_user_see_exchange(exchange, request.user):
+            return Response(
+                {"detail": "Agreement Exchange is not available yet."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         return Response(exchange_detail(exchange, request.user))
 
 

@@ -477,6 +477,7 @@ export default function NewContract() {
       structure_type: structureTypeFromContractType(data.contract_type),
       entity_type: activeEntityType,
       status: 'draft',
+      state: 'created',
     }
     if (activeEntityType === 'business') {
       payload.entity = activeEntityId

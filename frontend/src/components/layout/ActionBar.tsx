@@ -359,6 +359,17 @@ function MyEntitiesBtn() {
 export default function ActionBar() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('bb_topbar_collapsed') === 'true')
   const [askAiOpen, setAskAiOpen] = useState(false)
+  const [isCompact, setIsCompact] = useState(false)
+  const location = useLocation()
+  const isDashboard = location.pathname === '/dashboard'
+
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 1100px)')
+    const update = () => setIsCompact(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
 
   useEffect(() => {
     function onCollapse(e: Event) {
@@ -376,22 +387,24 @@ export default function ActionBar() {
 
   return (
     <div
-      className="fixed right-0 flex h-[44px] items-center gap-2 px-5"
+      className="app-action-bar fixed right-0 flex h-[44px] items-center gap-2 px-5"
       style={{
-        top: 114,
+        top: isCompact ? 192 : 114,
         left: 'var(--sidebar-w, 216px)',
         background: '#F3F4F6',
         maxHeight: collapsed ? 0 : 44,
-        overflow: collapsed ? 'hidden' : 'visible',
+        overflowX: collapsed ? 'hidden' : 'auto',
+        overflowY: 'hidden',
+        flexWrap: 'nowrap',
         opacity: collapsed ? 0 : 1,
         transition: 'max-height 0.3s ease, opacity 0.2s ease',
         zIndex: 30,
       }}
     >
-      <GhostBtn label="▶  Book a Live Session" />
-      <GhostBtn label="+ New Contract" />
+      {!isDashboard && <GhostBtn label="▶  Book a Live Session" />}
+      {isDashboard ? <GhostBtnLink label="+ New Contract" to="/contracts/new" /> : <GhostBtn label="+ New Contract" />}
 
-      <GhostBtn label="⚡ Negotiation Prep" />
+      {!isDashboard && <GhostBtn label="⚡ Negotiation Prep" />}
       <button
         onClick={toggleAskAi}
         style={{
@@ -410,33 +423,37 @@ export default function ActionBar() {
       >
         ✦ Ask AI
       </button>
-      <GhostBtn label="🔍 Analyze Contract" />
-      <GhostBtn label="⚡ Contract Counter" />
-      <GhostBtn label="🌐 Language" />
-      <GhostBtn label="+ Contact" />
-      <button
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          height: 26,
-          padding: '0 12px',
-          borderRadius: 7,
-          fontSize: 11,
-          fontWeight: 600,
-          fontFamily: "'Outfit', sans-serif",
-          color: '#0F2830',
-          background: '#2DD4BF',
-          border: 'none',
-          cursor: 'pointer',
-          whiteSpace: 'nowrap',
-          transition: 'opacity 0.15s',
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
-        onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-      >
-        PBVD
-      </button>
-      <GhostBtn label="+ Invite a Friend" />
+      {!isDashboard && (
+        <>
+          <GhostBtn label="🔍 Analyze Contract" />
+          <GhostBtn label="⚡ Contract Counter" />
+          <GhostBtn label="🌐 Language" />
+          <GhostBtn label="+ Contact" />
+          <button
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              height: 26,
+              padding: '0 12px',
+              borderRadius: 7,
+              fontSize: 11,
+              fontWeight: 600,
+              fontFamily: "'Outfit', sans-serif",
+              color: '#0F2830',
+              background: '#2DD4BF',
+              border: 'none',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              transition: 'opacity 0.15s',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+          >
+            PBVD
+          </button>
+          <GhostBtn label="+ Invite a Friend" />
+        </>
+      )}
     </div>
   )
 }

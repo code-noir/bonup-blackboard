@@ -24,7 +24,9 @@
 #   - entity_type and entity fields are stored as provided
 
 from django.test import TestCase
+from django.utils import timezone
 
+from backend.billing.models import SubscriptionPlan, UserSubscription
 from backend.contracts.models import Contract
 from backend.users.models import BusinessEntity
 
@@ -109,6 +111,24 @@ class ContractCreateTests(TestCase):
         r = self.client.post(CONTRACT_URL, minimal, format="json")
         self.assertEqual(r.status_code, 201)
         self.assertIn("id", r.data)
+
+    def test_inactive_subscription_does_not_block_first_contract(self):
+        first_timer = make_user("first_timer", "first_timer@example.com")
+        plan = SubscriptionPlan.objects.get(slug="business")
+        UserSubscription.objects.create(
+            user=first_timer,
+            plan=plan,
+            status="no_subscription",
+            billing_period="monthly",
+            current_period_start=timezone.now(),
+        )
+
+        r = authed_client(first_timer).post(CONTRACT_URL, FULL_PAYLOAD, format="json")
+
+        self.assertEqual(r.status_code, 201)
+        sub = UserSubscription.objects.get(user=first_timer)
+        self.assertEqual(sub.status, "no_subscription")
+        self.assertEqual(sub.trial_contracts_remaining, 0)
 
     def test_unauthenticated_request_rejected(self):
         from rest_framework.test import APIClient

@@ -16,8 +16,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from backend.ai.context import build_user_context
-from backend.ai.models import AIConversation
+from backend.ai.models import AIConversation, WorkflowState
 from backend.ai.prompts import BASIC_PROMPT, ADVANCED_PROMPT, FULL_PROMPT
+from backend.api.ai.workflow_utils import get_workflow_for_user, log_workflow_contract_update, upsert_counter_draft, upsert_review_result
 from backend.billing.gates import get_ai_tier, get_user_subscription, has_feature
 from backend.contracts.models import Contract, ContractVersion, ContractObligation, ContractServiceObligation
 
@@ -92,6 +93,22 @@ You may include a brief introductory sentence before the JSON block.
 Do NOT include any text after the closing ``` of the JSON block.
 """
 
+GENERATE_CONTRACT_DRAFT_PROMPT = """\
+You are a contract drafting assistant inside bonUP Blackboard.
+Generate draft contract text from the user's supplied instructions.
+
+Rules:
+- This is draft text only. Do not describe it as signed, final, prepared, active, or lifecycle-ready.
+- Do not invent unknown party names, addresses, dates, emails, or amounts.
+- Use placeholders like [PARTY NAME], [ADDRESS], [DATE], [AMOUNT], or [EMAIL] where details are missing.
+- Use the provided jurisdiction or governing law when supplied.
+- Include the requested clause categories when relevant.
+- Write in clear contract style with section headings.
+- Include a short review note at the end reminding the user to review before using or signing.
+
+Return only the contract draft text. Do not return JSON.
+"""
+
 IMPORT_CONTRACT_PROMPT = """\
 You are a contract data extraction specialist. The user has uploaded an existing contract PDF. \
 Extract all structured data from it to create records in the bonUP contract management system.
@@ -134,6 +151,70 @@ Return ONLY the JSON block with no surrounding text.
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _clean_generation_field(value):
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
+
+
+def _clean_clause_list(value):
+    if not isinstance(value, list):
+        return []
+    cleaned = []
+    for item in value:
+        text = _clean_generation_field(item)
+        if text:
+            cleaned.append(text)
+    return cleaned
+
+
+def _generation_missing_fields(payload):
+    required = {
+        "parties": "parties",
+        "jurisdiction": "jurisdiction/governing law",
+        "payment_terms": "payment terms",
+        "service_obligations": "service obligations",
+        "termination_terms": "termination terms",
+        "dispute_terms": "dispute/resolution terms",
+    }
+    return [label for key, label in required.items() if not _clean_generation_field(payload.get(key))]
+
+
+def _generation_title(contract_type, prompt):
+    if contract_type:
+        return f"AI Draft - {contract_type[:80]}"
+    if prompt:
+        first_line = prompt.splitlines()[0].strip()
+        if first_line:
+            return f"AI Draft - {first_line[:80]}"
+    return "AI Generated Contract Draft"
+
+
+def _build_generation_prompt(payload, missing_fields):
+    include_clauses = _clean_clause_list(payload.get("include_clauses"))
+    lines = [
+        "Generate a contract draft using these user-supplied inputs.",
+        "Use placeholders for missing details; do not invent facts.",
+        f"Prompt: {_clean_generation_field(payload.get('prompt'))}",
+        f"Contract type: {_clean_generation_field(payload.get('contract_type'))}",
+        f"Jurisdiction / governing law: {_clean_generation_field(payload.get('jurisdiction'))}",
+        f"Parties: {_clean_generation_field(payload.get('parties'))}",
+        f"Key terms: {_clean_generation_field(payload.get('key_terms'))}",
+        f"Payment terms: {_clean_generation_field(payload.get('payment_terms'))}",
+        f"Service obligations: {_clean_generation_field(payload.get('service_obligations'))}",
+        f"Deadlines: {_clean_generation_field(payload.get('deadlines'))}",
+        f"Termination terms: {_clean_generation_field(payload.get('termination_terms'))}",
+        f"Dispute / resolution terms: {_clean_generation_field(payload.get('dispute_terms'))}",
+        f"Special clauses: {_clean_generation_field(payload.get('special_clauses'))}",
+        f"Requested clause categories: {', '.join(include_clauses) if include_clauses else 'None specified'}",
+    ]
+    if missing_fields:
+        lines.append(f"Missing fields that need placeholders: {', '.join(missing_fields)}")
+    return "\n".join(lines)
+
 
 def _serialize_conversation(conv, include_messages=False):
     data = {
@@ -320,6 +401,64 @@ def _execute_create_contract(data: dict, user) -> dict:
         "counterparty_found": counterparty is not None,
     }
 
+
+
+# ---------------------------------------------------------------------------
+# POST /api/ai/contracts/generate-draft/
+# ---------------------------------------------------------------------------
+
+class GenerateContractDraftView(APIView):
+
+    def post(self, request):
+        ai_tier = get_ai_tier(request.user)
+        if ai_tier == "none":
+            return Response(
+                {"error": _("AI contract generation requires a Professional, Business, or Anchor subscription.")},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        api_key = getattr(settings, "ANTHROPIC_API_KEY", "")
+        if not api_key:
+            return Response(
+                {"error": _("AI contract generation is not configured.")},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        prompt = _clean_generation_field(request.data.get("prompt"))
+        contract_type = _clean_generation_field(request.data.get("contract_type"))
+        key_terms = _clean_generation_field(request.data.get("key_terms"))
+        if not any([prompt, contract_type, key_terms]):
+            return Response(
+                {"error": _("Provide a prompt, contract type, or key terms to generate a draft.")},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        missing_fields = _generation_missing_fields(request.data)
+        warnings = []
+        if missing_fields:
+            warnings.append("Some important fields were missing; the draft should include placeholders for review.")
+
+        title = _generation_title(contract_type, prompt)
+        generation_prompt = _build_generation_prompt(request.data, missing_fields)
+
+        client = anthropic.Anthropic(api_key=api_key)
+        api_response = client.messages.create(
+            model=AI_MODEL,
+            max_tokens=AI_MAX_TOKENS_ANALYSIS,
+            system=GENERATE_CONTRACT_DRAFT_PROMPT,
+            messages=[{"role": "user", "content": generation_prompt}],
+        )
+        draft_text = api_response.content[0].text.strip()
+
+        return Response(
+            {
+                "draft_text": draft_text,
+                "title": title,
+                "warnings": warnings,
+                "missing_fields": missing_fields,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 # ---------------------------------------------------------------------------
 # POST /api/ai/chat/
@@ -513,6 +652,11 @@ class AnalyzeContractView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        workflow_id = (request.data.get("workflow_id") or request.data.get("workflowId") or "").strip()
+        workflow = None
+        if workflow_id:
+            workflow = get_workflow_for_user(request.user, workflow_id)
+
         pdf_bytes, err = _get_pdf_bytes(request)
         if err is not None:
             return err
@@ -521,6 +665,8 @@ class AnalyzeContractView(APIView):
         user_message = f"Please analyze this contract:\n\n{pdf_text}"
 
         conv = AIConversation(user=request.user, conversation_type="contract_help", messages=[])
+        if workflow and workflow.contract_id:
+            conv.contract = workflow.contract
         conv.messages.append({"role": "user", "content": user_message})
 
         client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
@@ -535,18 +681,49 @@ class AnalyzeContractView(APIView):
         conv.save()
 
         parsed = _extract_json_block(assistant_text) or {}
-
-        return Response({
+        payload = {
             "conversation_id": str(conv.id),
             "summary": parsed.get("summary", ""),
             "key_terms": parsed.get("key_terms", {}),
             "red_flags": parsed.get("red_flags", []),
             "questions": parsed.get("questions", []),
-        }, status=status.HTTP_200_OK)
+        }
+
+        if workflow is not None:
+            with transaction.atomic():
+                review = upsert_review_result(
+                    workflow=workflow,
+                    conversation=conv,
+                    parsed=parsed,
+                    ai_metadata={"model": AI_MODEL, "source": "analyze-contract"},
+                )
+
+                if workflow.current_state == WorkflowState.STATE_UPLOADED:
+                    workflow.advance_to(WorkflowState.STATE_ANALYZING)
+                if workflow.current_state == WorkflowState.STATE_ANALYZING:
+                    workflow.advance_to(WorkflowState.STATE_REVIEW_READY)
+                workflow.save(update_fields=["current_state", "completed_states", "pending_states", "state_timestamps", "updated_at"])
+
+                if workflow.contract_id is not None:
+                    log_workflow_contract_update(
+                        workflow,
+                        request.user,
+                        "Contract review completed.",
+                        {
+                            "workflow_id": str(workflow.id),
+                            "review_result_id": str(review.id),
+                        },
+                    )
+
+            payload["workflow_id"] = str(workflow.id)
+            payload["review_result_id"] = str(review.id)
+
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 # ---------------------------------------------------------------------------
 # POST /api/ai/counter-contract/   (Business and Anchor tiers only)
+# ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 
 class CounterContractView(APIView):
@@ -559,6 +736,11 @@ class CounterContractView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        workflow_id = (request.data.get("workflow_id") or request.data.get("workflowId") or "").strip()
+        workflow = None
+        if workflow_id:
+            workflow = get_workflow_for_user(request.user, workflow_id)
+
         pdf_bytes, err = _get_pdf_bytes(request)
         if err is not None:
             return err
@@ -567,6 +749,8 @@ class CounterContractView(APIView):
         user_message = f"Please help me counter this contract:\n\n{pdf_text}"
 
         conv = AIConversation(user=request.user, conversation_type="contract_help", messages=[])
+        if workflow and workflow.contract_id:
+            conv.contract = workflow.contract
         conv.messages.append({"role": "user", "content": user_message})
 
         client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
@@ -581,18 +765,57 @@ class CounterContractView(APIView):
         conv.save()
 
         parsed = _extract_json_block(assistant_text) or {}
-
-        return Response({
+        payload = {
             "conversation_id": str(conv.id),
             "summary": parsed.get("summary", ""),
             "concerning_clauses": parsed.get("concerning_clauses", []),
             "negotiation_strategy": parsed.get("negotiation_strategy", {}),
             "revised_contract": parsed.get("revised_contract", ""),
-        }, status=status.HTTP_200_OK)
+        }
+
+        if workflow is not None:
+            selected_requested_changes = request.data.get("selected_requested_changes", [])
+            if not isinstance(selected_requested_changes, list):
+                selected_requested_changes = [selected_requested_changes]
+            user_negotiation_instructions = (request.data.get("counter_terms") or "").strip()
+
+            with transaction.atomic():
+                draft = upsert_counter_draft(
+                    workflow=workflow,
+                    conversation=conv,
+                    parsed=parsed,
+                    selected_requested_changes=selected_requested_changes,
+                    user_negotiation_instructions=user_negotiation_instructions,
+                )
+
+                if workflow.current_state == WorkflowState.STATE_UPLOADED:
+                    workflow.advance_to(WorkflowState.STATE_ANALYZING)
+                if workflow.current_state == WorkflowState.STATE_ANALYZING:
+                    workflow.advance_to(WorkflowState.STATE_REVIEW_READY)
+                if workflow.current_state == WorkflowState.STATE_REVIEW_READY:
+                    workflow.advance_to(WorkflowState.STATE_COUNTER_DRAFT_READY)
+                workflow.save(update_fields=["current_state", "completed_states", "pending_states", "state_timestamps", "updated_at"])
+
+                if workflow.contract_id is not None:
+                    log_workflow_contract_update(
+                        workflow,
+                        request.user,
+                        "Counter draft created.",
+                        {
+                            "workflow_id": str(workflow.id),
+                            "counter_draft_id": str(draft.id),
+                        },
+                    )
+
+            payload["workflow_id"] = str(workflow.id)
+            payload["counter_draft_id"] = str(draft.id)
+
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 # ---------------------------------------------------------------------------
 # POST /api/ai/import-contract/   (Anchor tier only)
+# ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 
 class ImportContractView(APIView):

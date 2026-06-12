@@ -1144,8 +1144,21 @@ export default function CreateContract() {
 
   function apiErrorMessage(err: unknown, fallback: string): string {
     const data = (err as { response?: { data?: unknown } })?.response?.data
+    if (typeof data === 'string' && data.trim()) return data
+    if (Array.isArray(data)) {
+      const message = data.flat().filter(Boolean).join(' ')
+      return message || fallback
+    }
     if (data && typeof data === 'object') {
-      return String(Object.values(data as Record<string, unknown>).flat().join(' '))
+      const record = data as Record<string, unknown>
+      const primary = record.error || record.detail || record.message
+      if (typeof primary === 'string' && primary.trim()) return primary
+      if (Array.isArray(primary)) {
+        const message = primary.flat().filter(Boolean).join(' ')
+        if (message) return message
+      }
+      const message = Object.values(record).flat().filter(Boolean).join(' ')
+      return message || fallback
     }
     return fallback
   }

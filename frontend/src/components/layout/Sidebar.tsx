@@ -232,11 +232,20 @@ function NavItem({
 
 export default function Sidebar() {
   const [iconOnly, setIconOnly] = useState(false)
+  const [forceIconOnly, setForceIconOnly] = useState(false)
   const { user } = useAuth()
   const location = useLocation()
 
   // Operator mode is route-based: follows URL, not user identity.
   const isOperator = location.pathname.startsWith('/admin')
+
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 1100px)')
+    const update = () => setForceIconOnly(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
 
   useEffect(() => {
     function onSidebarMode(e: Event) {
@@ -249,6 +258,8 @@ export default function Sidebar() {
   }, [])
 
   // Operator mode uses sky blue active accent; user mode uses gold.
+  const effectiveIconOnly = forceIconOnly || iconOnly
+
   const activeColor = isOperator ? '#38BDF8' : '#F5A623'
   const activeBg    = isOperator ? 'rgba(56,189,248,0.12)' : 'rgba(245,166,35,0.12)'
 
@@ -262,7 +273,7 @@ export default function Sidebar() {
 
   function renderNavItem(item: NavDef, idx: number) {
     if (item.type === 'section') {
-      return <SectionHeader key={`section-${item.label}-${idx}`} label={item.label} iconOnly={iconOnly} />
+      return <SectionHeader key={`section-${item.label}-${idx}`} label={item.label} iconOnly={effectiveIconOnly} />
     }
     return (
       <NavItem
@@ -271,7 +282,7 @@ export default function Sidebar() {
         label={item.label}
         Icon={item.Icon}
         goldIcon={item.goldIcon}
-        iconOnly={iconOnly}
+        iconOnly={effectiveIconOnly}
         activeColor={activeColor}
         activeBg={activeBg}
       />
@@ -280,9 +291,9 @@ export default function Sidebar() {
 
   return (
     <aside
-      className="fixed top-0 left-0 bottom-0 z-40 flex flex-col"
+      className="app-sidebar fixed top-0 left-0 bottom-0 z-40 flex flex-col"
       style={{
-        width: iconOnly ? 48 : 216,
+        width: effectiveIconOnly ? 56 : 216,
         background: '#111827',
         borderRight: '1px solid rgba(255,255,255,0.10)',
         boxShadow: '8px 0 24px rgba(15,23,42,0.12)',
@@ -291,7 +302,7 @@ export default function Sidebar() {
       }}
     >
       {/* Brand */}
-      {iconOnly ? (
+      {effectiveIconOnly ? (
         <div style={{
           textAlign: 'center', fontSize: 14, fontWeight: 800,
           color: '#F5A623',
@@ -320,14 +331,14 @@ export default function Sidebar() {
       )}
 
       {/* Main nav */}
-      <nav className={`flex-1 overflow-y-auto ${iconOnly ? 'px-1 py-3' : 'px-3 py-3'}`}>
+      <nav className={`flex-1 overflow-y-auto ${effectiveIconOnly ? 'px-1 py-3' : 'px-3 py-3'}`}>
         {mainNav.map((item, idx) => renderNavItem(item, idx))}
       </nav>
 
       {/* Bottom nav */}
       <div
-        style={{ background: 'rgba(15,23,42,0.55)', borderTop: '1px solid rgba(255,255,255,0.10)', ...(iconOnly ? { padding: '12px 4px' } : undefined) }}
-        className={iconOnly ? '' : 'px-3 py-3'}
+        style={{ background: 'rgba(15,23,42,0.55)', borderTop: '1px solid rgba(255,255,255,0.10)', ...(effectiveIconOnly ? { padding: '12px 4px' } : undefined) }}
+        className={effectiveIconOnly ? '' : 'px-3 py-3'}
       >
         {footerNav.map((item, idx) => renderNavItem(item, idx))}
       </div>

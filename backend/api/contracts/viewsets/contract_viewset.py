@@ -7,12 +7,13 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
 
 from backend.billing.gates import can_create_contract, consume_trial_contract, increment_contracts_used
-from backend.contracts.models import Contract
+from backend.contracts.models import Contract, ContractVersion
 from backend.contract_pro.models import ContractProOversightEvent
 from backend.contract_pro.services import ContractProEditingService, ContractProOversightService
 
 from backend.api.contracts.permissions import contract_party_response, is_party
-from backend.api.contracts.serializers import ContractSerializer
+from backend.api.contracts.serializers import ContractSerializer, ContractVersionSerializer
+from backend.api.contracts.services.visibility_service import can_user_see_contract_on_dashboard
 from backend.activity.log import log_activity
 
 
@@ -23,12 +24,28 @@ class ContractViewSet(ViewSet):
         Return only contracts where the authenticated user is a party
         (initiator or counterparty).
         """
-        contracts = Contract.objects.filter(
+        candidate_contracts = Contract.objects.filter(
             Q(initiator=request.user)
             | Q(counterparty_email=request.user.email)
-        ).order_by("-created_at")
+        ).prefetch_related("agreement_exchanges").order_by("-created_at")
+        contracts = [
+            contract
+            for contract in candidate_contracts
+            if can_user_see_contract_on_dashboard(contract, request.user)
+        ]
         serializer = ContractSerializer(contracts, many=True)
-        return Response(serializer.data)
+        data = list(serializer.data)
+        latest_versions = {}
+        for version in (
+            ContractVersion.objects
+            .filter(contract__in=contracts, superseded=False)
+            .order_by("contract_id", "-version_number")
+        ):
+            latest_versions.setdefault(str(version.contract_id), version)
+        for item in data:
+            latest = latest_versions.get(str(item["id"]))
+            item["latest_version"] = ContractVersionSerializer(latest).data if latest else None
+        return Response(data)
 
     def create(self, request):
         """
@@ -63,8 +80,18 @@ class ContractViewSet(ViewSet):
         contract = get_object_or_404(Contract, pk=pk)
         if not is_party(request.user, contract):
             return contract_party_response()
-        serializer = ContractSerializer(contract)
-        return Response(serializer.data)
+        data = ContractSerializer(contract).data
+        latest_version = (
+            contract.versions
+            .filter(superseded=False)
+            .order_by("-version_number")
+            .first()
+        )
+        data["latest_version"] = (
+            ContractVersionSerializer(latest_version).data
+            if latest_version else None
+        )
+        return Response(data)
 
     def update(self, request, pk=None):
         """

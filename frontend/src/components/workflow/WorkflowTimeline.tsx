@@ -24,6 +24,8 @@ type WorkflowTimelineProps = {
   workflow: WorkflowTimelineState | null
   activeVersion?: ActiveVersionSummary | null
   compact?: boolean
+  hideContext?: boolean
+  variant?: 'vertical' | 'horizontal'
 }
 
 const WORKFLOW_STATES = [
@@ -70,7 +72,7 @@ function getStateStatus(workflow: WorkflowTimelineState, state: string) {
   return 'pending'
 }
 
-export default function WorkflowTimeline({ workflow, activeVersion, compact = false }: WorkflowTimelineProps) {
+export default function WorkflowTimeline({ workflow, activeVersion, compact = false, hideContext = false, variant = 'vertical' }: WorkflowTimelineProps) {
   if (!workflow) return null
   const counterparty = workflow.counterparty_email || workflow.sent_to_counterparty_email || ''
   const visibleStates = WORKFLOW_STATES.filter(([state]) => {
@@ -80,9 +82,35 @@ export default function WorkflowTimeline({ workflow, activeVersion, compact = fa
     return true
   })
 
+  if (variant === 'horizontal') {
+    return (
+      <div style={{ background: 'white', borderRadius: 9, border: '1px solid rgba(0,0,0,0.08)', padding: compact ? '7px 10px' : '9px 12px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '5px 8px' }}>
+          <p style={{ fontSize: 12, fontWeight: 800, color: '#0F1F3D', margin: 0, lineHeight: 1.2, whiteSpace: 'nowrap' }}>Workflow Timeline</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0, minWidth: 0, flex: '1 1 520px' }}>
+            {visibleStates.map(([state, label], index) => {
+              const status = getStateStatus(workflow, state)
+              const isCompleted = status === 'completed'
+              const isCurrent = status === 'current'
+              const color = isCurrent ? '#0F1F3D' : isCompleted ? '#065F46' : '#64748B'
+              const dotBg = isCurrent ? '#F5A623' : isCompleted ? '#10B981' : '#CBD5E1'
+              return (
+                <div key={state} style={{ display: 'flex', alignItems: 'center', minHeight: 22 }}>
+                  <span style={{ width: 11, height: 11, borderRadius: 999, background: dotBg, border: `1px solid ${isCurrent ? '#D4900A' : isCompleted ? '#059669' : '#CBD5E1'}`, boxShadow: isCurrent ? '0 0 0 3px rgba(245,166,35,0.16)' : 'none', flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, fontWeight: isCurrent ? 800 : 700, color, marginLeft: 5, lineHeight: 1.15, whiteSpace: 'nowrap' }}>{label}</span>
+                  {index < visibleStates.length - 1 && <span style={{ width: 18, height: 1, background: isCompleted ? '#A7F3D0' : '#E5E7EB', margin: '0 7px', flexShrink: 0 }} />}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{ background: 'white', borderRadius: 8, border: '1px solid rgba(0,0,0,0.08)', padding: compact ? 12 : 16 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: compact ? '1fr' : 'minmax(0, 1.4fr) minmax(220px, 0.8fr)', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: compact || hideContext ? '1fr' : 'minmax(0, 1.4fr) minmax(220px, 0.8fr)', gap: 16 }}>
         <div>
           <p style={{ fontSize: 14, fontWeight: 700, color: '#0F1F3D', margin: '0 0 12px' }}>Workflow Timeline</p>
           <div style={{ display: 'grid', gap: 0 }}>
@@ -110,6 +138,7 @@ export default function WorkflowTimeline({ workflow, activeVersion, compact = fa
           </div>
         </div>
 
+        {!hideContext && (
         <div style={{ background: '#F8FAFC', borderRadius: 8, border: '1px solid #E5E7EB', padding: 12, alignSelf: 'start' }}>
           <p style={{ fontSize: 12, fontWeight: 700, color: '#0F1F3D', margin: '0 0 10px' }}>Workflow Context</p>
           <ContextRow label="Current" value={workflow.current_state.replaceAll('_', ' ')} />
@@ -118,6 +147,7 @@ export default function WorkflowTimeline({ workflow, activeVersion, compact = fa
           <ContextRow label="Counterparty" value={counterparty || 'Not sent'} />
           <ContextRow label="Last activity" value={workflow.last_activity?.description || 'No activity yet'} muted />
         </div>
+        )}
       </div>
     </div>
   )

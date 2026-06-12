@@ -2,6 +2,7 @@
 
 from rest_framework import serializers
 from backend.contracts.models import Contract, ContractVersion
+from backend.contracts.section_normalizer import normalize_contract_sections
 
 
 class ContractSerializer(serializers.ModelSerializer):
@@ -33,6 +34,11 @@ class ContractSerializer(serializers.ModelSerializer):
 
 
 class ContractVersionSerializer(serializers.ModelSerializer):
+    sections = serializers.SerializerMethodField()
+
+    def get_sections(self, obj):
+        return normalize_contract_sections(obj.content_snapshot)
+
     class Meta:
         model = ContractVersion
         fields = [
@@ -44,6 +50,7 @@ class ContractVersionSerializer(serializers.ModelSerializer):
             "superseded",
             "status",
             "content_snapshot",
+            "sections",
             "created_at",
         ]
         read_only_fields = [

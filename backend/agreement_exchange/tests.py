@@ -122,10 +122,12 @@ class AgreementExchangeMVPAPITests(TestCase):
         self.assertEqual(initiator_response.data["viewer_role"], "initiator")
         self.assertEqual(initiator_response.data["screen_state"], "initiator_send_initial_version")
         self.assertEqual(initiator_response.data["available_actions"], ["send_initial_version"])
-        self.assertEqual(counterparty_response.data["viewer_role"], "counterparty")
-        self.assertEqual(counterparty_response.data["screen_state"], "counterparty_not_sent")
-        self.assertEqual(counterparty_response.data["available_actions"], [])
-        self.assertEqual(counterparty_response.data["current_contract"]["sections"][0]["id"], "payment")
+        self.assertEqual(initiator_response.data["current_contract"]["sections"][0]["id"], "payment")
+        self.assertEqual(initiator_response.data["current_contract"]["sections"][0]["anchor_id"], "contract-section-payment")
+        self.assertEqual(initiator_response.data["current_contract"]["sections"][0]["order"], 1)
+        self.assertEqual(initiator_response.data["current_contract"]["sections"][0]["content_html"], "<p>Payment due on the 1st.</p>")
+        self.assertEqual(counterparty_response.status_code, 403)
+        self.assertEqual(counterparty_response.data["detail"], "Agreement Exchange is not available yet.")
 
     def test_create_open_prefers_active_pending_exchange_over_newer_draft_duplicate(self):
         active, _ = self.create_exchange()
@@ -157,6 +159,52 @@ class AgreementExchangeMVPAPITests(TestCase):
         self.assertEqual(counterparty_detail.status_code, 200)
         self.assertEqual(counterparty_detail.data["screen_state"], "counterparty_review")
         self.assertEqual(counterparty_detail.data["available_actions"], ["sign", "request_change", "reject"])
+
+    def test_prepared_contract_dashboard_visibility_before_initial_send(self):
+        self.contract.state = "prepared"
+        self.contract.save(update_fields=["state"])
+
+        initiator_response = self.initiator_client.get("/api/contracts/")
+        counterparty_response = self.counterparty_client.get("/api/contracts/")
+
+        self.assertEqual(initiator_response.status_code, 200)
+        self.assertIn(str(self.contract.id), [item["id"] for item in initiator_response.data])
+        self.assertEqual(counterparty_response.status_code, 200)
+        self.assertNotIn(str(self.contract.id), [item["id"] for item in counterparty_response.data])
+
+    def test_draft_exchange_dashboard_and_open_negotiation_are_private_to_initiator(self):
+        exchange, _ = self.create_exchange()
+        self.contract.state = "prepared"
+        self.contract.save(update_fields=["state"])
+
+        initiator_response = self.initiator_client.get("/api/contracts/")
+        counterparty_response = self.counterparty_client.get("/api/contracts/")
+        counterparty_detail = self.counterparty_client.get(f"/api/agreement-exchange/{exchange.id}/")
+        open_response = self.counterparty_client.post(
+            "/api/ai/workflows/for-contract/",
+            {"contract_id": str(self.contract.id)},
+            format="json",
+        )
+
+        self.assertIn(str(self.contract.id), [item["id"] for item in initiator_response.data])
+        self.assertNotIn(str(self.contract.id), [item["id"] for item in counterparty_response.data])
+        self.assertEqual(counterparty_detail.status_code, 403)
+        self.assertEqual(open_response.status_code, 403)
+        self.assertEqual(Notification.objects.filter(user=self.counterparty).count(), 0)
+        exchange.refresh_from_db()
+        self.assertEqual(exchange.status, AgreementExchange.STATUS_DRAFT)
+        self.assertEqual(exchange.current_actor, AgreementExchange.ACTOR_INITIATOR)
+
+    def test_after_initial_send_counterparty_dashboard_includes_contract(self):
+        exchange, _ = self.create_exchange()
+        self.contract.state = "prepared"
+        self.contract.save(update_fields=["state"])
+
+        self.send_initial(exchange)
+        response = self.counterparty_client.get("/api/contracts/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(str(self.contract.id), [item["id"] for item in response.data])
 
     def test_open_negotiation_returns_active_exchange_for_counterparty(self):
         active, _ = self.create_exchange()
@@ -623,8 +671,11 @@ class AgreementExchangeMVPAPITests(TestCase):
         self.assertEqual(response.data["exchange"]["exchange"]["current_contract_version_id"], str(new_version.id))
         self.assertEqual(response.data["exchange"]["current_contract"]["version_label"], "v2")
         snapshot = self.snapshot_data(new_version)
+        self.assertEqual(len(snapshot["sections"]), 2)
         self.assertEqual(snapshot["sections"][0]["content_html"], "<p>Payment is due on the 15th.</p>")
+        self.assertEqual(snapshot["sections"][1]["content_html"], "<p>Provide monthly service.</p>")
         self.assertIn("<h2>Payment Terms</h2><p>Payment is due on the 15th.</p>", snapshot["editor_html"])
+        self.assertIn("<h2>Services</h2><p>Provide monthly service.</p>", snapshot["editor_html"])
         self.assertEqual(snapshot["agreement_exchange_latest_update"]["matched_by"], "id")
         self.assertFalse(snapshot["agreement_exchange_latest_update"]["fallback_used"])
         notification = self.notification_for(self.counterparty)
@@ -843,8 +894,12 @@ class AgreementExchangeMVPAPITests(TestCase):
         self.assertEqual(response.status_code, 200)
         exchange.refresh_from_db()
         snapshot = self.snapshot_data(exchange.current_contract_version)
+        self.assertEqual(len(snapshot["sections"]), 2)
+        self.assertIn("Payment due on the 1st.", snapshot["sections"][0]["content_html"])
         self.assertIn("Provide monthly service.", snapshot["sections"][1]["content_html"])
         self.assertIn("Provider will deliver a monthly status report.", snapshot["sections"][1]["content_html"])
+        self.assertIn("Payment due on the 1st.", snapshot["editor_html"])
+        self.assertIn("Provider will deliver a monthly status report.", snapshot["editor_html"])
         self.assertEqual(snapshot["agreement_exchange_latest_update"]["application_status"], "section_appended")
 
     def test_missing_target_section_uses_agreement_exchange_updates_fallback(self):
@@ -875,11 +930,230 @@ class AgreementExchangeMVPAPITests(TestCase):
         exchange.refresh_from_db()
         snapshot = self.snapshot_data(exchange.current_contract_version)
         fallback = snapshot["sections"][-1]
+        self.assertEqual(len(snapshot["sections"]), 3)
+        self.assertEqual(snapshot["sections"][0]["content_html"], "<p>Payment due on the 1st.</p>")
+        self.assertEqual(snapshot["sections"][1]["content_html"], "<p>Provide monthly service.</p>")
+        self.assertIn("Payment due on the 1st.", snapshot["editor_html"])
+        self.assertIn("Provide monthly service.", snapshot["editor_html"])
         self.assertEqual(fallback["name"], "Agreement Exchange Updates")
         self.assertTrue(fallback["agreement_exchange_fallback"])
         self.assertIn("Add this reviewed fallback language.", fallback["content_html"])
         self.assertTrue(snapshot["agreement_exchange_latest_update"]["fallback_used"])
         self.assertEqual(snapshot["agreement_exchange_latest_update"]["application_status"], "fallback_appended")
+
+    def test_v3_preserves_full_contract_from_v2_and_changes_only_target_section(self):
+        exchange, _ = self.create_exchange()
+        self.send_initial(exchange)
+        self.submit_request(exchange)
+        first_change = AgreementExchangeRequest.objects.get()
+        first_response = self.initiator_client.post(
+            f"/api/agreement-exchange/{exchange.id}/requests/{first_change.id}/respond/",
+            {"decision": "accept", "final_text": "Payment is due on the 15th."},
+            format="json",
+        )
+        self.assertEqual(first_response.status_code, 200)
+        exchange.refresh_from_db()
+        v2 = exchange.current_contract_version
+        v2_snapshot = self.snapshot_data(v2)
+        self.assertEqual(v2_snapshot["sections"][0]["content_html"], "<p>Payment is due on the 15th.</p>")
+        self.assertEqual(v2_snapshot["sections"][1]["content_html"], "<p>Provide monthly service.</p>")
+
+        request_response = self.counterparty_client.post(
+            f"/api/agreement-exchange/{exchange.id}/requests/",
+            {
+                "target_section_id": "services",
+                "target_section_title": "Services",
+                "request_category": "obligations",
+                "action_type": "replace_clause",
+                "proposed_text": "Provide weekly service.",
+            },
+            format="json",
+        )
+        self.assertEqual(request_response.status_code, 201)
+        second_change = AgreementExchangeRequest.objects.filter(exchange=exchange).order_by("created_at").last()
+
+        second_response = self.initiator_client.post(
+            f"/api/agreement-exchange/{exchange.id}/requests/{second_change.id}/respond/",
+            {"decision": "accept", "final_text": "Provide weekly service."},
+            format="json",
+        )
+
+        self.assertEqual(second_response.status_code, 200)
+        exchange.refresh_from_db()
+        v3 = exchange.current_contract_version
+        snapshot = self.snapshot_data(v3)
+        self.assertEqual(v3.version_number, 3)
+        self.assertEqual(v3.previous_version_id, v2.id)
+        self.assertEqual(exchange.current_contract_version_id, v3.id)
+        self.assertEqual(len(snapshot["sections"]), 2)
+        self.assertEqual(snapshot["sections"][0]["content_html"], "<p>Payment is due on the 15th.</p>")
+        self.assertEqual(snapshot["sections"][1]["content_html"], "<p>Provide weekly service.</p>")
+        self.assertIn("Payment is due on the 15th.", snapshot["editor_html"])
+        self.assertIn("Provide weekly service.", snapshot["editor_html"])
+        self.assertNotIn("Provide monthly service.", snapshot["sections"][1]["content_html"])
+
+    def test_replace_with_title_only_sections_preserves_full_original_body(self):
+        full_editor_html = (
+            "<h2>Introduction</h2><p>Intro body unique alpha remains in the contract.</p>"
+            "<h2>Scope of Services</h2><p>Scope body unique beta remains unchanged.</p>"
+            "<h2>Payment Terms</h2><p>Original payment body unique gamma should not be the only body.</p>"
+            "<h2>Termination</h2><p>Termination body unique delta remains unchanged.</p>"
+        )
+        snapshot = json.dumps({
+            "sections": [
+                {"id": "intro", "number": 1, "name": "Introduction"},
+                {"id": "scope", "number": 2, "name": "Scope of Services"},
+                {"id": "payment", "number": 3, "name": "Payment Terms"},
+                {"id": "termination", "number": 4, "name": "Termination"},
+            ],
+            "editor_html": full_editor_html,
+            "body": "Intro body unique alpha remains in the contract. Scope body unique beta remains unchanged. Original payment body unique gamma should not be the only body. Termination body unique delta remains unchanged.",
+            "text": "Intro body unique alpha remains in the contract. Scope body unique beta remains unchanged. Original payment body unique gamma should not be the only body. Termination body unique delta remains unchanged.",
+        })
+        contract = make_contract(self.initiator, counterparty_email=self.counterparty.email)
+        version = make_version(contract, self.initiator, content_snapshot=snapshot, status="sent")
+        create_response = self.initiator_client.post(
+            "/api/agreement-exchange/",
+            {
+                "contract_id": str(contract.id),
+                "contract_version_id": str(version.id),
+                "counterparty_email": self.counterparty.email,
+            },
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 201)
+        exchange = AgreementExchange.objects.get(id=create_response.data["exchange"]["id"])
+        self.send_initial(exchange)
+
+        request_response = self.counterparty_client.post(
+            f"/api/agreement-exchange/{exchange.id}/requests/",
+            {
+                "target_section_id": "payment",
+                "target_section_title": "Payment Terms",
+                "request_category": "payment_terms",
+                "action_type": "replace_clause",
+                "proposed_text": "Updated payment terms unique epsilon are accepted.",
+            },
+            format="json",
+        )
+        self.assertEqual(request_response.status_code, 201)
+        change = AgreementExchangeRequest.objects.get(exchange=exchange)
+
+        response = self.initiator_client.post(
+            f"/api/agreement-exchange/{exchange.id}/requests/{change.id}/respond/",
+            {"decision": "accept", "final_text": "Updated payment terms unique epsilon are accepted."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        exchange.refresh_from_db()
+        new_version = exchange.current_contract_version
+        updated = self.snapshot_data(new_version)
+        self.assertEqual(new_version.version_number, 2)
+        self.assertEqual(exchange.current_contract_version_id, new_version.id)
+        self.assertIn("Intro body unique alpha remains in the contract.", updated["editor_html"])
+        self.assertIn("Scope body unique beta remains unchanged.", updated["editor_html"])
+        self.assertIn("Termination body unique delta remains unchanged.", updated["editor_html"])
+        self.assertIn("Updated payment terms unique epsilon are accepted.", updated["editor_html"])
+        self.assertIn("Intro body unique alpha remains in the contract.", updated["body"])
+        self.assertIn("Scope body unique beta remains unchanged.", updated["text"])
+        self.assertEqual(len(updated["sections"]), 5)
+        self.assertEqual(updated["sections"][-1]["name"], "Agreement Exchange Updates")
+        self.assertTrue(updated["agreement_exchange_latest_update"]["fallback_used"])
+        self.assertNotEqual(
+            updated["editor_html"],
+            "<h2>Introduction</h2><h2>Scope of Services</h2><h2>Payment Terms</h2><p>Updated payment terms unique epsilon are accepted.</p><h2>Termination</h2>",
+        )
+
+    def test_v3_title_only_sections_preserve_full_body_from_v2(self):
+        full_editor_html = (
+            "<h2>Introduction</h2><p>Intro body unique one persists.</p>"
+            "<h2>Scope of Services</h2><p>Scope body unique two persists.</p>"
+            "<h2>Payment Terms</h2><p>Payment body unique three persists.</p>"
+            "<h2>Termination</h2><p>Termination body unique four persists.</p>"
+        )
+        snapshot = json.dumps({
+            "sections": [
+                {"id": "intro", "number": 1, "name": "Introduction"},
+                {"id": "scope", "number": 2, "name": "Scope of Services"},
+                {"id": "payment", "number": 3, "name": "Payment Terms"},
+                {"id": "termination", "number": 4, "name": "Termination"},
+            ],
+            "editor_html": full_editor_html,
+            "body": "Intro body unique one persists. Scope body unique two persists. Payment body unique three persists. Termination body unique four persists.",
+            "text": "Intro body unique one persists. Scope body unique two persists. Payment body unique three persists. Termination body unique four persists.",
+        })
+        contract = make_contract(self.initiator, counterparty_email=self.counterparty.email)
+        version = make_version(contract, self.initiator, content_snapshot=snapshot, status="sent")
+        create_response = self.initiator_client.post(
+            "/api/agreement-exchange/",
+            {
+                "contract_id": str(contract.id),
+                "contract_version_id": str(version.id),
+                "counterparty_email": self.counterparty.email,
+            },
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 201)
+        exchange = AgreementExchange.objects.get(id=create_response.data["exchange"]["id"])
+        self.send_initial(exchange)
+
+        first_request = self.counterparty_client.post(
+            f"/api/agreement-exchange/{exchange.id}/requests/",
+            {
+                "target_section_id": "payment",
+                "target_section_title": "Payment Terms",
+                "request_category": "payment_terms",
+                "action_type": "replace_clause",
+                "proposed_text": "First accepted update unique five.",
+            },
+            format="json",
+        )
+        self.assertEqual(first_request.status_code, 201)
+        first_change = AgreementExchangeRequest.objects.get(exchange=exchange)
+        first_response = self.initiator_client.post(
+            f"/api/agreement-exchange/{exchange.id}/requests/{first_change.id}/respond/",
+            {"decision": "accept", "final_text": "First accepted update unique five."},
+            format="json",
+        )
+        self.assertEqual(first_response.status_code, 200)
+        exchange.refresh_from_db()
+        v2 = exchange.current_contract_version
+
+        second_request = self.counterparty_client.post(
+            f"/api/agreement-exchange/{exchange.id}/requests/",
+            {
+                "target_section_id": "scope",
+                "target_section_title": "Scope of Services",
+                "request_category": "obligations",
+                "action_type": "add_clause",
+                "proposed_text": "Second accepted update unique six.",
+            },
+            format="json",
+        )
+        self.assertEqual(second_request.status_code, 201)
+        second_change = AgreementExchangeRequest.objects.filter(exchange=exchange).order_by("created_at").last()
+        second_response = self.initiator_client.post(
+            f"/api/agreement-exchange/{exchange.id}/requests/{second_change.id}/respond/",
+            {"decision": "accept", "final_text": "Second accepted update unique six."},
+            format="json",
+        )
+
+        self.assertEqual(second_response.status_code, 200)
+        exchange.refresh_from_db()
+        v3 = exchange.current_contract_version
+        updated = self.snapshot_data(v3)
+        self.assertEqual(v3.version_number, 3)
+        self.assertEqual(v3.previous_version_id, v2.id)
+        self.assertIn("Intro body unique one persists.", updated["editor_html"])
+        self.assertIn("Scope body unique two persists.", updated["editor_html"])
+        self.assertIn("Payment body unique three persists.", updated["editor_html"])
+        self.assertIn("Termination body unique four persists.", updated["editor_html"])
+        self.assertIn("First accepted update unique five.", updated["editor_html"])
+        self.assertIn("Second accepted update unique six.", updated["editor_html"])
+        self.assertIn("Intro body unique one persists.", updated["body"])
+        self.assertIn("Termination body unique four persists.", updated["text"])
+        self.assertEqual(exchange.current_contract_version_id, v3.id)
 
     def test_initiator_accept_respects_exchange_local_version_cap(self):
         exchange = self.make_rejected_exchange_at_v3(reject=False)
@@ -1024,7 +1298,7 @@ class AgreementExchangeMVPAPITests(TestCase):
         self.assertEqual(detail.data["available_actions"], ["send_initial_version"])
         self.assertEqual(detail.data["current_contract"]["version_label"], "v1")
         counterparty_detail = self.counterparty_client.get(f"/api/agreement-exchange/{new_exchange.id}/")
-        self.assertEqual(counterparty_detail.data["available_actions"], [])
+        self.assertEqual(counterparty_detail.status_code, 403)
 
         send_response = self.send_initial(new_exchange)
 

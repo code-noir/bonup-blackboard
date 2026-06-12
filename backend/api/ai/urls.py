@@ -9,6 +9,7 @@ from .views import (
     AnalyzeContractView,
     CounterContractView,
     ImportContractView,
+    GenerateContractDraftView,
 )
 from .workflow_views import (
     CounterDraftApproveAPIView,
@@ -32,6 +33,7 @@ urlpatterns = [
     path("analyze-contract/", AnalyzeContractView.as_view(), name="ai-analyze-contract"),
     path("counter-contract/", CounterContractView.as_view(), name="ai-counter-contract"),
     path("import-contract/", ImportContractView.as_view(), name="ai-import-contract"),
+    path("contracts/generate-draft/", GenerateContractDraftView.as_view(), name="ai-contract-generate-draft"),
     path("workflows/", WorkflowListCreateAPIView.as_view(), name="ai-workflows"),
     path("workflows/for-contract/", WorkflowForContractAPIView.as_view(), name="ai-workflow-for-contract"),
     path("workflows/<uuid:workflow_id>/", WorkflowDetailAPIView.as_view(), name="ai-workflow-detail"),

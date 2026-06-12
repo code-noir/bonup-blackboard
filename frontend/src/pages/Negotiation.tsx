@@ -34,7 +34,7 @@ export default function Negotiation() {
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err?.response?.data?.error || 'Negotiation workflow could not be opened.')
+          setError(err?.response?.data?.error || err?.response?.data?.detail || 'Negotiation workflow could not be opened.')
         }
       })
       .finally(() => {

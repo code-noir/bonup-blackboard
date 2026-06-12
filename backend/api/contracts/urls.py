@@ -1,5 +1,3 @@
-# backend/api/contracts/urls.py
-
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .management_views import ContractManagementSummaryAPIView
@@ -17,6 +15,9 @@ from .version_views import (
     ContractVersionSignAPIView,
     ContractVersionRejectAPIView,
 )
+from .draft_views import ContractDraftAutosaveAPIView
+from .prepare_views import ContractPrepareAPIView
+from .invite_views import ContractInviteAPIView
 from .role_switch_views import (
     ContractRoleSwitchRequestAPIView,
     ContractRoleSwitchConfirmAPIView,
@@ -152,14 +153,29 @@ urlpatterns = [
         ContractDocumentDeleteAPIView.as_view(),
         name="contract-document-delete",
     ),
+    path(
+        "<uuid:contract_id>/invite/",
+        ContractInviteAPIView.as_view(),
+        name="contract-invite",
+    ),
 
     # --------------------------------------------------
     # Version negotiation
     # --------------------------------------------------
     path(
+        "<uuid:contract_id>/prepare/",
+        ContractPrepareAPIView.as_view(),
+        name="contract-prepare",
+    ),
+    path(
         "<uuid:contract_id>/versions/",
         ContractVersionCreateAPIView.as_view(),
         name="contract-version-create",
+    ),
+    path(
+        "<uuid:contract_id>/draft/",
+        ContractDraftAutosaveAPIView.as_view(),
+        name="contract-draft-autosave",
     ),
     path(
         "<uuid:contract_id>/versions/<uuid:version_id>/sign/",

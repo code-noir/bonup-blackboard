@@ -62,6 +62,11 @@ class AgreementExchangeRequestResponseSerializer(serializers.Serializer):
     initiator_response = serializers.CharField(required=False, allow_blank=True)
 
 
+class AgreementExchangeRestartSerializer(serializers.Serializer):
+    source_version_id = serializers.UUIDField()
+    counterparty_email = serializers.EmailField(required=False, allow_blank=True)
+
+
 class AgreementExchangeRejectSerializer(serializers.Serializer):
     reason = serializers.CharField(required=False, allow_blank=True)
 

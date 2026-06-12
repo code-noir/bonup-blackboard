@@ -111,6 +111,24 @@ export default function TopBar() {
   const [visible, setVisible] = useState(true)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('bb_topbar_collapsed') === 'true')
+  const [isCompact, setIsCompact] = useState(false)
+  const [isNarrow, setIsNarrow] = useState(false)
+
+  useEffect(() => {
+    const compactQuery = window.matchMedia('(max-width: 1100px)')
+    const narrowQuery = window.matchMedia('(max-width: 900px)')
+    const update = () => {
+      setIsCompact(compactQuery.matches)
+      setIsNarrow(narrowQuery.matches)
+    }
+    update()
+    compactQuery.addEventListener('change', update)
+    narrowQuery.addEventListener('change', update)
+    return () => {
+      compactQuery.removeEventListener('change', update)
+      narrowQuery.removeEventListener('change', update)
+    }
+  }, [])
 
   useEffect(() => {
     // Cycle: 10s visible → 3s fade out → swap text → 3s fade in → 10s visible → ...
@@ -127,7 +145,7 @@ export default function TopBar() {
 
   return (
     <div
-      className="fixed right-0 z-40 flex h-[64px] items-center px-5"
+      className="app-topbar fixed right-0 z-40 flex h-[64px] items-center px-5"
       style={{
         top: 0,
         left: 'var(--sidebar-w, 216px)',
@@ -135,6 +153,7 @@ export default function TopBar() {
         borderBottom: '1px solid rgba(255,255,255,0.07)',
       }}
     >
+      {!isNarrow && <>
       {/* Left — External ad banner */}
       <AdBanner
         ads={EXTERNAL_ADS}
@@ -144,9 +163,10 @@ export default function TopBar() {
         maskBg="rgba(22,33,44,0.97)"
         startDelayMs={0}
       />
+      </>}
 
       {/* Center — brand, single horizontal line */}
-      <div className="flex flex-1 items-center justify-center gap-2" style={{ whiteSpace: 'nowrap' }}>
+      <div className="flex flex-1 items-center justify-center gap-2" style={{ minWidth: 0, whiteSpace: 'nowrap' }}>
         <span style={{ fontSize: 14, fontWeight: 600 }}>
           <span style={{ color: 'rgba(255,255,255,0.5)' }}>bon</span>
           <span style={{ color: '#F5A623' }}>UP</span>
@@ -154,8 +174,8 @@ export default function TopBar() {
         <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 14 }}>·</span>
         <span style={{ fontSize: 18, fontWeight: 800, color: '#ffffff' }}>Blackboard</span>
         {/* Teal dot */}
-        <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#2DD4BF', flexShrink: 0, margin: '0 10px' }} />
-        <span
+        {!isCompact && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#2DD4BF', flexShrink: 0, margin: '0 10px' }} />}
+        {!isCompact && <span
           style={{
             display: 'inline-block',
             minWidth: 390,
@@ -169,9 +189,10 @@ export default function TopBar() {
           }}
         >
           {SLOGANS[sloganIdx]}
-        </span>
+        </span>}
       </div>
 
+      {!isNarrow && <>
       {/* Right — Internal ad banner */}
       <AdBanner
         ads={INTERNAL_ADS}
@@ -181,6 +202,7 @@ export default function TopBar() {
         maskBg="rgba(22,33,44,0.97)"
         startDelayMs={6000}
       />
+      </>}
 
       {/* Collapse toggle — gold bee */}
       <button

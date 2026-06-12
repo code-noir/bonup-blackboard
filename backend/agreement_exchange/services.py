@@ -14,7 +14,9 @@ from backend.agreement_exchange.models import (
 )
 from backend.agreement_exchange.notifications import find_user_by_email, notify_exchange_recipient
 from backend.ai.models import WorkflowState
+from backend.api.contracts.services.visibility_service import can_user_see_exchange
 from backend.contracts.models import Contract, ContractVersion
+from backend.contracts.section_normalizer import normalize_contract_sections
 
 User = get_user_model()
 
@@ -38,35 +40,7 @@ def extract_snapshot(version):
 
 
 def extract_contract_sections(content_snapshot):
-    if not content_snapshot:
-        return []
-    if isinstance(content_snapshot, str):
-        try:
-            snapshot = json.loads(content_snapshot)
-        except (TypeError, ValueError):
-            return []
-    else:
-        snapshot = content_snapshot
-    if not isinstance(snapshot, dict):
-        return []
-    sections = snapshot.get("sections")
-    if not isinstance(sections, list):
-        return []
-    normalized = []
-    for index, section in enumerate(sections, start=1):
-        if not isinstance(section, dict):
-            continue
-        title = section.get("name") or section.get("title") or section.get("heading") or ""
-        if not title:
-            continue
-        normalized.append({
-            "id": str(section.get("id") or section.get("section_id") or index),
-            "title": str(title),
-            "name": str(title),
-            "number": section.get("number") or index,
-            "content_html": section.get("content_html") or section.get("html") or section.get("body") or "",
-        })
-    return normalized
+    return normalize_contract_sections(content_snapshot)
 
 
 def _reviewed_update_snapshot(previous_version, change_request, *, decision, final_text, initiator_response):
@@ -455,9 +429,14 @@ def resolve_active_exchange_for_contract_and_user(contract, user):
         .select_related("current_contract_version", "source_contract_version", "initiator", "counterparty_user")
         .prefetch_related("requests")
     )
-    if not candidates:
+    visible_candidates = [
+        exchange
+        for exchange in candidates
+        if can_user_see_exchange(exchange, user)
+    ]
+    if not visible_candidates:
         return None
-    return sorted(candidates, key=lambda exchange: _exchange_open_rank(exchange, user=user))[0]
+    return sorted(visible_candidates, key=lambda exchange: _exchange_open_rank(exchange, user=user))[0]
 
 
 def find_existing_exchange_for_open(*, contract, version, counterparty_email, user=None):
@@ -489,6 +468,12 @@ def create_or_open_from_workflow(*, user, workflow_id):
         raise AgreementExchangeResolveError("permission_denied", "You do not have access to this workflow.")
     if not workflow.contract_id:
         raise AgreementExchangeResolveError("contract_missing", "Workflow is not linked to a contract.")
+
+    if workflow.user_id != user.id:
+        exchange = resolve_active_exchange_for_contract_and_user(workflow.contract, user)
+        if exchange is not None:
+            return load_exchange(exchange.id)
+        raise AgreementExchangeResolveError("permission_denied", "Agreement Exchange is not available yet.")
 
     version = get_workflow_contract_version(workflow)
     if version is None:

@@ -9,7 +9,7 @@ import uuid
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from backend.ai.context import build_user_context
@@ -20,6 +20,7 @@ from .helpers import authed_client, make_contract, make_user, make_subscription
 
 CHAT_URL = "/api/ai/chat/"
 CONVERSATIONS_URL = "/api/ai/conversations/"
+GENERATE_CONTRACT_DRAFT_URL = "/api/ai/contracts/generate-draft/"
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +105,61 @@ class AITierGateTests(TestCase):
         from rest_framework.test import APIClient
         r = APIClient().post(CHAT_URL, {"message": "Hello"}, format="json")
         self.assertEqual(r.status_code, 401)
+
+
+# ---------------------------------------------------------------------------
+# Contract draft generation
+# ---------------------------------------------------------------------------
+
+class AIContractDraftGenerationTests(TestCase):
+
+    def setUp(self):
+        self.user = make_user("generate_user", "generate_user@example.com")
+        make_ai_subscription(self.user, "basic")
+        self.client = authed_client(self.user)
+
+    @override_settings(ANTHROPIC_API_KEY="test-key")
+    def test_missing_prompt_or_fields_returns_400(self):
+        r = self.client.post(GENERATE_CONTRACT_DRAFT_URL, {}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("prompt", r.data["error"].lower())
+
+    @override_settings(ANTHROPIC_API_KEY="")
+    def test_provider_not_configured_returns_clear_error(self):
+        r = self.client.post(
+            GENERATE_CONTRACT_DRAFT_URL,
+            {"prompt": "Draft a lawn service contract."},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 503)
+        self.assertIn("not configured", r.data["error"].lower())
+        self.assertEqual(Contract.objects.filter(initiator=self.user).count(), 0)
+
+    @override_settings(ANTHROPIC_API_KEY="test-key")
+    @patch("backend.api.ai.views.anthropic.Anthropic")
+    def test_generate_draft_returns_ai_text_and_metadata(self, MockClient):
+        mock_instance = MagicMock()
+        mock_content = MagicMock()
+        mock_content.text = "LAWN SERVICE AGREEMENT\n\n1. Services..."
+        mock_instance.messages.create.return_value = MagicMock(content=[mock_content])
+        MockClient.return_value = mock_instance
+
+        r = self.client.post(
+            GENERATE_CONTRACT_DRAFT_URL,
+            {
+                "prompt": "Draft a lawn service agreement.",
+                "contract_type": "Lawn Service Agreement",
+                "jurisdiction": "Florida",
+                "include_clauses": ["payment", "service_obligations"],
+            },
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["draft_text"], "LAWN SERVICE AGREEMENT\n\n1. Services...")
+        self.assertEqual(r.data["title"], "AI Draft - Lawn Service Agreement")
+        self.assertIn("missing_fields", r.data)
+        self.assertEqual(Contract.objects.filter(initiator=self.user).count(), 0)
+
 
 
 # ---------------------------------------------------------------------------

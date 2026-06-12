@@ -1,42 +1,45 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import api from '@/api/client'
-import WorkflowWorkspace, { WorkflowRecord } from '@/components/workflow/WorkflowWorkspace'
 
-type WorkflowDetailResponse = WorkflowRecord
+type AgreementExchangeFromWorkflowResponse = {
+  exchange_id: string
+  redirect_url: string
+}
+
+type AgreementExchangeErrorResponse = {
+  code?: string
+  detail?: string
+  error?: string
+}
 
 export default function WorkflowDetail() {
   const { workflowId } = useParams()
   const navigate = useNavigate()
-  const [workflow, setWorkflow] = useState<WorkflowRecord | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!workflowId) return
+    if (!workflowId) {
+      setError('Workflow id is missing.')
+      return
+    }
 
     let cancelled = false
-    setIsLoading(true)
-    api.get<WorkflowDetailResponse>(`/ai/workflows/${workflowId}/`)
+    setError('')
+    api.post<AgreementExchangeFromWorkflowResponse>('/agreement-exchange/from-workflow/', { workflow_id: workflowId })
       .then(({ data }) => {
-        if (!cancelled) setWorkflow(data)
+        if (!cancelled) navigate(data.redirect_url || `/agreement-exchange/${data.exchange_id}`, { replace: true })
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err?.response?.data?.error || 'Workflow could not be loaded.')
-          setWorkflow(null)
+          const data = err?.response?.data as AgreementExchangeErrorResponse | undefined
+          const message = data?.detail || data?.error || 'Agreement Exchange could not be opened.'
+          setError(data?.code ? `${data.code}: ${message}` : message)
         }
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false)
       })
 
     return () => { cancelled = true }
-  }, [workflowId])
-
-  if (isLoading) {
-    return <div style={{ color: '#6B7280' }}>Loading workflow workspace...</div>
-  }
+  }, [navigate, workflowId])
 
   if (error) {
     return (
@@ -45,7 +48,7 @@ export default function WorkflowDetail() {
           onClick={() => navigate('/workflows')}
           style={{ height: 34, padding: '0 12px', border: '1px solid #E5E7EB', borderRadius: 8, background: 'white', color: '#374151', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
         >
-          ← Back to Workflows
+          Back to Workflows
         </button>
         <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 12, padding: '12px 14px', fontSize: 13, color: '#B91C1C' }}>
           {error}
@@ -54,19 +57,5 @@ export default function WorkflowDetail() {
     )
   }
 
-  if (!workflow) {
-    return null
-  }
-
-  return (
-    <div className="space-y-4">
-      <button
-        onClick={() => navigate('/workflows')}
-        style={{ height: 34, padding: '0 12px', border: '1px solid #E5E7EB', borderRadius: 8, background: 'white', color: '#374151', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-      >
-        ← Back to Workflows
-      </button>
-      <WorkflowWorkspace workflow={workflow} />
-    </div>
-  )
+  return <div style={{ color: '#6B7280' }}>Opening Agreement Exchange...</div>
 }

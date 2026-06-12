@@ -6,6 +6,8 @@
 
 from django.test import TestCase
 
+from backend.agreement_exchange.models import AgreementExchange
+
 from .helpers import (
     authed_client,
     make_contract,
@@ -40,7 +42,24 @@ class OwnershipContractTests(TestCase):
         self.assertIn(str(self.contract.id), ids)
         self.assertNotIn(str(self.charlie_contract.id), ids)
 
-    def test_counterparty_list_returns_shared_contract(self):
+    def test_counterparty_list_excludes_pre_send_contract(self):
+        r = authed_client(self.bob).get("/api/contracts/")
+        ids = [c["id"] for c in r.data]
+        self.assertNotIn(str(self.contract.id), ids)
+
+    def test_counterparty_list_returns_shared_contract_after_initial_send(self):
+        version = make_version(self.contract, self.alice, status="sent")
+        AgreementExchange.objects.create(
+            contract=self.contract,
+            current_contract_version=version,
+            source_contract_version=version,
+            initiator=self.alice,
+            counterparty_email=self.bob.email,
+            counterparty_user=self.bob,
+            status=AgreementExchange.STATUS_COUNTERPARTY_REVIEW,
+            current_actor=AgreementExchange.ACTOR_COUNTERPARTY,
+        )
+
         r = authed_client(self.bob).get("/api/contracts/")
         ids = [c["id"] for c in r.data]
         self.assertIn(str(self.contract.id), ids)

@@ -181,6 +181,9 @@ class ContractVersionSignAPIView(APIView):
 
         version.status = "signed"
         version.save(update_fields=["status"])
+        if contract.status != "active":
+            contract.status = "active"
+            contract.save(update_fields=["status"])
 
         log_activity(
             contract=contract,

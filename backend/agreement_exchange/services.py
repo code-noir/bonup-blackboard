@@ -849,6 +849,14 @@ def sign_exchange(*, exchange_id, user, typed_name="", signature_text="", ip_add
         ip_address=ip_address,
         user_agent=user_agent,
     )
+    current_version = exchange.current_contract_version
+    contract = exchange.contract
+    if current_version.status != "signed":
+        current_version.status = "signed"
+        current_version.save(update_fields=["status"])
+    if contract.status != "active":
+        contract.status = "active"
+        contract.save(update_fields=["status"])
     exchange.status = AgreementExchange.STATUS_SIGNED
     exchange.current_actor = AgreementExchange.ACTOR_NONE
     exchange.save(update_fields=["status", "current_actor", "updated_at"])

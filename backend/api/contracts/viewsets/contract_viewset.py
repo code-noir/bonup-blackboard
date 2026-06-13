@@ -13,7 +13,7 @@ from backend.contract_pro.services import ContractProEditingService, ContractPro
 
 from backend.api.contracts.permissions import contract_party_response, is_party
 from backend.api.contracts.serializers import ContractSerializer, ContractVersionSerializer
-from backend.api.contracts.services.visibility_service import can_user_see_contract_on_dashboard
+from backend.api.contracts.services.visibility_service import can_user_see_contract_on_dashboard, resolve_contract_dashboard_status
 from backend.activity.log import log_activity
 
 
@@ -42,9 +42,11 @@ class ContractViewSet(ViewSet):
             .order_by("contract_id", "-version_number")
         ):
             latest_versions.setdefault(str(version.contract_id), version)
+        contracts_by_id = {str(contract.id): contract for contract in contracts}
         for item in data:
             latest = latest_versions.get(str(item["id"]))
             item["latest_version"] = ContractVersionSerializer(latest).data if latest else None
+            item.update(resolve_contract_dashboard_status(contracts_by_id[str(item["id"])]))
         return Response(data)
 
     def create(self, request):
@@ -91,6 +93,7 @@ class ContractViewSet(ViewSet):
             ContractVersionSerializer(latest_version).data
             if latest_version else None
         )
+        data.update(resolve_contract_dashboard_status(contract))
         return Response(data)
 
     def update(self, request, pk=None):

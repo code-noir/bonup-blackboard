@@ -18,7 +18,7 @@ from backend.ai.models import (
 )
 from backend.agreement_exchange.services import exchange_redirect_url, resolve_active_exchange_for_contract_and_user
 from backend.api.contracts.permissions import contract_party_response, is_party
-from backend.api.contracts.services.visibility_service import can_user_see_contract_on_dashboard
+from backend.api.contracts.services.visibility_service import can_user_see_contract_on_dashboard, resolve_contract_dashboard_status
 from backend.contracts.models import Contract, ContractVersion
 
 
@@ -327,6 +327,19 @@ class WorkflowForContractAPIView(APIView):
             return Response(
                 {"error": "This contract is not available for negotiation yet."},
                 status=status.HTTP_403_FORBIDDEN,
+            )
+
+        dashboard_status = resolve_contract_dashboard_status(contract)
+        if dashboard_status["lifecycle_ready"]:
+            return Response(
+                {
+                    "contract_id": str(contract.id),
+                    "created": False,
+                    "lifecycle_ready": True,
+                    "primary_action": dashboard_status["primary_action"],
+                    "redirect_url": dashboard_status["primary_action_url"],
+                },
+                status=status.HTTP_200_OK,
             )
 
         active_exchange = resolve_active_exchange_for_contract_and_user(contract, request.user)

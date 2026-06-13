@@ -1178,6 +1178,8 @@ class AgreementExchangeMVPAPITests(TestCase):
     def test_counterparty_sign_works(self):
         exchange, _ = self.create_exchange()
         self.send_initial(exchange)
+        original_version_count = ContractVersion.objects.count()
+        signed_version_id = exchange.current_contract_version_id
 
         response = self.counterparty_client.post(
             f"/api/agreement-exchange/{exchange.id}/sign/",
@@ -1187,14 +1189,43 @@ class AgreementExchangeMVPAPITests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         exchange.refresh_from_db()
+        self.version.refresh_from_db()
+        self.contract.refresh_from_db()
         self.assertEqual(exchange.status, AgreementExchange.STATUS_SIGNED)
         self.assertEqual(exchange.current_actor, AgreementExchange.ACTOR_NONE)
         self.assertEqual(AgreementExchangeSignature.objects.count(), 1)
+        signature = AgreementExchangeSignature.objects.get()
+        self.assertEqual(signature.signed_version_id, signed_version_id)
+        self.assertEqual(self.version.status, "signed")
+        self.assertEqual(self.contract.status, "active")
+        self.assertEqual(ContractVersion.objects.count(), original_version_count)
         self.assertEqual(AgreementExchangeEvent.objects.filter(event_type="signed").count(), 1)
         self.assertEqual(response.data["exchange"]["screen_state"], "signed")
         self.assertEqual(response.data["exchange"]["available_actions"], [])
         notification = self.notification_for(self.initiator)
         self.assertEqual(notification.metadata["redirect_url"], f"/agreement-exchange/{exchange.id}")
+
+        dashboard_response = self.counterparty_client.get("/api/contracts/")
+        self.assertEqual(dashboard_response.status_code, 200)
+        dashboard_contract = next(item for item in dashboard_response.data if item["id"] == str(self.contract.id))
+        self.assertEqual(dashboard_contract["display_status"], "signed")
+        self.assertEqual(dashboard_contract["display_status_label"], "Signed")
+        self.assertEqual(dashboard_contract["latest_exchange_status"], AgreementExchange.STATUS_SIGNED)
+        self.assertEqual(dashboard_contract["signed_version_id"], str(signed_version_id))
+        self.assertTrue(dashboard_contract["lifecycle_ready"])
+        self.assertEqual(dashboard_contract["primary_action"], "open_lifecycle")
+        self.assertEqual(dashboard_contract["primary_action_url"], f"/lifecycle?contract={self.contract.id}")
+
+        open_response = self.counterparty_client.post(
+            "/api/ai/workflows/for-contract/",
+            {"contract_id": str(self.contract.id)},
+            format="json",
+        )
+        self.assertEqual(open_response.status_code, 200)
+        self.assertEqual(open_response.data["redirect_url"], f"/lifecycle?contract={self.contract.id}")
+        self.assertEqual(open_response.data["primary_action"], "open_lifecycle")
+        self.assertNotIn("exchange_id", open_response.data)
+        self.assertEqual(AgreementExchange.objects.count(), 1)
 
     def test_reject_exchange_works(self):
         exchange, _ = self.create_exchange()

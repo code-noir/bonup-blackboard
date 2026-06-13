@@ -42,9 +42,18 @@ interface ContractRecord {
   state?: string
   created_at?: string
   latest_version?: ContractVersionPayload | null
+  display_status?: string
+  display_status_label?: string
+  active_exchange_id?: string | null
+  latest_exchange_status?: string | null
+  signed_version_id?: string | null
+  lifecycle_ready?: boolean
+  primary_action?: string
+  primary_action_url?: string
 }
 
 function contractStatusLabel(contract: ContractRecord): string {
+  if (contract.display_status_label) return contract.display_status_label
   if (contract.state === 'created') return 'Created'
   if (contract.state === 'prepared') return 'Prepared'
   if (contract.state === 'ready_to_send') return 'Ready to Send'
@@ -57,9 +66,10 @@ function contractStatusLabel(contract: ContractRecord): string {
 }
 
 function statusStyle(label: string): CSSProperties {
-  if (label === 'Active') return { background: '#ECFDF5', color: '#047857' }
+  if (label === 'Active' || label === 'Signed') return { background: '#ECFDF5', color: '#047857' }
   if (label === 'Prepared' || label === 'Ready to Send') return { background: '#E0F2FE', color: '#0369A1' }
-  if (label === 'Sent / Awaiting Signature') return { background: '#FEF3C7', color: '#B45309' }
+  if (label === 'Under Negotiation' || label === 'Sent / Awaiting Signature') return { background: '#FEF3C7', color: '#B45309' }
+  if (label === 'Rejected') return { background: '#FEF2F2', color: '#B91C1C' }
   if (label === 'Completed / Closed') return { background: '#EEF2FF', color: '#4F46E5' }
   if (label === 'Archived') return { background: '#F3F4F6', color: '#6B7280' }
   return { background: '#F8FAFC', color: '#475569' }
@@ -120,6 +130,21 @@ function hasLifecycleAccess(contract: ContractRecord): boolean {
   const status = (contract.status || '').toLowerCase()
   return ['signed', 'active', 'completed', 'closed', 'archived'].includes(state)
     || ['signed', 'active', 'completed', 'closed', 'archived'].includes(status)
+}
+
+function primaryActionLabel(action?: string): string {
+  if (action === 'open_lifecycle') return 'Open Lifecycle'
+  if (action === 'open_rejected_exchange') return 'Open Exchange'
+  if (action === 'open_negotiation') return 'Open Negotiation'
+  return 'Open'
+}
+
+function fallbackPrimaryAction(contract: ContractRecord): { label: string; url: string } | null {
+  const phase = contractPhase(contract)
+  if (phase === 'draft') return { label: 'Open Editor', url: `/contracts/create?id=${contract.id}` }
+  if (phase === 'negotiation') return { label: 'Open Negotiation', url: `/negotiation/${contract.id}` }
+  if (hasLifecycleAccess(contract)) return { label: 'Open Lifecycle', url: `/lifecycle?contract=${contract.id}` }
+  return null
 }
 
 const actionButtonStyle = (variant: 'primary' | 'secondary' | 'disabled'): CSSProperties => ({
@@ -325,10 +350,11 @@ export default function Dashboard() {
             {contracts.map((contract) => {
               const label = contractStatusLabel(contract)
               const summary = contractSummary(contract)
-              const phase = contractPhase(contract)
-              const showEditor = phase === 'draft'
-              const showNegotiation = phase === 'negotiation'
-              const showLifecycle = hasLifecycleAccess(contract)
+              const fallbackAction = fallbackPrimaryAction(contract)
+              const primaryUrl = contract.primary_action_url || fallbackAction?.url
+              const primaryLabel = contract.primary_action
+                ? primaryActionLabel(contract.primary_action)
+                : fallbackAction?.label
 
               return (
                 <article
@@ -379,33 +405,13 @@ export default function Dashboard() {
                       View Contract
                     </button>
 
-                    {showEditor && (
+                    {primaryUrl && primaryLabel && (
                       <button
                         type="button"
-                        onClick={() => navigate(`/contracts/create?id=${contract.id}`)}
+                        onClick={() => navigate(primaryUrl)}
                         style={actionButtonStyle('primary')}
                       >
-                        Open Editor
-                      </button>
-                    )}
-
-                    {showNegotiation && (
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/negotiation/${contract.id}`)}
-                        style={actionButtonStyle('primary')}
-                      >
-                        Open Negotiation
-                      </button>
-                    )}
-
-                    {showLifecycle && (
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/lifecycle?contract=${contract.id}`)}
-                        style={actionButtonStyle('primary')}
-                      >
-                        Lifecycle Management
+                        {primaryLabel}
                       </button>
                     )}
                   </div>

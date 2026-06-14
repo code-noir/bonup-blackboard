@@ -66,6 +66,9 @@ ACTIVE_EXCHANGE_STATUSES = {
     AgreementExchange.STATUS_READY_TO_SIGN,
 }
 
+DRAFTING_CONTRACT_STATES = {"created", "draft", "drafting"}
+PREPARED_CONTRACT_STATES = {"prepared", "ready", "ready_to_send", "ready_for_negotiation"}
+
 
 def _contract_exchanges(contract):
     prefetched_exchanges = getattr(contract, "_prefetched_objects_cache", {}).get("agreement_exchanges")
@@ -80,6 +83,14 @@ def _latest_current_version(contract):
         versions = sorted(prefetched_versions, key=lambda version: version.version_number, reverse=True)
         return next((version for version in versions if not version.superseded), versions[0] if versions else None)
     return contract.versions.filter(superseded=False).order_by("-version_number", "-created_at").first()
+
+
+def _normalized_contract_state(contract):
+    return str(contract.state or "").strip().lower()
+
+
+def _normalized_contract_status(contract):
+    return str(contract.status or "").strip().lower()
 
 
 def resolve_contract_dashboard_status(contract):
@@ -98,8 +109,18 @@ def resolve_contract_dashboard_status(contract):
     lifecycle_target = resolve_lifecycle_ready_contract(contract)
     signed_version = lifecycle_target["signed_version"]
     signed_version_id = signed_version.id if signed_version is not None else (signed_exchange.current_contract_version_id if signed_exchange else None)
+    contract_state = _normalized_contract_state(contract)
+    contract_status = _normalized_contract_status(contract)
 
-    if signed_version is not None:
+    if contract_status == "active":
+        display_status = "active"
+        display_status_label = "Active"
+        lifecycle_ready = signed_version is not None
+        primary_action = "open_lifecycle" if lifecycle_ready else "open_contract"
+        primary_action_label = "Open Lifecycle" if lifecycle_ready else "Open"
+        primary_action_url = f"/lifecycle?contract={contract.id}" if lifecycle_ready else f"/contracts/{contract.id}/view"
+        active_exchange_id = None
+    elif signed_version is not None:
         display_status = "signed"
         display_status_label = "Signed"
         lifecycle_ready = True
@@ -131,13 +152,29 @@ def resolve_contract_dashboard_status(contract):
         primary_action_label = "Open Exchange"
         primary_action_url = f"/agreement-exchange/{rejected_exchange.id}"
         active_exchange_id = None
-    else:
+    elif contract_state in DRAFTING_CONTRACT_STATES and contract_status == "draft":
+        display_status = "drafting"
+        display_status_label = "Drafting"
+        lifecycle_ready = False
+        primary_action = "continue_draft"
+        primary_action_label = "Continue Draft"
+        primary_action_url = f"/contracts/create?id={contract.id}"
+        active_exchange_id = None
+    elif contract_state in PREPARED_CONTRACT_STATES:
         display_status = "prepared"
         display_status_label = "Prepared"
         lifecycle_ready = False
         primary_action = "open_negotiation"
         primary_action_label = "Open Negotiation"
         primary_action_url = f"/negotiation/{contract.id}"
+        active_exchange_id = None
+    else:
+        display_status = "drafting"
+        display_status_label = "Drafting"
+        lifecycle_ready = False
+        primary_action = "continue_draft"
+        primary_action_label = "Continue Draft"
+        primary_action_url = f"/contracts/create?id={contract.id}"
         active_exchange_id = None
 
     return {

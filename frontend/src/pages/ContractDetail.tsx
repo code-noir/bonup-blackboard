@@ -54,7 +54,8 @@ function formatDate(d: string | null): string {
 
 function statusColor(s: string): { background: string; color: string } {
   switch (s.toUpperCase()) {
-    case 'DRAFT':    return { background: 'rgba(107,114,128,0.12)', color: '#6B7280' }
+    case 'DRAFT':
+    case 'DRAFTING': return { background: 'rgba(107,114,128,0.12)', color: '#6B7280' }
     case 'SENT':     return { background: 'rgba(245,166,35,0.15)', color: '#D4900A' }
     case 'SIGNED':   return { background: 'rgba(16,185,129,0.12)', color: '#047857' }
     case 'ACTIVE':   return { background: 'rgba(16,185,129,0.12)', color: '#059669' }

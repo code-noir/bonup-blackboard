@@ -113,6 +113,49 @@ class LifecycleFoundationTests(TestCase):
         self.assertEqual(response.data["display_status"], "signed")
         self.assertEqual(response.data["display_status_label"], "Signed")
 
+    def test_newly_created_draft_contract_returns_drafting_metadata(self):
+        draft_contract = make_contract(self.initiator, counterparty_email=self.counterparty.email)
+        draft_contract.status = "draft"
+        draft_contract.state = "created"
+        draft_contract.save(update_fields=["status", "state"])
+
+        dashboard_status = resolve_contract_dashboard_status(draft_contract)
+
+        self.assertEqual(dashboard_status["display_status"], "drafting")
+        self.assertEqual(dashboard_status["display_status_label"], "Drafting")
+        self.assertFalse(dashboard_status["lifecycle_ready"])
+        self.assertEqual(dashboard_status["primary_action"], "continue_draft")
+        self.assertEqual(dashboard_status["primary_action_label"], "Continue Draft")
+        self.assertEqual(dashboard_status["primary_action_url"], f"/contracts/create?id={draft_contract.id}")
+
+    def test_drafting_contract_detail_metadata_does_not_show_prepared(self):
+        draft_contract = make_contract(self.initiator, counterparty_email=self.counterparty.email)
+        draft_contract.status = "draft"
+        draft_contract.state = "drafting"
+        draft_contract.save(update_fields=["status", "state"])
+
+        response = self.initiator_client.get(f"/api/contracts/{draft_contract.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["display_status"], "drafting")
+        self.assertEqual(response.data["display_status_label"], "Drafting")
+        self.assertNotEqual(response.data["display_status_label"], "Prepared")
+
+    def test_prepared_contract_returns_prepared_metadata(self):
+        prepared_contract = make_contract(self.initiator, counterparty_email=self.counterparty.email)
+        prepared_contract.status = "draft"
+        prepared_contract.state = "prepared"
+        prepared_contract.save(update_fields=["status", "state"])
+
+        dashboard_status = resolve_contract_dashboard_status(prepared_contract)
+
+        self.assertEqual(dashboard_status["display_status"], "prepared")
+        self.assertEqual(dashboard_status["display_status_label"], "Prepared")
+        self.assertFalse(dashboard_status["lifecycle_ready"])
+        self.assertEqual(dashboard_status["primary_action"], "open_negotiation")
+        self.assertEqual(dashboard_status["primary_action_label"], "Open Negotiation")
+        self.assertEqual(dashboard_status["primary_action_url"], f"/negotiation/{prepared_contract.id}")
+
     def test_signed_exchange_without_signed_version_shows_signed_but_no_lifecycle(self):
         unsigned_contract = make_contract(self.initiator, counterparty_email=self.counterparty.email)
         unsigned_version = make_version(unsigned_contract, self.initiator, content_snapshot="Draft", status="sent")
@@ -152,6 +195,9 @@ class LifecycleFoundationTests(TestCase):
             current_actor=AgreementExchange.ACTOR_COUNTERPARTY,
         )
         prepared_contract = make_contract(self.initiator, counterparty_email=self.counterparty.email)
+        prepared_contract.status = "draft"
+        prepared_contract.state = "prepared"
+        prepared_contract.save(update_fields=["status", "state"])
 
         negotiating_status = resolve_contract_dashboard_status(negotiating_contract)
         prepared_status = resolve_contract_dashboard_status(prepared_contract)

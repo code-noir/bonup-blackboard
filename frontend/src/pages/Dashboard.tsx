@@ -68,6 +68,7 @@ function contractStatusLabel(contract: ContractRecord): string {
 
 function statusStyle(label: string): CSSProperties {
   if (label === 'Active' || label === 'Signed') return { background: '#ECFDF5', color: '#047857' }
+  if (label === 'Drafting') return { background: '#F8FAFC', color: '#475569' }
   if (label === 'Prepared' || label === 'Ready to Send') return { background: '#E0F2FE', color: '#0369A1' }
   if (label === 'Under Negotiation' || label === 'Sent / Awaiting Signature') return { background: '#FEF3C7', color: '#B45309' }
   if (label === 'Rejected') return { background: '#FEF2F2', color: '#B91C1C' }
@@ -137,6 +138,7 @@ function primaryActionLabel(action?: string): string {
   if (action === 'open_lifecycle') return 'Open Lifecycle'
   if (action === 'open_rejected_exchange') return 'Open Exchange'
   if (action === 'open_negotiation') return 'Open Negotiation'
+  if (action === 'continue_draft') return 'Continue Draft'
   if (action === 'open_contract') return 'Open'
   return 'Open'
 }

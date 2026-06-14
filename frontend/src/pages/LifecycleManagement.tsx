@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import api from '@/api/client'
 
 type SummaryCounts = Record<string, number>
@@ -290,7 +291,185 @@ function ModalShell({
   )
 }
 
-export default function LifecycleManagement() {
+
+type LifecycleItemGroup = 'obligations' | 'payments' | 'deadlines' | 'services' | 'risks' | 'notes'
+
+type ContractScopedLifecycleResponse = {
+  contract: { id: string; title: string; status: string; state?: string; counterparty_email?: string; counterparty_name?: string }
+  signed_version: { id: string; label: string; status: string; content_snapshot?: string }
+  lifecycle_agreement: { id: string; status: string; started_at?: string; source_exchange_id?: string | null }
+  parties?: { initiator?: { email?: string; name?: string } | null; counterparty?: { email?: string; name?: string } | null }
+  items: Record<LifecycleItemGroup, Array<Record<string, string | null | undefined>>>
+  events: Array<{ id: string; event_type: string; title: string; description?: string; occurred_at?: string }>
+}
+
+const LIFECYCLE_TABS: Array<{ key: LifecycleItemGroup | 'overview' | 'events' | 'documents'; label: string }> = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'obligations', label: 'Obligations' },
+  { key: 'payments', label: 'Payments' },
+  { key: 'deadlines', label: 'Deadlines' },
+  { key: 'services', label: 'Services' },
+  { key: 'events', label: 'Events' },
+  { key: 'documents', label: 'Documents / Signed Version' },
+]
+
+const EMPTY_COPY: Record<LifecycleItemGroup, string> = {
+  obligations: 'No obligations added yet.',
+  payments: 'No payment obligations added yet.',
+  deadlines: 'No deadlines tracked yet.',
+  services: 'No service duties added yet.',
+  risks: 'No risks tracked yet.',
+  notes: 'No notes added yet.',
+}
+
+function ContractScopedLifecycle({ contractId }: { contractId: string }) {
+  const [data, setData] = useState<ContractScopedLifecycleResponse | null>(null)
+  const [activeTab, setActiveTab] = useState<(typeof LIFECYCLE_TABS)[number]['key']>('overview')
+  const [isLoading, setIsLoading] = useState(true)
+  const [feedback, setFeedback] = useState<ActionFeedback>(null)
+  const [draftType, setDraftType] = useState<LifecycleItemGroup>('obligations')
+  const [draftTitle, setDraftTitle] = useState('')
+
+  const loadLifecycle = async () => {
+    setIsLoading(true)
+    try {
+      const response = await api.get<ContractScopedLifecycleResponse>('/lifecycle/', { params: { contract: contractId } })
+      setData(response.data)
+      setFeedback(null)
+    } catch (error) {
+      setFeedback({ kind: 'error', message: getErrorMessage(error, 'Unable to load lifecycle data for this contract.') })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadLifecycle()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contractId])
+
+  const addItem = async () => {
+    if (!data || !draftTitle.trim()) return
+    const itemType = draftType === 'obligations' ? 'obligation' : draftType === 'payments' ? 'payment' : draftType === 'deadlines' ? 'deadline' : draftType === 'services' ? 'service' : draftType.slice(0, -1)
+    try {
+      await api.post(`/lifecycle/${data.lifecycle_agreement.id}/items/`, { item_type: itemType, title: draftTitle.trim() })
+      setDraftTitle('')
+      await loadLifecycle()
+    } catch (error) {
+      setFeedback({ kind: 'error', message: getErrorMessage(error, 'Unable to add lifecycle item.') })
+    }
+  }
+
+  if (isLoading) return <p style={{ fontSize: 13, color: '#64748B' }}>Loading lifecycle...</p>
+
+  if (!data) {
+    return (
+      <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 14 }}>
+        <p style={{ fontSize: 13, color: '#B91C1C', margin: 0 }}>{feedback?.message || 'Lifecycle data is unavailable.'}</p>
+      </div>
+    )
+  }
+
+  const activeItems = activeTab in data.items ? data.items[activeTab as LifecycleItemGroup] : []
+
+  return (
+    <div className="space-y-6">
+      <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 8, padding: 20 }}>
+        <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.14em', color: '#9CA3AF', fontWeight: 700, margin: '0 0 6px' }}>Signed contract lifecycle</p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={{ fontSize: 26, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{data.contract.title}</h1>
+            <p style={{ fontSize: 13, color: '#6B7280', margin: '8px 0 0' }}>
+              Signed version {data.signed_version.label} · Lifecycle {humanize(data.lifecycle_agreement.status)}
+            </p>
+          </div>
+          <span style={{ alignSelf: 'flex-start', borderRadius: 999, padding: '5px 10px', fontSize: 11, fontWeight: 800, ...statusStyle('Paid') }}>Signed</span>
+        </div>
+      </section>
+
+      {feedback && (
+        <div style={{ background: feedback.kind === 'success' ? '#ECFDF5' : '#FEF2F2', border: `1px solid ${feedback.kind === 'success' ? '#A7F3D0' : '#FECACA'}`, borderRadius: 8, padding: '12px 14px' }}>
+          <p style={{ fontSize: 13, color: feedback.kind === 'success' ? '#047857' : '#B91C1C', margin: 0 }}>{feedback.message}</p>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {LIFECYCLE_TABS.map((tab) => (
+          <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} style={{ border: '1px solid #CBD5E1', borderRadius: 8, background: activeTab === tab.key ? '#0F1F3D' : '#FFFFFF', color: activeTab === tab.key ? '#FFFFFF' : '#334155', padding: '8px 11px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'overview' && (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <StatCard label="Lifecycle Status" value={humanize(data.lifecycle_agreement.status)} sub={`Started ${formatDate(data.lifecycle_agreement.started_at)}`} />
+          <StatCard label="Counterparty" value={data.contract.counterparty_name || data.contract.counterparty_email || '—'} sub="Signed agreement party" />
+          <StatCard label="Tracked Items" value={Object.values(data.items).reduce((sum, items) => sum + items.length, 0)} sub="Manual and existing lifecycle records" />
+        </div>
+      )}
+
+      {activeTab in data.items && (
+        <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 8, padding: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+            <div>
+              <h2 style={{ fontSize: 16, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{LIFECYCLE_TABS.find((tab) => tab.key === activeTab)?.label}</h2>
+              <p style={{ fontSize: 12, color: '#6B7280', margin: '4px 0 0' }}>Contract-scoped lifecycle records for this signed agreement.</p>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <select value={draftType} onChange={(event) => setDraftType(event.target.value as LifecycleItemGroup)} style={{ height: 34, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 8px', fontSize: 12 }}>
+                {(['obligations', 'payments', 'deadlines', 'services', 'risks', 'notes'] as LifecycleItemGroup[]).map((key) => <option key={key} value={key}>{humanize(key)}</option>)}
+              </select>
+              <input value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} placeholder="Add item" style={{ height: 34, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 10px', fontSize: 12 }} />
+              <button type="button" onClick={() => void addItem()} disabled={!draftTitle.trim()} style={{ height: 34, border: 'none', borderRadius: 8, background: draftTitle.trim() ? '#0F1F3D' : '#E5E7EB', color: draftTitle.trim() ? '#FFFFFF' : '#64748B', padding: '0 12px', fontSize: 12, fontWeight: 700, cursor: draftTitle.trim() ? 'pointer' : 'default' }}>Add Item</button>
+            </div>
+          </div>
+          {activeItems.length === 0 ? (
+            <div style={{ border: '1px dashed #CBD5E1', borderRadius: 8, padding: 18, background: '#F8FAFC' }}>
+              <p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>{EMPTY_COPY[activeTab as LifecycleItemGroup]}</p>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {activeItems.map((item) => (
+                <div key={`${item.source}-${item.id}`} style={{ border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                    <p style={{ fontSize: 14, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{item.title}</p>
+                    <span style={{ borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 700, ...statusStyle(item.status === 'completed' ? 'Paid' : 'Due') }}>{humanize(item.status || 'pending')}</span>
+                  </div>
+                  {item.description && <p style={{ fontSize: 12, color: '#475569', margin: '8px 0 0' }}>{item.description}</p>}
+                  <p style={{ fontSize: 11, color: '#94A3B8', margin: '8px 0 0' }}>{item.due_date ? `Due ${formatDate(item.due_date)}` : 'No due date'}{item.amount ? ` · ${formatMoney(item.amount)}` : ''}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {activeTab === 'events' && (
+        <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 8, padding: 20 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 800, color: '#0F1F3D', margin: '0 0 12px' }}>Events</h2>
+          {data.events.length === 0 ? <p style={{ fontSize: 13, color: '#64748B' }}>No lifecycle events recorded yet.</p> : data.events.map((event) => (
+            <div key={event.id} style={{ borderBottom: '1px solid #E5E7EB', padding: '10px 0' }}>
+              <p style={{ fontSize: 13, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{event.title}</p>
+              <p style={{ fontSize: 12, color: '#64748B', margin: '4px 0 0' }}>{event.description || humanize(event.event_type)}</p>
+              <p style={{ fontSize: 11, color: '#94A3B8', margin: '4px 0 0' }}>{formatDate(event.occurred_at)}</p>
+            </div>
+          ))}
+        </section>
+      )}
+
+      {activeTab === 'documents' && (
+        <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 8, padding: 20 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>Signed Version</h2>
+          <p style={{ fontSize: 12, color: '#6B7280', margin: '4px 0 14px' }}>Immutable signed contract snapshot retained from {data.signed_version.label}.</p>
+          <pre style={{ maxHeight: 360, overflow: 'auto', whiteSpace: 'pre-wrap', background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14, fontSize: 12, color: '#334155' }}>{data.signed_version.content_snapshot || 'No signed version snapshot returned.'}</pre>
+        </section>
+      )}
+    </div>
+  )
+}
+
+function GlobalLifecycleManagement() {
   const [obligationSummary, setObligationSummary] = useState<ObligationSummary | null>(null)
   const [paymentSummary, setPaymentSummary] = useState<PaymentSummary | null>(null)
   const [obligations, setObligations] = useState<ObligationRecord[]>([])
@@ -999,4 +1178,14 @@ function FormField({
       />
     </label>
   )
+}
+
+
+export default function LifecycleManagement() {
+  const [searchParams] = useSearchParams()
+  const contractId = searchParams.get('contract')
+
+  if (contractId) return <ContractScopedLifecycle contractId={contractId} />
+
+  return <GlobalLifecycleManagement />
 }

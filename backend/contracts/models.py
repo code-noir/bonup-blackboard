@@ -107,6 +107,7 @@ class Contract(models.Model):
     STATUS_CHOICES = [
         ("draft", "Draft"),
         ("sent", "Sent"),
+        ("signed", "Signed"),
         ("active", "Active"),
         ("completed", "Completed"),
         ("archived", "Archived"),
@@ -803,6 +804,138 @@ class ContractApprovalRequest(models.Model):
 
     def __str__(self):
         return f"{self.approval_type} - {self.status}"
+
+
+class LifecycleAgreement(models.Model):
+    STATUS_ACTIVE = "active"
+    STATUS_COMPLETED = "completed"
+    STATUS_ARCHIVED = "archived"
+
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, "Active"),
+        (STATUS_COMPLETED, "Completed"),
+        (STATUS_ARCHIVED, "Archived"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    contract = models.OneToOneField(
+        Contract,
+        on_delete=models.CASCADE,
+        related_name="lifecycle_agreement",
+    )
+    signed_version = models.ForeignKey(
+        ContractVersion,
+        on_delete=models.PROTECT,
+        related_name="lifecycle_agreements",
+    )
+    source_exchange = models.ForeignKey(
+        "agreement_exchange.AgreementExchange",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="lifecycle_agreements",
+    )
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="owned_lifecycle_agreements",
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    started_at = models.DateTimeField(default=timezone.now)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-started_at"]
+
+    def __str__(self):
+        return f"LifecycleAgreement {self.contract_id} - {self.status}"
+
+
+class LifecycleItem(models.Model):
+    TYPE_OBLIGATION = "obligation"
+    TYPE_PAYMENT = "payment"
+    TYPE_DEADLINE = "deadline"
+    TYPE_SERVICE = "service"
+    TYPE_RISK = "risk"
+    TYPE_NOTE = "note"
+
+    ITEM_TYPE_CHOICES = [
+        (TYPE_OBLIGATION, "Obligation"),
+        (TYPE_PAYMENT, "Payment"),
+        (TYPE_DEADLINE, "Deadline"),
+        (TYPE_SERVICE, "Service"),
+        (TYPE_RISK, "Risk"),
+        (TYPE_NOTE, "Note"),
+    ]
+
+    STATUS_PENDING = "pending"
+    STATUS_COMPLETED = "completed"
+    STATUS_OVERDUE = "overdue"
+    STATUS_CANCELLED = "cancelled"
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_COMPLETED, "Completed"),
+        (STATUS_OVERDUE, "Overdue"),
+        (STATUS_CANCELLED, "Cancelled"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    lifecycle_agreement = models.ForeignKey(
+        LifecycleAgreement,
+        on_delete=models.CASCADE,
+        related_name="items",
+    )
+    item_type = models.CharField(max_length=20, choices=ITEM_TYPE_CHOICES)
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default="")
+    responsible_party = models.CharField(max_length=255, blank=True, default="")
+    beneficiary_party = models.CharField(max_length=255, blank=True, default="")
+    due_date = models.DateTimeField(null=True, blank=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    recurrence = models.CharField(max_length=100, null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    source_clause = models.TextField(null=True, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["due_date", "created_at"]
+        indexes = [
+            models.Index(fields=["lifecycle_agreement", "item_type"], name="contracts_l_lifecyc_4c36b4_idx"),
+            models.Index(fields=["status", "due_date"], name="contracts_l_status_e2c12a_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.item_type} - {self.title}"
+
+
+class LifecycleEvent(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    lifecycle_agreement = models.ForeignKey(
+        LifecycleAgreement,
+        on_delete=models.CASCADE,
+        related_name="events",
+    )
+    event_type = models.CharField(max_length=80)
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default="")
+    occurred_at = models.DateTimeField(default=timezone.now)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-occurred_at", "-created_at"]
+        indexes = [models.Index(fields=["lifecycle_agreement", "event_type"], name="contracts_l_lifecyc_9aca54_idx")]
+
+    def __str__(self):
+        return f"{self.event_type} - {self.title}"
+
 
 class ContractRoleSwitchRequest(models.Model):
     """

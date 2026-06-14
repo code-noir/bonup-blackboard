@@ -10,6 +10,7 @@ urlpatterns = [
     path("auth/", include("backend.api.auth.urls")),
     path("billing/", include("backend.api.billing.urls")),
     path("contracts/", include("backend.api.contracts.urls")),
+    path("lifecycle/", include("backend.api.lifecycle.urls")),
     path("documents/", include("backend.api.documents.urls")),
     path("notifications/", include("backend.api.notifications.urls")),
     path("obligations/", include("backend.api.obligations.urls")),

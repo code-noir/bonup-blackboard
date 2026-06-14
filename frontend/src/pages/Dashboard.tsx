@@ -49,6 +49,7 @@ interface ContractRecord {
   signed_version_id?: string | null
   lifecycle_ready?: boolean
   primary_action?: string
+  primary_action_label?: string
   primary_action_url?: string
 }
 
@@ -136,6 +137,7 @@ function primaryActionLabel(action?: string): string {
   if (action === 'open_lifecycle') return 'Open Lifecycle'
   if (action === 'open_rejected_exchange') return 'Open Exchange'
   if (action === 'open_negotiation') return 'Open Negotiation'
+  if (action === 'open_contract') return 'Open'
   return 'Open'
 }
 
@@ -352,9 +354,8 @@ export default function Dashboard() {
               const summary = contractSummary(contract)
               const fallbackAction = fallbackPrimaryAction(contract)
               const primaryUrl = contract.primary_action_url || fallbackAction?.url
-              const primaryLabel = contract.primary_action
-                ? primaryActionLabel(contract.primary_action)
-                : fallbackAction?.label
+              const primaryLabel = contract.primary_action_label
+                || (contract.primary_action ? primaryActionLabel(contract.primary_action) : fallbackAction?.label)
 
               return (
                 <article

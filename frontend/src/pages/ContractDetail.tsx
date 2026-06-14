@@ -28,6 +28,8 @@ interface ContractData {
   entity_type: 'personal' | 'business'
   entity: string | null
   status: string
+  display_status?: string
+  display_status_label?: string
   version: number
   state: string
   created_at: string
@@ -54,6 +56,7 @@ function statusColor(s: string): { background: string; color: string } {
   switch (s.toUpperCase()) {
     case 'DRAFT':    return { background: 'rgba(107,114,128,0.12)', color: '#6B7280' }
     case 'SENT':     return { background: 'rgba(245,166,35,0.15)', color: '#D4900A' }
+    case 'SIGNED':   return { background: 'rgba(16,185,129,0.12)', color: '#047857' }
     case 'ACTIVE':   return { background: 'rgba(16,185,129,0.12)', color: '#059669' }
     case 'COMPLETED': return { background: 'rgba(99,102,241,0.12)', color: '#6366F1' }
     case 'ARCHIVED': return { background: 'rgba(107,114,128,0.1)', color: '#9CA3AF' }
@@ -178,7 +181,8 @@ export default function ContractDetail() {
     )
   }
 
-  const sc = statusColor(contract.status)
+  const statusLabel = contract.display_status_label || contract.status
+  const sc = statusColor(statusLabel)
   const displayTitle = contract.title || `Contract #${contract.id.slice(-8).toUpperCase()}`
   const valueDisplay = contract.contract_value
     ? `${contract.currency} ${Number(contract.contract_value).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
@@ -253,7 +257,7 @@ export default function ContractDetail() {
               fontFamily: "'Outfit', sans-serif",
               flexShrink: 0, marginTop: 4,
             }}>
-              {contract.status}
+              {statusLabel}
             </span>
           </div>
           <div style={{
@@ -369,7 +373,7 @@ export default function ContractDetail() {
             }}>i</div>
             <p style={{ fontSize: 12, color: '#6A7585', lineHeight: 1.6, margin: 0, fontFamily: "'Outfit', sans-serif" }}>
               This contract is saved as{' '}
-              <strong style={{ color: NAVY }}>{contract.status} · Version {contract.version}</strong>.
+              <strong style={{ color: NAVY }}>{statusLabel} · Version {contract.version}</strong>.
               The other party sees nothing until you send it.
             </p>
           </div>

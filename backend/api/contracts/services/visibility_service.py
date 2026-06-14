@@ -1,4 +1,5 @@
 from backend.agreement_exchange.models import AgreementExchange
+from backend.lifecycle.services import resolve_lifecycle_ready_contract
 
 
 COUNTERPARTY_VISIBLE_EXCHANGE_STATUSES = {
@@ -85,34 +86,41 @@ def resolve_contract_dashboard_status(contract):
     """
     Resolve the user-facing contract state used by dashboard/list surfaces.
 
-    Uses Agreement Exchange first because that is the live negotiation path.
-    Falls back to the latest current ContractVersion for older direct signing.
+    Status display and lifecycle action use the same contract-scoped signed
+    version check, while still showing Signed for signed exchanges that need
+    data repair.
     """
     exchanges = _contract_exchanges(contract)
     latest_exchange = exchanges[0] if exchanges else None
     active_exchange = next((exchange for exchange in exchanges if exchange.status in ACTIVE_EXCHANGE_STATUSES), None)
-    signed_exchange = next((exchange for exchange in exchanges if exchange.status == AgreementExchange.STATUS_SIGNED), None)
     rejected_exchange = next((exchange for exchange in exchanges if exchange.status == AgreementExchange.STATUS_REJECTED), None)
-    latest_version = _latest_current_version(contract)
-    signed_version_id = None
+    signed_exchange = latest_exchange if latest_exchange and latest_exchange.status == AgreementExchange.STATUS_SIGNED else None
+    lifecycle_target = resolve_lifecycle_ready_contract(contract)
+    signed_version = lifecycle_target["signed_version"]
+    signed_version_id = signed_version.id if signed_version is not None else (signed_exchange.current_contract_version_id if signed_exchange else None)
 
-    if signed_exchange is not None:
-        signed_version_id = signed_exchange.current_contract_version_id
-    elif latest_version is not None and latest_version.status == "signed":
-        signed_version_id = latest_version.id
-
-    if signed_version_id:
+    if signed_version is not None:
         display_status = "signed"
         display_status_label = "Signed"
         lifecycle_ready = True
         primary_action = "open_lifecycle"
+        primary_action_label = "Open Lifecycle"
         primary_action_url = f"/lifecycle?contract={contract.id}"
+        active_exchange_id = None
+    elif signed_exchange is not None:
+        display_status = "signed"
+        display_status_label = "Signed"
+        lifecycle_ready = False
+        primary_action = "open_contract"
+        primary_action_label = "Open"
+        primary_action_url = f"/contracts/{contract.id}/view"
         active_exchange_id = None
     elif active_exchange is not None:
         display_status = "under_negotiation"
         display_status_label = "Under Negotiation"
         lifecycle_ready = False
         primary_action = "open_negotiation"
+        primary_action_label = "Open Negotiation"
         primary_action_url = f"/negotiation/{contract.id}"
         active_exchange_id = active_exchange.id
     elif rejected_exchange is not None and latest_exchange == rejected_exchange:
@@ -120,6 +128,7 @@ def resolve_contract_dashboard_status(contract):
         display_status_label = "Rejected"
         lifecycle_ready = False
         primary_action = "open_rejected_exchange"
+        primary_action_label = "Open Exchange"
         primary_action_url = f"/agreement-exchange/{rejected_exchange.id}"
         active_exchange_id = None
     else:
@@ -127,6 +136,7 @@ def resolve_contract_dashboard_status(contract):
         display_status_label = "Prepared"
         lifecycle_ready = False
         primary_action = "open_negotiation"
+        primary_action_label = "Open Negotiation"
         primary_action_url = f"/negotiation/{contract.id}"
         active_exchange_id = None
 
@@ -138,5 +148,6 @@ def resolve_contract_dashboard_status(contract):
         "signed_version_id": str(signed_version_id) if signed_version_id else None,
         "lifecycle_ready": lifecycle_ready,
         "primary_action": primary_action,
+        "primary_action_label": primary_action_label,
         "primary_action_url": primary_action_url,
     }

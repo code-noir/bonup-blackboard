@@ -807,11 +807,13 @@ class ContractApprovalRequest(models.Model):
 
 
 class LifecycleAgreement(models.Model):
+    STATUS_SETUP = "setup"
     STATUS_ACTIVE = "active"
     STATUS_COMPLETED = "completed"
     STATUS_ARCHIVED = "archived"
 
     STATUS_CHOICES = [
+        (STATUS_SETUP, "Setup"),
         (STATUS_ACTIVE, "Active"),
         (STATUS_COMPLETED, "Completed"),
         (STATUS_ARCHIVED, "Archived"),
@@ -842,7 +844,7 @@ class LifecycleAgreement(models.Model):
         blank=True,
         related_name="owned_lifecycle_agreements",
     )
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_SETUP)
     started_at = models.DateTimeField(default=timezone.now)
     metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -148,6 +148,20 @@ function humanize(value?: string) {
   return value.replaceAll('_', ' ').replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
+function timelineStatusLabel(status?: string) {
+  switch ((status || '').toLowerCase()) {
+    case 'setup': return 'Ready for setup'
+    case 'active': return 'Active'
+    case 'completed': return 'Completed'
+    case 'archived': return 'Archived'
+    default: return 'Ready for setup'
+  }
+}
+
+function timelineSubtitleStatus(status?: string) {
+  return (status || '').toLowerCase() === 'active' ? 'Timeline Active' : 'Timeline Setup'
+}
+
 function serviceStatusLabel(status?: string) {
   switch ((status || '').toLowerCase()) {
     case 'active': return 'In Progress'
@@ -221,9 +235,9 @@ function EmptyStates() {
   return (
     <div style={{ display: 'grid', gap: 8 }}>
       {[
-        'No lifecycle obligations found yet.',
-        'Prepare a contract to generate service and payment obligations.',
-        'Lifecycle records remain planned until the contract becomes Active.',
+        'No timeline to-dos found yet.',
+        'Signed agreement records will appear here as they are added.',
+        'Timeline records remain planned until performance activity begins.',
       ].map((message) => (
         <div key={message} style={{ border: '1px dashed #CBD5E1', borderRadius: 8, padding: 18, background: '#F8FAFC' }}>
           <p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>{message}</p>
@@ -274,7 +288,7 @@ function ModalShell({
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16 }}>
           <div>
-            <p style={{ margin: 0, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.14em', color: '#94A3B8', fontWeight: 700 }}>Lifecycle action</p>
+            <p style={{ margin: 0, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.14em', color: '#94A3B8', fontWeight: 700 }}>Timeline action</p>
             <h3 style={{ margin: '4px 0 0', fontSize: 20, fontWeight: 800, color: '#0F1F3D' }}>{title}</h3>
           </div>
           <button
@@ -305,11 +319,11 @@ type ContractScopedLifecycleResponse = {
 
 const LIFECYCLE_TABS: Array<{ key: LifecycleItemGroup | 'overview' | 'events' | 'documents'; label: string }> = [
   { key: 'overview', label: 'Overview' },
-  { key: 'obligations', label: 'Obligations' },
+  { key: 'obligations', label: 'To-Dos' },
   { key: 'payments', label: 'Payments' },
-  { key: 'deadlines', label: 'Deadlines' },
+  { key: 'deadlines', label: 'Due Dates' },
   { key: 'services', label: 'Services' },
-  { key: 'events', label: 'Events' },
+  { key: 'events', label: 'Activity' },
   { key: 'documents', label: 'Documents / Signed Version' },
 ]
 
@@ -337,7 +351,7 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
       setData(response.data)
       setFeedback(null)
     } catch (error) {
-      setFeedback({ kind: 'error', message: getErrorMessage(error, 'Unable to load lifecycle data for this contract.') })
+      setFeedback({ kind: 'error', message: getErrorMessage(error, 'Unable to load Agreement Timeline data for this contract.') })
     } finally {
       setIsLoading(false)
     }
@@ -356,16 +370,16 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
       setDraftTitle('')
       await loadLifecycle()
     } catch (error) {
-      setFeedback({ kind: 'error', message: getErrorMessage(error, 'Unable to add lifecycle item.') })
+      setFeedback({ kind: 'error', message: getErrorMessage(error, 'Unable to add timeline item.') })
     }
   }
 
-  if (isLoading) return <p style={{ fontSize: 13, color: '#64748B' }}>Loading lifecycle...</p>
+  if (isLoading) return <p style={{ fontSize: 13, color: '#64748B' }}>Loading Agreement Timeline...</p>
 
   if (!data) {
     return (
       <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 14 }}>
-        <p style={{ fontSize: 13, color: '#B91C1C', margin: 0 }}>{feedback?.message || 'Lifecycle data is unavailable.'}</p>
+        <p style={{ fontSize: 13, color: '#B91C1C', margin: 0 }}>{feedback?.message || 'Agreement Timeline data is unavailable.'}</p>
       </div>
     )
   }
@@ -375,12 +389,12 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
   return (
     <div className="space-y-6">
       <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 8, padding: 20 }}>
-        <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.14em', color: '#9CA3AF', fontWeight: 700, margin: '0 0 6px' }}>Signed contract lifecycle</p>
+        <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.14em', color: '#9CA3AF', fontWeight: 700, margin: '0 0 6px' }}>Signed agreement timeline</p>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{data.contract.title}</h1>
             <p style={{ fontSize: 13, color: '#6B7280', margin: '8px 0 0' }}>
-              Signed version {data.signed_version.label} · Lifecycle {humanize(data.lifecycle_agreement.status)}
+              Signed version {data.signed_version.label} · {timelineSubtitleStatus(data.lifecycle_agreement.status)}
             </p>
           </div>
           <span style={{ alignSelf: 'flex-start', borderRadius: 999, padding: '5px 10px', fontSize: 11, fontWeight: 800, ...statusStyle('Paid') }}>Signed</span>
@@ -403,9 +417,9 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
 
       {activeTab === 'overview' && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <StatCard label="Lifecycle Status" value={humanize(data.lifecycle_agreement.status)} sub={`Started ${formatDate(data.lifecycle_agreement.started_at)}`} />
+          <StatCard label="Timeline Status" value={timelineStatusLabel(data.lifecycle_agreement.status)} sub={`Available since ${formatDate(data.lifecycle_agreement.started_at)}`} />
           <StatCard label="Counterparty" value={data.contract.counterparty_name || data.contract.counterparty_email || '—'} sub="Signed agreement party" />
-          <StatCard label="Tracked Items" value={Object.values(data.items).reduce((sum, items) => sum + items.length, 0)} sub="Manual and existing lifecycle records" />
+          <StatCard label="Tracked Items" value={Object.values(data.items).reduce((sum, items) => sum + items.length, 0)} sub="Manual and existing timeline records" />
         </div>
       )}
 
@@ -414,7 +428,7 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
             <div>
               <h2 style={{ fontSize: 16, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{LIFECYCLE_TABS.find((tab) => tab.key === activeTab)?.label}</h2>
-              <p style={{ fontSize: 12, color: '#6B7280', margin: '4px 0 0' }}>Contract-scoped lifecycle records for this signed agreement.</p>
+              <p style={{ fontSize: 12, color: '#6B7280', margin: '4px 0 0' }}>Agreement Timeline records for this signed agreement.</p>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <select value={draftType} onChange={(event) => setDraftType(event.target.value as LifecycleItemGroup)} style={{ height: 34, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 8px', fontSize: 12 }}>
@@ -448,7 +462,7 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
       {activeTab === 'events' && (
         <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 8, padding: 20 }}>
           <h2 style={{ fontSize: 16, fontWeight: 800, color: '#0F1F3D', margin: '0 0 12px' }}>Events</h2>
-          {data.events.length === 0 ? <p style={{ fontSize: 13, color: '#64748B' }}>No lifecycle events recorded yet.</p> : data.events.map((event) => (
+          {data.events.length === 0 ? <p style={{ fontSize: 13, color: '#64748B' }}>No timeline activity recorded yet.</p> : data.events.map((event) => (
             <div key={event.id} style={{ borderBottom: '1px solid #E5E7EB', padding: '10px 0' }}>
               <p style={{ fontSize: 13, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{event.title}</p>
               <p style={{ fontSize: 12, color: '#64748B', margin: '4px 0 0' }}>{event.description || humanize(event.event_type)}</p>
@@ -701,11 +715,11 @@ function GlobalLifecycleManagement() {
     <div className="space-y-6">
       <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 8, padding: 20 }}>
         <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.14em', color: '#9CA3AF', fontWeight: 700, margin: '0 0 6px' }}>
-          Blackboard lifecycle
+          Agreement Timeline
         </p>
-        <h1 style={{ fontSize: 26, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>Lifecycle Management</h1>
+        <h1 style={{ fontSize: 26, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>Agreement Timeline</h1>
         <p style={{ fontSize: 13, color: '#6B7280', lineHeight: 1.6, margin: '8px 0 0', maxWidth: 820 }}>
-          Track service obligations, payment obligations, and payment records returned by the current lifecycle APIs.
+          Track agreement activity, to-dos, due dates, services, and payments.
         </p>
       </section>
 
@@ -725,7 +739,7 @@ function GlobalLifecycleManagement() {
       <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 8, padding: 20 }}>
         <div style={{ marginBottom: 14 }}>
           <h2 style={{ fontSize: 16, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>Service Obligations</h2>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: '4px 0 0' }}>Operational service, delivery, and performance obligations from existing lifecycle records.</p>
+          <p style={{ fontSize: 12, color: '#6B7280', margin: '4px 0 0' }}>Operational service, delivery, and performance obligations from existing timeline records.</p>
         </div>
         {isLoading ? (
           <p style={{ fontSize: 13, color: '#64748B' }}>Loading service obligations...</p>

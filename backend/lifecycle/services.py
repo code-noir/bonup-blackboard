@@ -103,6 +103,7 @@ def get_or_create_lifecycle_for_signed_contract(contract, user):
             "signed_version": signed_version,
             "source_exchange": source_exchange,
             "owner": user if getattr(user, "is_authenticated", False) else locked_contract.initiator,
+            "status": LifecycleAgreement.STATUS_SETUP,
             "metadata": {"source": "signed_contract"},
         },
     )
@@ -110,9 +111,9 @@ def get_or_create_lifecycle_for_signed_contract(contract, user):
     if created:
         LifecycleEvent.objects.create(
             lifecycle_agreement=agreement,
-            event_type="lifecycle_started",
-            title="Lifecycle started",
-            description="Lifecycle tracking was opened for the signed contract.",
+            event_type="timeline_setup_started",
+            title="Timeline setup started",
+            description="Agreement Timeline setup was opened for the signed contract.",
             metadata={
                 "contract_id": str(lifecycle_contract.id),
                 "signed_version_id": str(signed_version.id),

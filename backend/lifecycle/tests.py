@@ -19,7 +19,7 @@ class LifecycleFoundationTests(TestCase):
         self.counterparty_client = authed_client(self.counterparty)
         self.stranger_client = authed_client(self.stranger)
         self.contract = make_contract(self.initiator, counterparty_email=self.counterparty.email)
-        self.contract.title = "Signed Lifecycle Contract"
+        self.contract.title = "Signed Timeline Contract"
         self.contract.save(update_fields=["title"])
         self.snapshot = json.dumps({"editor_html": "<p>Signed terms.</p>", "sections": []})
         self.version = make_version(self.contract, self.initiator, content_snapshot=self.snapshot, status="signed")
@@ -32,8 +32,11 @@ class LifecycleFoundationTests(TestCase):
         self.assertEqual(agreement.contract, self.contract)
         self.assertEqual(agreement.signed_version, self.version)
         self.assertEqual(agreement.owner, self.initiator)
-        self.assertEqual(agreement.status, LifecycleAgreement.STATUS_ACTIVE)
-        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type="lifecycle_started").count(), 1)
+        self.assertEqual(agreement.status, LifecycleAgreement.STATUS_SETUP)
+        self.contract.refresh_from_db()
+        self.assertEqual(self.contract.status, "signed")
+        self.assertNotEqual(self.contract.status, "active")
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type="timeline_setup_started").count(), 1)
 
     def test_signed_version_can_create_lifecycle_even_if_contract_status_is_not_active(self):
         self.contract.status = "draft"
@@ -59,19 +62,22 @@ class LifecycleFoundationTests(TestCase):
 
         self.assertEqual(first.id, second.id)
         self.assertEqual(LifecycleAgreement.objects.filter(contract=self.contract).count(), 1)
-        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=first, event_type="lifecycle_started").count(), 1)
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=first, event_type="timeline_setup_started").count(), 1)
 
     def test_lifecycle_endpoint_returns_contract_scoped_data(self):
         response = self.counterparty_client.get(f"/api/lifecycle/?contract={self.contract.id}")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["contract"]["id"], str(self.contract.id))
-        self.assertEqual(response.data["contract"]["title"], "Signed Lifecycle Contract")
+        self.assertEqual(response.data["contract"]["title"], "Signed Timeline Contract")
         self.assertEqual(response.data["signed_version"]["id"], str(self.version.id))
         self.assertEqual(response.data["signed_version"]["label"], "v1")
-        self.assertEqual(response.data["lifecycle_agreement"]["status"], "active")
+        self.assertEqual(response.data["lifecycle_agreement"]["status"], "setup")
+        self.contract.refresh_from_db()
+        self.assertEqual(self.contract.status, "signed")
+        self.assertNotEqual(self.contract.status, "active")
         self.assertEqual(set(response.data["items"].keys()), {"obligations", "payments", "deadlines", "services", "risks", "notes"})
-        self.assertEqual(response.data["events"][0]["event_type"], "lifecycle_started")
+        self.assertEqual(response.data["events"][0]["event_type"], "timeline_setup_started")
 
     def test_lifecycle_endpoint_rejects_unauthorized_user(self):
         response = self.stranger_client.get(f"/api/lifecycle/?contract={self.contract.id}")
@@ -96,7 +102,7 @@ class LifecycleFoundationTests(TestCase):
         self.assertEqual(dashboard_contract["display_status"], "signed")
         self.assertTrue(dashboard_contract["lifecycle_ready"])
         self.assertEqual(dashboard_contract["primary_action"], "open_lifecycle")
-        self.assertEqual(dashboard_contract["primary_action_label"], "Open Lifecycle")
+        self.assertEqual(dashboard_contract["primary_action_label"], "Open Agreement Timeline")
         self.assertEqual(dashboard_contract["primary_action_url"], f"/lifecycle?contract={self.contract.id}")
 
         response = self.counterparty_client.get(f"/api/lifecycle/?contract={self.contract.id}")

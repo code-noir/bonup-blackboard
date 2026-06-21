@@ -18,6 +18,10 @@ type NotificationResponse = {
   results: NotificationItem[]
 }
 
+type NotificationCountResponse = {
+  unread_count: number
+}
+
 function relativeTime(value: string) {
   const timestamp = new Date(value).getTime()
   if (Number.isNaN(timestamp)) return ''
@@ -36,20 +40,34 @@ export default function NotificationIndicator() {
   const ref = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<NotificationItem[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
 
   async function loadUnread() {
-    const { data } = await api.get<NotificationResponse>('/notifications/unread/')
-    setItems(data.results || [])
+    const [{ data: listData }, { data: countData }] = await Promise.all([
+      api.get<NotificationResponse>('/notifications/unread/'),
+      api.get<NotificationCountResponse>('/notifications/unread-count/'),
+    ])
+    setItems(listData.results || [])
+    setUnreadCount(countData.unread_count || 0)
   }
 
   useEffect(() => {
     let cancelled = false
     const load = async () => {
       try {
-        const { data } = await api.get<NotificationResponse>('/notifications/unread/')
-        if (!cancelled) setItems(data.results || [])
+        const [{ data: listData }, { data: countData }] = await Promise.all([
+          api.get<NotificationResponse>('/notifications/unread/'),
+          api.get<NotificationCountResponse>('/notifications/unread-count/'),
+        ])
+        if (!cancelled) {
+          setItems(listData.results || [])
+          setUnreadCount(countData.unread_count || 0)
+        }
       } catch {
-        if (!cancelled) setItems([])
+        if (!cancelled) {
+          setItems([])
+          setUnreadCount(0)
+        }
       }
     }
     load()
@@ -92,7 +110,7 @@ export default function NotificationIndicator() {
         onMouseLeave={(event) => (event.currentTarget.style.background = 'transparent')}
       >
         <BellIcon className="h-5 w-5" />
-        {items.length > 0 && (
+        {unreadCount > 0 && (
           <span
             style={{
               position: 'absolute',
@@ -111,7 +129,7 @@ export default function NotificationIndicator() {
               padding: '0 3px',
             }}
           >
-            {items.length > 9 ? '9+' : items.length}
+            {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
       </button>
@@ -120,7 +138,7 @@ export default function NotificationIndicator() {
         <div className="absolute right-0 top-full mt-2 w-80 rounded-lg border border-slate-200 bg-white shadow-lg" style={{ zIndex: 9999 }}>
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
             <p className="text-sm font-semibold text-slate-900">Notifications</p>
-            <span className="text-xs text-slate-500">{items.length} unread</span>
+            <span className="text-xs text-slate-500">{unreadCount} unread</span>
           </div>
           <div style={{ maxHeight: 340, overflowY: 'auto' }}>
             {items.length === 0 ? (

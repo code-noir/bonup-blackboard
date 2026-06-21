@@ -10,6 +10,23 @@
 from backend.activity.models import ContractActivity
 
 
+_BACKGROUND_NOTIFICATION_TYPES = {
+    "draft_autosaved",
+}
+
+
+def _metadata_marks_background_save(metadata):
+    metadata = metadata or {}
+    source = str(metadata.get("source") or metadata.get("source_event") or "").lower()
+    return source in {"editor_autosave", "draft_autosave", "autosave", "draft_autosaved"}
+
+
+def _should_create_visible_notification(activity_type, metadata):
+    if activity_type in _BACKGROUND_NOTIFICATION_TYPES:
+        return False
+    return not _metadata_marks_background_save(metadata)
+
+
 def _get_other_party(contract, actor_user):
     """
     Return the User who is the OTHER party on the contract (i.e. not the actor).
@@ -55,6 +72,9 @@ def log_activity(contract, user, activity_type, description, metadata=None):
     # Notify the other party.  Wrapped in try/except so a broken mail backend
     # or missing notification type never bubbles up and corrupts the caller's
     # transaction.
+    if not _should_create_visible_notification(activity_type, metadata):
+        return
+
     try:
         recipient = _get_other_party(contract, user)
         if recipient is not None:

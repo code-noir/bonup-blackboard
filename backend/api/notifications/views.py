@@ -6,10 +6,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from backend.notifications.models import Notification
+from backend.notifications.visibility import visible_notifications
 
 
 _DEFAULT_PAGE_SIZE = 20
 _MAX_PAGE_SIZE = 100
+_UNREAD_DROPDOWN_SIZE = 20
 
 
 def _serialize(n):
@@ -22,6 +24,7 @@ def _serialize(n):
         "related_contract_id": str(n.related_contract_id) if n.related_contract_id else None,
         "metadata": n.metadata,
         "redirect_url": (n.metadata or {}).get("redirect_url", ""),
+        "target_url": (n.metadata or {}).get("redirect_url", ""),
         "created_at": n.created_at,
     }
 
@@ -38,7 +41,7 @@ class NotificationListAPIView(APIView):
     """
 
     def get(self, request):
-        qs = Notification.objects.filter(user=request.user)
+        qs = visible_notifications(Notification.objects.filter(user=request.user))
 
         is_read_param = request.query_params.get("is_read")
         if is_read_param is not None:
@@ -75,7 +78,7 @@ class NotificationUnreadListAPIView(APIView):
     """
 
     def get(self, request):
-        qs = Notification.objects.filter(user=request.user, is_read=False).order_by("-created_at")[:_MAX_PAGE_SIZE]
+        qs = visible_notifications(Notification.objects.filter(user=request.user, is_read=False)).order_by("-created_at")[:_UNREAD_DROPDOWN_SIZE]
         return Response({"results": [_serialize(n) for n in qs]})
 
 
@@ -87,7 +90,7 @@ class NotificationUnreadCountAPIView(APIView):
     """
 
     def get(self, request):
-        count = Notification.objects.filter(user=request.user, is_read=False).count()
+        count = visible_notifications(Notification.objects.filter(user=request.user, is_read=False)).count()
         return Response({"unread_count": count})
 
 
@@ -99,7 +102,7 @@ class NotificationReadAllAPIView(APIView):
     """
 
     def post(self, request):
-        updated = Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
+        updated = visible_notifications(Notification.objects.filter(user=request.user, is_read=False)).update(is_read=True)
         return Response({"marked_read": updated})
 
 

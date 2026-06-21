@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone as dt_timezone
 
 from django.test import TestCase
 
@@ -6,7 +7,8 @@ from backend.agreement_exchange.models import AgreementExchange
 from backend.agreement_exchange.services import sign_exchange
 from backend.api.contracts.services.visibility_service import resolve_contract_dashboard_status
 from backend.api.tests.helpers import authed_client, make_contract, make_user, make_version
-from backend.contracts.models import LifecycleAgreement, LifecycleEvent
+from backend.contracts.models import LifecycleAgreement, LifecycleEvent, LifecycleItem
+from backend.notifications.models import Notification
 from backend.lifecycle.services import LifecycleNotReadyError, get_or_create_lifecycle_for_signed_contract
 
 
@@ -76,7 +78,10 @@ class LifecycleFoundationTests(TestCase):
         self.contract.refresh_from_db()
         self.assertEqual(self.contract.status, "signed")
         self.assertNotEqual(self.contract.status, "active")
-        self.assertEqual(set(response.data["items"].keys()), {"obligations", "payments", "deadlines", "services", "risks", "notes"})
+        self.assertEqual(set(response.data["items"].keys()), {"obligations", "payments", "deadlines", "services", "notices", "documents", "risks", "changes", "notes"})
+        self.assertIn("views", response.data)
+        self.assertIn("upcoming", response.data["views"])
+        self.assertIn("changes_add_ons", response.data["views"])
         self.assertEqual(response.data["events"][0]["event_type"], "timeline_setup_started")
 
     def test_lifecycle_endpoint_rejects_unauthorized_user(self):
@@ -250,3 +255,153 @@ class LifecycleFoundationTests(TestCase):
         self.assertEqual(contract.status, "signed")
         self.assertNotEqual(contract.status, "active")
         self.assertEqual(agreement.source_exchange_id, exchange.id)
+
+
+    def test_creating_timeline_item_does_not_activate_contract(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+
+        response = self.initiator_client.post(
+            f"/api/lifecycle/{agreement.id}/items/",
+            {"item_type": "payment", "title": "First payment", "amount": "100.00"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.contract.refresh_from_db()
+        agreement.refresh_from_db()
+        self.assertEqual(self.contract.status, "signed")
+        self.assertEqual(agreement.status, LifecycleAgreement.STATUS_SETUP)
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type="item_created").count(), 1)
+
+    def test_first_performance_action_notifies_counterparty_and_activates_contract(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            title="Initial payment",
+            amount="125.00",
+            created_by=self.initiator,
+        )
+
+        response = self.initiator_client.post(
+            f"/api/lifecycle/items/{item.id}/actions/",
+            {"action": "mark_paid"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.contract.refresh_from_db()
+        agreement.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(item.status, LifecycleItem.STATUS_COMPLETED)
+        self.assertEqual(self.contract.status, "active")
+        self.assertEqual(agreement.status, LifecycleAgreement.STATUS_ACTIVE)
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type="payment_marked_paid").count(), 1)
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type="contract_activated").count(), 1)
+        notification = Notification.objects.get(user=self.counterparty, notification_type="agreement_timeline")
+        self.assertEqual(notification.title, "Payment marked paid")
+        self.assertIn("Signed Timeline Contract", notification.message)
+        self.assertIn("Initial payment", notification.message)
+        self.assertEqual(notification.metadata["redirect_url"], f"/lifecycle?contract={self.contract.id}")
+
+    def test_active_transition_is_idempotent(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_RESPONSIBILITY,
+            title="Provide keys",
+            created_by=self.initiator,
+        )
+
+        first = self.initiator_client.post(f"/api/lifecycle/items/{item.id}/actions/", {"action": "mark_completed"}, format="json")
+        second = self.initiator_client.post(f"/api/lifecycle/items/{item.id}/actions/", {"action": "mark_completed"}, format="json")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type="contract_activated").count(), 1)
+        self.contract.refresh_from_db()
+        self.assertEqual(self.contract.status, "active")
+
+    def test_change_order_proposal_and_acceptance_create_events_and_notifications(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_NOTE,
+            title="Extend service area",
+            created_by=self.initiator,
+        )
+
+        proposed = self.initiator_client.post(
+            f"/api/lifecycle/items/{item.id}/actions/",
+            {"action": "propose_change_order", "message": "Add the back patio."},
+            format="json",
+        )
+        accepted = self.counterparty_client.post(
+            f"/api/lifecycle/items/{item.id}/actions/",
+            {"action": "accept_change_order"},
+            format="json",
+        )
+
+        self.assertEqual(proposed.status_code, 200)
+        self.assertEqual(accepted.status_code, 200)
+        item.refresh_from_db()
+        self.contract.refresh_from_db()
+        self.assertEqual(item.item_type, LifecycleItem.TYPE_CHANGE_ORDER)
+        self.assertEqual(item.status, LifecycleItem.STATUS_CONFIRMED)
+        self.assertEqual(self.contract.status, "signed")
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type="change_order_proposed").count(), 1)
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type="change_order_accepted").count(), 1)
+        self.assertEqual(Notification.objects.filter(notification_type="agreement_timeline").count(), 2)
+
+    def test_add_on_proposal_creates_timeline_notification_without_activation(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_NOTE,
+            title="Weekly cleanup add-on",
+            created_by=self.initiator,
+        )
+
+        response = self.initiator_client.post(
+            f"/api/lifecycle/items/{item.id}/actions/",
+            {"action": "propose_add_on", "message": "Add weekly cleanup."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        item.refresh_from_db()
+        self.contract.refresh_from_db()
+        agreement.refresh_from_db()
+        self.assertEqual(item.item_type, LifecycleItem.TYPE_ADD_ON)
+        self.assertEqual(item.status, LifecycleItem.STATUS_PROPOSED)
+        self.assertEqual(self.contract.status, "signed")
+        self.assertEqual(agreement.status, LifecycleAgreement.STATUS_SETUP)
+        notification = Notification.objects.get(notification_type="agreement_timeline")
+        self.assertIn("Weekly cleanup add-on", notification.message)
+
+    def test_timeline_endpoint_returns_grouped_views(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_DUE_DATE,
+            title="Notice deadline",
+            due_date=datetime(2030, 1, 1, 12, 0, tzinfo=dt_timezone.utc),
+            created_by=self.initiator,
+        )
+        LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_CHANGE_ORDER,
+            title="Scope change",
+            status=LifecycleItem.STATUS_PROPOSED,
+            created_by=self.initiator,
+        )
+
+        response = self.initiator_client.get(f"/api/lifecycle/?contract={self.contract.id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("views", response.data)
+        self.assertEqual(response.data["counts"]["deadlines"], 1)
+        self.assertEqual(response.data["counts"]["changes"], 1)
+        self.assertEqual(response.data["views"]["due_dates"][0]["title"], "Notice deadline")
+        self.assertEqual(response.data["views"]["changes_add_ons"][0]["title"], "Scope change")
+        self.assertEqual(response.data["lifecycle_agreement"]["status"], "setup")

@@ -306,42 +306,97 @@ function ModalShell({
 }
 
 
-type LifecycleItemGroup = 'obligations' | 'payments' | 'deadlines' | 'services' | 'risks' | 'notes'
+type LifecycleItemGroup = 'obligations' | 'payments' | 'deadlines' | 'services' | 'notices' | 'documents' | 'risks' | 'changes' | 'notes'
+type TimelineViewKey = 'overview' | 'upcoming' | 'to_dos' | 'payments' | 'due_dates' | 'work_services' | 'changes_add_ons' | 'activity' | 'documents'
+
+type TimelineItem = Record<string, string | null | undefined> & { id: string; item_type?: string; title?: string; status?: string; source?: string }
+
+type TimelineEvent = { id: string; event_type: string; title: string; description?: string; occurred_at?: string }
 
 type ContractScopedLifecycleResponse = {
-  contract: { id: string; title: string; status: string; state?: string; counterparty_email?: string; counterparty_name?: string }
-  signed_version: { id: string; label: string; status: string; content_snapshot?: string }
-  lifecycle_agreement: { id: string; status: string; started_at?: string; source_exchange_id?: string | null }
+  contract?: { id: string; title?: string; status?: string; state?: string; counterparty_email?: string; counterparty_name?: string }
+  signed_version?: { id: string; label?: string; status?: string; content_snapshot?: string }
+  lifecycle_agreement?: { id: string; status?: string; started_at?: string; source_exchange_id?: string | null }
+  timeline?: { id: string; status?: string; started_at?: string; source_exchange_id?: string | null }
   parties?: { initiator?: { email?: string; name?: string } | null; counterparty?: { email?: string; name?: string } | null }
-  items: Record<LifecycleItemGroup, Array<Record<string, string | null | undefined>>>
-  events: Array<{ id: string; event_type: string; title: string; description?: string; occurred_at?: string }>
+  items?: Partial<Record<LifecycleItemGroup, TimelineItem[]>>
+  views?: Record<TimelineViewKey, TimelineItem[] | TimelineEvent[]>
+  counts?: Record<string, number>
+  events?: TimelineEvent[]
 }
 
-const LIFECYCLE_TABS: Array<{ key: LifecycleItemGroup | 'overview' | 'events' | 'documents'; label: string }> = [
+const EMPTY_LIFECYCLE_GROUPS: Record<LifecycleItemGroup, TimelineItem[]> = {
+  obligations: [],
+  payments: [],
+  deadlines: [],
+  services: [],
+  notices: [],
+  documents: [],
+  risks: [],
+  changes: [],
+  notes: [],
+}
+
+const LIFECYCLE_TABS: Array<{ key: TimelineViewKey; label: string }> = [
   { key: 'overview', label: 'Overview' },
-  { key: 'obligations', label: 'To-Dos' },
+  { key: 'upcoming', label: 'Upcoming' },
+  { key: 'to_dos', label: 'To-Dos' },
   { key: 'payments', label: 'Payments' },
-  { key: 'deadlines', label: 'Due Dates' },
-  { key: 'services', label: 'Services' },
-  { key: 'events', label: 'Activity' },
-  { key: 'documents', label: 'Documents / Signed Version' },
+  { key: 'due_dates', label: 'Due Dates' },
+  { key: 'work_services', label: 'Work / Services' },
+  { key: 'changes_add_ons', label: 'Changes / Add-ons' },
+  { key: 'activity', label: 'Activity' },
+  { key: 'documents', label: 'Documents' },
 ]
 
-const EMPTY_COPY: Record<LifecycleItemGroup, string> = {
-  obligations: 'No obligations added yet.',
-  payments: 'No payment obligations added yet.',
-  deadlines: 'No deadlines tracked yet.',
-  services: 'No service duties added yet.',
-  risks: 'No risks tracked yet.',
-  notes: 'No notes added yet.',
+const EMPTY_COPY: Record<TimelineViewKey, string> = {
+  overview: '',
+  upcoming: 'No upcoming timeline items yet.',
+  to_dos: 'No to-dos added yet.',
+  payments: 'No payment records added yet.',
+  due_dates: 'No due dates tracked yet.',
+  work_services: 'No work or service records added yet.',
+  changes_add_ons: 'No changes or add-ons proposed yet.',
+  activity: 'No timeline activity recorded yet.',
+  documents: 'No documents attached yet.',
+}
+
+const TIMELINE_ITEM_TYPES = [
+  { value: 'responsibility', label: 'Responsibility' },
+  { value: 'payment', label: 'Payment' },
+  { value: 'due_date', label: 'Due Date' },
+  { value: 'service_work', label: 'Work / Service' },
+  { value: 'notice', label: 'Notice' },
+  { value: 'document', label: 'Document' },
+  { value: 'risk', label: 'Risk' },
+  { value: 'change_order', label: 'Change Order' },
+  { value: 'add_on', label: 'Add-on' },
+  { value: 'note', label: 'Note' },
+]
+
+const BUTTON = {
+  border: '1px solid #CBD5E1',
+  borderRadius: 8,
+  background: '#FFFFFF',
+  color: '#334155',
+  padding: '7px 10px',
+  fontSize: 12,
+  fontWeight: 700,
+  cursor: 'pointer',
+}
+
+const DANGER_BUTTON = {
+  ...BUTTON,
+  border: '1px solid #FECACA',
+  color: '#B91C1C',
 }
 
 function ContractScopedLifecycle({ contractId }: { contractId: string }) {
   const [data, setData] = useState<ContractScopedLifecycleResponse | null>(null)
-  const [activeTab, setActiveTab] = useState<(typeof LIFECYCLE_TABS)[number]['key']>('overview')
+  const [activeTab, setActiveTab] = useState<TimelineViewKey>('overview')
   const [isLoading, setIsLoading] = useState(true)
   const [feedback, setFeedback] = useState<ActionFeedback>(null)
-  const [draftType, setDraftType] = useState<LifecycleItemGroup>('obligations')
+  const [draftType, setDraftType] = useState('responsibility')
   const [draftTitle, setDraftTitle] = useState('')
 
   const loadLifecycle = async () => {
@@ -364,13 +419,23 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
 
   const addItem = async () => {
     if (!data || !draftTitle.trim()) return
-    const itemType = draftType === 'obligations' ? 'obligation' : draftType === 'payments' ? 'payment' : draftType === 'deadlines' ? 'deadline' : draftType === 'services' ? 'service' : draftType.slice(0, -1)
     try {
-      await api.post(`/lifecycle/${data.lifecycle_agreement.id}/items/`, { item_type: itemType, title: draftTitle.trim() })
+      await api.post(`/lifecycle/${data.lifecycle_agreement.id}/items/`, { item_type: draftType, title: draftTitle.trim() })
       setDraftTitle('')
       await loadLifecycle()
     } catch (error) {
       setFeedback({ kind: 'error', message: getErrorMessage(error, 'Unable to add timeline item.') })
+    }
+  }
+
+  const runItemAction = async (item: TimelineItem, action: string, payload: Record<string, string> = {}) => {
+    if (!item.id || item.source !== 'manual') return
+    try {
+      await api.post(`/lifecycle/items/${item.id}/actions/`, { action, ...payload })
+      await loadLifecycle()
+      setFeedback({ kind: 'success', message: 'Agreement Timeline updated.' })
+    } catch (error) {
+      setFeedback({ kind: 'error', message: getErrorMessage(error, 'Unable to update timeline item.') })
     }
   }
 
@@ -384,7 +449,34 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
     )
   }
 
-  const activeItems = activeTab in data.items ? data.items[activeTab as LifecycleItemGroup] : []
+  const groupedItems = { ...EMPTY_LIFECYCLE_GROUPS, ...(data.items || {}) }
+  const events = data.events || []
+  const agreement = data.lifecycle_agreement || data.timeline
+  if (!data.contract || !data.signed_version || !agreement) {
+    return (
+      <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 14 }}>
+        <p style={{ fontSize: 13, color: '#B91C1C', margin: 0 }}>Agreement Timeline data is incomplete. Please refresh or try another signed agreement.</p>
+      </div>
+    )
+  }
+
+  const fallbackViews: Record<TimelineViewKey, TimelineItem[] | TimelineEvent[]> = {
+    overview: [],
+    upcoming: Object.values(groupedItems)
+      .flat()
+      .filter((item) => item.due_date && !['completed', 'confirmed', 'cancelled', 'rejected'].includes(item.status || ''))
+      .sort((left, right) => String(left.due_date || '').localeCompare(String(right.due_date || '')))
+      .slice(0, 10),
+    to_dos: [...groupedItems.obligations, ...groupedItems.notices, ...groupedItems.notes],
+    payments: groupedItems.payments,
+    due_dates: groupedItems.deadlines,
+    work_services: groupedItems.services,
+    changes_add_ons: groupedItems.changes,
+    activity: events,
+    documents: groupedItems.documents,
+  }
+  const views = { ...fallbackViews, ...(data.views || {}) }
+  const activeItems = (views[activeTab] || []) as TimelineItem[]
 
   return (
     <div className="space-y-6">
@@ -392,9 +484,9 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
         <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.14em', color: '#9CA3AF', fontWeight: 700, margin: '0 0 6px' }}>Signed agreement timeline</p>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div>
-            <h1 style={{ fontSize: 26, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{data.contract.title}</h1>
+            <h1 style={{ fontSize: 26, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{data.contract.title || 'Untitled contract'}</h1>
             <p style={{ fontSize: 13, color: '#6B7280', margin: '8px 0 0' }}>
-              Signed version {data.signed_version.label} · {timelineSubtitleStatus(data.lifecycle_agreement.status)}
+              Signed version {data.signed_version.label || 'signed'} · {timelineSubtitleStatus(agreement.status)}
             </p>
           </div>
           <span style={{ alignSelf: 'flex-start', borderRadius: 999, padding: '5px 10px', fontSize: 11, fontWeight: 800, ...statusStyle('Paid') }}>Signed</span>
@@ -417,13 +509,13 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
 
       {activeTab === 'overview' && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <StatCard label="Timeline Status" value={timelineStatusLabel(data.lifecycle_agreement.status)} sub={`Available since ${formatDate(data.lifecycle_agreement.started_at)}`} />
+          <StatCard label="Timeline Status" value={timelineStatusLabel(agreement.status)} sub={`Available since ${formatDate(agreement.started_at)}`} />
           <StatCard label="Counterparty" value={data.contract.counterparty_name || data.contract.counterparty_email || '—'} sub="Signed agreement party" />
-          <StatCard label="Tracked Items" value={Object.values(data.items).reduce((sum, items) => sum + items.length, 0)} sub="Manual and existing timeline records" />
+          <StatCard label="Tracked Items" value={data.counts?.total ?? Object.values(groupedItems).reduce((sum, items) => sum + items.length, 0)} sub="Manual and existing timeline records" />
         </div>
       )}
 
-      {activeTab in data.items && (
+      {!['overview', 'activity', 'documents'].includes(activeTab) && (
         <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 8, padding: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
             <div>
@@ -431,8 +523,8 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
               <p style={{ fontSize: 12, color: '#6B7280', margin: '4px 0 0' }}>Agreement Timeline records for this signed agreement.</p>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <select value={draftType} onChange={(event) => setDraftType(event.target.value as LifecycleItemGroup)} style={{ height: 34, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 8px', fontSize: 12 }}>
-                {(['obligations', 'payments', 'deadlines', 'services', 'risks', 'notes'] as LifecycleItemGroup[]).map((key) => <option key={key} value={key}>{humanize(key)}</option>)}
+              <select value={draftType} onChange={(event) => setDraftType(event.target.value)} style={{ height: 34, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 8px', fontSize: 12 }}>
+                {TIMELINE_ITEM_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
               </select>
               <input value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} placeholder="Add item" style={{ height: 34, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 10px', fontSize: 12 }} />
               <button type="button" onClick={() => void addItem()} disabled={!draftTitle.trim()} style={{ height: 34, border: 'none', borderRadius: 8, background: draftTitle.trim() ? '#0F1F3D' : '#E5E7EB', color: draftTitle.trim() ? '#FFFFFF' : '#64748B', padding: '0 12px', fontSize: 12, fontWeight: 700, cursor: draftTitle.trim() ? 'pointer' : 'default' }}>Add Item</button>
@@ -440,7 +532,7 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
           </div>
           {activeItems.length === 0 ? (
             <div style={{ border: '1px dashed #CBD5E1', borderRadius: 8, padding: 18, background: '#F8FAFC' }}>
-              <p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>{EMPTY_COPY[activeTab as LifecycleItemGroup]}</p>
+              <p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>{EMPTY_COPY[activeTab]}</p>
             </div>
           ) : (
             <div style={{ display: 'grid', gap: 10 }}>
@@ -452,6 +544,16 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
                   </div>
                   {item.description && <p style={{ fontSize: 12, color: '#475569', margin: '8px 0 0' }}>{item.description}</p>}
                   <p style={{ fontSize: 11, color: '#94A3B8', margin: '8px 0 0' }}>{item.due_date ? `Due ${formatDate(item.due_date)}` : 'No due date'}{item.amount ? ` · ${formatMoney(item.amount)}` : ''}</p>
+                  {item.source === 'manual' && (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                      {item.item_type === 'payment' && item.status !== 'completed' && <button type="button" style={BUTTON} onClick={() => void runItemAction(item, 'mark_paid')}>Mark Paid</button>}
+                      {['service', 'service_work'].includes(item.item_type || '') && item.status !== 'completed' && <button type="button" style={BUTTON} onClick={() => void runItemAction(item, 'mark_work_performed')}>Mark Work Performed</button>}
+                      {['responsibility', 'obligation'].includes(item.item_type || '') && item.status !== 'completed' && <button type="button" style={BUTTON} onClick={() => void runItemAction(item, 'mark_completed')}>Mark Completed</button>}
+                      {item.status === 'completed' && <button type="button" style={BUTTON} onClick={() => void runItemAction(item, 'request_confirmation')}>Request Confirmation</button>}
+                      {['change_order', 'add_on'].includes(item.item_type || '') && item.status === 'proposed' && <button type="button" style={BUTTON} onClick={() => void runItemAction(item, item.item_type === 'change_order' ? 'accept_change_order' : 'accept_add_on')}>Accept</button>}
+                      {['change_order', 'add_on'].includes(item.item_type || '') && item.status === 'proposed' && <button type="button" style={DANGER_BUTTON} onClick={() => void runItemAction(item, item.item_type === 'change_order' ? 'reject_change_order' : 'reject_add_on')}>Reject</button>}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -459,10 +561,10 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
         </section>
       )}
 
-      {activeTab === 'events' && (
+      {activeTab === 'activity' && (
         <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 8, padding: 20 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 800, color: '#0F1F3D', margin: '0 0 12px' }}>Events</h2>
-          {data.events.length === 0 ? <p style={{ fontSize: 13, color: '#64748B' }}>No timeline activity recorded yet.</p> : data.events.map((event) => (
+          <h2 style={{ fontSize: 16, fontWeight: 800, color: '#0F1F3D', margin: '0 0 12px' }}>Activity</h2>
+          {events.length === 0 ? <p style={{ fontSize: 13, color: '#64748B' }}>No timeline activity recorded yet.</p> : events.map((event) => (
             <div key={event.id} style={{ borderBottom: '1px solid #E5E7EB', padding: '10px 0' }}>
               <p style={{ fontSize: 13, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{event.title}</p>
               <p style={{ fontSize: 12, color: '#64748B', margin: '4px 0 0' }}>{event.description || humanize(event.event_type)}</p>

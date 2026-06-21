@@ -1,5 +1,3 @@
-from decimal import Decimal
-
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.response import Response
@@ -14,17 +12,27 @@ from backend.contracts.models import (
 )
 from backend.lifecycle.services import (
     LifecycleNotReadyError,
+    create_timeline_item,
     get_or_create_lifecycle_for_signed_contract,
+    perform_timeline_item_action,
+    update_timeline_item,
 )
 from backend.payments.models import Payment
 
 
 _GROUPS = {
     LifecycleItem.TYPE_OBLIGATION: "obligations",
+    LifecycleItem.TYPE_RESPONSIBILITY: "obligations",
     LifecycleItem.TYPE_PAYMENT: "payments",
     LifecycleItem.TYPE_DEADLINE: "deadlines",
+    LifecycleItem.TYPE_DUE_DATE: "deadlines",
     LifecycleItem.TYPE_SERVICE: "services",
+    LifecycleItem.TYPE_SERVICE_WORK: "services",
+    LifecycleItem.TYPE_NOTICE: "notices",
+    LifecycleItem.TYPE_DOCUMENT: "documents",
     LifecycleItem.TYPE_RISK: "risks",
+    LifecycleItem.TYPE_CHANGE_ORDER: "changes",
+    LifecycleItem.TYPE_ADD_ON: "changes",
     LifecycleItem.TYPE_NOTE: "notes",
 }
 
@@ -92,6 +100,8 @@ def _serialize_lifecycle_item(item):
         "status": item.status,
         "source_clause": item.source_clause,
         "metadata": item.metadata or {},
+        "created_by": str(item.created_by_id) if getattr(item, "created_by_id", None) else None,
+        "visibility": getattr(item, "visibility", "parties"),
     }
 
 
@@ -156,7 +166,17 @@ def _serialize_payment(payment):
 
 
 def _empty_groups():
-    return {"obligations": [], "payments": [], "deadlines": [], "services": [], "risks": [], "notes": []}
+    return {
+        "obligations": [],
+        "payments": [],
+        "deadlines": [],
+        "services": [],
+        "notices": [],
+        "documents": [],
+        "risks": [],
+        "changes": [],
+        "notes": [],
+    }
 
 
 def _group_items(agreement):
@@ -187,13 +207,39 @@ def _serialize_event(event):
     }
 
 
+def _grouped_views(grouped, events):
+    upcoming = sorted(
+        [item for values in grouped.values() for item in values if item.get("due_date") and item.get("status") not in {"completed", "confirmed", "cancelled", "rejected"}],
+        key=lambda item: item.get("due_date") or "",
+    )[:10]
+    return {
+        "upcoming": upcoming,
+        "to_dos": grouped["obligations"] + grouped["notices"] + grouped["notes"],
+        "payments": grouped["payments"],
+        "due_dates": grouped["deadlines"],
+        "work_services": grouped["services"],
+        "changes_add_ons": grouped["changes"],
+        "activity": events,
+        "documents": grouped["documents"],
+    }
+
+
+def _item_counts(grouped):
+    counts = {key: len(value) for key, value in grouped.items()}
+    counts["total"] = sum(counts.values())
+    return counts
+
+
 def lifecycle_payload(agreement):
     contract = agreement.contract
     signed_version = agreement.signed_version
+    grouped = _group_items(agreement)
+    events = [_serialize_event(event) for event in agreement.events.all()]
     return {
         "contract": _contract_summary(contract),
         "signed_version": _signed_version_summary(signed_version),
         "lifecycle_agreement": _lifecycle_summary(agreement),
+        "timeline": _lifecycle_summary(agreement),
         "parties": {
             "initiator": _party_summary(contract.initiator),
             "counterparty": {
@@ -201,8 +247,10 @@ def lifecycle_payload(agreement):
                 "email": contract.counterparty_email,
             },
         },
-        "items": _group_items(agreement),
-        "events": [_serialize_event(event) for event in agreement.events.all()],
+        "items": grouped,
+        "counts": _item_counts(grouped),
+        "views": _grouped_views(grouped, events),
+        "events": events,
     }
 
 
@@ -247,21 +295,10 @@ class LifecycleItemCreateAPIView(APIView):
         if not title:
             return Response({"detail": "title is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        amount = request.data.get("amount")
-        item = LifecycleItem.objects.create(
-            lifecycle_agreement=agreement,
-            item_type=item_type,
-            title=title,
-            description=request.data.get("description") or "",
-            responsible_party=request.data.get("responsible_party") or "",
-            beneficiary_party=request.data.get("beneficiary_party") or "",
-            due_date=request.data.get("due_date") or None,
-            amount=Decimal(str(amount)) if amount not in (None, "") else None,
-            recurrence=request.data.get("recurrence") or None,
-            status=request.data.get("status") or LifecycleItem.STATUS_PENDING,
-            source_clause=request.data.get("source_clause") or None,
-            metadata=request.data.get("metadata") or {},
-        )
+        try:
+            item = create_timeline_item(agreement, request.user, request.data)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(_serialize_lifecycle_item(item), status=status.HTTP_201_CREATED)
 
 
@@ -271,32 +308,24 @@ class LifecycleItemDetailAPIView(APIView):
         if not is_party(request.user, item.lifecycle_agreement.contract):
             return contract_party_response()
 
-        allowed = {
-            "title",
-            "description",
-            "responsible_party",
-            "beneficiary_party",
-            "due_date",
-            "amount",
-            "recurrence",
-            "status",
-            "source_clause",
-            "metadata",
-        }
-        update_fields = []
-        for field in allowed:
-            if field not in request.data:
-                continue
-            value = request.data[field]
-            if field == "amount":
-                value = Decimal(str(value)) if value not in (None, "") else None
-            elif field == "due_date":
-                value = value or None
-            setattr(item, field, value)
-            update_fields.append(field)
+        try:
+            item = update_timeline_item(item, request.user, request.data)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        if update_fields:
-            update_fields.append("updated_at")
-            item.save(update_fields=update_fields)
+        return Response(_serialize_lifecycle_item(item), status=status.HTTP_200_OK)
+
+
+class LifecycleItemActionAPIView(APIView):
+    def post(self, request, item_id):
+        item = get_object_or_404(LifecycleItem.objects.select_related("lifecycle_agreement", "lifecycle_agreement__contract"), pk=item_id)
+        if not is_party(request.user, item.lifecycle_agreement.contract):
+            return contract_party_response()
+
+        action = request.data.get("action")
+        try:
+            item = perform_timeline_item_action(item, request.user, action, request.data)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(_serialize_lifecycle_item(item), status=status.HTTP_200_OK)

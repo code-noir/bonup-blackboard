@@ -859,31 +859,59 @@ class LifecycleAgreement(models.Model):
 
 class LifecycleItem(models.Model):
     TYPE_OBLIGATION = "obligation"
+    TYPE_RESPONSIBILITY = "responsibility"
     TYPE_PAYMENT = "payment"
     TYPE_DEADLINE = "deadline"
+    TYPE_DUE_DATE = "due_date"
     TYPE_SERVICE = "service"
+    TYPE_SERVICE_WORK = "service_work"
+    TYPE_NOTICE = "notice"
+    TYPE_DOCUMENT = "document"
     TYPE_RISK = "risk"
+    TYPE_CHANGE_ORDER = "change_order"
+    TYPE_ADD_ON = "add_on"
     TYPE_NOTE = "note"
 
     ITEM_TYPE_CHOICES = [
         (TYPE_OBLIGATION, "Obligation"),
+        (TYPE_RESPONSIBILITY, "Responsibility"),
         (TYPE_PAYMENT, "Payment"),
         (TYPE_DEADLINE, "Deadline"),
+        (TYPE_DUE_DATE, "Due Date"),
         (TYPE_SERVICE, "Service"),
+        (TYPE_SERVICE_WORK, "Service Work"),
+        (TYPE_NOTICE, "Notice"),
+        (TYPE_DOCUMENT, "Document"),
         (TYPE_RISK, "Risk"),
+        (TYPE_CHANGE_ORDER, "Change Order"),
+        (TYPE_ADD_ON, "Add-On"),
         (TYPE_NOTE, "Note"),
     ]
 
     STATUS_PENDING = "pending"
+    STATUS_PROPOSED = "proposed"
     STATUS_COMPLETED = "completed"
+    STATUS_CONFIRMED = "confirmed"
+    STATUS_REJECTED = "rejected"
     STATUS_OVERDUE = "overdue"
     STATUS_CANCELLED = "cancelled"
 
     STATUS_CHOICES = [
         (STATUS_PENDING, "Pending"),
+        (STATUS_PROPOSED, "Proposed"),
         (STATUS_COMPLETED, "Completed"),
+        (STATUS_CONFIRMED, "Confirmed"),
+        (STATUS_REJECTED, "Rejected"),
         (STATUS_OVERDUE, "Overdue"),
         (STATUS_CANCELLED, "Cancelled"),
+    ]
+
+    VISIBILITY_PARTIES = "parties"
+    VISIBILITY_OWNER = "owner"
+
+    VISIBILITY_CHOICES = [
+        (VISIBILITY_PARTIES, "Both Parties"),
+        (VISIBILITY_OWNER, "Owner Only"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -903,6 +931,14 @@ class LifecycleItem(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
     source_clause = models.TextField(null=True, blank=True)
     metadata = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_lifecycle_items",
+    )
+    visibility = models.CharField(max_length=20, choices=VISIBILITY_CHOICES, default=VISIBILITY_PARTIES)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -13,6 +13,8 @@ db.sqlite3
 
 # Environment variables
 .env
+.env.staging
+frontend/.env.staging
 
 # VS Code
 .vscode/

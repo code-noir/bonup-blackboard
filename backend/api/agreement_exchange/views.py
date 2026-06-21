@@ -14,9 +14,12 @@ from backend.agreement_exchange.services import (
     load_exchange,
     mark_viewed,
     reject_exchange,
+    rebuild_staged_updated_version,
     respond_to_request,
     restart_exchange_from_version,
+    save_staged_updated_version,
     send_initial_version,
+    send_staged_updated_version,
     sign_exchange,
 )
 from backend.agreement_exchange.templates import AGREEMENT_EXCHANGE_TEMPLATES
@@ -29,6 +32,8 @@ from .serializers import (
     AgreementExchangeRequestResponseSerializer,
     AgreementExchangeRequestSerializer,
     AgreementExchangeRestartSerializer,
+    AgreementExchangeSaveStagedVersionSerializer,
+    AgreementExchangeSendUpdatedVersionSerializer,
     AgreementExchangeSignSerializer,
 )
 
@@ -154,6 +159,72 @@ class AgreementExchangeRequestRespondAPIView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            "request": AgreementExchangeRequestSerializer(change_request).data,
+            "exchange": exchange_detail(exchange, request.user),
+        })
+
+
+class AgreementExchangeRebuildStagedVersionAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, exchange_id):
+        try:
+            exchange, change_request = rebuild_staged_updated_version(
+                exchange_id=exchange_id,
+                user=request.user,
+            )
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response({
+            "request": AgreementExchangeRequestSerializer(change_request).data,
+            "exchange": exchange_detail(exchange, request.user),
+        })
+
+
+class AgreementExchangeSaveStagedVersionAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, exchange_id):
+        serializer = AgreementExchangeSaveStagedVersionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            exchange, change_request = save_staged_updated_version(
+                exchange_id=exchange_id,
+                user=request.user,
+                staged_version_id=serializer.validated_data["staged_version_id"],
+                full_content_html=serializer.validated_data["full_content_html"],
+            )
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response({
+            "request": AgreementExchangeRequestSerializer(change_request).data,
+            "exchange": exchange_detail(exchange, request.user),
+        })
+
+
+class AgreementExchangeSendUpdatedVersionAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, exchange_id):
+        serializer = AgreementExchangeSendUpdatedVersionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            exchange, change_request = send_staged_updated_version(
+                exchange_id=exchange_id,
+                user=request.user,
+                staged_version_id=serializer.validated_data["staged_version_id"],
+                message_to_counterparty=serializer.validated_data.get("message_to_counterparty", ""),
+                full_content_html=serializer.validated_data.get("full_content_html", ""),
+            )
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         return Response({
             "request": AgreementExchangeRequestSerializer(change_request).data,
             "exchange": exchange_detail(exchange, request.user),

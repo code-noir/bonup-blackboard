@@ -11,6 +11,7 @@ class AgreementExchange(models.Model):
     STATUS_COUNTERPARTY_REVIEW = "counterparty_review"
     STATUS_CHANGES_REQUESTED = "changes_requested"
     STATUS_INITIATOR_REVIEW = "initiator_review"
+    STATUS_INITIATOR_EDITING = "initiator_editing"
     STATUS_UPDATED_VERSION_SENT = "updated_version_sent"
     STATUS_READY_TO_SIGN = "ready_to_sign"
     STATUS_SIGNED = "signed"
@@ -23,6 +24,7 @@ class AgreementExchange(models.Model):
         (STATUS_COUNTERPARTY_REVIEW, "Counterparty review"),
         (STATUS_CHANGES_REQUESTED, "Changes requested"),
         (STATUS_INITIATOR_REVIEW, "Initiator review"),
+        (STATUS_INITIATOR_EDITING, "Initiator editing"),
         (STATUS_UPDATED_VERSION_SENT, "Updated version sent"),
         (STATUS_READY_TO_SIGN, "Ready to sign"),
         (STATUS_SIGNED, "Signed"),
@@ -42,6 +44,7 @@ class AgreementExchange(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     contract = models.ForeignKey("contracts.Contract", on_delete=models.CASCADE, related_name="agreement_exchanges")
     current_contract_version = models.ForeignKey("contracts.ContractVersion", on_delete=models.PROTECT, related_name="agreement_exchanges")
+    staged_contract_version = models.ForeignKey("contracts.ContractVersion", on_delete=models.SET_NULL, null=True, blank=True, related_name="staged_for_exchanges")
     source_contract_version = models.ForeignKey("contracts.ContractVersion", on_delete=models.PROTECT, null=True, blank=True, related_name="agreement_exchange_restarts")
     restarted_from_exchange = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="restarted_exchanges")
     initiator = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="initiated_agreement_exchanges")

@@ -62,6 +62,17 @@ class AgreementExchangeRequestResponseSerializer(serializers.Serializer):
     initiator_response = serializers.CharField(required=False, allow_blank=True)
 
 
+class AgreementExchangeSaveStagedVersionSerializer(serializers.Serializer):
+    staged_version_id = serializers.UUIDField()
+    full_content_html = serializers.CharField(required=True, allow_blank=False)
+
+
+class AgreementExchangeSendUpdatedVersionSerializer(serializers.Serializer):
+    staged_version_id = serializers.UUIDField()
+    message_to_counterparty = serializers.CharField(required=False, allow_blank=True)
+    full_content_html = serializers.CharField(required=False, allow_blank=True)
+
+
 class AgreementExchangeRestartSerializer(serializers.Serializer):
     source_version_id = serializers.UUIDField()
     counterparty_email = serializers.EmailField(required=False, allow_blank=True)

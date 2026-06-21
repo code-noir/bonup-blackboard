@@ -11,6 +11,7 @@ type ExchangeSummary = {
   id: string
   contract_id: string
   current_contract_version_id: string
+  staged_contract_version_id?: string | null
   source_contract_version_id?: string | null
   restarted_from_exchange_id?: string | null
   status: string
@@ -79,6 +80,7 @@ type AgreementExchangeDetail = {
   viewer_role: ExchangeRole
   screen_state: string
   current_contract: CurrentContract
+  staged_update?: CurrentContract & { request_id?: string } | null
   requests: ExchangeRequest[]
   events: ExchangeEvent[]
   signatures: ExchangeSignature[]
@@ -161,7 +163,14 @@ function getExchangeStateCopy(detail: AgreementExchangeDetail) {
     return {
       mode: 'Initiator review',
       actor: role === 'initiator' ? 'Your turn' : 'Waiting on initiator',
-      next: 'Review the requested change and accept, edit, or reject it.',
+      next: 'Review the requested change and apply, edit, or reject it.',
+    }
+  }
+  if (state === 'initiator_editing') {
+    return {
+      mode: 'Initiator editing',
+      actor: role === 'initiator' ? 'Your turn' : 'Waiting on initiator',
+      next: 'Save or send the staged updated version.',
     }
   }
   if (state === 'counterparty_review_updated_version') {
@@ -273,6 +282,7 @@ function resolveContractBodyHtml(contract: CurrentContract) {
       if (sectionHtml) return sectionHtml.includes('<') ? sectionHtml : plainTextToHtml(sectionHtml)
       const clauseText = Array.isArray(parsed.clauses) ? parsed.clauses.map((clause) => clause.body || '').filter(Boolean).join('\n\n') : ''
       if (clauseText) return plainTextToHtml(clauseText)
+      return ''
     } catch {
       return plainTextToHtml(raw)
     }
@@ -384,6 +394,49 @@ function ContractViewer({ contract }: { contract: CurrentContract }) {
   )
 }
 
+
+function FullContractUpdateReview({ contract, request, message, setMessage, onSave, onSend, isSubmitting }: { contract: CurrentContract & { request_id?: string }; request?: ExchangeRequest; message: string; setMessage: (value: string) => void; onSave: (html: string) => void; onSend: (html: string) => void; isSubmitting: boolean }) {
+  const editorRef = useRef<HTMLDivElement | null>(null)
+  const bodyHtml = useMemo(() => resolveContractBodyHtml(contract), [contract])
+  const annotatedBodyHtml = useMemo(() => annotateContractBodyHtml(bodyHtml, contract.sections), [bodyHtml, contract.sections])
+
+  const hasBody = Boolean(annotatedBodyHtml.trim())
+
+  return (
+    <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+      <div style={{ border: '1px solid #BFDBFE', borderRadius: 8, background: '#EFF6FF', padding: 10 }}>
+        <p style={{ ...LABEL, marginBottom: 6 }}>Requested change context</p>
+        <RequestSummary request={request} />
+      </div>
+      <div>
+        <p style={{ ...LABEL, marginBottom: 6 }}>Full updated contract review</p>
+        {hasBody ? (
+          <div
+            ref={editorRef}
+            contentEditable
+            suppressContentEditableWarning
+            style={{ minHeight: 420, maxHeight: 640, overflow: 'auto', border: '1px solid #CBD5E1', borderRadius: 8, background: '#FFFFFF', color: '#0F172A', padding: 18, fontSize: 14, lineHeight: 1.65, outline: 'none' }}
+            dangerouslySetInnerHTML={{ __html: annotatedBodyHtml }}
+          />
+        ) : (
+          <div style={{ minHeight: 220, border: '1px dashed #CBD5E1', borderRadius: 8, background: '#F8FAFC', color: '#64748B', padding: 18, display: 'grid', alignContent: 'center', justifyItems: 'center', gap: 10, textAlign: 'center', fontSize: 13, fontWeight: 700 }}>
+            <span>Unable to prepare the updated version. Please refresh or contact support.</span>
+          </div>
+        )}
+      </div>
+      <textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Optional message to counterparty" style={{ ...TEXTAREA, minHeight: 70 }} />
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button type="button" style={BUTTON} onClick={() => onSave(editorRef.current?.innerHTML || annotatedBodyHtml)} disabled={isSubmitting || !hasBody}>
+          {isSubmitting ? 'Saving...' : 'Save Updated Version'}
+        </button>
+        <button type="button" style={PRIMARY_BUTTON} onClick={() => onSend(editorRef.current?.innerHTML || annotatedBodyHtml)} disabled={isSubmitting || !hasBody}>
+          {isSubmitting ? 'Sending...' : 'Send Updated Version'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function RequestSummary({ request }: { request?: ExchangeRequest }) {
   if (!request) return <p style={{ margin: 0, color: '#64748B', fontSize: 13 }}>No requested changes have been submitted.</p>
   return (
@@ -432,7 +485,7 @@ function decisionStatusCopy(detail: AgreementExchangeDetail) {
 function DecisionPanel({ detail, onRefresh, smallScreen }: { detail: AgreementExchangeDetail; onRefresh: () => void; smallScreen: boolean }) {
   const { user } = useAuth()
   const navigate = useNavigate()
-  const [mode, setMode] = useState<'idle' | 'request' | 'reject' | 'sign' | 'edit'>('idle')
+  const [mode, setMode] = useState<'idle' | 'request' | 'reject' | 'sign'>('idle')
   const [reason, setReason] = useState('')
   const [typedName, setTypedName] = useState(user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : '')
   const [signatureText, setSignatureText] = useState('')
@@ -445,9 +498,11 @@ function DecisionPanel({ detail, onRefresh, smallScreen }: { detail: AgreementEx
   const canSign = availableActions.includes('sign')
   const canRequestChange = availableActions.includes('request_change')
   const canRejectExchange = detail.viewer_role === 'counterparty' && availableActions.includes('reject')
-  const canAcceptRequest = availableActions.includes('accept') || availableActions.includes('accept_request')
-  const canEditRequest = availableActions.includes('edit') || availableActions.includes('edit_request')
+  const canAcceptRequest = availableActions.includes('apply_change') || availableActions.includes('accept') || availableActions.includes('accept_request')
+  const canEditRequest = availableActions.includes('edit_updated_version') || availableActions.includes('edit') || availableActions.includes('edit_request')
   const canRejectRequest = detail.viewer_role === 'initiator' && (availableActions.includes('reject') || availableActions.includes('reject_request'))
+  const canSaveStagedVersion = availableActions.includes('save_staged_version')
+  const canSendUpdatedVersion = availableActions.includes('send_updated_version')
   const canCounterpartyAct = canSign || canRequestChange || canRejectExchange
   const canInitiatorAct = canAcceptRequest || canEditRequest || canRejectRequest
 
@@ -473,8 +528,25 @@ function DecisionPanel({ detail, onRefresh, smallScreen }: { detail: AgreementEx
     if (!request?.id) return
     await submit(`/agreement-exchange/${detail.exchange.id}/requests/${request.id}/respond/`, {
       decision,
-      final_text: decision === 'reject' ? '' : finalText,
+      final_text: decision === 'accept' ? finalText : '',
       initiator_response: responseText,
+    })
+  }
+
+  async function saveStagedVersion(fullContentHtml: string) {
+    if (!detail.staged_update?.id) return
+    await submit(`/agreement-exchange/${detail.exchange.id}/save-staged-version/`, {
+      staged_version_id: detail.staged_update.id,
+      full_content_html: fullContentHtml,
+    })
+  }
+
+  async function sendUpdatedVersion(fullContentHtml: string) {
+    if (!detail.staged_update?.id) return
+    await submit(`/agreement-exchange/${detail.exchange.id}/send-updated-version/`, {
+      staged_version_id: detail.staged_update.id,
+      full_content_html: fullContentHtml,
+      message_to_counterparty: responseText,
     })
   }
 
@@ -576,23 +648,27 @@ function DecisionPanel({ detail, onRefresh, smallScreen }: { detail: AgreementEx
     )
   }
 
+  if (detail.viewer_role === 'initiator' && detail.staged_update && (canSaveStagedVersion || canSendUpdatedVersion)) {
+    return (
+      <div style={CARD}>
+        <p style={LABEL}>Updated Version Review</p>
+        <p style={{ margin: '0 0 10px', color: '#64748B', fontSize: 13 }}>Review and edit the full updated contract before sending it to the counterparty.</p>
+        <FullContractUpdateReview contract={detail.staged_update} request={request} message={responseText} setMessage={setResponseText} onSave={saveStagedVersion} onSend={sendUpdatedVersion} isSubmitting={isSubmitting} />
+        {error && <p style={{ margin: '10px 0 0', color: '#B91C1C', fontSize: 12 }}>{error}</p>}
+      </div>
+    )
+  }
+
   if (canInitiatorAct) {
     return (
       <div style={CARD}>
         <p style={LABEL}>Counterparty Request</p>
         <RequestSummary request={request} />
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-          {canAcceptRequest && <button type="button" style={PRIMARY_BUTTON} onClick={() => respond('accept')} disabled={!request?.id || isSubmitting}>Accept and Send Updated Version</button>}
-          {canEditRequest && <button type="button" style={BUTTON} onClick={() => setMode(mode === 'edit' ? 'idle' : 'edit')} disabled={!request?.id}>Edit First</button>}
+          {canAcceptRequest && <button type="button" style={PRIMARY_BUTTON} onClick={() => respond('accept')} disabled={!request?.id || isSubmitting}>Apply Change</button>}
+          {canEditRequest && <button type="button" style={BUTTON} onClick={() => respond('edit')} disabled={!request?.id || isSubmitting}>Edit Updated Version</button>}
           {canRejectRequest && <button type="button" style={DANGER_BUTTON} onClick={() => respond('reject')} disabled={!request?.id || isSubmitting}>Reject</button>}
         </div>
-        {mode === 'edit' && canEditRequest && (
-          <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
-            <textarea value={finalText} onChange={(event) => setFinalText(event.target.value)} style={TEXTAREA} />
-            <textarea value={responseText} onChange={(event) => setResponseText(event.target.value)} placeholder="Message to counterparty" style={{ ...TEXTAREA, minHeight: 70 }} />
-            <button type="button" style={{ ...PRIMARY_BUTTON, justifySelf: 'start' }} onClick={() => respond('edit')} disabled={isSubmitting || !finalText.trim()}>{isSubmitting ? 'Sending...' : 'Send Edited Version'}</button>
-          </div>
-        )}
         {error && <p style={{ margin: '10px 0 0', color: '#B91C1C', fontSize: 12 }}>{error}</p>}
       </div>
     )

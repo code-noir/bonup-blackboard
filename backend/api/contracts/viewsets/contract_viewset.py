@@ -1,5 +1,7 @@
 # backend/api/contracts/viewsets/contract_viewset.py
 
+import json
+
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -15,6 +17,35 @@ from backend.api.contracts.permissions import contract_party_response, is_party
 from backend.api.contracts.serializers import ContractSerializer, ContractVersionSerializer
 from backend.api.contracts.services.visibility_service import can_user_see_contract_on_dashboard, resolve_contract_dashboard_status
 from backend.activity.log import log_activity
+
+
+def _dashboard_version_summary(version):
+    if version is None:
+        return None
+
+    prepared_terms = None
+    prepared_summary = None
+    if version.content_snapshot:
+        try:
+            snapshot = json.loads(version.content_snapshot)
+        except (TypeError, ValueError):
+            snapshot = {}
+        if isinstance(snapshot, dict):
+            prepared_terms = snapshot.get("prepared_terms")
+            prepared_summary = snapshot.get("prepared_summary")
+
+    return {
+        "id": str(version.id),
+        "contract": str(version.contract_id),
+        "version_number": version.version_number,
+        "created_by": version.created_by_id,
+        "previous_version": str(version.previous_version_id) if version.previous_version_id else None,
+        "superseded": version.superseded,
+        "status": version.status,
+        "created_at": version.created_at,
+        "prepared_terms": prepared_terms,
+        "prepared_summary": prepared_summary,
+    }
 
 
 class ContractViewSet(ViewSet):
@@ -45,7 +76,7 @@ class ContractViewSet(ViewSet):
         contracts_by_id = {str(contract.id): contract for contract in contracts}
         for item in data:
             latest = latest_versions.get(str(item["id"]))
-            item["latest_version"] = ContractVersionSerializer(latest).data if latest else None
+            item["latest_version"] = _dashboard_version_summary(latest)
             item.update(resolve_contract_dashboard_status(contracts_by_id[str(item["id"])]))
         return Response(data)
 

@@ -117,7 +117,7 @@ def resolve_contract_dashboard_status(contract):
         display_status_label = "Active"
         lifecycle_ready = signed_version is not None
         primary_action = "open_lifecycle" if lifecycle_ready else "open_contract"
-        primary_action_label = "Open Lifecycle" if lifecycle_ready else "Open"
+        primary_action_label = "Open Agreement Timeline" if lifecycle_ready else "Open"
         primary_action_url = f"/lifecycle?contract={contract.id}" if lifecycle_ready else f"/contracts/{contract.id}/view"
         active_exchange_id = None
     elif signed_version is not None:
@@ -125,7 +125,7 @@ def resolve_contract_dashboard_status(contract):
         display_status_label = "Signed"
         lifecycle_ready = True
         primary_action = "open_lifecycle"
-        primary_action_label = "Open Lifecycle"
+        primary_action_label = "Open Agreement Timeline"
         primary_action_url = f"/lifecycle?contract={contract.id}"
         active_exchange_id = None
     elif signed_exchange is not None:

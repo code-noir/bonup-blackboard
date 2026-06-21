@@ -11,6 +11,7 @@ const MOCK_ENTITIES: { id: string; name: string }[] = []
 
 interface ContractVersionPayload {
   content_snapshot?: string
+  prepared_terms?: PreparedTerms | null
 }
 
 interface PreparedTerm {
@@ -83,6 +84,7 @@ function formatDate(value?: string): string {
 }
 
 function preparedTermsFor(contract: ContractRecord): PreparedTerms | null {
+  if (contract.latest_version?.prepared_terms) return contract.latest_version.prepared_terms
   const raw = contract.latest_version?.content_snapshot
   if (!raw) return null
   try {
@@ -135,7 +137,7 @@ function hasLifecycleAccess(contract: ContractRecord): boolean {
 }
 
 function primaryActionLabel(action?: string): string {
-  if (action === 'open_lifecycle') return 'Open Lifecycle'
+  if (action === 'open_lifecycle') return 'Open Agreement Timeline'
   if (action === 'open_rejected_exchange') return 'Open Exchange'
   if (action === 'open_negotiation') return 'Open Negotiation'
   if (action === 'continue_draft') return 'Continue Draft'
@@ -147,7 +149,7 @@ function fallbackPrimaryAction(contract: ContractRecord): { label: string; url: 
   const phase = contractPhase(contract)
   if (phase === 'draft') return { label: 'Open Editor', url: `/contracts/create?id=${contract.id}` }
   if (phase === 'negotiation') return { label: 'Open Negotiation', url: `/negotiation/${contract.id}` }
-  if (hasLifecycleAccess(contract)) return { label: 'Open Lifecycle', url: `/lifecycle?contract=${contract.id}` }
+  if (hasLifecycleAccess(contract)) return { label: 'Open Agreement Timeline', url: `/lifecycle?contract=${contract.id}` }
   return null
 }
 
@@ -461,9 +463,9 @@ export default function Dashboard() {
             },
             {
               icon: '📈',
-              title: 'Lifecycle Management',
-              description: 'Manage lifecycle obligations and payments after contract activation.',
-              action: 'Lifecycle Management',
+              title: 'Agreement Timeline',
+              description: 'Review signed agreement activity, to-dos, due dates, services, and payments.',
+              action: 'Agreement Timeline',
               onClick: () => navigate('/lifecycle'),
               available: true,
               badge: '',

@@ -442,6 +442,183 @@ class LifecycleFoundationTests(TestCase):
         self.assertFalse(response.data["is_contract_derived"])
         self.assertEqual(response.data["locked_fields"], [])
 
+    def test_manual_timeline_item_can_still_be_patched(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_NOTE,
+            title="Original manual note",
+            description="Original description",
+            created_by=self.initiator,
+        )
+        before_events = LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count()
+
+        response = self.initiator_client.patch(
+            f"/api/lifecycle/items/{item.id}/",
+            {"title": "Updated manual note", "description": "Updated description"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        item.refresh_from_db()
+        self.assertEqual(item.title, "Updated manual note")
+        self.assertEqual(item.description, "Updated description")
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count(), before_events + 1)
+
+    def test_protected_origin_fields_cannot_be_patched(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_NOTE,
+            title="Origin protected note",
+            created_by=self.initiator,
+            source_type=LifecycleItem.SOURCE_ORIGINAL_CONTRACT,
+            source_id="original-1",
+            source_label="Original source",
+            is_contract_derived=True,
+            locked_fields=[],
+        )
+        before_events = LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count()
+
+        response = self.initiator_client.patch(
+            f"/api/lifecycle/items/{item.id}/",
+            {"source_type": LifecycleItem.SOURCE_MANUAL},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("origin fields cannot be edited", response.data["detail"])
+        item.refresh_from_db()
+        self.assertEqual(item.source_type, LifecycleItem.SOURCE_ORIGINAL_CONTRACT)
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count(), before_events)
+
+    def test_contract_derived_item_with_locked_title_cannot_patch_title(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_NOTE,
+            title="Locked title",
+            created_by=self.initiator,
+            source_type=LifecycleItem.SOURCE_ORIGINAL_CONTRACT,
+            is_contract_derived=True,
+            locked_fields=["title"],
+        )
+        before_events = LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count()
+
+        response = self.initiator_client.patch(
+            f"/api/lifecycle/items/{item.id}/",
+            {"title": "Changed title"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Contract-derived timeline fields cannot be edited", response.data["detail"])
+        item.refresh_from_db()
+        self.assertEqual(item.title, "Locked title")
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count(), before_events)
+
+    def test_contract_derived_item_with_locked_description_cannot_patch_description(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_NOTE,
+            title="Locked description item",
+            description="Original description",
+            created_by=self.initiator,
+            source_type=LifecycleItem.SOURCE_ORIGINAL_CONTRACT,
+            is_contract_derived=True,
+            locked_fields=["description"],
+        )
+        before_events = LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count()
+
+        response = self.initiator_client.patch(
+            f"/api/lifecycle/items/{item.id}/",
+            {"description": "Changed description"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Contract-derived timeline fields cannot be edited", response.data["detail"])
+        item.refresh_from_db()
+        self.assertEqual(item.description, "Original description")
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count(), before_events)
+
+    def test_contract_derived_item_can_patch_unlocked_status(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_NOTE,
+            title="Unlocked status item",
+            created_by=self.initiator,
+            source_type=LifecycleItem.SOURCE_ORIGINAL_CONTRACT,
+            is_contract_derived=True,
+            locked_fields=["title", "description", "amount", "due_date"],
+        )
+        before_events = LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count()
+
+        response = self.initiator_client.patch(
+            f"/api/lifecycle/items/{item.id}/",
+            {"status": LifecycleItem.STATUS_CONFIRMED},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        item.refresh_from_db()
+        self.assertEqual(item.status, LifecycleItem.STATUS_CONFIRMED)
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count(), before_events + 1)
+
+    def test_locked_amount_and_due_date_cannot_be_patched(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            title="Locked payment",
+            created_by=self.initiator,
+            source_type=LifecycleItem.SOURCE_ORIGINAL_CONTRACT,
+            is_contract_derived=True,
+            locked_fields=["amount", "due_date"],
+        )
+        before_events = LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count()
+
+        amount_response = self.initiator_client.patch(
+            f"/api/lifecycle/items/{item.id}/",
+            {"amount": "123.45"},
+            format="json",
+        )
+        due_date_response = self.initiator_client.patch(
+            f"/api/lifecycle/items/{item.id}/",
+            {"due_date": "2030-01-01T12:00:00Z"},
+            format="json",
+        )
+
+        self.assertEqual(amount_response.status_code, 400)
+        self.assertEqual(due_date_response.status_code, 400)
+        item.refresh_from_db()
+        self.assertIsNone(item.amount)
+        self.assertIsNone(item.due_date)
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count(), before_events)
+
+    def test_timeline_loads_with_contract_derived_item_without_activation(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_NOTE,
+            title="Derived source note",
+            created_by=self.initiator,
+            source_type=LifecycleItem.SOURCE_ORIGINAL_CONTRACT,
+            is_contract_derived=True,
+            locked_fields=["title"],
+        )
+
+        response = self.initiator_client.get(f"/api/lifecycle/?contract={self.contract.id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["contract"]["id"], str(self.contract.id))
+        self.contract.refresh_from_db()
+        agreement.refresh_from_db()
+        self.assertEqual(self.contract.status, "signed")
+        self.assertEqual(agreement.status, LifecycleAgreement.STATUS_SETUP)
+
     def _make_signed_exchange(self, source_version):
         exchange = AgreementExchange.objects.create(
             contract=self.contract,

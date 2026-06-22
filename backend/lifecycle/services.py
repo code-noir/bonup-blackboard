@@ -346,10 +346,24 @@ def update_timeline_item(item, user, data):
     from decimal import Decimal
     from django.utils.dateparse import parse_datetime
 
+    protected_origin_fields = {
+        "source_type", "source_id", "source_label", "source_version", "source_version_id",
+        "source_exchange", "source_exchange_id", "is_contract_derived", "locked_fields",
+    }
+    requested_origin_fields = sorted(field for field in protected_origin_fields if field in data)
+    if requested_origin_fields:
+        raise ValueError(f"Timeline item origin fields cannot be edited: {', '.join(requested_origin_fields)}.")
+
     allowed = {
         "title", "description", "responsible_party", "beneficiary_party", "due_date", "amount",
         "recurrence", "status", "source_clause", "metadata", "visibility",
     }
+    if item.is_contract_derived:
+        locked_fields = set(item.locked_fields or [])
+        requested_locked_fields = sorted(field for field in locked_fields if field in data and field in allowed)
+        if requested_locked_fields:
+            raise ValueError(f"Contract-derived timeline fields cannot be edited: {', '.join(requested_locked_fields)}.")
+
     update_fields = []
     for field in allowed:
         if field not in data:

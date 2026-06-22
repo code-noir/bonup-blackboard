@@ -4,6 +4,7 @@ import json
 
 from django.test import TestCase
 
+from backend.agreement_exchange.models import AgreementExchange
 from backend.contracts.models import Contract, ContractObligation, ContractServiceObligation, ContractVersion
 from backend.payments.models import Payment
 
@@ -226,4 +227,116 @@ class ContractPrepareTests(TestCase):
         self.assertEqual(ContractObligation.objects.filter(contract=contract).count(), 0)
         self.assertEqual(ContractServiceObligation.objects.filter(contract=contract).count(), 0)
         self.assertEqual(Payment.objects.filter(contract=contract).count(), 0)
+
+class ContractReturnToDraftTests(TestCase):
+    def setUp(self):
+        self.initiator = make_user("return_owner", "return-owner@example.com")
+        self.counterparty = make_user("return_counterparty", "return-counterparty@example.com")
+        make_subscription(self.initiator)
+        self.client = authed_client(self.initiator)
+
+    def _make_prepared_contract(self, **overrides):
+        defaults = {
+            "initiator": self.initiator,
+            "counterparty_name": "Counter Party",
+            "counterparty_email": self.counterparty.email,
+            "title": "Prepared Contract",
+            "status": "draft",
+            "state": "prepared",
+            "structure_type": "ONE_TIME",
+        }
+        defaults.update(overrides)
+        contract = Contract.objects.create(**defaults)
+        version = ContractVersion.objects.create(
+            contract=contract,
+            version_number=1,
+            created_by=self.initiator,
+            content_snapshot=json.dumps({
+                "source": "contract_prepare",
+                "editor_html": "<p>Prepared body</p>",
+                "prepared_terms": {"payment_terms": []},
+            }),
+            status="draft",
+        )
+        return contract, version
+
+    def test_return_to_draft_unlocks_prepared_contract_without_changing_content(self):
+        contract, version = self._make_prepared_contract()
+        original_snapshot = version.content_snapshot
+
+        response = self.client.post(f"/api/contracts/{contract.id}/return-to-draft/", {}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        contract.refresh_from_db()
+        version.refresh_from_db()
+        self.assertEqual(contract.state, "drafting")
+        self.assertEqual(contract.status, "draft")
+        self.assertEqual(version.status, "draft")
+        self.assertEqual(version.content_snapshot, original_snapshot)
+        self.assertEqual(contract.versions.count(), 1)
+        self.assertEqual(response.data["editor_url"], f"/contracts/create?id={contract.id}")
+
+    def test_return_to_draft_allows_draft_placeholder_exchange(self):
+        contract, version = self._make_prepared_contract()
+        AgreementExchange.objects.create(
+            contract=contract,
+            current_contract_version=version,
+            source_contract_version=version,
+            initiator=self.initiator,
+            counterparty_email=self.counterparty.email,
+            counterparty_user=self.counterparty,
+        )
+
+        response = self.client.post(f"/api/contracts/{contract.id}/return-to-draft/", {}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        contract.refresh_from_db()
+        version.refresh_from_db()
+        self.assertEqual(contract.state, "drafting")
+        self.assertEqual(contract.status, "draft")
+        self.assertEqual(version.status, "draft")
+        self.assertEqual(contract.agreement_exchanges.count(), 1)
+        self.assertEqual(contract.agreement_exchanges.first().status, AgreementExchange.STATUS_DRAFT)
+
+    def test_return_to_draft_rejects_after_exchange_has_started(self):
+        contract, version = self._make_prepared_contract()
+        exchange = AgreementExchange.objects.create(
+            contract=contract,
+            current_contract_version=version,
+            source_contract_version=version,
+            initiator=self.initiator,
+            counterparty_email=self.counterparty.email,
+            counterparty_user=self.counterparty,
+            status=AgreementExchange.STATUS_COUNTERPARTY_REVIEW,
+        )
+
+        response = self.client.post(f"/api/contracts/{contract.id}/return-to-draft/", {}, format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("initial version has been sent", response.data["error"])
+        contract.refresh_from_db()
+        self.assertEqual(contract.state, "prepared")
+        self.assertEqual(AgreementExchange.objects.get(pk=exchange.pk).status, AgreementExchange.STATUS_COUNTERPARTY_REVIEW)
+
+    def test_return_to_draft_rejects_terminal_contract_statuses(self):
+        for contract_status in ["sent", "signed", "active", "completed"]:
+            with self.subTest(contract_status=contract_status):
+                contract, _version = self._make_prepared_contract(status=contract_status, state=contract_status)
+
+                response = self.client.post(f"/api/contracts/{contract.id}/return-to-draft/", {}, format="json")
+
+                self.assertEqual(response.status_code, 400)
+                contract.refresh_from_db()
+                self.assertEqual(contract.status, contract_status)
+                self.assertEqual(contract.state, contract_status)
+
+    def test_return_to_draft_rejects_counterparty(self):
+        contract, _version = self._make_prepared_contract()
+        counterparty_client = authed_client(self.counterparty)
+
+        response = counterparty_client.post(f"/api/contracts/{contract.id}/return-to-draft/", {}, format="json")
+
+        self.assertEqual(response.status_code, 403)
+        contract.refresh_from_db()
+        self.assertEqual(contract.state, "prepared")
 

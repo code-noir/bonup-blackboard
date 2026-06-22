@@ -32,6 +32,9 @@ type ContractDocumentPayload = {
   counterparty_email?: string
   created_at?: string
   latest_version?: ContractVersionPayload | null
+  active_exchange_id?: string | null
+  latest_exchange_status?: string | null
+  display_status?: string
 }
 
 type ParsedDocument = {
@@ -173,6 +176,8 @@ export default function ContractDocumentView() {
   const [contract, setContract] = useState<ContractDocumentPayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [actionError, setActionError] = useState('')
+  const [isReturningToDraft, setIsReturningToDraft] = useState(false)
 
   useEffect(() => {
     if (!id) return
@@ -180,7 +185,10 @@ export default function ContractDocumentView() {
     setLoading(true)
     api.get<ContractDocumentPayload>(`/contracts/${id}/`)
       .then(({ data }) => {
-        if (!cancelled) setContract(data)
+        if (!cancelled) {
+          setContract(data)
+          setActionError('')
+        }
       })
       .catch((err) => {
         if (!cancelled) setError(err?.response?.data?.error || 'Contract document could not be loaded.')
@@ -198,6 +206,27 @@ export default function ContractDocumentView() {
   function scrollToSection(section: ContractSection) {
     const target = window.document.getElementById(sectionAnchorId(section))
     target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  async function handleReturnToDraft() {
+    if (!contract || isReturningToDraft) return
+    const confirmed = window.confirm('This will move the contract back to draft so you can edit it before sending it for negotiation.')
+    if (!confirmed) return
+
+    setIsReturningToDraft(true)
+    setActionError('')
+    try {
+      const { data } = await api.post<{ editor_url?: string }>(`/contracts/${contract.id}/return-to-draft/`, {})
+      navigate(data.editor_url || `/contracts/create?id=${contract.id}`)
+    } catch (err) {
+      const message = err && typeof err === 'object' && 'response' in err
+        ? (err as { response?: { data?: { error?: string; detail?: string } } }).response?.data?.error
+          || (err as { response?: { data?: { error?: string; detail?: string } } }).response?.data?.detail
+        : ''
+      setActionError(message || 'Contract could not be returned to draft.')
+    } finally {
+      setIsReturningToDraft(false)
+    }
   }
 
   if (loading) {
@@ -219,6 +248,20 @@ export default function ContractDocumentView() {
 
   const versionNumber = contract.latest_version?.version_number || contract.version || 1
   const counterparty = contract.counterparty_name || contract.counterparty_email || 'Counterparty not provided'
+  const contractState = (contract.state || '').toLowerCase()
+  const contractStatus = (contract.status || '').toLowerCase()
+  const versionStatus = (contract.latest_version?.status || '').toLowerCase()
+  const hasExchangeStarted = Boolean(contract.active_exchange_id || contract.latest_exchange_status)
+  const blockedStatuses = new Set(['sent', 'negotiating', 'signed', 'active', 'completed', 'archived'])
+  const blockedStates = new Set(['sent', 'negotiating', 'in_negotiation', 'under_negotiation', 'awaiting_signature', 'signed', 'completed', 'archived'])
+  const isPreparedForReturn = contractState === 'prepared' || contractStatus === 'prepared'
+  const canReturnToDraft = (
+    isPreparedForReturn
+    && !blockedStatuses.has(contractStatus)
+    && !blockedStates.has(contractState)
+    && !blockedStatuses.has(versionStatus)
+    && !hasExchangeStarted
+  )
 
   return (
     <div style={pageStyle}>
@@ -227,10 +270,28 @@ export default function ContractDocumentView() {
           <button onClick={() => navigate('/dashboard')} style={{ border: 'none', background: 'transparent', color: '#64748B', cursor: 'pointer', padding: 0, fontSize: 13 }}>
             Back to dashboard
           </button>
-          <button onClick={() => navigate(`/contracts/${contract.id}`)} style={{ height: 32, padding: '0 12px', border: '1px solid #CBD5E1', background: 'white', color: '#334155', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-            Contract Summary
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+            {canReturnToDraft && (
+              <button
+                type="button"
+                onClick={handleReturnToDraft}
+                disabled={isReturningToDraft}
+                style={{ height: 32, padding: '0 12px', border: '1px solid #B45309', background: isReturningToDraft ? '#FDE68A' : '#FEF3C7', color: '#78350F', borderRadius: 7, fontSize: 12, fontWeight: 800, cursor: isReturningToDraft ? 'default' : 'pointer' }}
+              >
+                Return to Draft
+              </button>
+            )}
+            <button onClick={() => navigate(`/contracts/${contract.id}`)} style={{ height: 32, padding: '0 12px', border: '1px solid #CBD5E1', background: 'white', color: '#334155', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+              Contract Summary
+            </button>
+          </div>
         </div>
+
+        {actionError && (
+          <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 12, color: '#B91C1C', fontSize: 13, marginBottom: 16 }}>
+            {actionError}
+          </div>
+        )}
 
         <div style={documentStyle}>
           <header style={{ borderBottom: '1px solid #E2E8F0', paddingBottom: 22, marginBottom: 30 }}>

@@ -12,6 +12,7 @@ const MOCK_ENTITIES: { id: string; name: string }[] = []
 interface ContractVersionPayload {
   content_snapshot?: string
   prepared_terms?: PreparedTerms | null
+  status?: string
 }
 
 interface PreparedTerm {
@@ -174,6 +175,8 @@ export default function Dashboard() {
   const [contracts, setContracts] = useState<ContractRecord[]>([])
   const [contractsLoading, setContractsLoading] = useState(true)
   const [contractsError, setContractsError] = useState('')
+  const [returningContractId, setReturningContractId] = useState<string | null>(null)
+  const [returnToDraftError, setReturnToDraftError] = useState<{ contractId: string; message: string } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -200,6 +203,30 @@ export default function Dashboard() {
   const viewingAsLabel = viewingAs === 'personal'
     ? `${displayName} (Personal)`
     : MOCK_ENTITIES.find((e) => e.id === viewingAs)?.name ?? 'Personal'
+
+  async function handleReturnToDraft(contract: ContractRecord) {
+    const confirmed = window.confirm('This will move the contract back to draft so you can edit it before sending it for negotiation.')
+    if (!confirmed) return
+
+    setReturningContractId(contract.id)
+    setReturnToDraftError(null)
+    try {
+      const { data } = await api.post<{ editor_url?: string }>(`/contracts/${contract.id}/return-to-draft/`, {})
+      navigate(data.editor_url || `/contracts/create?id=${contract.id}`)
+    } catch (error) {
+      const response = error && typeof error === 'object' && 'response' in error
+        ? (error as { response?: { data?: { error?: string; detail?: string } } }).response?.data
+        : null
+      const message = response?.error || response?.detail || 'Return to Draft failed.'
+      setReturnToDraftError({ contractId: contract.id, message })
+    } finally {
+      setReturningContractId(null)
+    }
+  }
+
+  function canReturnToDraftFromDashboard(_contract: ContractRecord, label: string) {
+    return label === 'Prepared'
+  }
 
   return (
     <div className="space-y-6">
@@ -360,6 +387,7 @@ export default function Dashboard() {
               const primaryUrl = contract.primary_action_url || fallbackAction?.url
               const primaryLabel = contract.primary_action_label
                 || (contract.primary_action ? primaryActionLabel(contract.primary_action) : fallbackAction?.label)
+              const canReturnToDraft = canReturnToDraftFromDashboard(contract, label)
 
               return (
                 <article
@@ -410,6 +438,17 @@ export default function Dashboard() {
                       View Contract
                     </button>
 
+                    {canReturnToDraft && (
+                      <button
+                        type="button"
+                        onClick={() => void handleReturnToDraft(contract)}
+                        disabled={returningContractId === contract.id}
+                        style={actionButtonStyle('secondary')}
+                      >
+                        {returningContractId === contract.id ? 'Returning...' : 'Return to Draft'}
+                      </button>
+                    )}
+
                     {primaryUrl && primaryLabel && (
                       <button
                         type="button"
@@ -420,6 +459,11 @@ export default function Dashboard() {
                       </button>
                     )}
                   </div>
+                  {returnToDraftError?.contractId === contract.id && (
+                    <p style={{ margin: '10px 0 0', color: '#B91C1C', fontSize: 12, lineHeight: 1.4 }}>
+                      {returnToDraftError.message}
+                    </p>
+                  )}
                 </article>
               )
             })}

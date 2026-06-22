@@ -15,7 +15,7 @@ from .version_views import (
     ContractVersionSignAPIView,
     ContractVersionRejectAPIView,
 )
-from .draft_views import ContractDraftAutosaveAPIView
+from .draft_views import ContractDraftAutosaveAPIView, ContractReturnToDraftAPIView
 from .prepare_views import ContractPrepareAPIView
 from .invite_views import ContractInviteAPIView
 from .role_switch_views import (
@@ -176,6 +176,11 @@ urlpatterns = [
         "<uuid:contract_id>/draft/",
         ContractDraftAutosaveAPIView.as_view(),
         name="contract-draft-autosave",
+    ),
+    path(
+        "<uuid:contract_id>/return-to-draft/",
+        ContractReturnToDraftAPIView.as_view(),
+        name="contract-return-to-draft",
     ),
     path(
         "<uuid:contract_id>/versions/<uuid:version_id>/sign/",

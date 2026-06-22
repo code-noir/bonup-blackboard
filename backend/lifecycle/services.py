@@ -302,6 +302,13 @@ def create_timeline_item(agreement, user, data):
     due_date = data.get("due_date") or None
     if isinstance(due_date, str):
         due_date = parse_datetime(due_date) if due_date else None
+    source_type = data.get("source_type") or LifecycleItem.SOURCE_MANUAL
+    source_id = data.get("source_id") or None
+    source_label = data.get("source_label") or None
+    source_version = data.get("source_version") or data.get("source_version_id") or None
+    source_exchange = data.get("source_exchange") or data.get("source_exchange_id") or None
+    is_contract_derived = data.get("is_contract_derived")
+    locked_fields = data.get("locked_fields")
     item = LifecycleItem.objects.create(
         lifecycle_agreement=agreement,
         item_type=item_type,
@@ -313,6 +320,13 @@ def create_timeline_item(agreement, user, data):
         amount=Decimal(str(amount)) if amount not in (None, "") else None,
         recurrence=data.get("recurrence") or None,
         status=data.get("status") or (LifecycleItem.STATUS_PROPOSED if item_type in {LifecycleItem.TYPE_CHANGE_ORDER, LifecycleItem.TYPE_ADD_ON} else LifecycleItem.STATUS_PENDING),
+        source_type=source_type,
+        source_id=source_id,
+        source_label=source_label,
+        source_version_id=getattr(source_version, "pk", source_version),
+        source_exchange_id=getattr(source_exchange, "pk", source_exchange),
+        is_contract_derived=bool(is_contract_derived) if is_contract_derived is not None else False,
+        locked_fields=locked_fields if isinstance(locked_fields, list) else [],
         source_clause=data.get("source_clause") or None,
         metadata=data.get("metadata") or {},
         created_by=user if getattr(user, "is_authenticated", False) else None,

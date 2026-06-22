@@ -858,6 +858,26 @@ class LifecycleAgreement(models.Model):
 
 
 class LifecycleItem(models.Model):
+    SOURCE_MANUAL = "manual"
+    SOURCE_ORIGINAL_CONTRACT = "original_contract"
+    SOURCE_CONTRACT_OBLIGATION = "contract_obligation"
+    SOURCE_CONTRACT_SERVICE_OBLIGATION = "contract_service_obligation"
+    SOURCE_PAYMENT_RECORD = "payment_record"
+    SOURCE_CHANGE_ORDER = "change_order"
+    SOURCE_ADD_ON = "add_on"
+    SOURCE_SYSTEM = "system"
+
+    SOURCE_CHOICES = [
+        (SOURCE_MANUAL, "Manual"),
+        (SOURCE_ORIGINAL_CONTRACT, "Original Contract"),
+        (SOURCE_CONTRACT_OBLIGATION, "Contract Obligation"),
+        (SOURCE_CONTRACT_SERVICE_OBLIGATION, "Contract Service Obligation"),
+        (SOURCE_PAYMENT_RECORD, "Payment Record"),
+        (SOURCE_CHANGE_ORDER, "Change Order"),
+        (SOURCE_ADD_ON, "Add-On"),
+        (SOURCE_SYSTEM, "System"),
+    ]
+
     TYPE_OBLIGATION = "obligation"
     TYPE_RESPONSIBILITY = "responsibility"
     TYPE_PAYMENT = "payment"
@@ -929,6 +949,25 @@ class LifecycleItem(models.Model):
     amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     recurrence = models.CharField(max_length=100, null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    source_type = models.CharField(max_length=40, choices=SOURCE_CHOICES, default=SOURCE_MANUAL)
+    source_id = models.CharField(max_length=255, null=True, blank=True)
+    source_label = models.CharField(max_length=255, null=True, blank=True)
+    source_version = models.ForeignKey(
+        "ContractVersion",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="lifecycle_items",
+    )
+    source_exchange = models.ForeignKey(
+        "agreement_exchange.AgreementExchange",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="lifecycle_items",
+    )
+    is_contract_derived = models.BooleanField(default=False)
+    locked_fields = models.JSONField(default=list, blank=True)
     source_clause = models.TextField(null=True, blank=True)
     metadata = models.JSONField(default=dict, blank=True)
     created_by = models.ForeignKey(

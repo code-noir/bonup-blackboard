@@ -86,9 +86,17 @@ def _lifecycle_summary(agreement):
 
 
 def _serialize_lifecycle_item(item):
+    source_type = getattr(item, "source_type", "manual") or "manual"
     return {
         "id": str(item.id),
-        "source": "manual",
+        "source": source_type,
+        "source_type": source_type,
+        "source_id": item.source_id,
+        "source_label": item.source_label,
+        "source_version_id": str(item.source_version_id) if item.source_version_id else None,
+        "source_exchange_id": str(item.source_exchange_id) if item.source_exchange_id else None,
+        "is_contract_derived": getattr(item, "is_contract_derived", False),
+        "locked_fields": getattr(item, "locked_fields", []) or [],
         "item_type": item.item_type,
         "title": item.title,
         "description": item.description,

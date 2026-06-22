@@ -379,6 +379,82 @@ class LifecycleFoundationTests(TestCase):
         notification = Notification.objects.get(notification_type="agreement_timeline")
         self.assertIn("Weekly cleanup add-on", notification.message)
 
+    def test_manual_timeline_item_defaults_origin_fields(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+
+        response = self.initiator_client.post(
+            f"/api/lifecycle/{agreement.id}/items/",
+            {"item_type": "note", "title": "Manual note"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        item = LifecycleItem.objects.get(pk=response.data["id"])
+        self.assertEqual(item.source_type, LifecycleItem.SOURCE_MANUAL)
+        self.assertFalse(item.is_contract_derived)
+        self.assertEqual(item.locked_fields, [])
+        self.assertEqual(response.data["source_type"], LifecycleItem.SOURCE_MANUAL)
+        self.assertFalse(response.data["is_contract_derived"])
+        self.assertEqual(response.data["locked_fields"], [])
+
+    def test_timeline_item_response_includes_origin_fields(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        source_version = self.version
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            title="Origin aware payment",
+            created_by=self.initiator,
+            source_type=LifecycleItem.SOURCE_PAYMENT_RECORD,
+            source_id="payment-123",
+            source_label="Payment record 123",
+            source_version=source_version,
+            source_exchange=self._make_signed_exchange(source_version),
+            is_contract_derived=True,
+            locked_fields=["title", "amount"],
+        )
+
+        response = self.initiator_client.get(f"/api/lifecycle/?contract={self.contract.id}")
+
+        self.assertEqual(response.status_code, 200)
+        payments = response.data["items"]["payments"]
+        serialized = next(entry for entry in payments if entry["id"] == str(item.id))
+        self.assertEqual(serialized["source_type"], LifecycleItem.SOURCE_PAYMENT_RECORD)
+        self.assertEqual(serialized["source"], LifecycleItem.SOURCE_PAYMENT_RECORD)
+        self.assertEqual(serialized["source_id"], "payment-123")
+        self.assertEqual(serialized["source_label"], "Payment record 123")
+        self.assertEqual(serialized["source_version_id"], str(source_version.id))
+        self.assertEqual(serialized["source_exchange_id"], str(item.source_exchange_id))
+        self.assertTrue(serialized["is_contract_derived"])
+        self.assertEqual(serialized["locked_fields"], ["title", "amount"])
+
+    def test_old_creation_payload_without_origin_fields_still_works(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+
+        response = self.initiator_client.post(
+            f"/api/lifecycle/{agreement.id}/items/",
+            {"item_type": "payment", "title": "First payment", "amount": "100.00"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["source_type"], LifecycleItem.SOURCE_MANUAL)
+        self.assertFalse(response.data["is_contract_derived"])
+        self.assertEqual(response.data["locked_fields"], [])
+
+    def _make_signed_exchange(self, source_version):
+        exchange = AgreementExchange.objects.create(
+            contract=self.contract,
+            current_contract_version=source_version,
+            source_contract_version=source_version,
+            initiator=self.initiator,
+            counterparty_email=self.counterparty.email,
+            counterparty_user=self.counterparty,
+            status=AgreementExchange.STATUS_SIGNED,
+            current_actor=AgreementExchange.ACTOR_NONE,
+        )
+        return exchange
+
     def test_timeline_endpoint_returns_grouped_views(self):
         agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
         LifecycleItem.objects.create(

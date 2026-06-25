@@ -28,6 +28,7 @@ import Entities from '@/pages/Entities'
 import Profile from '@/pages/Profile'
 import Billing from '@/pages/Billing'
 import LifecycleManagement from '@/pages/LifecycleManagement'
+import AgreementPerformance from '@/pages/AgreementPerformance'
 import Negotiation from '@/pages/Negotiation'
 import NotFound from '@/pages/NotFound'
 import AdminLayout from '@/pages/admin/AdminLayout'
@@ -162,6 +163,7 @@ export default function App() {
             <Route path="/settings" element={<Placeholder name="Settings" />} />
             <Route path="/billing" element={<Billing />} />
             <Route path="/lifecycle" element={<LifecycleManagement />} />
+            <Route path="/agreement-performance" element={<AgreementPerformance />} />
             <Route path="/negotiation" element={<Negotiation />} />
             <Route path="/negotiation/:contractId" element={<Negotiation />} />
 

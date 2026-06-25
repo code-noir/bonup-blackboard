@@ -9,6 +9,7 @@ from backend.contracts.models import (
     ContractObligation,
     ContractServiceObligation,
     LifecycleItem,
+    LifecycleItemUserState,
 )
 from backend.lifecycle.services import (
     LifecycleNotReadyError,
@@ -85,8 +86,67 @@ def _lifecycle_summary(agreement):
     }
 
 
-def _serialize_lifecycle_item(item):
+def _payment_method_from_metadata(metadata):
+    payment_method = (metadata or {}).get("payment_method")
+    if not payment_method:
+        payment_methods = (metadata or {}).get("payment_methods")
+        if isinstance(payment_methods, list) and payment_methods:
+            payment_method = payment_methods[0]
+    return payment_method
+
+
+
+def _timeline_item_baseline_values(item):
+    metadata = item.metadata or {}
+    return {
+        "title": item.title,
+        "description": item.description,
+        "due_date": _iso(item.due_date),
+        "amount": _money(item.amount),
+        "responsible_party": item.responsible_party,
+        "payment_method": _payment_method_from_metadata(metadata),
+        "status": item.status,
+    }
+
+
+
+def _timeline_item_overlay_state(item, overlay):
+    baseline = _timeline_item_baseline_values(item)
+    if overlay is None:
+        return baseline
+    return {
+        "title": overlay.title_override if overlay.title_override is not None else baseline["title"],
+        "description": overlay.description_override if overlay.description_override is not None else baseline["description"],
+        "due_date": _iso(overlay.due_date_override) if overlay.due_date_override else baseline["due_date"],
+        "amount": _money(overlay.amount_override) if overlay.amount_override is not None else baseline["amount"],
+        "responsible_party": overlay.responsible_party_override if overlay.responsible_party_override is not None else baseline["responsible_party"],
+        "payment_method": overlay.payment_method_override if overlay.payment_method_override is not None else baseline["payment_method"],
+        "status": overlay.status_override if overlay.status_override is not None else baseline["status"],
+    }
+
+
+
+def _serialize_lifecycle_item(item, overlay=None):
     source_type = getattr(item, "source_type", "manual") or "manual"
+    metadata = item.metadata or {}
+    state = _timeline_item_overlay_state(item, overlay)
+    baseline_values = _timeline_item_baseline_values(item)
+    overlay_metadata = getattr(overlay, "metadata", {}) or {}
+    has_personal_overrides = bool(overlay and any(
+        value not in (None, "", [])
+        for value in (
+            overlay.title_override,
+            overlay.description_override,
+            overlay.due_date_override,
+            overlay.amount_override,
+            overlay.responsible_party_override,
+            overlay.payment_method_override,
+            overlay.status_override,
+            overlay.notes,
+            overlay.reminder_at,
+            overlay_metadata,
+        )
+    ))
     return {
         "id": str(item.id),
         "source": source_type,
@@ -98,16 +158,21 @@ def _serialize_lifecycle_item(item):
         "is_contract_derived": getattr(item, "is_contract_derived", False),
         "locked_fields": getattr(item, "locked_fields", []) or [],
         "item_type": item.item_type,
-        "title": item.title,
-        "description": item.description,
-        "responsible_party": item.responsible_party,
+        "title": state["title"],
+        "description": state["description"],
+        "responsible_party": state["responsible_party"],
         "beneficiary_party": item.beneficiary_party,
-        "due_date": _iso(item.due_date),
-        "amount": _money(item.amount),
+        "due_date": state["due_date"],
+        "amount": state["amount"],
         "recurrence": item.recurrence,
-        "status": item.status,
+        "status": state["status"],
+        "payment_method": state["payment_method"],
+        "notes": overlay.notes if overlay is not None else "",
+        "reminder_at": _iso(overlay.reminder_at) if overlay is not None and overlay.reminder_at else None,
         "source_clause": item.source_clause,
-        "metadata": item.metadata or {},
+        "metadata": metadata,
+        "baseline_values": baseline_values,
+        "has_personal_overrides": has_personal_overrides,
         "created_by": str(item.created_by_id) if getattr(item, "created_by_id", None) else None,
         "visibility": getattr(item, "visibility", "parties"),
     }
@@ -187,16 +252,56 @@ def _empty_groups():
     }
 
 
-def _group_items(agreement):
+def _looks_like_whole_contract_text(value):
+    if not value:
+        return False
+    normalized = " ".join(str(value).lower().split())
+    if len(normalized) < 500:
+        return False
+    markers = [
+        "agreement is made between",
+        "personal repayment agreement",
+        "governing law",
+        "signatures",
+        "borrower",
+        "lender",
+        "provider",
+        "client",
+    ]
+    return "agreement" in normalized and sum(1 for marker in markers if marker in normalized) >= 2
+
+
+def _is_whole_contract_timeline_item(item):
+    return _looks_like_whole_contract_text(item.get("title")) or _looks_like_whole_contract_text(item.get("description"))
+
+
+def _append_timeline_item(grouped, group_name, item):
+    if _is_whole_contract_timeline_item(item):
+        return
+    grouped[group_name].append(item)
+
+
+def _is_signed_contract_document(item):
+    return (
+        item.item_type == LifecycleItem.TYPE_DOCUMENT
+        and getattr(item, "source_type", None) == LifecycleItem.SOURCE_ORIGINAL_CONTRACT
+    )
+
+
+def _group_items(agreement, overlays_by_item_id=None):
     grouped = _empty_groups()
+    overlays_by_item_id = overlays_by_item_id or {}
     for item in agreement.items.all():
-        grouped[_GROUPS[item.item_type]].append(_serialize_lifecycle_item(item))
+        if _is_signed_contract_document(item):
+            continue
+        overlay = overlays_by_item_id.get(str(item.id))
+        _append_timeline_item(grouped, _GROUPS[item.item_type], _serialize_lifecycle_item(item, overlay))
 
     for obligation in ContractObligation.objects.filter(contract=agreement.contract).order_by("due_date"):
         grouped["payments"].append(_serialize_payment_obligation(obligation))
 
     for obligation in ContractServiceObligation.objects.filter(contract=agreement.contract).order_by("due_date"):
-        grouped["services"].append(_serialize_service_obligation(obligation))
+        _append_timeline_item(grouped, "services", _serialize_service_obligation(obligation))
 
     for payment in Payment.objects.filter(contract=agreement.contract).order_by("-created_at"):
         grouped["payments"].append(_serialize_payment(payment))
@@ -215,20 +320,52 @@ def _serialize_event(event):
     }
 
 
+def _is_open_timeline_status(item):
+    return item.get("status") not in {"completed", "confirmed", "cancelled", "rejected"}
+
+
+def _is_generated_repayment_schedule_item(item):
+    return (
+        item.get("source_type") == LifecycleItem.SOURCE_ORIGINAL_CONTRACT
+        and str(item.get("source_id") or "").startswith("repayment_schedule:")
+    )
+
+
+def _is_loan_delivery_work_item(item):
+    return str(item.get("source_id") or "").startswith("loan_delivery_work:")
+
+
+def _without_legacy_generated_payment_sources(items, has_generated_repayment_schedule):
+    if not has_generated_repayment_schedule:
+        return items
+    return [
+        item for item in items
+        if item.get("source") not in {"contract_payment_obligation", "payment_record"}
+    ]
+
+
 def _grouped_views(grouped, events):
-    upcoming = sorted(
-        [item for values in grouped.values() for item in values if item.get("due_date") and item.get("status") not in {"completed", "confirmed", "cancelled", "rejected"}],
-        key=lambda item: item.get("due_date") or "",
-    )[:10]
+    all_items = [item for values in grouped.values() for item in values]
+    has_generated_repayment_schedule = any(_is_generated_repayment_schedule_item(item) for item in grouped["payments"])
+    action_items = _without_legacy_generated_payment_sources(all_items, has_generated_repayment_schedule)
+    due_dated_action_items = [
+        item for item in action_items
+        if item.get("due_date")
+        and _is_open_timeline_status(item)
+        and not _is_loan_delivery_work_item(item)
+        and item.get("item_type") in {"payment", "service", "service_work", "responsibility", "obligation", "due_date", "deadline"}
+    ]
+    upcoming = sorted(due_dated_action_items, key=lambda item: item.get("due_date") or "")[:10]
+    payment_items = _without_legacy_generated_payment_sources(grouped["payments"], has_generated_repayment_schedule)
     return {
         "upcoming": upcoming,
-        "to_dos": grouped["obligations"] + grouped["notices"] + grouped["notes"],
-        "payments": grouped["payments"],
-        "due_dates": grouped["deadlines"],
-        "work_services": grouped["services"],
-        "changes_add_ons": grouped["changes"],
+        "to_dos": [item for item in grouped["obligations"] if item.get("item_type") in {"responsibility", "obligation"}],
+        "payments": [item for item in payment_items if item.get("item_type") == "payment"],
+        "due_dates": sorted(due_dated_action_items, key=lambda item: item.get("due_date") or ""),
+        "work_services": [item for item in grouped["services"] if item.get("item_type") in {"service", "service_work"}],
+        "changes_add_ons": [item for item in grouped["changes"] if item.get("item_type") in {"change_order", "add_on"}],
         "activity": events,
-        "documents": grouped["documents"],
+        "documents": [item for item in grouped["documents"] if item.get("item_type") == "document"],
     }
 
 
@@ -238,10 +375,16 @@ def _item_counts(grouped):
     return counts
 
 
-def lifecycle_payload(agreement):
+def lifecycle_payload(agreement, user=None):
     contract = agreement.contract
     signed_version = agreement.signed_version
-    grouped = _group_items(agreement)
+    overlays_by_item_id = {}
+    if getattr(user, "is_authenticated", False):
+        overlays_by_item_id = {
+            str(state.lifecycle_item_id): state
+            for state in LifecycleItemUserState.objects.filter(lifecycle_item__lifecycle_agreement=agreement, user=user)
+        }
+    grouped = _group_items(agreement, overlays_by_item_id)
     events = [_serialize_event(event) for event in agreement.events.all()]
     return {
         "contract": _contract_summary(contract),
@@ -283,7 +426,7 @@ class LifecycleAgreementAPIView(APIView):
             .prefetch_related("items", "events")
             .get(pk=agreement.pk)
         )
-        return Response(lifecycle_payload(agreement), status=status.HTTP_200_OK)
+        return Response(lifecycle_payload(agreement, request.user), status=status.HTTP_200_OK)
 
 
 class LifecycleItemCreateAPIView(APIView):
@@ -321,7 +464,8 @@ class LifecycleItemDetailAPIView(APIView):
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response(_serialize_lifecycle_item(item), status=status.HTTP_200_OK)
+        overlay = LifecycleItemUserState.objects.filter(lifecycle_item=item, user=request.user).first()
+        return Response(_serialize_lifecycle_item(item, overlay), status=status.HTTP_200_OK)
 
 
 class LifecycleItemActionAPIView(APIView):

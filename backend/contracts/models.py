@@ -992,6 +992,43 @@ class LifecycleItem(models.Model):
         return f"{self.item_type} - {self.title}"
 
 
+class LifecycleItemUserState(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    lifecycle_item = models.ForeignKey(
+        LifecycleItem,
+        on_delete=models.CASCADE,
+        related_name="user_states",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="lifecycle_item_states",
+    )
+    title_override = models.CharField(max_length=255, null=True, blank=True)
+    description_override = models.TextField(null=True, blank=True)
+    due_date_override = models.DateTimeField(null=True, blank=True)
+    amount_override = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    responsible_party_override = models.CharField(max_length=255, null=True, blank=True)
+    payment_method_override = models.CharField(max_length=255, null=True, blank=True)
+    status_override = models.CharField(max_length=20, null=True, blank=True)
+    notes = models.TextField(blank=True, default="")
+    reminder_at = models.DateTimeField(null=True, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["lifecycle_item", "user"], name="contracts_lifecycleitem_user_unique"),
+        ]
+        indexes = [
+            models.Index(fields=["lifecycle_item", "user"], name="contracts_lifec_user_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.lifecycle_item_id} - {self.user_id}"
+
+
 class LifecycleEvent(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     lifecycle_agreement = models.ForeignKey(

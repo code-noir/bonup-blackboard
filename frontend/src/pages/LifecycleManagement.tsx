@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import api from '@/api/client'
 
 type SummaryCounts = Record<string, number>
@@ -530,11 +530,21 @@ const EMPTY_TIMELINE_ITEM_DRAFT: TimelineItemDraft = {
 
 type TimelineEvent = { id: string; event_type: string; title: string; description?: string; occurred_at?: string }
 
+type LifecycleAgreementSummary = {
+  id: string
+  status?: string
+  started_at?: string
+  source_exchange_id?: string | null
+  performance_ready?: boolean
+  performance_ready_at?: string | null
+  performance_ready_by?: string | null
+}
+
 type ContractScopedLifecycleResponse = {
   contract?: { id: string; title?: string; status?: string; state?: string; counterparty_email?: string; counterparty_name?: string }
   signed_version?: { id: string; label?: string; status?: string; content_snapshot?: string }
-  lifecycle_agreement?: { id: string; status?: string; started_at?: string; source_exchange_id?: string | null }
-  timeline?: { id: string; status?: string; started_at?: string; source_exchange_id?: string | null }
+  lifecycle_agreement?: LifecycleAgreementSummary
+  timeline?: LifecycleAgreementSummary
   parties?: { initiator?: { email?: string; name?: string } | null; counterparty?: { email?: string; name?: string } | null }
   items?: Partial<Record<LifecycleItemGroup, TimelineItem[]>>
   views?: Record<TimelineViewKey, TimelineItem[] | TimelineEvent[]>
@@ -609,6 +619,7 @@ const DANGER_BUTTON = {
 }
 
 function ContractScopedLifecycle({ contractId }: { contractId: string }) {
+  const navigate = useNavigate()
   const [data, setData] = useState<ContractScopedLifecycleResponse | null>(null)
   const [activeTab, setActiveTab] = useState<TimelineViewKey>('overview')
   const [isLoading, setIsLoading] = useState(true)
@@ -621,6 +632,7 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
   const [timelineItemEditMode, setTimelineItemEditMode] = useState(false)
   const [timelineItemSaving, setTimelineItemSaving] = useState(false)
   const [timelineItemError, setTimelineItemError] = useState<string | null>(null)
+  const [performancePreparing, setPerformancePreparing] = useState(false)
 
   const loadLifecycle = async () => {
     setIsLoading(true)
@@ -715,6 +727,21 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
     }
   }
 
+  const prepareAgreementPerformance = async () => {
+    if (!data?.lifecycle_agreement?.id) return
+    setPerformancePreparing(true)
+    setFeedback(null)
+    try {
+      const response = await api.post<ContractScopedLifecycleResponse>(`/lifecycle/${data.lifecycle_agreement.id}/ready-for-performance/`, {})
+      setData(response.data)
+      setFeedback({ kind: 'success', message: 'Agreement Performance is ready.' })
+    } catch (error) {
+      setFeedback({ kind: 'error', message: getErrorMessage(error, 'Unable to prepare Agreement Performance.') })
+    } finally {
+      setPerformancePreparing(false)
+    }
+  }
+
   if (isLoading) return <p style={{ fontSize: 13, color: '#64748B' }}>Loading Agreement Timeline...</p>
 
   if (!data) {
@@ -784,6 +811,15 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
             <button type="button" onClick={() => setShowSignedAgreement(true)} style={{ border: '1px solid #0F1F3D', borderRadius: 8, background: '#0F1F3D', color: '#FFFFFF', padding: '7px 11px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
               View Signed Agreement
             </button>
+            {agreement.performance_ready ? (
+              <button type="button" onClick={() => navigate('/agreement-performance')} style={{ border: '1px solid #047857', borderRadius: 8, background: '#047857', color: '#FFFFFF', padding: '7px 11px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                Open Agreement Performance
+              </button>
+            ) : (
+              <button type="button" onClick={() => void prepareAgreementPerformance()} disabled={performancePreparing} style={{ border: '1px solid #047857', borderRadius: 8, background: performancePreparing ? '#D1FAE5' : '#047857', color: performancePreparing ? '#047857' : '#FFFFFF', padding: '7px 11px', fontSize: 12, fontWeight: 800, cursor: performancePreparing ? 'default' : 'pointer' }}>
+                {performancePreparing ? 'Preparing Agreement Performance...' : 'Ready for Agreement Performance'}
+              </button>
+            )}
             <span style={{ borderRadius: 999, padding: '5px 10px', fontSize: 11, fontWeight: 800, ...statusStyle('Paid') }}>Signed</span>
           </div>
         </div>
@@ -793,6 +829,29 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
         <div style={{ background: feedback.kind === 'success' ? '#ECFDF5' : '#FEF2F2', border: `1px solid ${feedback.kind === 'success' ? '#A7F3D0' : '#FECACA'}`, borderRadius: 8, padding: '12px 14px' }}>
           <p style={{ fontSize: 13, color: feedback.kind === 'success' ? '#047857' : '#B91C1C', margin: 0 }}>{feedback.message}</p>
         </div>
+      )}
+
+      {performancePreparing && (
+        <section style={{ background: '#F8FAFC', border: '1px solid #A7F3D0', borderRadius: 8, padding: 16 }}>
+          <p style={{ fontSize: 13, fontWeight: 800, color: '#047857', margin: '0 0 8px' }}>Preparing Agreement Performance...</p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {['Checking obligations...', 'Preparing performance records...', 'Opening Agreement Performance...'].map((step) => (
+              <span key={step} style={{ borderRadius: 999, background: '#ECFDF5', color: '#047857', padding: '5px 9px', fontSize: 11, fontWeight: 800 }}>{step}</span>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {agreement.performance_ready && !performancePreparing && (
+        <section style={{ background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: 8, padding: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 800, color: '#047857', margin: 0 }}>Agreement Performance is ready.</p>
+              <p style={{ fontSize: 12, color: '#475569', margin: '5px 0 0' }}>This signed agreement is now available in Agreement Performance while the Signed Agreement Timeline remains available here.</p>
+            </div>
+            <button type="button" onClick={() => navigate('/agreement-performance')} style={{ border: '1px solid #047857', borderRadius: 8, background: '#047857', color: '#FFFFFF', padding: '8px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>Open Agreement Performance</button>
+          </div>
+        </section>
       )}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

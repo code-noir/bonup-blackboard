@@ -983,8 +983,8 @@ def perform_timeline_item_action(item, user, action, data=None):
     if action not in TIMELINE_ACTIONS:
         raise ValueError("Unsupported timeline action.")
 
-    agreement = LifecycleAgreement.objects.select_for_update().select_related("contract", "contract__initiator").get(pk=item.lifecycle_agreement_id)
-    item = LifecycleItem.objects.select_for_update().select_related("lifecycle_agreement", "lifecycle_agreement__contract").get(pk=item.pk)
+    agreement = LifecycleAgreement.objects.select_for_update(of=("self",)).select_related("contract", "contract__initiator").get(pk=item.lifecycle_agreement_id)
+    item = LifecycleItem.objects.select_for_update(of=("self",)).select_related("lifecycle_agreement", "lifecycle_agreement__contract").get(pk=item.pk)
 
     metadata = dict(item.metadata or {})
     note = data.get("note") or data.get("message") or ""

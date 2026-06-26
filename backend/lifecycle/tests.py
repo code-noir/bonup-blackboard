@@ -90,6 +90,71 @@ class LifecycleFoundationTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.data["error"], "You are not a party to this contract.")
 
+    def test_ready_for_performance_marks_lifecycle_without_activation(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+
+        response = self.initiator_client.post(f"/api/lifecycle/{agreement.id}/ready-for-performance/", {}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        agreement.refresh_from_db()
+        self.contract.refresh_from_db()
+        self.assertTrue(agreement.performance_ready)
+        self.assertEqual(agreement.performance_ready_by, self.initiator)
+        self.assertIsNotNone(agreement.performance_ready_at)
+        self.assertEqual(agreement.status, LifecycleAgreement.STATUS_SETUP)
+        self.assertEqual(self.contract.status, "signed")
+        self.assertNotEqual(self.contract.status, "active")
+        self.assertTrue(response.data["lifecycle_agreement"]["performance_ready"])
+
+    def test_ready_for_performance_is_idempotent(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+
+        first = self.initiator_client.post(f"/api/lifecycle/{agreement.id}/ready-for-performance/", {}, format="json")
+        agreement.refresh_from_db()
+        first_ready_at = agreement.performance_ready_at
+        second = self.counterparty_client.post(f"/api/lifecycle/{agreement.id}/ready-for-performance/", {}, format="json")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        agreement.refresh_from_db()
+        self.assertEqual(agreement.performance_ready_at, first_ready_at)
+        self.assertEqual(agreement.performance_ready_by, self.initiator)
+        self.assertEqual(agreement.status, LifecycleAgreement.STATUS_SETUP)
+        self.contract.refresh_from_db()
+        self.assertEqual(self.contract.status, "signed")
+
+    def test_ready_for_performance_rejects_unauthorized_user(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+
+        response = self.stranger_client.post(f"/api/lifecycle/{agreement.id}/ready-for-performance/", {}, format="json")
+
+        self.assertEqual(response.status_code, 403)
+        agreement.refresh_from_db()
+        self.assertFalse(agreement.performance_ready)
+
+    def test_agreement_performance_list_only_returns_ready_party_agreements(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        other_contract = make_contract(self.initiator, counterparty_email=self.counterparty.email)
+        make_version(other_contract, self.initiator, content_snapshot=self.snapshot, status="signed")
+        other_contract.status = "signed"
+        other_contract.save(update_fields=["status"])
+        get_or_create_lifecycle_for_signed_contract(other_contract, self.initiator)
+
+        before = self.counterparty_client.get("/api/lifecycle/performance/")
+        self.initiator_client.post(f"/api/lifecycle/{agreement.id}/ready-for-performance/", {}, format="json")
+        after = self.counterparty_client.get("/api/lifecycle/performance/")
+        stranger = self.stranger_client.get("/api/lifecycle/performance/")
+
+        self.assertEqual(before.status_code, 200)
+        self.assertEqual(before.data["results"], [])
+        self.assertEqual(after.status_code, 200)
+        self.assertEqual(len(after.data["results"]), 1)
+        self.assertEqual(after.data["results"][0]["id"], str(agreement.id))
+        self.assertEqual(after.data["results"][0]["contract"]["title"], "Signed Timeline Contract")
+        self.assertEqual(after.data["results"][0]["status"], "Waiting for first performed obligation")
+        self.assertEqual(stranger.status_code, 200)
+        self.assertEqual(stranger.data["results"], [])
+
     def test_lifecycle_endpoint_rejects_unsigned_contract(self):
         unsigned_contract = make_contract(self.initiator, counterparty_email=self.counterparty.email)
         make_version(unsigned_contract, self.initiator, content_snapshot="Draft", status="sent")

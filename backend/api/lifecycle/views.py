@@ -1,4 +1,6 @@
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -8,6 +10,7 @@ from backend.contracts.models import (
     Contract,
     ContractObligation,
     ContractServiceObligation,
+    LifecycleAgreement,
     LifecycleItem,
     LifecycleItemUserState,
 )
@@ -82,6 +85,9 @@ def _lifecycle_summary(agreement):
         "status": agreement.status,
         "started_at": _iso(agreement.started_at),
         "source_exchange_id": str(agreement.source_exchange_id) if agreement.source_exchange_id else None,
+        "performance_ready": agreement.performance_ready,
+        "performance_ready_at": _iso(agreement.performance_ready_at),
+        "performance_ready_by": str(agreement.performance_ready_by_id) if agreement.performance_ready_by_id else None,
         "metadata": agreement.metadata or {},
     }
 
@@ -403,6 +409,74 @@ def lifecycle_payload(agreement, user=None):
         "views": _grouped_views(grouped, events),
         "events": events,
     }
+
+
+def performance_agreement_payload(agreement):
+    grouped = _group_items(agreement)
+    events = [_serialize_event(event) for event in agreement.events.all()]
+    views = _grouped_views(grouped, events)
+    payment_count = len([item for item in views["payments"] if item.get("item_type") == "payment"])
+    work_item_count = len([item for item in views["work_services"] if item.get("item_type") in {"service", "service_work"}])
+    due_date_count = len(views["due_dates"])
+    return {
+        "id": str(agreement.id),
+        "contract_id": str(agreement.contract_id),
+        "lifecycle_id": str(agreement.id),
+        "title": agreement.contract.title or "Untitled contract",
+        "contract": _contract_summary(agreement.contract),
+        "signed_version": _signed_version_summary(agreement.signed_version),
+        "lifecycle_agreement": _lifecycle_summary(agreement),
+        "counterparty": {
+            "name": agreement.contract.counterparty_name,
+            "email": agreement.contract.counterparty_email,
+        },
+        "status": "Waiting for first performed obligation",
+        "performance_ready": agreement.performance_ready,
+        "payment_count": payment_count,
+        "work_count": work_item_count,
+        "work_item_count": work_item_count,
+        "due_date_count": due_date_count,
+        "activity_count": len(events),
+    }
+
+
+class AgreementPerformanceListAPIView(APIView):
+    def get(self, request):
+        agreements = (
+            LifecycleAgreement.objects
+            .filter(performance_ready=True)
+            .filter(Q(contract__initiator=request.user) | Q(contract__counterparty_email__iexact=request.user.email))
+            .select_related("contract", "contract__initiator", "signed_version", "performance_ready_by")
+            .prefetch_related("items", "events")
+            .order_by("-performance_ready_at", "-updated_at")
+        )
+        return Response({"results": [performance_agreement_payload(agreement) for agreement in agreements]}, status=status.HTTP_200_OK)
+
+
+class LifecycleReadyForPerformanceAPIView(APIView):
+    def post(self, request, lifecycle_id):
+        agreement = get_object_or_404(
+            LifecycleAgreement.objects.select_related("contract", "contract__initiator", "signed_version", "source_exchange", "owner", "performance_ready_by"),
+            pk=lifecycle_id,
+        )
+        if not is_party(request.user, agreement.contract):
+            return contract_party_response()
+        if agreement.signed_version.status != "signed":
+            return Response({"detail": "Agreement Performance requires a signed agreement."}, status=status.HTTP_409_CONFLICT)
+
+        if not agreement.performance_ready:
+            agreement.performance_ready = True
+            agreement.performance_ready_at = timezone.now()
+            agreement.performance_ready_by = request.user
+            agreement.save(update_fields=["performance_ready", "performance_ready_at", "performance_ready_by", "updated_at"])
+
+        agreement = (
+            LifecycleAgreement.objects
+            .select_related("contract", "contract__initiator", "signed_version", "source_exchange", "owner", "performance_ready_by")
+            .prefetch_related("items", "events")
+            .get(pk=agreement.pk)
+        )
+        return Response(lifecycle_payload(agreement, request.user), status=status.HTTP_200_OK)
 
 
 class LifecycleAgreementAPIView(APIView):

@@ -3,6 +3,8 @@ import api from '@/api/client'
 
 type BoardTab = 'payments' | 'work' | 'due_dates' | 'activity' | 'changes'
 
+type BoardViewOptions = { resetView?: boolean }
+
 type PerformanceAgreement = {
   id: string
   contract_id?: string
@@ -49,6 +51,7 @@ type TimelineEvent = {
   title?: string
   description?: string
   occurred_at?: string
+  metadata?: Record<string, unknown>
 }
 
 type LifecycleBoardResponse = {
@@ -177,6 +180,59 @@ function statusStyle(status?: string) {
   return { background: '#F8FAFC', color: '#475569' }
 }
 
+function eventTimeLabel(value?: string) {
+  if (!value) return 'Time not recorded'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Time not recorded'
+  return date.toLocaleString()
+}
+
+function metadataString(metadata: Record<string, unknown> | undefined, key: string) {
+  const value = metadata?.[key]
+  return typeof value === 'string' ? value : ''
+}
+
+function performanceEventVerb(event: TimelineEvent) {
+  if (event.event_type === 'payment_marked_paid') return 'paid'
+  if (event.event_type === 'work_marked_performed') return 'performed'
+  if (event.event_type === 'item_completed') return 'completed'
+  return ''
+}
+
+function performanceEventActionLabel(event: TimelineEvent) {
+  if (event.event_type === 'payment_marked_paid') return 'Payment marked paid'
+  if (event.event_type === 'work_marked_performed') return 'Work marked performed'
+  if (event.event_type === 'item_completed') return 'Item completed'
+  return event.title || humanize(event.event_type)
+}
+
+function isPerformanceActivityEvent(event: TimelineEvent) {
+  return ['payment_marked_paid', 'work_marked_performed', 'item_completed'].includes(event.event_type || '')
+}
+
+function eventItemId(event: TimelineEvent) {
+  return metadataString(event.metadata, 'lifecycle_item_id') || metadataString(event.metadata, 'item_id')
+}
+
+function itemHistoryEvents(events: TimelineEvent[], item: TimelineItem) {
+  return events.filter((event) => eventItemId(event) === item.id && isPerformanceActivityEvent(event))
+}
+
+function performanceStatusLabel(item: TimelineItem) {
+  const normalized = (item.status || item.lifecycle_state || '').toLowerCase()
+  if (normalized === 'completed') {
+    if (item.item_type === 'payment') return 'Paid — awaiting review'
+    if (['service', 'service_work'].includes(item.item_type || '')) return 'Performed — awaiting review'
+  }
+  return humanize(item.status || item.lifecycle_state)
+}
+
+function itemTypeLabel(item: TimelineItem) {
+  if (item.item_type === 'payment') return 'Payment'
+  if (['service', 'service_work'].includes(item.item_type || '')) return 'Work / Service'
+  return humanize(item.item_type)
+}
+
 function itemAction(item: TimelineItem): { action: string; label: string } | null {
   const source = item.source || item.source_type
   if (source === 'contract_payment_obligation' || source === 'payment_record') return null
@@ -262,14 +318,16 @@ export default function AgreementPerformance() {
     }
   }
 
-  async function openBoard(agreement: PerformanceAgreement) {
+  async function openBoard(agreement: PerformanceAgreement, options: BoardViewOptions = {}) {
     const contractId = agreement.contract_id || agreement.contract.id
     setSelectedAgreement(agreement)
     setBoardLoading(true)
     setBoardError('')
     setFeedback('')
-    setActiveTab('payments')
-    setSelectedItem(null)
+    if (options.resetView !== false) {
+      setActiveTab('payments')
+      setSelectedItem(null)
+    }
     try {
       const response = await api.get<LifecycleBoardResponse>('/lifecycle/', { params: { contract: contractId } })
       setBoardData(response.data)
@@ -281,20 +339,33 @@ export default function AgreementPerformance() {
     }
   }
 
-  async function refreshBoard() {
-    if (!selectedAgreement) return
-    await openBoard(selectedAgreement)
+  function findBoardItem(data: LifecycleBoardResponse | null, itemId: string) {
+    const items = [
+      ...((data?.views?.payments || []) as TimelineItem[]),
+      ...((data?.views?.work_services || []) as TimelineItem[]),
+      ...((data?.views?.due_dates || []) as TimelineItem[]),
+    ]
+    return items.find((item) => item.id === itemId) || null
+  }
+
+  async function refreshBoard(options: BoardViewOptions = {}) {
+    if (!selectedAgreement) return null
+    const contractId = selectedAgreement.contract_id || selectedAgreement.contract.id
+    if (options.resetView !== false) setSelectedItem(null)
+    const response = await api.get<LifecycleBoardResponse>('/lifecycle/', { params: { contract: contractId } })
+    setBoardData(response.data)
     await loadPerformanceAgreements()
+    return response.data
   }
 
   async function runAction(item: TimelineItem, action: string) {
     setActionBusy(`${item.id}:${action}`)
     setFeedback('')
     try {
-      await api.post(`/lifecycle/items/${item.id}/actions/`, { action })
+      const response = await api.post<TimelineItem>(`/lifecycle/items/${item.id}/actions/`, { action })
       setFeedback('Performance action recorded.')
-      setSelectedItem(null)
-      await refreshBoard()
+      const refreshed = await refreshBoard({ resetView: false })
+      setSelectedItem(findBoardItem(refreshed, item.id) || response.data)
     } catch (err) {
       setBoardError(getErrorMessage(err, 'Unable to record performance action.'))
     } finally {
@@ -322,7 +393,7 @@ export default function AgreementPerformance() {
     setBoardError('')
     try {
       const response = await api.patch<TimelineItem>(`/lifecycle/items/${item.id}/`, { reminder_at: reminderAt })
-      setSelectedItem(response.data)
+      if (selectedItem?.id === response.data.id) setSelectedItem(response.data)
       replaceBoardItem(response.data)
       setFeedback(reminderAt ? 'Reminder saved.' : 'Reminder cleared.')
     } catch (err) {
@@ -336,11 +407,17 @@ export default function AgreementPerformance() {
     void loadPerformanceAgreements()
   }, [])
 
+  const rawBoardItems = useMemo(() => ([
+    ...((boardData?.views?.payments || []) as TimelineItem[]),
+    ...((boardData?.views?.work_services || []) as TimelineItem[]),
+    ...((boardData?.views?.due_dates || []) as TimelineItem[]),
+  ]), [boardData])
   const payments = useMemo(() => ((boardData?.views?.payments || []) as TimelineItem[]).filter(isDisplayableItem), [boardData])
   const workItems = useMemo(() => ((boardData?.views?.work_services || []) as TimelineItem[]).filter(isDisplayableItem), [boardData])
   const dueDates = useMemo(() => ((boardData?.views?.due_dates || []) as TimelineItem[]).filter(isDisplayableItem), [boardData])
   const events = useMemo(() => ((boardData?.views?.activity || boardData?.events || []) as TimelineEvent[]), [boardData])
 
+  const selectedItemEvents = selectedItem ? itemHistoryEvents(events, selectedItem) : []
   const activeItems = activeTab === 'payments' ? payments : activeTab === 'work' ? workItems : []
   const sourceText = signedAgreementText(boardData?.signed_version?.content_snapshot)
 
@@ -384,7 +461,7 @@ export default function AgreementPerformance() {
                     <h2 style={{ fontSize: 18, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{agreement.title || agreement.contract.title || 'Untitled contract'}</h2>
                     <p style={{ fontSize: 13, color: '#64748B', margin: '7px 0 0' }}>{counterparty}</p>
                   </div>
-                  <button type="button" onClick={() => void openBoard(agreement)} style={{ height: 34, border: '1px solid #047857', borderRadius: 8, background: '#047857', color: '#FFFFFF', padding: '0 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                  <button type="button" onClick={() => void openBoard(agreement)} style={{ height: 34, border: '1px solid #0F1F3D', borderRadius: 8, background: '#0F1F3D', color: '#FFFFFF', padding: '0 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                     {selected ? 'Refresh Performance' : 'Open Performance'}
                   </button>
                 </div>
@@ -427,14 +504,24 @@ export default function AgreementPerformance() {
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
               {BOARD_TABS.map((tab) => (
-                <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} style={{ border: '1px solid #CBD5E1', borderRadius: 8, background: activeTab === tab.key ? '#047857' : '#FFFFFF', color: activeTab === tab.key ? '#FFFFFF' : '#334155', padding: '8px 11px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} style={{ border: '1px solid #CBD5E1', borderRadius: 8, background: activeTab === tab.key ? '#0F1F3D' : '#FFFFFF', color: activeTab === tab.key ? '#FFFFFF' : '#334155', padding: '8px 11px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                   {tab.label}
                 </button>
               ))}
             </div>
 
-            {activeTab === 'activity' ? (
-              <ActivityPanel events={events} />
+            {selectedItem ? (
+              <PerformanceThread
+                agreementTitle={boardData.contract?.title || selectedAgreement.contract.title || selectedAgreement.title || 'Untitled contract'}
+                item={selectedItem}
+                events={selectedItemEvents}
+                busy={actionBusy}
+                onBack={() => setSelectedItem(null)}
+                onViewSource={() => setShowSource(true)}
+                onAction={(action) => void runAction(selectedItem, action)}
+              />
+            ) : activeTab === 'activity' ? (
+              <ActivityPanel events={events} items={rawBoardItems} agreementTitle={boardData.contract?.title || selectedAgreement.contract.title || selectedAgreement.title} />
             ) : activeTab === 'changes' ? (
               <div style={{ border: '1px dashed #CBD5E1', borderRadius: 8, padding: 18, background: '#FFFFFF' }}>
                 <p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>Changes and add-ons will be managed here.</p>
@@ -447,24 +534,21 @@ export default function AgreementPerformance() {
               </div>
             ) : (
               <div style={{ display: 'grid', gap: 10 }}>
-                {activeItems.map((item) => <PerformanceCard key={`${item.source || item.source_type}-${item.id}`} item={item} onOpen={() => setSelectedItem(item)} onViewSource={() => setShowSource(true)} />)}
+                {activeItems.map((item) => (
+                  <PerformanceCard
+                    key={`${item.source || item.source_type}-${item.id}`}
+                    item={item}
+                    onOpen={() => setSelectedItem(item)}
+                    onViewSource={() => setShowSource(true)}
+                    reminderBusy={reminderBusy === item.id}
+                    onReminder={(reminderAt) => void saveReminder(item, reminderAt)}
+                  />
+                ))}
               </div>
             )}
           </div>
         ) : null}
       </section>
-
-      {selectedItem && (
-        <ItemDetail
-          item={selectedItem}
-          busy={actionBusy}
-          onClose={() => setSelectedItem(null)}
-          onViewSource={() => setShowSource(true)}
-          onAction={(action) => void runAction(selectedItem, action)}
-          onReminder={(reminderAt) => void saveReminder(selectedItem, reminderAt)}
-          reminderBusy={reminderBusy === selectedItem.id}
-        />
-      )}
 
       {showSource && (
         <Modal title="Signed agreement source" onClose={() => setShowSource(false)}>
@@ -484,8 +568,24 @@ function SummaryCell({ label, value }: { label: string; value: string }) {
   )
 }
 
-function PerformanceCard({ item, onOpen, onViewSource }: { item: TimelineItem; onOpen: () => void; onViewSource: () => void }) {
+function PerformanceCard({
+  item,
+  onOpen,
+  onViewSource,
+  onReminder,
+  reminderBusy,
+}: {
+  item: TimelineItem
+  onOpen: () => void
+  onViewSource: () => void
+  onReminder: (reminderAt: string | null) => void
+  reminderBusy: boolean
+}) {
   const action = itemAction(item)
+  const [reminderDraft, setReminderDraft] = useState(toDateTimeInput(item.reminder_at))
+  useEffect(() => {
+    setReminderDraft(toDateTimeInput(item.reminder_at))
+  }, [item.id, item.reminder_at])
   return (
     <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
@@ -501,6 +601,24 @@ function PerformanceCard({ item, onOpen, onViewSource }: { item: TimelineItem; o
         <SmallFact label="Responsible" value={item.responsible_party || 'Not set'} />
       </div>
       {item.description && <p style={{ fontSize: 12, color: '#475569', lineHeight: 1.5, margin: '10px 0 0' }}>{item.description}</p>}
+      <section style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 8, padding: 10, marginTop: 12 }}>
+        <p style={{ fontSize: 10, color: '#64748B', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Private reminder</p>
+        <p style={{ fontSize: 12, color: '#334155', margin: '4px 0 8px', fontWeight: 800 }}>{reminderLabel(item.reminder_at)}</p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input
+            type="datetime-local"
+            value={reminderDraft}
+            onChange={(event) => setReminderDraft(event.target.value)}
+            style={{ height: 34, minWidth: 190, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 10px', fontSize: 12, color: '#0F1F3D', background: '#FFFFFF' }}
+          />
+          <button type="button" onClick={() => onReminder(fromDateTimeInput(reminderDraft))} disabled={reminderBusy || !reminderDraft} style={{ ...amberButtonStyle, opacity: reminderBusy || !reminderDraft ? 0.65 : 1, cursor: reminderBusy || !reminderDraft ? 'default' : 'pointer' }}>
+            {reminderBusy ? 'Saving...' : item.reminder_at ? 'Update Reminder' : 'Set Reminder'}
+          </button>
+          <button type="button" onClick={() => { setReminderDraft(''); onReminder(null) }} disabled={reminderBusy || !item.reminder_at} style={{ ...secondaryButtonStyle, opacity: reminderBusy || !item.reminder_at ? 0.55 : 1, cursor: reminderBusy || !item.reminder_at ? 'default' : 'pointer' }}>
+            Clear
+          </button>
+        </div>
+      </section>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
         <button type="button" onClick={onOpen} style={inspectButtonStyle}>Open Detail</button>
         <button type="button" onClick={onViewSource} style={secondaryButtonStyle}>View Source</button>
@@ -553,7 +671,7 @@ function DeadlinesPanel({ items, onOpen, onViewSource }: { items: TimelineItem[]
                 </div>
                 <p style={{ fontSize: 14, fontWeight: 900, color: '#0F1F3D', margin: 0 }}>{item.title || humanize(item.item_type)}</p>
                 <p style={{ fontSize: 12, color: '#64748B', margin: '5px 0 0' }}>Responsible: {item.responsible_party || 'Not set'}{amount ? ` · ${amount}` : ''}</p>
-                {item.reminder_at && <p style={{ fontSize: 11, color: '#047857', fontWeight: 900, margin: '5px 0 0' }}>Reminder set: {reminderLabel(item.reminder_at)}</p>}
+                {item.reminder_at && <p style={{ fontSize: 11, color: '#475569', fontWeight: 900, margin: '5px 0 0' }}>Private reminder: {reminderLabel(item.reminder_at)}</p>}
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 <button type="button" onClick={() => onOpen(item)} style={secondaryButtonStyle}>Open Detail</button>
@@ -567,111 +685,150 @@ function DeadlinesPanel({ items, onOpen, onViewSource }: { items: TimelineItem[]
   )
 }
 
-function ActivityPanel({ events }: { events: TimelineEvent[] }) {
-  if (events.length === 0) {
-    return <div style={{ border: '1px dashed #CBD5E1', borderRadius: 8, padding: 18, background: '#FFFFFF' }}><p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>No performance activity recorded yet.</p></div>
+function ActivityPanel({ events, items, agreementTitle }: { events: TimelineEvent[]; items: TimelineItem[]; agreementTitle?: string }) {
+  const itemById = new Map(items.map((item) => [item.id, item]))
+  const performanceEvents = events.filter(isPerformanceActivityEvent)
+
+  if (performanceEvents.length === 0) {
+    return <div style={{ border: '1px dashed #CBD5E1', borderRadius: 8, padding: 18, background: '#FFFFFF' }}><p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>No shared performance activity recorded yet.</p></div>
   }
+
   return (
     <div style={{ display: 'grid', gap: 8 }}>
-      {events.map((event) => (
-        <div key={event.id} style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
-          <p style={{ fontSize: 13, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{event.title || humanize(event.event_type)}</p>
-          <p style={{ fontSize: 12, color: '#64748B', margin: '5px 0 0' }}>{event.description || humanize(event.event_type)}</p>
-          <p style={{ fontSize: 11, color: '#94A3B8', margin: '5px 0 0' }}>{formatDate(event.occurred_at)}</p>
-        </div>
-      ))}
+      {performanceEvents.map((event) => {
+        const itemId = metadataString(event.metadata, 'lifecycle_item_id') || metadataString(event.metadata, 'item_id')
+        const item = itemById.get(itemId)
+        const itemTitle = item?.title || metadataString(event.metadata, 'item_title') || event.description || 'this obligation'
+        const actor = item?.responsible_party || metadataString(event.metadata, 'actor_label') || 'A party'
+        const verb = performanceEventVerb(event)
+        const result = metadataString(event.metadata, 'result_status') || metadataString(event.metadata, 'status')
+        const sentence = verb ? `${actor} marked "${itemTitle}" as ${verb}.` : event.description || performanceEventActionLabel(event)
+        return (
+          <div key={event.id} style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              <div style={{ minWidth: 0 }}>
+                <p style={{ fontSize: 13, fontWeight: 900, color: '#0F1F3D', margin: 0 }}>{performanceEventActionLabel(event)}</p>
+                <p style={{ fontSize: 12, color: '#334155', margin: '6px 0 0', lineHeight: 1.5 }}>{sentence}</p>
+              </div>
+              {result && <span style={{ borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 900, ...statusStyle(result) }}>{humanize(result)}</span>}
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+              <span style={{ fontSize: 11, color: '#64748B', fontWeight: 800 }}>{eventTimeLabel(event.occurred_at)}</span>
+              {agreementTitle && <span style={{ fontSize: 11, color: '#94A3B8' }}>{agreementTitle}</span>}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
 
-function ItemDetail({
+function ItemHistoryPanel({ events, item }: { events: TimelineEvent[]; item: TimelineItem }) {
+  if (events.length === 0) {
+    return <div style={{ border: '1px dashed #CBD5E1', borderRadius: 8, padding: 14, background: '#FFFFFF' }}><p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>No shared history recorded for this obligation yet.</p></div>
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      {events.map((event) => {
+        const result = metadataString(event.metadata, 'result_status') || metadataString(event.metadata, 'status') || item.status || item.lifecycle_state
+        const actor = item.responsible_party || metadataString(event.metadata, 'actor_label') || 'A party'
+        const verb = performanceEventVerb(event)
+        const sentence = verb ? `${actor} marked "${item.title || 'this obligation'}" as ${verb}.` : event.description || performanceEventActionLabel(event)
+        return (
+          <div key={event.id} style={{ border: '1px solid #E5E7EB', borderRadius: 8, background: '#FFFFFF', padding: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+              <div>
+                <p style={{ fontSize: 12, fontWeight: 900, color: '#0F1F3D', margin: 0 }}>{performanceEventActionLabel(event)}</p>
+                <p style={{ fontSize: 12, color: '#334155', margin: '5px 0 0', lineHeight: 1.5 }}>{sentence}</p>
+              </div>
+              {result && <span style={{ alignSelf: 'flex-start', borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 900, ...statusStyle(result) }}>{performanceStatusLabel({ ...item, status: result })}</span>}
+            </div>
+            <p style={{ fontSize: 11, color: '#94A3B8', margin: '7px 0 0', fontWeight: 800 }}>{eventTimeLabel(event.occurred_at)}</p>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function PlaceholderPanel({ title }: { title: string }) {
+  return (
+    <section style={{ background: '#FFFFFF', border: '1px dashed #CBD5E1', borderRadius: 8, padding: 14 }}>
+      <p style={{ fontSize: 11, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>{title}</p>
+      <p style={{ fontSize: 13, color: '#64748B', margin: '6px 0 0' }}>Coming soon</p>
+    </section>
+  )
+}
+
+function PerformanceThread({
+  agreementTitle,
   item,
+  events,
   busy,
-  reminderBusy,
-  onClose,
+  onBack,
   onViewSource,
   onAction,
-  onReminder,
 }: {
+  agreementTitle: string
   item: TimelineItem
+  events: TimelineEvent[]
   busy: string
-  reminderBusy: boolean
-  onClose: () => void
+  onBack: () => void
   onViewSource: () => void
   onAction: (action: string) => void
-  onReminder: (reminderAt: string | null) => void
 }) {
   const action = itemAction(item)
   const actionBusy = action ? busy === `${item.id}:${action.action}` : false
-  const [reminderDraft, setReminderDraft] = useState(toDateTimeInput(item.reminder_at))
-  useEffect(() => {
-    setReminderDraft(toDateTimeInput(item.reminder_at))
-  }, [item.id, item.reminder_at])
+
   return (
-    <Modal title={item.title || humanize(item.item_type)} onClose={onClose}>
-      <div style={{ display: 'grid', gap: 12 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
-          <SmallFact label="Status" value={humanize(item.status || item.lifecycle_state)} />
-          <SmallFact label="Amount" value={formatMoney(item.amount, item.currency || 'USD')} />
-          <SmallFact label="Due / Delivery" value={dueDateLabel(item.due_date)} />
-          <SmallFact label="Responsible" value={item.responsible_party || 'Not set'} />
+    <div style={{ display: 'grid', gap: 14 }}>
+      <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 16 }}>
+        <button type="button" onClick={onBack} style={{ ...secondaryButtonStyle, marginBottom: 12 }}>Back to Performance Board</button>
+        <p style={{ fontSize: 11, color: '#64748B', margin: '0 0 6px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Performance Thread</p>
+        <h3 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: '#0F1F3D' }}>{item.title || humanize(item.item_type)}</h3>
+        <p style={{ fontSize: 13, color: '#64748B', margin: '7px 0 0' }}>{agreementTitle}</p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+          <span style={{ borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 900, background: '#EFF6FF', color: '#1D4ED8' }}>{itemTypeLabel(item)}</span>
+          <span style={{ borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 900, ...statusStyle(item.status || item.lifecycle_state) }}>{performanceStatusLabel(item)}</span>
         </div>
-        <section style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 8, padding: 12 }}>
-          <p style={{ fontSize: 11, color: '#94A3B8', margin: 0, fontWeight: 800, textTransform: 'uppercase' }}>Performance detail</p>
-          <p style={{ fontSize: 13, color: '#334155', lineHeight: 1.55, margin: '6px 0 0' }}>{item.description || 'No additional detail recorded for this performance item.'}</p>
-        </section>
-        <section style={{ background: '#F8FAFC', border: '1px solid #D1FAE5', borderRadius: 8, padding: 12 }}>
-          <p style={{ fontSize: 11, color: '#047857', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Personal reminder</p>
-          <p style={{ fontSize: 13, color: '#334155', margin: '6px 0 10px', fontWeight: 800 }}>{reminderLabel(item.reminder_at)}</p>
-          <div style={{ display: 'grid', gap: 8 }}>
-            <input
-              type="datetime-local"
-              value={reminderDraft}
-              onChange={(event) => setReminderDraft(event.target.value)}
-              style={{ height: 36, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 10px', fontSize: 13, color: '#0F1F3D', background: '#FFFFFF' }}
-            />
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {[
-                { label: 'Same day', days: 0 },
-                { label: '1 day before', days: 1 },
-                { label: '3 days before', days: 3 },
-              ].map((choice) => (
-                <button
-                  key={choice.label}
-                  type="button"
-                  onClick={() => setReminderDraft(quickReminderValue(item, choice.days))}
-                  disabled={!item.due_date}
-                  style={{ ...secondaryButtonStyle, opacity: item.due_date ? 1 : 0.55, cursor: item.due_date ? 'pointer' : 'default' }}
-                >
-                  {choice.label}
-                </button>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button type="button" onClick={() => onReminder(fromDateTimeInput(reminderDraft))} disabled={reminderBusy || !reminderDraft} style={{ ...primaryButtonStyle, opacity: reminderBusy || !reminderDraft ? 0.65 : 1, cursor: reminderBusy || !reminderDraft ? 'default' : 'pointer' }}>
-                {reminderBusy ? 'Saving...' : item.reminder_at ? 'Update Reminder' : 'Set Reminder'}
-              </button>
-              <button type="button" onClick={() => { setReminderDraft(''); onReminder(null) }} disabled={reminderBusy || !item.reminder_at} style={{ ...secondaryButtonStyle, opacity: reminderBusy || !item.reminder_at ? 0.55 : 1, cursor: reminderBusy || !item.reminder_at ? 'default' : 'pointer' }}>
-                Clear Reminder
-              </button>
-            </div>
-          </div>
-        </section>
-        <section style={{ background: '#F8FAFC', border: '1px dashed #CBD5E1', borderRadius: 8, padding: 12 }}>
-          <p style={{ fontSize: 12, color: '#64748B', margin: 0 }}>Notes, receipts, and confirmations will be managed here later.</p>
-        </section>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+        <SummaryCell label="Responsible" value={item.responsible_party || 'Not set'} />
+        <SummaryCell label="Amount" value={formatMoney(item.amount, item.currency || 'USD')} />
+        <SummaryCell label="Due / Delivery" value={dueDateLabel(item.due_date)} />
+        <SummaryCell label="Current Status" value={performanceStatusLabel(item)} />
+      </div>
+
+      <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
+        <p style={{ fontSize: 11, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Performance detail</p>
+        <p style={{ fontSize: 13, color: '#334155', lineHeight: 1.55, margin: '6px 0 0' }}>{item.description || 'No additional detail recorded for this performance item.'}</p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
           <button type="button" onClick={onViewSource} style={secondaryButtonStyle}>View Source</button>
           {action ? (
             <button type="button" onClick={() => onAction(action.action)} disabled={actionBusy} style={{ ...primaryButtonStyle, opacity: actionBusy ? 0.7 : 1, cursor: actionBusy ? 'default' : 'pointer' }}>
               {actionBusy ? 'Recording...' : action.label}
             </button>
           ) : (
-            <span style={{ fontSize: 12, color: '#64748B', alignSelf: 'center' }}>No direct performance action is available for this generated record yet.</span>
+            <span style={{ fontSize: 12, color: '#64748B', alignSelf: 'center' }}>No direct performance action is available for this item.</span>
           )}
         </div>
+      </section>
+
+      <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
+        <p style={{ fontSize: 11, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Item history</p>
+        <div style={{ marginTop: 10 }}>
+          <ItemHistoryPanel events={events} item={item} />
+        </div>
+      </section>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10 }}>
+        <PlaceholderPanel title="Proof / Receipts" />
+        <PlaceholderPanel title="Messages" />
+        <PlaceholderPanel title="Counterparty Review" />
       </div>
-    </Modal>
+    </div>
   )
 }
 
@@ -690,9 +847,20 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 const primaryButtonStyle = {
-  border: '1px solid #047857',
+  border: '1px solid #0F1F3D',
   borderRadius: 8,
-  background: '#047857',
+  background: '#0F1F3D',
+  color: '#FFFFFF',
+  padding: '8px 12px',
+  fontSize: 12,
+  fontWeight: 800,
+  cursor: 'pointer',
+}
+
+const amberButtonStyle = {
+  border: '1px solid #B45309',
+  borderRadius: 8,
+  background: '#B45309',
   color: '#FFFFFF',
   padding: '8px 12px',
   fontSize: 12,

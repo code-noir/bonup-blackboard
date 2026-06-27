@@ -794,40 +794,47 @@ function PerformanceThread({
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
-        <SummaryCell label="Responsible" value={item.responsible_party || 'Not set'} />
-        <SummaryCell label="Amount" value={formatMoney(item.amount, item.currency || 'USD')} />
-        <SummaryCell label="Due / Delivery" value={dueDateLabel(item.due_date)} />
-        <SummaryCell label="Current Status" value={performanceStatusLabel(item)} />
-      </div>
+      <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 16 }}>
+        <p style={{ fontSize: 11, color: '#64748B', margin: '0 0 14px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Performance Detail</p>
 
-      <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
-        <p style={{ fontSize: 11, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Performance detail</p>
-        <p style={{ fontSize: 13, color: '#334155', lineHeight: 1.55, margin: '6px 0 0' }}>{item.description || 'No additional detail recorded for this performance item.'}</p>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-          <button type="button" onClick={onViewSource} style={secondaryButtonStyle}>View Source</button>
-          {action ? (
-            <button type="button" onClick={() => onAction(action.action)} disabled={actionBusy} style={{ ...primaryButtonStyle, opacity: actionBusy ? 0.7 : 1, cursor: actionBusy ? 'default' : 'pointer' }}>
-              {actionBusy ? 'Recording...' : action.label}
-            </button>
-          ) : (
-            <span style={{ fontSize: 12, color: '#64748B', alignSelf: 'center' }}>No direct performance action is available for this item.</span>
-          )}
+        <div style={{ display: 'grid', gap: 14 }}>
+          <section style={{ borderBottom: '1px solid #E5E7EB', paddingBottom: 14 }}>
+            <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Obligation Summary</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginTop: 10 }}>
+              <SummaryCell label="Responsible" value={item.responsible_party || 'Not set'} />
+              <SummaryCell label="Amount" value={formatMoney(item.amount, item.currency || 'USD')} />
+              <SummaryCell label="Due / Delivery" value={dueDateLabel(item.due_date)} />
+              <SummaryCell label="Current Status" value={performanceStatusLabel(item)} />
+            </div>
+            <p style={{ fontSize: 13, color: '#334155', lineHeight: 1.55, margin: '12px 0 0' }}>{item.description || sourceLabel(item) || 'No additional detail recorded for this performance item.'}</p>
+          </section>
+
+          <section style={{ borderBottom: '1px solid #E5E7EB', paddingBottom: 14 }}>
+            <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Performance Action</p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+              <button type="button" onClick={onViewSource} style={secondaryButtonStyle}>View Source</button>
+              {action ? (
+                <button type="button" onClick={() => onAction(action.action)} disabled={actionBusy} style={{ ...primaryButtonStyle, opacity: actionBusy ? 0.7 : 1, cursor: actionBusy ? 'default' : 'pointer' }}>
+                  {actionBusy ? 'Recording...' : action.label}
+                </button>
+              ) : (
+                <span style={{ fontSize: 12, color: '#64748B', alignSelf: 'center' }}>No direct performance action is available for this item.</span>
+              )}
+            </div>
+          </section>
+
+          <PlaceholderPanel title="Proof / Receipts" />
+          <PlaceholderPanel title="Messages" />
+          <PlaceholderPanel title="Counterparty Review" />
+
+          <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
+            <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Item History</p>
+            <div style={{ marginTop: 10 }}>
+              <ItemHistoryPanel events={events} item={item} />
+            </div>
+          </section>
         </div>
       </section>
-
-      <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
-        <p style={{ fontSize: 11, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Item history</p>
-        <div style={{ marginTop: 10 }}>
-          <ItemHistoryPanel events={events} item={item} />
-        </div>
-      </section>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10 }}>
-        <PlaceholderPanel title="Proof / Receipts" />
-        <PlaceholderPanel title="Messages" />
-        <PlaceholderPanel title="Counterparty Review" />
-      </div>
     </div>
   )
 }

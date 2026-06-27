@@ -39,6 +39,7 @@ type TimelineItem = {
   source_clause?: string | null
   payment_method?: string | null
   lifecycle_state?: string
+  reminder_at?: string | null
   metadata?: Record<string, unknown>
 }
 
@@ -61,7 +62,7 @@ type LifecycleBoardResponse = {
 const BOARD_TABS: Array<{ key: BoardTab; label: string }> = [
   { key: 'payments', label: 'Payments' },
   { key: 'work', label: 'Work / Services' },
-  { key: 'due_dates', label: 'Due Dates' },
+  { key: 'due_dates', label: 'Deadlines' },
   { key: 'activity', label: 'Activity' },
   { key: 'changes', label: 'Changes / Add-ons' },
 ]
@@ -78,6 +79,36 @@ function dueDateLabel(value?: string | null) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'No date set'
   return date.toLocaleDateString()
+}
+
+function reminderLabel(value?: string | null) {
+  if (!value) return 'No reminder set'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'No reminder set'
+  return date.toLocaleString()
+}
+
+function toDateTimeInput(value?: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toISOString().slice(0, 16)
+}
+
+function fromDateTimeInput(value: string) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toISOString()
+}
+
+function quickReminderValue(item: TimelineItem, daysBefore: number) {
+  if (!item.due_date) return ''
+  const date = new Date(item.due_date)
+  if (Number.isNaN(date.getTime())) return ''
+  date.setDate(date.getDate() - daysBefore)
+  date.setHours(9, 0, 0, 0)
+  return date.toISOString().slice(0, 16)
 }
 
 function formatMoney(amount?: string | null, currency = 'USD') {
@@ -172,6 +203,37 @@ function sourceLabel(item: TimelineItem) {
   return humanize(item.source_type || item.source || 'Performance item')
 }
 
+function deadlineTypeLabel(item: TimelineItem) {
+  if (item.item_type === 'payment' || item.source === 'contract_payment_obligation' || item.source === 'payment_record') return 'Payment'
+  if (['service', 'service_work'].includes(item.item_type || '')) {
+    const text = `${item.title || ''} ${item.description || ''}`.toLowerCase()
+    return text.includes('loan') || text.includes('fund') || text.includes('deliver') ? 'Delivery' : 'Work'
+  }
+  return 'Task'
+}
+
+function deadlineTypeStyle(label: string) {
+  if (label === 'Payment') return { background: '#EFF6FF', color: '#1D4ED8' }
+  if (label === 'Delivery') return { background: '#ECFDF5', color: '#047857' }
+  if (label === 'Work') return { background: '#F0FDF4', color: '#15803D' }
+  return { background: '#F8FAFC', color: '#475569' }
+}
+
+function deadlineDateKey(value?: string | null) {
+  if (!value) return 'No date set'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'No date set'
+  return date.toISOString().slice(0, 10)
+}
+
+function sortByDeadline(items: TimelineItem[]) {
+  return [...items].sort((left, right) => {
+    const leftTime = left.due_date ? new Date(left.due_date).getTime() : Number.MAX_SAFE_INTEGER
+    const rightTime = right.due_date ? new Date(right.due_date).getTime() : Number.MAX_SAFE_INTEGER
+    return leftTime - rightTime
+  })
+}
+
 export default function AgreementPerformance() {
   const [agreements, setAgreements] = useState<PerformanceAgreement[]>([])
   const [selectedAgreement, setSelectedAgreement] = useState<PerformanceAgreement | null>(null)
@@ -182,6 +244,7 @@ export default function AgreementPerformance() {
   const [isLoading, setIsLoading] = useState(true)
   const [boardLoading, setBoardLoading] = useState(false)
   const [actionBusy, setActionBusy] = useState('')
+  const [reminderBusy, setReminderBusy] = useState('')
   const [error, setError] = useState('')
   const [boardError, setBoardError] = useState('')
   const [feedback, setFeedback] = useState('')
@@ -239,6 +302,36 @@ export default function AgreementPerformance() {
     }
   }
 
+
+  function replaceBoardItem(updated: TimelineItem) {
+    setBoardData((current) => {
+      if (!current?.views) return current
+      const nextViews = { ...current.views }
+      for (const key of ['payments', 'work_services', 'due_dates'] as const) {
+        const values = nextViews[key]
+        if (!Array.isArray(values)) continue
+        nextViews[key] = values.map((item) => ('id' in item && item.id === updated.id ? updated : item)) as TimelineItem[]
+      }
+      return { ...current, views: nextViews }
+    })
+  }
+
+  async function saveReminder(item: TimelineItem, reminderAt: string | null) {
+    setReminderBusy(item.id)
+    setFeedback('')
+    setBoardError('')
+    try {
+      const response = await api.patch<TimelineItem>(`/lifecycle/items/${item.id}/`, { reminder_at: reminderAt })
+      setSelectedItem(response.data)
+      replaceBoardItem(response.data)
+      setFeedback(reminderAt ? 'Reminder saved.' : 'Reminder cleared.')
+    } catch (err) {
+      setBoardError(getErrorMessage(err, 'Unable to update reminder.'))
+    } finally {
+      setReminderBusy('')
+    }
+  }
+
   useEffect(() => {
     void loadPerformanceAgreements()
   }, [])
@@ -248,7 +341,7 @@ export default function AgreementPerformance() {
   const dueDates = useMemo(() => ((boardData?.views?.due_dates || []) as TimelineItem[]).filter(isDisplayableItem), [boardData])
   const events = useMemo(() => ((boardData?.views?.activity || boardData?.events || []) as TimelineEvent[]), [boardData])
 
-  const activeItems = activeTab === 'payments' ? payments : activeTab === 'work' ? workItems : activeTab === 'due_dates' ? dueDates : []
+  const activeItems = activeTab === 'payments' ? payments : activeTab === 'work' ? workItems : []
   const sourceText = signedAgreementText(boardData?.signed_version?.content_snapshot)
 
   return (
@@ -299,7 +392,7 @@ export default function AgreementPerformance() {
                   <SummaryCell label="Status" value={agreement.status} />
                   <SummaryCell label="Payments" value={`${agreement.payment_count || 0} payment item(s)`} />
                   <SummaryCell label="Work" value={`${agreement.work_count ?? agreement.work_item_count ?? 0} work item(s)`} />
-                  <SummaryCell label="Due Dates" value={`${agreement.due_date_count || 0} due date(s)`} />
+                  <SummaryCell label="Deadlines" value={`${agreement.due_date_count || 0} deadline(s)`} />
                   <SummaryCell label="Activity" value={`${agreement.activity_count || 0} event(s)`} />
                   <SummaryCell label="Ready Since" value={formatDate(agreement.lifecycle_agreement?.performance_ready_at)} />
                 </div>
@@ -346,6 +439,8 @@ export default function AgreementPerformance() {
               <div style={{ border: '1px dashed #CBD5E1', borderRadius: 8, padding: 18, background: '#FFFFFF' }}>
                 <p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>Changes and add-ons will be managed here.</p>
               </div>
+            ) : activeTab === 'due_dates' ? (
+              <DeadlinesPanel items={dueDates} onOpen={setSelectedItem} onViewSource={() => setShowSource(true)} />
             ) : activeItems.length === 0 ? (
               <div style={{ border: '1px dashed #CBD5E1', borderRadius: 8, padding: 18, background: '#FFFFFF' }}>
                 <p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>No records found for this panel.</p>
@@ -366,6 +461,8 @@ export default function AgreementPerformance() {
           onClose={() => setSelectedItem(null)}
           onViewSource={() => setShowSource(true)}
           onAction={(action) => void runAction(selectedItem, action)}
+          onReminder={(reminderAt) => void saveReminder(selectedItem, reminderAt)}
+          reminderBusy={reminderBusy === selectedItem.id}
         />
       )}
 
@@ -422,6 +519,54 @@ function SmallFact({ label, value }: { label: string; value: string }) {
   )
 }
 
+function DeadlinesPanel({ items, onOpen, onViewSource }: { items: TimelineItem[]; onOpen: (item: TimelineItem) => void; onViewSource: () => void }) {
+  const sorted = sortByDeadline(items.filter((item) => item.due_date))
+  if (sorted.length === 0) {
+    return <div style={{ border: '1px dashed #CBD5E1', borderRadius: 8, padding: 18, background: '#FFFFFF' }}><p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>No upcoming deadlines found.</p></div>
+  }
+
+  let currentDate = ''
+  return (
+    <div style={{ display: 'grid', gap: 10 }}>
+      {sorted.map((item) => {
+        const key = deadlineDateKey(item.due_date)
+        const showDateHeader = key !== currentDate
+        currentDate = key
+        const type = deadlineTypeLabel(item)
+        const amount = item.amount ? formatMoney(item.amount, item.currency || 'USD') : ''
+        return (
+          <div key={`${item.source || item.source_type}-${item.id}`}>
+            {showDateHeader && (
+              <p style={{ fontSize: 12, fontWeight: 900, color: '#047857', margin: '4px 0 8px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                {dueDateLabel(item.due_date)}
+              </p>
+            )}
+            <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 12, display: 'grid', gridTemplateColumns: '104px minmax(0, 1fr) auto', gap: 12, alignItems: 'center' }}>
+              <div>
+                <p style={{ fontSize: 20, lineHeight: 1, fontWeight: 900, color: '#0F1F3D', margin: 0 }}>{dueDateLabel(item.due_date)}</p>
+                <p style={{ fontSize: 10, color: '#94A3B8', fontWeight: 800, margin: '5px 0 0', textTransform: 'uppercase' }}>Deadline</p>
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 5 }}>
+                  <span style={{ borderRadius: 999, padding: '3px 8px', fontSize: 10, fontWeight: 900, ...deadlineTypeStyle(type) }}>{type}</span>
+                  <span style={{ borderRadius: 999, padding: '3px 8px', fontSize: 10, fontWeight: 900, ...statusStyle(item.status || item.lifecycle_state) }}>{humanize(item.status || item.lifecycle_state)}</span>
+                </div>
+                <p style={{ fontSize: 14, fontWeight: 900, color: '#0F1F3D', margin: 0 }}>{item.title || humanize(item.item_type)}</p>
+                <p style={{ fontSize: 12, color: '#64748B', margin: '5px 0 0' }}>Responsible: {item.responsible_party || 'Not set'}{amount ? ` · ${amount}` : ''}</p>
+                {item.reminder_at && <p style={{ fontSize: 11, color: '#047857', fontWeight: 900, margin: '5px 0 0' }}>Reminder set: {reminderLabel(item.reminder_at)}</p>}
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => onOpen(item)} style={secondaryButtonStyle}>Open Detail</button>
+                <button type="button" onClick={onViewSource} style={secondaryButtonStyle}>View Source</button>
+              </div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function ActivityPanel({ events }: { events: TimelineEvent[] }) {
   if (events.length === 0) {
     return <div style={{ border: '1px dashed #CBD5E1', borderRadius: 8, padding: 18, background: '#FFFFFF' }}><p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>No performance activity recorded yet.</p></div>
@@ -439,9 +584,29 @@ function ActivityPanel({ events }: { events: TimelineEvent[] }) {
   )
 }
 
-function ItemDetail({ item, busy, onClose, onViewSource, onAction }: { item: TimelineItem; busy: string; onClose: () => void; onViewSource: () => void; onAction: (action: string) => void }) {
+function ItemDetail({
+  item,
+  busy,
+  reminderBusy,
+  onClose,
+  onViewSource,
+  onAction,
+  onReminder,
+}: {
+  item: TimelineItem
+  busy: string
+  reminderBusy: boolean
+  onClose: () => void
+  onViewSource: () => void
+  onAction: (action: string) => void
+  onReminder: (reminderAt: string | null) => void
+}) {
   const action = itemAction(item)
   const actionBusy = action ? busy === `${item.id}:${action.action}` : false
+  const [reminderDraft, setReminderDraft] = useState(toDateTimeInput(item.reminder_at))
+  useEffect(() => {
+    setReminderDraft(toDateTimeInput(item.reminder_at))
+  }, [item.id, item.reminder_at])
   return (
     <Modal title={item.title || humanize(item.item_type)} onClose={onClose}>
       <div style={{ display: 'grid', gap: 12 }}>
@@ -455,8 +620,45 @@ function ItemDetail({ item, busy, onClose, onViewSource, onAction }: { item: Tim
           <p style={{ fontSize: 11, color: '#94A3B8', margin: 0, fontWeight: 800, textTransform: 'uppercase' }}>Performance detail</p>
           <p style={{ fontSize: 13, color: '#334155', lineHeight: 1.55, margin: '6px 0 0' }}>{item.description || 'No additional detail recorded for this performance item.'}</p>
         </section>
+        <section style={{ background: '#F8FAFC', border: '1px solid #D1FAE5', borderRadius: 8, padding: 12 }}>
+          <p style={{ fontSize: 11, color: '#047857', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Personal reminder</p>
+          <p style={{ fontSize: 13, color: '#334155', margin: '6px 0 10px', fontWeight: 800 }}>{reminderLabel(item.reminder_at)}</p>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <input
+              type="datetime-local"
+              value={reminderDraft}
+              onChange={(event) => setReminderDraft(event.target.value)}
+              style={{ height: 36, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 10px', fontSize: 13, color: '#0F1F3D', background: '#FFFFFF' }}
+            />
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {[
+                { label: 'Same day', days: 0 },
+                { label: '1 day before', days: 1 },
+                { label: '3 days before', days: 3 },
+              ].map((choice) => (
+                <button
+                  key={choice.label}
+                  type="button"
+                  onClick={() => setReminderDraft(quickReminderValue(item, choice.days))}
+                  disabled={!item.due_date}
+                  style={{ ...secondaryButtonStyle, opacity: item.due_date ? 1 : 0.55, cursor: item.due_date ? 'pointer' : 'default' }}
+                >
+                  {choice.label}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => onReminder(fromDateTimeInput(reminderDraft))} disabled={reminderBusy || !reminderDraft} style={{ ...primaryButtonStyle, opacity: reminderBusy || !reminderDraft ? 0.65 : 1, cursor: reminderBusy || !reminderDraft ? 'default' : 'pointer' }}>
+                {reminderBusy ? 'Saving...' : item.reminder_at ? 'Update Reminder' : 'Set Reminder'}
+              </button>
+              <button type="button" onClick={() => { setReminderDraft(''); onReminder(null) }} disabled={reminderBusy || !item.reminder_at} style={{ ...secondaryButtonStyle, opacity: reminderBusy || !item.reminder_at ? 0.55 : 1, cursor: reminderBusy || !item.reminder_at ? 'default' : 'pointer' }}>
+                Clear Reminder
+              </button>
+            </div>
+          </div>
+        </section>
         <section style={{ background: '#F8FAFC', border: '1px dashed #CBD5E1', borderRadius: 8, padding: 12 }}>
-          <p style={{ fontSize: 12, color: '#64748B', margin: 0 }}>Notes, reminders, receipts, and confirmations will be managed here later.</p>
+          <p style={{ fontSize: 12, color: '#64748B', margin: 0 }}>Notes, receipts, and confirmations will be managed here later.</p>
         </section>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button type="button" onClick={onViewSource} style={secondaryButtonStyle}>View Source</button>

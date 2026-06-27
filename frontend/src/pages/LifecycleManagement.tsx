@@ -812,11 +812,11 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
               View Signed Agreement
             </button>
             {agreement.performance_ready ? (
-              <button type="button" onClick={() => navigate('/agreement-performance')} style={{ border: '1px solid #047857', borderRadius: 8, background: '#047857', color: '#FFFFFF', padding: '7px 11px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+              <button type="button" onClick={() => navigate('/agreement-performance')} style={{ border: '1px solid #0F1F3D', borderRadius: 8, background: '#0F1F3D', color: '#FFFFFF', padding: '7px 11px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                 Open Agreement Performance
               </button>
             ) : (
-              <button type="button" onClick={() => void prepareAgreementPerformance()} disabled={performancePreparing} style={{ border: '1px solid #047857', borderRadius: 8, background: performancePreparing ? '#D1FAE5' : '#047857', color: performancePreparing ? '#047857' : '#FFFFFF', padding: '7px 11px', fontSize: 12, fontWeight: 800, cursor: performancePreparing ? 'default' : 'pointer' }}>
+              <button type="button" onClick={() => void prepareAgreementPerformance()} disabled={performancePreparing} style={{ border: '1px solid #B45309', borderRadius: 8, background: performancePreparing ? '#FEF3C7' : '#B45309', color: performancePreparing ? '#92400E' : '#FFFFFF', padding: '7px 11px', fontSize: 12, fontWeight: 800, cursor: performancePreparing ? 'default' : 'pointer' }}>
                 {performancePreparing ? 'Preparing Agreement Performance...' : 'Ready for Agreement Performance'}
               </button>
             )}
@@ -832,24 +832,23 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
       )}
 
       {performancePreparing && (
-        <section style={{ background: '#F8FAFC', border: '1px solid #A7F3D0', borderRadius: 8, padding: 16 }}>
-          <p style={{ fontSize: 13, fontWeight: 800, color: '#047857', margin: '0 0 8px' }}>Preparing Agreement Performance...</p>
+        <section style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 8, padding: 16 }}>
+          <p style={{ fontSize: 13, fontWeight: 800, color: '#92400E', margin: '0 0 8px' }}>Preparing Agreement Performance...</p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {['Checking obligations...', 'Preparing performance records...', 'Opening Agreement Performance...'].map((step) => (
-              <span key={step} style={{ borderRadius: 999, background: '#ECFDF5', color: '#047857', padding: '5px 9px', fontSize: 11, fontWeight: 800 }}>{step}</span>
+              <span key={step} style={{ borderRadius: 999, background: '#FFFFFF', border: '1px solid #FDE68A', color: '#92400E', padding: '5px 9px', fontSize: 11, fontWeight: 800 }}>{step}</span>
             ))}
           </div>
         </section>
       )}
 
       {agreement.performance_ready && !performancePreparing && (
-        <section style={{ background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: 8, padding: 16 }}>
+        <section style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 8, padding: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             <div>
-              <p style={{ fontSize: 13, fontWeight: 800, color: '#047857', margin: 0 }}>Agreement Performance is ready.</p>
+              <p style={{ fontSize: 13, fontWeight: 800, color: '#78350F', margin: 0 }}>Agreement Performance is ready.</p>
               <p style={{ fontSize: 12, color: '#475569', margin: '5px 0 0' }}>This signed agreement is now available in Agreement Performance while the Signed Agreement Timeline remains available here.</p>
             </div>
-            <button type="button" onClick={() => navigate('/agreement-performance')} style={{ border: '1px solid #047857', borderRadius: 8, background: '#047857', color: '#FFFFFF', padding: '8px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>Open Agreement Performance</button>
           </div>
         </section>
       )}

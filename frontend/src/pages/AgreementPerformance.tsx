@@ -502,7 +502,7 @@ function PerformanceCard({ item, onOpen, onViewSource }: { item: TimelineItem; o
       </div>
       {item.description && <p style={{ fontSize: 12, color: '#475569', lineHeight: 1.5, margin: '10px 0 0' }}>{item.description}</p>}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-        <button type="button" onClick={onOpen} style={primaryButtonStyle}>Open Detail</button>
+        <button type="button" onClick={onOpen} style={inspectButtonStyle}>Open Detail</button>
         <button type="button" onClick={onViewSource} style={secondaryButtonStyle}>View Source</button>
         {!action && <span style={{ fontSize: 11, color: '#64748B', alignSelf: 'center' }}>Action unavailable for this generated record.</span>}
       </div>
@@ -694,6 +694,17 @@ const primaryButtonStyle = {
   borderRadius: 8,
   background: '#047857',
   color: '#FFFFFF',
+  padding: '8px 12px',
+  fontSize: 12,
+  fontWeight: 800,
+  cursor: 'pointer',
+}
+
+const inspectButtonStyle = {
+  border: '1px solid #BFDBFE',
+  borderRadius: 8,
+  background: '#EFF6FF',
+  color: '#1D4ED8',
   padding: '8px 12px',
   fontSize: 12,
   fontWeight: 800,

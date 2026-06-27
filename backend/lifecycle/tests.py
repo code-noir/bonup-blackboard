@@ -425,13 +425,14 @@ class LifecycleFoundationTests(TestCase):
         self.assertEqual(agreement.status, LifecycleAgreement.STATUS_SETUP)
         self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type="item_created").count(), 1)
 
-    def test_first_performance_action_notifies_counterparty_and_activates_contract(self):
+    def test_first_performance_action_notifies_counterparty_and_starts_performance(self):
         agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
         item = LifecycleItem.objects.create(
             lifecycle_agreement=agreement,
             item_type=LifecycleItem.TYPE_PAYMENT,
             title="Initial payment",
             amount="125.00",
+            responsible_party=str(self.initiator.id),
             created_by=self.initiator,
         )
 
@@ -446,22 +447,33 @@ class LifecycleFoundationTests(TestCase):
         agreement.refresh_from_db()
         item.refresh_from_db()
         self.assertEqual(item.status, LifecycleItem.STATUS_COMPLETED)
-        self.assertEqual(self.contract.status, "active")
+        self.assertEqual(self.contract.status, "signed")
         self.assertEqual(agreement.status, LifecycleAgreement.STATUS_ACTIVE)
         self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type="payment_marked_paid").count(), 1)
-        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type="contract_activated").count(), 1)
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type="contract_activated").count(), 0)
+        event = LifecycleEvent.objects.get(lifecycle_agreement=agreement, event_type="payment_marked_paid")
+        self.assertTrue(event.metadata["performance_started"])
+        self.assertEqual(event.metadata["result_status"], LifecycleItem.STATUS_COMPLETED)
         notification = Notification.objects.get(user=self.counterparty, notification_type="agreement_timeline")
         self.assertEqual(notification.title, "Payment marked paid")
         self.assertIn("Signed Timeline Contract", notification.message)
         self.assertIn("Initial payment", notification.message)
-        self.assertEqual(notification.metadata["redirect_url"], f"/lifecycle?contract={self.contract.id}")
+        self.assertEqual(notification.metadata["source"], "agreement_performance_action")
+        self.assertEqual(notification.metadata["action"], "mark_paid")
+        self.assertEqual(notification.metadata["contract_id"], str(self.contract.id))
+        self.assertEqual(notification.metadata["lifecycle_agreement_id"], str(agreement.id))
+        self.assertEqual(notification.metadata["lifecycle_item_id"], str(item.id))
+        self.assertEqual(notification.metadata["lifecycle_event_id"], str(event.id))
+        self.assertEqual(notification.metadata["redirect_url"], "/agreement-performance")
+        self.assertEqual(Notification.objects.filter(user=self.initiator, metadata__source="agreement_performance_action").count(), 0)
 
-    def test_active_transition_is_idempotent(self):
+    def test_performance_action_is_idempotent(self):
         agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
         item = LifecycleItem.objects.create(
             lifecycle_agreement=agreement,
             item_type=LifecycleItem.TYPE_RESPONSIBILITY,
             title="Provide keys",
+            responsible_party=str(self.initiator.id),
             created_by=self.initiator,
         )
 
@@ -470,9 +482,69 @@ class LifecycleFoundationTests(TestCase):
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
-        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type="contract_activated").count(), 1)
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type="item_completed").count(), 1)
+        self.assertEqual(Notification.objects.filter(user=self.counterparty, metadata__source="agreement_performance_action").count(), 1)
+        agreement.refresh_from_db()
         self.contract.refresh_from_db()
-        self.assertEqual(self.contract.status, "active")
+        self.assertEqual(agreement.status, LifecycleAgreement.STATUS_ACTIVE)
+        self.assertEqual(self.contract.status, "signed")
+
+    def test_performance_action_requires_responsible_party(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            title="Initial payment",
+            amount="125.00",
+            responsible_party=str(self.initiator.id),
+            created_by=self.initiator,
+        )
+
+        response = self.counterparty_client.post(
+            f"/api/lifecycle/items/{item.id}/actions/",
+            {"action": "mark_paid"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        item.refresh_from_db()
+        agreement.refresh_from_db()
+        self.contract.refresh_from_db()
+        self.assertEqual(item.status, LifecycleItem.STATUS_PENDING)
+        self.assertEqual(agreement.status, LifecycleAgreement.STATUS_SETUP)
+        self.assertEqual(self.contract.status, "signed")
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type="payment_marked_paid").count(), 0)
+        self.assertEqual(Notification.objects.filter(metadata__source="agreement_performance_action").count(), 0)
+
+    def test_work_performed_uses_agreement_performance_notification_action(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_SERVICE_WORK,
+            title="Provide loan funds",
+            responsible_party="Lender",
+            created_by=self.initiator,
+        )
+
+        response = self.initiator_client.post(
+            f"/api/lifecycle/items/{item.id}/actions/",
+            {"action": "mark_work_performed"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        item.refresh_from_db()
+        agreement.refresh_from_db()
+        self.contract.refresh_from_db()
+        self.assertEqual(item.status, LifecycleItem.STATUS_COMPLETED)
+        self.assertEqual(agreement.status, LifecycleAgreement.STATUS_ACTIVE)
+        self.assertEqual(self.contract.status, "signed")
+        event = LifecycleEvent.objects.get(lifecycle_agreement=agreement, event_type="work_marked_performed")
+        notification = Notification.objects.get(user=self.counterparty, metadata__source="agreement_performance_action")
+        self.assertEqual(notification.title, "Work marked performed")
+        self.assertEqual(notification.metadata["action"], "mark_performed")
+        self.assertEqual(notification.metadata["api_action"], "mark_work_performed")
+        self.assertEqual(notification.metadata["lifecycle_event_id"], str(event.id))
 
     def test_change_order_proposal_and_acceptance_create_events_and_notifications(self):
         agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)

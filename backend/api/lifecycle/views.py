@@ -418,6 +418,11 @@ def performance_agreement_payload(agreement):
     payment_count = len([item for item in views["payments"] if item.get("item_type") == "payment"])
     work_item_count = len([item for item in views["work_services"] if item.get("item_type") in {"service", "service_work"}])
     due_date_count = len(views["due_dates"])
+    status_label = "Waiting for first performed obligation"
+    if agreement.status == LifecycleAgreement.STATUS_ACTIVE:
+        status_label = "In progress"
+    elif agreement.status == LifecycleAgreement.STATUS_COMPLETED:
+        status_label = "Completed"
     return {
         "id": str(agreement.id),
         "contract_id": str(agreement.contract_id),
@@ -430,7 +435,7 @@ def performance_agreement_payload(agreement):
             "name": agreement.contract.counterparty_name,
             "email": agreement.contract.counterparty_email,
         },
-        "status": "Waiting for first performed obligation",
+        "status": status_label,
         "performance_ready": agreement.performance_ready,
         "payment_count": payment_count,
         "work_count": work_item_count,
@@ -551,6 +556,8 @@ class LifecycleItemActionAPIView(APIView):
         action = request.data.get("action")
         try:
             item = perform_timeline_item_action(item, request.user, action, request.data)
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 

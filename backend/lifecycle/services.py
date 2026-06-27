@@ -10,6 +10,7 @@ from django.utils import timezone
 from backend.agreement_exchange.models import AgreementExchange
 from backend.agreement_exchange.notifications import find_user_by_email, notify_exchange_recipient
 from backend.contracts.models import ContractVersion, LifecycleAgreement, LifecycleEvent, LifecycleItem, LifecycleItemUserState
+from backend.notifications.models import Notification
 
 
 class LifecycleNotReadyError(Exception):
@@ -730,6 +731,117 @@ def _timeline_recipient(agreement, actor):
     return contract.initiator, getattr(contract.initiator, "email", "")
 
 
+def _normalise_party_token(value):
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def _party_name(user):
+    return _normalise_party_token(" ".join(part for part in [getattr(user, "first_name", ""), getattr(user, "last_name", "")] if part))
+
+
+def _counterparty_user(contract):
+    return find_user_by_email(contract.counterparty_email)
+
+
+def _responsible_party_matches_user(agreement, item, user):
+    if not getattr(user, "is_authenticated", False):
+        return False
+    responsible = _normalise_party_token(item.responsible_party)
+    if not responsible:
+        return False
+
+    contract = agreement.contract
+    counterparty = _counterparty_user(contract)
+    initiator_values = {
+        str(contract.initiator_id or ""),
+        _normalise_party_token(getattr(contract.initiator, "email", "")),
+        _party_name(contract.initiator),
+        "initiator",
+        "owner",
+        "lender",
+        "provider",
+    }
+    counterparty_values = {
+        _normalise_party_token(contract.counterparty_email),
+        _normalise_party_token(contract.counterparty_name),
+        str(getattr(counterparty, "id", "") or ""),
+        _normalise_party_token(getattr(counterparty, "email", "")),
+        _party_name(counterparty),
+        "counterparty",
+        "borrower",
+        "client",
+    }
+    initiator_values.discard("")
+    counterparty_values.discard("")
+
+    if contract.initiator_id == user.id and responsible in initiator_values:
+        return True
+    if _normalise_party_token(getattr(user, "email", "")) == _normalise_party_token(contract.counterparty_email) and responsible in counterparty_values:
+        return True
+    return False
+
+
+def _performance_target_url():
+    return "/agreement-performance"
+
+
+def _performance_metadata_action(action):
+    if action == "mark_work_performed":
+        return "mark_performed"
+    return action
+
+
+def _performance_notification_title(action):
+    if action == "mark_paid":
+        return "Payment marked paid"
+    if action == "mark_work_performed":
+        return "Work marked performed"
+    return ACTION_TITLES.get(action, humanize_timeline_action(action))
+
+
+def _performance_notification_message(agreement, item, *, actor, action_title):
+    return "\n".join([
+        f"Agreement: {agreement.contract.title or 'Untitled contract'}",
+        f"Item: {item.title}",
+        f"Marked by: {_actor_label(actor)}",
+        f"Action: {action_title}",
+        "Awaiting counterparty review.",
+    ])
+
+
+def notify_agreement_performance_counterparty(agreement, item, *, actor, action, event):
+    recipient, _email = _timeline_recipient(agreement, actor)
+    if not recipient or (getattr(actor, "is_authenticated", False) and recipient.id == actor.id):
+        return None
+    action_title = _performance_notification_title(action)
+    notification = Notification.objects.create(
+        user=recipient,
+        notification_type="agreement_timeline",
+        title=action_title,
+        message=_performance_notification_message(agreement, item, actor=actor, action_title=action_title),
+        related_contract=agreement.contract,
+        metadata={
+            "source": "agreement_performance_action",
+            "action": _performance_metadata_action(action),
+            "api_action": action,
+            "contract_id": str(agreement.contract_id),
+            "lifecycle_agreement_id": str(agreement.id),
+            "lifecycle_item_id": str(item.id),
+            "lifecycle_event_id": str(event.id),
+            "item_title": item.title,
+            "actor_id": str(actor.id) if getattr(actor, "is_authenticated", False) else None,
+            "actor_label": _actor_label(actor),
+            "target_url": _performance_target_url(),
+            "redirect_url": _performance_target_url(),
+        },
+    )
+    return {
+        "in_app_created": True,
+        "notification_id": str(notification.id),
+        "recipient_id": str(recipient.id),
+    }
+
+
 def _timeline_notification_message(agreement, item, *, actor, action_title):
     return "\n".join([
         f"Contract: {agreement.contract.title or 'Untitled contract'}",
@@ -785,28 +897,18 @@ def _notification_delivered(result):
     return bool(result and (result.get("in_app_created") or result.get("email_sent") or result.get("email_attempted")))
 
 
-def maybe_activate_contract_from_timeline_action(agreement, action, actor, notification_result):
+def maybe_start_agreement_performance(agreement, action, actor):
     if action not in PERFORMANCE_ACTIONS:
         return False
-    if agreement.contract.status == "active" and agreement.status == LifecycleAgreement.STATUS_ACTIVE:
+    if agreement.status != LifecycleAgreement.STATUS_SETUP:
         return False
-    if not _notification_delivered(notification_result):
-        return False
-
-    contract = agreement.contract
-    if contract.status == "signed":
-        contract.status = "active"
-        contract.save(update_fields=["status"])
-    if agreement.status == LifecycleAgreement.STATUS_SETUP:
-        agreement.status = LifecycleAgreement.STATUS_ACTIVE
-        agreement.save(update_fields=["status", "updated_at"])
-    create_timeline_event(
-        agreement,
-        event_type="contract_activated",
-        title=ACTION_TITLES["contract_activated"],
-        description="The first notified performance action activated this signed agreement.",
-        metadata={"action": action, "actor_id": str(actor.id) if getattr(actor, "is_authenticated", False) else None},
-    )
+    agreement.status = LifecycleAgreement.STATUS_ACTIVE
+    metadata = dict(agreement.metadata or {})
+    metadata.setdefault("performance_started_at", timezone.now().isoformat())
+    metadata.setdefault("performance_started_by", str(actor.id) if getattr(actor, "is_authenticated", False) else None)
+    metadata.setdefault("performance_started_action", action)
+    agreement.metadata = metadata
+    agreement.save(update_fields=["status", "metadata", "updated_at"])
     return True
 
 
@@ -986,6 +1088,13 @@ def perform_timeline_item_action(item, user, action, data=None):
     agreement = LifecycleAgreement.objects.select_for_update(of=("self",)).select_related("contract", "contract__initiator").get(pk=item.lifecycle_agreement_id)
     item = LifecycleItem.objects.select_for_update(of=("self",)).select_related("lifecycle_agreement", "lifecycle_agreement__contract").get(pk=item.pk)
 
+    if action in PERFORMANCE_ACTIONS:
+        if not _responsible_party_matches_user(agreement, item, user):
+            raise PermissionError("Only the responsible party can mark this obligation performed.")
+        target_status = ACTION_STATUSES.get(action)
+        if target_status and item.status == target_status:
+            return item
+
     metadata = dict(item.metadata or {})
     note = data.get("note") or data.get("message") or ""
     if note:
@@ -999,6 +1108,12 @@ def perform_timeline_item_action(item, user, action, data=None):
         metadata.setdefault("documents", []).append({"title": data.get("document_title") or data.get("title") or "Document", "url": data.get("document_url") or ""})
     if action in ACTION_STATUSES:
         item.status = ACTION_STATUSES[action]
+    if action in PERFORMANCE_ACTIONS:
+        metadata.setdefault("performance_actions", {})[action] = {
+            "status": item.status,
+            "acted_at": timezone.now().isoformat(),
+            "actor_id": str(user.id) if getattr(user, "is_authenticated", False) else None,
+        }
     if action == "propose_change_order":
         item.item_type = LifecycleItem.TYPE_CHANGE_ORDER
     if action == "propose_add_on":
@@ -1008,22 +1123,33 @@ def perform_timeline_item_action(item, user, action, data=None):
 
     event_type = ACTION_EVENT_MAP[action]
     title = ACTION_TITLES[action]
-    notification = None
-    if action != "add_note" and action != "upload_or_attach_document":
-        notification = notify_timeline_counterparty(agreement, item, actor=user, action=action, event_type=event_type)
+    performance_started = False
+    if action in PERFORMANCE_ACTIONS:
+        performance_started = maybe_start_agreement_performance(agreement, action, user)
 
-    create_timeline_event(
+    event = create_timeline_event(
         agreement,
         event_type=event_type,
         title=title,
         description=note or item.title,
         metadata={
             "item_id": str(item.id),
+            "lifecycle_item_id": str(item.id),
             "item_type": item.item_type,
             "action": action,
             "actor_id": str(user.id) if getattr(user, "is_authenticated", False) else None,
-            "notification": notification or {},
+            "status": item.status,
+            "result_status": item.status,
+            "performance_started": performance_started,
         },
     )
-    maybe_activate_contract_from_timeline_action(agreement, action, user, notification)
+
+    notification = None
+    if action in PERFORMANCE_ACTIONS:
+        notification = notify_agreement_performance_counterparty(agreement, item, actor=user, action=action, event=event)
+    elif action != "add_note" and action != "upload_or_attach_document":
+        notification = notify_timeline_counterparty(agreement, item, actor=user, action=action, event_type=event_type)
+    if notification:
+        event.metadata = {**(event.metadata or {}), "notification": notification}
+        event.save(update_fields=["metadata"])
     return item

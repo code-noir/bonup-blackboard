@@ -1,7 +1,10 @@
 import json
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime, timedelta, timezone as dt_timezone
+from io import StringIO
 
+from django.core.management import call_command
 from django.test import TestCase
+from django.utils import timezone
 
 from backend.agreement_exchange.models import AgreementExchange
 from backend.agreement_exchange.services import sign_exchange
@@ -154,6 +157,90 @@ class LifecycleFoundationTests(TestCase):
         self.assertEqual(after.data["results"][0]["status"], "Waiting for first performed obligation")
         self.assertEqual(stranger.status_code, 200)
         self.assertEqual(stranger.data["results"], [])
+
+    def test_due_personal_reminder_command_notifies_owner_only(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            title="Payment installment 1",
+            amount="125.00",
+            created_by=self.initiator,
+        )
+        state = LifecycleItemUserState.objects.create(
+            lifecycle_item=item,
+            user=self.initiator,
+            reminder_at=timezone.now() - timedelta(minutes=5),
+        )
+        before_events = LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count()
+
+        out = StringIO()
+        call_command("send_due_timeline_reminders", stdout=out)
+
+        self.assertIn("Sent 1", out.getvalue())
+        notification = Notification.objects.get(user=self.initiator, metadata__source="agreement_performance_reminder")
+        self.assertEqual(notification.notification_type, "agreement_timeline")
+        self.assertEqual(notification.title, "Reminder: Payment installment 1")
+        self.assertIn("Payment installment 1", notification.message)
+        self.assertIn("Signed Timeline Contract", notification.message)
+        self.assertEqual(notification.related_contract, self.contract)
+        self.assertEqual(notification.metadata["lifecycle_item_id"], str(item.id))
+        self.assertEqual(notification.metadata["lifecycle_agreement_id"], str(agreement.id))
+        self.assertEqual(notification.metadata["contract_id"], str(self.contract.id))
+        self.assertEqual(notification.metadata["source"], "agreement_performance_reminder")
+        self.assertEqual(notification.metadata["redirect_url"], "/agreement-performance")
+        self.assertEqual(Notification.objects.filter(user=self.counterparty, metadata__source="agreement_performance_reminder").count(), 0)
+        state.refresh_from_db()
+        self.assertEqual(state.metadata["reminder_delivery"]["sent_for"], state.reminder_at.isoformat())
+        self.assertEqual(state.metadata["reminder_delivery"]["notification_id"], str(notification.id))
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count(), before_events)
+        self.contract.refresh_from_db()
+        agreement.refresh_from_db()
+        self.assertEqual(self.contract.status, "signed")
+        self.assertEqual(agreement.status, LifecycleAgreement.STATUS_SETUP)
+
+    def test_due_personal_reminder_command_is_idempotent_for_same_reminder_time(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            title="Payment installment 1",
+            created_by=self.initiator,
+        )
+        LifecycleItemUserState.objects.create(
+            lifecycle_item=item,
+            user=self.initiator,
+            reminder_at=timezone.now() - timedelta(minutes=5),
+        )
+
+        call_command("send_due_timeline_reminders", stdout=StringIO())
+        call_command("send_due_timeline_reminders", stdout=StringIO())
+
+        self.assertEqual(Notification.objects.filter(user=self.initiator, metadata__source="agreement_performance_reminder").count(), 1)
+
+    def test_changed_due_personal_reminder_can_send_again_for_new_time(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            title="Payment installment 1",
+            created_by=self.initiator,
+        )
+        state = LifecycleItemUserState.objects.create(
+            lifecycle_item=item,
+            user=self.initiator,
+            reminder_at=timezone.now() - timedelta(minutes=10),
+        )
+        call_command("send_due_timeline_reminders", stdout=StringIO())
+
+        state.refresh_from_db()
+        state.reminder_at = timezone.now() - timedelta(minutes=1)
+        state.save(update_fields=["reminder_at", "updated_at"])
+        call_command("send_due_timeline_reminders", stdout=StringIO())
+
+        self.assertEqual(Notification.objects.filter(user=self.initiator, metadata__source="agreement_performance_reminder").count(), 2)
+        state.refresh_from_db()
+        self.assertEqual(state.metadata["reminder_delivery"]["sent_for"], state.reminder_at.isoformat())
 
     def test_lifecycle_endpoint_rejects_unsigned_contract(self):
         unsigned_contract = make_contract(self.initiator, counterparty_email=self.counterparty.email)

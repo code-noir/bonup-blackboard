@@ -2,6 +2,7 @@ import json
 from datetime import datetime, timedelta, timezone as dt_timezone
 from io import StringIO
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
@@ -10,7 +11,7 @@ from backend.agreement_exchange.models import AgreementExchange
 from backend.agreement_exchange.services import sign_exchange
 from backend.api.contracts.services.visibility_service import resolve_contract_dashboard_status
 from backend.api.tests.helpers import authed_client, make_contract, make_user, make_version
-from backend.contracts.models import ContractObligation, ContractServiceObligation, LifecycleAgreement, LifecycleEvent, LifecycleItem, LifecycleItemUserState
+from backend.contracts.models import ContractObligation, ContractServiceObligation, LifecycleAgreement, LifecycleEvent, LifecycleItem, LifecycleItemAttachment, LifecycleItemResponse, LifecycleItemUserState
 from backend.notifications.models import Notification
 from backend.lifecycle.services import LifecycleNotReadyError, get_or_create_lifecycle_for_signed_contract
 
@@ -438,8 +439,8 @@ class LifecycleFoundationTests(TestCase):
 
         response = self.initiator_client.post(
             f"/api/lifecycle/items/{item.id}/actions/",
-            {"action": "mark_paid"},
-            format="json",
+            {"action": "mark_paid", "file": SimpleUploadedFile("receipt.pdf", b"%PDF-1.4 proof", content_type="application/pdf")},
+            format="multipart",
         )
 
         self.assertEqual(response.status_code, 200)
@@ -455,7 +456,7 @@ class LifecycleFoundationTests(TestCase):
         self.assertTrue(event.metadata["performance_started"])
         self.assertEqual(event.metadata["result_status"], LifecycleItem.STATUS_COMPLETED)
         notification = Notification.objects.get(user=self.counterparty, notification_type="agreement_timeline")
-        self.assertEqual(notification.title, "Payment marked paid")
+        self.assertEqual(notification.title, "Paid")
         self.assertIn("Signed Timeline Contract", notification.message)
         self.assertIn("Initial payment", notification.message)
         self.assertEqual(notification.metadata["source"], "agreement_performance_action")
@@ -464,6 +465,9 @@ class LifecycleFoundationTests(TestCase):
         self.assertEqual(notification.metadata["lifecycle_agreement_id"], str(agreement.id))
         self.assertEqual(notification.metadata["lifecycle_item_id"], str(item.id))
         self.assertEqual(notification.metadata["lifecycle_event_id"], str(event.id))
+        self.assertTrue(notification.metadata["attachment_id"])
+        self.assertEqual(event.metadata["attachment_id"], notification.metadata["attachment_id"])
+        self.assertEqual(event.metadata["result_label"], "Paid")
         self.assertEqual(notification.metadata["redirect_url"], "/agreement-performance")
         self.assertEqual(Notification.objects.filter(user=self.initiator, metadata__source="agreement_performance_action").count(), 0)
 
@@ -477,7 +481,11 @@ class LifecycleFoundationTests(TestCase):
             created_by=self.initiator,
         )
 
-        first = self.initiator_client.post(f"/api/lifecycle/items/{item.id}/actions/", {"action": "mark_completed"}, format="json")
+        first = self.initiator_client.post(
+            f"/api/lifecycle/items/{item.id}/actions/",
+            {"action": "mark_completed", "file": SimpleUploadedFile("proof.pdf", b"%PDF-1.4 proof", content_type="application/pdf")},
+            format="multipart",
+        )
         second = self.initiator_client.post(f"/api/lifecycle/items/{item.id}/actions/", {"action": "mark_completed"}, format="json")
 
         self.assertEqual(first.status_code, 200)
@@ -528,8 +536,8 @@ class LifecycleFoundationTests(TestCase):
 
         response = self.initiator_client.post(
             f"/api/lifecycle/items/{item.id}/actions/",
-            {"action": "mark_work_performed"},
-            format="json",
+            {"action": "mark_work_performed", "file": SimpleUploadedFile("deposit.pdf", b"%PDF-1.4 proof", content_type="application/pdf")},
+            format="multipart",
         )
 
         self.assertEqual(response.status_code, 200)
@@ -541,10 +549,292 @@ class LifecycleFoundationTests(TestCase):
         self.assertEqual(self.contract.status, "signed")
         event = LifecycleEvent.objects.get(lifecycle_agreement=agreement, event_type="work_marked_performed")
         notification = Notification.objects.get(user=self.counterparty, metadata__source="agreement_performance_action")
-        self.assertEqual(notification.title, "Work marked performed")
+        self.assertEqual(notification.title, "Performed")
         self.assertEqual(notification.metadata["action"], "mark_performed")
         self.assertEqual(notification.metadata["api_action"], "mark_work_performed")
         self.assertEqual(notification.metadata["lifecycle_event_id"], str(event.id))
+        self.assertTrue(notification.metadata["attachment_id"])
+        self.assertEqual(event.metadata["attachment_id"], notification.metadata["attachment_id"])
+        self.assertEqual(event.metadata["result_label"], "Performed")
+
+    def test_performance_action_requires_proof_file(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            title="Initial payment",
+            responsible_party=str(self.initiator.id),
+            created_by=self.initiator,
+        )
+
+        response = self.initiator_client.post(
+            f"/api/lifecycle/items/{item.id}/actions/",
+            {"action": "mark_paid"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Upload proof or receipt", response.data["detail"])
+        item.refresh_from_db()
+        agreement.refresh_from_db()
+        self.contract.refresh_from_db()
+        self.assertEqual(item.status, LifecycleItem.STATUS_PENDING)
+        self.assertEqual(agreement.status, LifecycleAgreement.STATUS_SETUP)
+        self.assertEqual(self.contract.status, "signed")
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type="payment_marked_paid").count(), 0)
+        self.assertEqual(Notification.objects.filter(metadata__source="agreement_performance_action").count(), 0)
+
+    def test_performance_action_rejects_unsupported_proof_file(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            title="Initial payment",
+            responsible_party=str(self.initiator.id),
+            created_by=self.initiator,
+        )
+
+        response = self.initiator_client.post(
+            f"/api/lifecycle/items/{item.id}/actions/",
+            {"action": "mark_paid", "file": SimpleUploadedFile("proof.exe", b"binary", content_type="application/x-msdownload")},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Unsupported proof file type", response.data["detail"])
+        item.refresh_from_db()
+        self.assertEqual(item.status, LifecycleItem.STATUS_PENDING)
+
+    def test_performance_action_rejects_oversized_video_proof(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_SERVICE_WORK,
+            title="Install equipment",
+            responsible_party=str(self.initiator.id),
+            created_by=self.initiator,
+        )
+        upload = SimpleUploadedFile("proof.mp4", b"small", content_type="video/mp4")
+        upload.size = 100 * 1024 * 1024 + 1
+
+        response = self.initiator_client.post(
+            f"/api/lifecycle/items/{item.id}/actions/",
+            {"action": "mark_work_performed", "file": upload},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Maximum size is 100 MB", response.data["detail"])
+        item.refresh_from_db()
+        self.assertEqual(item.status, LifecycleItem.STATUS_PENDING)
+
+    def test_lifecycle_item_proof_upload_is_shared_and_notifies_counterparty(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            title="Payment installment 1",
+            amount="125.00",
+            responsible_party=str(self.counterparty.id),
+            created_by=self.initiator,
+        )
+        before_events = LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count()
+        upload = SimpleUploadedFile("receipt.pdf", b"%PDF-1.4 paid by bank transfer", content_type="application/pdf")
+
+        response = self.counterparty_client.post(
+            f"/api/lifecycle/items/{item.id}/attachments/",
+            {"file": upload, "note": "Bank receipt"},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        attachment = LifecycleItemAttachment.objects.get(pk=response.data["id"])
+        self.assertEqual(attachment.lifecycle_item, item)
+        self.assertEqual(attachment.lifecycle_agreement, agreement)
+        self.assertEqual(attachment.contract, self.contract)
+        self.assertEqual(attachment.uploaded_by, self.counterparty)
+        self.assertEqual(attachment.original_filename, "receipt.pdf")
+        self.assertEqual(attachment.content_type, "application/pdf")
+        self.assertEqual(attachment.file_size, len(b"%PDF-1.4 paid by bank transfer"))
+        self.assertEqual(attachment.note, "Bank receipt")
+        self.assertTrue(response.data["file_url"])
+
+        event = LifecycleEvent.objects.get(lifecycle_agreement=agreement, event_type="proof_uploaded")
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count(), before_events + 1)
+        self.assertEqual(event.metadata["source"], "agreement_performance_proof")
+        self.assertEqual(event.metadata["action"], "upload_proof")
+        self.assertEqual(event.metadata["contract_id"], str(self.contract.id))
+        self.assertEqual(event.metadata["lifecycle_agreement_id"], str(agreement.id))
+        self.assertEqual(event.metadata["lifecycle_item_id"], str(item.id))
+        self.assertEqual(event.metadata["attachment_id"], str(attachment.id))
+
+        notification = Notification.objects.get(user=self.initiator, metadata__source="agreement_performance_proof")
+        self.assertEqual(notification.title, "Proof uploaded")
+        self.assertIn("Payment installment 1", notification.message)
+        self.assertEqual(notification.related_contract, self.contract)
+        self.assertEqual(notification.metadata["action"], "upload_proof")
+        self.assertEqual(notification.metadata["attachment_id"], str(attachment.id))
+        self.assertEqual(notification.metadata["lifecycle_event_id"], str(event.id))
+        self.assertEqual(notification.metadata["redirect_url"], "/agreement-performance")
+        self.assertEqual(Notification.objects.filter(user=self.counterparty, metadata__source="agreement_performance_proof").count(), 0)
+
+        item.refresh_from_db()
+        agreement.refresh_from_db()
+        self.contract.refresh_from_db()
+        self.assertEqual(item.status, LifecycleItem.STATUS_PENDING)
+        self.assertEqual(agreement.status, LifecycleAgreement.STATUS_SETUP)
+        self.assertEqual(self.contract.status, "signed")
+
+    def test_lifecycle_item_proof_attachment_visible_to_parties_only(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_SERVICE_WORK,
+            title="Provide loan funds",
+            responsible_party=str(self.initiator.id),
+            created_by=self.initiator,
+        )
+        upload = SimpleUploadedFile("deposit.pdf", b"%PDF-1.4 deposit confirmation", content_type="application/pdf")
+        created = self.initiator_client.post(
+            f"/api/lifecycle/items/{item.id}/attachments/",
+            {"file": upload},
+            format="multipart",
+        )
+
+        initiator_response = self.initiator_client.get(f"/api/lifecycle/items/{item.id}/attachments/")
+        counterparty_response = self.counterparty_client.get(f"/api/lifecycle/items/{item.id}/attachments/")
+        stranger_response = self.stranger_client.get(f"/api/lifecycle/items/{item.id}/attachments/")
+
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(initiator_response.status_code, 200)
+        self.assertEqual(counterparty_response.status_code, 200)
+        self.assertEqual(stranger_response.status_code, 403)
+        self.assertEqual(len(initiator_response.data["results"]), 1)
+        self.assertEqual(len(counterparty_response.data["results"]), 1)
+        self.assertEqual(counterparty_response.data["results"][0]["id"], created.data["id"])
+
+    def test_lifecycle_item_proof_upload_requires_responsible_party(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_SERVICE_WORK,
+            title="Provide loan funds",
+            responsible_party=str(self.initiator.id),
+            created_by=self.initiator,
+        )
+
+        response = self.counterparty_client.post(
+            f"/api/lifecycle/items/{item.id}/attachments/",
+            {"file": SimpleUploadedFile("deposit.pdf", b"%PDF-1.4 deposit confirmation", content_type="application/pdf")},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("responsible party", response.data["detail"])
+        self.assertEqual(LifecycleItemAttachment.objects.filter(lifecycle_item=item).count(), 0)
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type="proof_uploaded").count(), 0)
+        self.assertEqual(Notification.objects.filter(metadata__source="agreement_performance_proof").count(), 0)
+
+    def test_lifecycle_item_payload_exposes_proof_permissions_by_party(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_SERVICE_WORK,
+            title="Provide loan funds",
+            responsible_party=str(self.initiator.id),
+            created_by=self.initiator,
+        )
+        self.initiator_client.post(
+            f"/api/lifecycle/items/{item.id}/attachments/",
+            {"file": SimpleUploadedFile("deposit.pdf", b"%PDF-1.4 deposit confirmation", content_type="application/pdf")},
+            format="multipart",
+        )
+
+        initiator_response = self.initiator_client.get(f"/api/lifecycle/?contract={self.contract.id}")
+        counterparty_response = self.counterparty_client.get(f"/api/lifecycle/?contract={self.contract.id}")
+
+        initiator_item = next(value for value in initiator_response.data["views"]["work_services"] if value["id"] == str(item.id))
+        counterparty_item = next(value for value in counterparty_response.data["views"]["work_services"] if value["id"] == str(item.id))
+        self.assertTrue(initiator_item["can_upload_proof"])
+        self.assertFalse(initiator_item["can_respond_to_proof"])
+        self.assertFalse(counterparty_item["can_upload_proof"])
+        self.assertTrue(counterparty_item["can_respond_to_proof"])
+
+    def test_counterparty_response_creates_shared_event_and_notifies_responsible_party(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_SERVICE_WORK,
+            title="Provide loan funds",
+            responsible_party=str(self.initiator.id),
+            created_by=self.initiator,
+        )
+        self.initiator_client.post(
+            f"/api/lifecycle/items/{item.id}/attachments/",
+            {"file": SimpleUploadedFile("deposit.pdf", b"%PDF-1.4 deposit confirmation", content_type="application/pdf")},
+            format="multipart",
+        )
+        before_events = LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count()
+
+        response = self.counterparty_client.post(
+            f"/api/lifecycle/items/{item.id}/responses/",
+            {"response": "received", "note": "Funds arrived."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        item_response = LifecycleItemResponse.objects.get(lifecycle_item=item, responder=self.counterparty)
+        self.assertEqual(item_response.response, LifecycleItemResponse.RESPONSE_RECEIVED)
+        self.assertEqual(item_response.note, "Funds arrived.")
+        event = LifecycleEvent.objects.get(lifecycle_agreement=agreement, event_type="proof_response")
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count(), before_events + 1)
+        self.assertEqual(event.metadata["source"], "agreement_performance_response")
+        self.assertEqual(event.metadata["action"], "received")
+        self.assertEqual(event.metadata["lifecycle_item_id"], str(item.id))
+        self.assertEqual(event.metadata["response_id"], str(item_response.id))
+        notification = Notification.objects.get(user=self.initiator, metadata__source="agreement_performance_response")
+        self.assertEqual(notification.metadata["action"], "received")
+        self.assertEqual(notification.metadata["lifecycle_item_id"], str(item.id))
+        self.assertEqual(notification.metadata["lifecycle_event_id"], str(event.id))
+        self.assertEqual(notification.metadata["redirect_url"], "/agreement-performance")
+        self.assertEqual(Notification.objects.filter(user=self.counterparty, metadata__source="agreement_performance_response").count(), 0)
+        item.refresh_from_db()
+        agreement.refresh_from_db()
+        self.contract.refresh_from_db()
+        self.assertEqual(item.status, LifecycleItem.STATUS_PENDING)
+        self.assertEqual(agreement.status, LifecycleAgreement.STATUS_SETUP)
+        self.assertEqual(self.contract.status, "signed")
+
+    def test_responsible_party_and_stranger_cannot_submit_counterparty_response(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_SERVICE_WORK,
+            title="Provide loan funds",
+            responsible_party=str(self.initiator.id),
+            created_by=self.initiator,
+        )
+        self.initiator_client.post(
+            f"/api/lifecycle/items/{item.id}/attachments/",
+            {"file": SimpleUploadedFile("deposit.pdf", b"%PDF-1.4 deposit confirmation", content_type="application/pdf")},
+            format="multipart",
+        )
+
+        responsible_response = self.initiator_client.post(
+            f"/api/lifecycle/items/{item.id}/responses/",
+            {"response": "received"},
+            format="json",
+        )
+        stranger_response = self.stranger_client.post(
+            f"/api/lifecycle/items/{item.id}/responses/",
+            {"response": "received"},
+            format="json",
+        )
+
+        self.assertEqual(responsible_response.status_code, 403)
+        self.assertEqual(stranger_response.status_code, 403)
+        self.assertEqual(LifecycleItemResponse.objects.filter(lifecycle_item=item).count(), 0)
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type="proof_response").count(), 0)
 
     def test_change_order_proposal_and_acceptance_create_events_and_notifications(self):
         agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)

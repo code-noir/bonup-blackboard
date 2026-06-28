@@ -1,7 +1,9 @@
+from django.db import DatabaseError, connection
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -12,14 +14,19 @@ from backend.contracts.models import (
     ContractServiceObligation,
     LifecycleAgreement,
     LifecycleItem,
+    LifecycleItemResponse,
     LifecycleItemUserState,
 )
 from backend.lifecycle.services import (
     LifecycleNotReadyError,
+    can_user_respond_to_lifecycle_item_proof,
+    can_user_upload_lifecycle_item_proof,
     create_timeline_item,
     get_or_create_lifecycle_for_signed_contract,
     perform_timeline_item_action,
+    submit_lifecycle_item_response,
     update_timeline_item,
+    upload_lifecycle_item_attachment,
 )
 from backend.payments.models import Payment
 
@@ -54,6 +61,65 @@ def _party_summary(user):
         return None
     name = " ".join(part for part in [user.first_name, user.last_name] if part).strip()
     return {"id": str(user.id), "email": user.email, "name": name}
+
+
+def _attachment_summary(attachment):
+    file_url = ""
+    if attachment.file:
+        try:
+            file_url = attachment.file.url
+        except ValueError:
+            file_url = ""
+    return {
+        "id": str(attachment.id),
+        "lifecycle_item_id": str(attachment.lifecycle_item_id),
+        "lifecycle_agreement_id": str(attachment.lifecycle_agreement_id),
+        "contract_id": str(attachment.contract_id),
+        "filename": attachment.original_filename,
+        "original_filename": attachment.original_filename,
+        "content_type": attachment.content_type,
+        "file_size": attachment.file_size,
+        "kind": attachment.kind,
+        "note": attachment.note,
+        "uploaded_by": _party_summary(attachment.uploaded_by),
+        "uploaded_by_email": attachment.uploaded_by.email if attachment.uploaded_by else None,
+        "created_at": _iso(attachment.created_at),
+        "updated_at": _iso(attachment.updated_at),
+        "file_url": file_url,
+    }
+
+
+def _response_summary(response):
+    if not response:
+        return None
+    return {
+        "id": str(response.id),
+        "lifecycle_item_id": str(response.lifecycle_item_id),
+        "lifecycle_agreement_id": str(response.lifecycle_agreement_id),
+        "contract_id": str(response.contract_id),
+        "response": response.response,
+        "note": response.note,
+        "responder": _party_summary(response.responder),
+        "created_at": _iso(response.created_at),
+        "updated_at": _iso(response.updated_at),
+    }
+
+
+def _model_table_exists(model):
+    try:
+        return model._meta.db_table in connection.introspection.table_names()
+    except DatabaseError:
+        return False
+
+
+def _latest_response_summary(item):
+    if not _model_table_exists(LifecycleItemResponse):
+        return None
+    try:
+        response = item.counterparty_responses.select_related("responder").order_by("-updated_at", "-created_at").first()
+    except DatabaseError:
+        return None
+    return _response_summary(response)
 
 
 def _contract_summary(contract):
@@ -120,6 +186,9 @@ def _timeline_item_overlay_state(item, overlay):
     baseline = _timeline_item_baseline_values(item)
     if overlay is None:
         return baseline
+    shared_status = baseline["status"]
+    personal_status = overlay.status_override if overlay.status_override is not None else shared_status
+    status = shared_status if shared_status in {"completed", "confirmed", "cancelled", "rejected"} else personal_status
     return {
         "title": overlay.title_override if overlay.title_override is not None else baseline["title"],
         "description": overlay.description_override if overlay.description_override is not None else baseline["description"],
@@ -127,12 +196,12 @@ def _timeline_item_overlay_state(item, overlay):
         "amount": _money(overlay.amount_override) if overlay.amount_override is not None else baseline["amount"],
         "responsible_party": overlay.responsible_party_override if overlay.responsible_party_override is not None else baseline["responsible_party"],
         "payment_method": overlay.payment_method_override if overlay.payment_method_override is not None else baseline["payment_method"],
-        "status": overlay.status_override if overlay.status_override is not None else baseline["status"],
+        "status": status,
     }
 
 
 
-def _serialize_lifecycle_item(item, overlay=None):
+def _serialize_lifecycle_item(item, overlay=None, user=None):
     source_type = getattr(item, "source_type", "manual") or "manual"
     metadata = item.metadata or {}
     state = _timeline_item_overlay_state(item, overlay)
@@ -181,6 +250,9 @@ def _serialize_lifecycle_item(item, overlay=None):
         "has_personal_overrides": has_personal_overrides,
         "created_by": str(item.created_by_id) if getattr(item, "created_by_id", None) else None,
         "visibility": getattr(item, "visibility", "parties"),
+        "can_upload_proof": can_user_upload_lifecycle_item_proof(item, user) if user is not None else False,
+        "can_respond_to_proof": can_user_respond_to_lifecycle_item_proof(item, user) if user is not None else False,
+        "latest_response": _latest_response_summary(item),
     }
 
 
@@ -294,14 +366,14 @@ def _is_signed_contract_document(item):
     )
 
 
-def _group_items(agreement, overlays_by_item_id=None):
+def _group_items(agreement, overlays_by_item_id=None, user=None):
     grouped = _empty_groups()
     overlays_by_item_id = overlays_by_item_id or {}
     for item in agreement.items.all():
         if _is_signed_contract_document(item):
             continue
         overlay = overlays_by_item_id.get(str(item.id))
-        _append_timeline_item(grouped, _GROUPS[item.item_type], _serialize_lifecycle_item(item, overlay))
+        _append_timeline_item(grouped, _GROUPS[item.item_type], _serialize_lifecycle_item(item, overlay, user))
 
     for obligation in ContractObligation.objects.filter(contract=agreement.contract).order_by("due_date"):
         grouped["payments"].append(_serialize_payment_obligation(obligation))
@@ -341,6 +413,57 @@ def _is_loan_delivery_work_item(item):
     return str(item.get("source_id") or "").startswith("loan_delivery_work:")
 
 
+def _normalise_status_key(value):
+    return str(value or "").strip().lower()
+
+
+def _is_completed_timeline_status(item):
+    return _normalise_status_key(item.get("status")) in {"completed", "confirmed", "resolved"}
+
+
+def _deadline_relation_key(item):
+    return (
+        item.get("due_date") or "",
+        _normalise_status_key(item.get("responsible_party")),
+        str(item.get("amount") or ""),
+    )
+
+
+def _source_related_deadline_key(item):
+    source_id = str(item.get("source_id") or "")
+    if source_id.startswith("loan_delivery_work:"):
+        return source_id.replace("loan_delivery_work:", "loan_delivery:", 1)
+    return ""
+
+
+def _apply_related_deadline_statuses(action_items):
+    completed_by_key = {}
+    completed_by_source_deadline = {}
+    for item in action_items:
+        if item.get("item_type") in {"due_date", "deadline"}:
+            continue
+        if not _is_completed_timeline_status(item):
+            continue
+        completed_by_key.setdefault(_deadline_relation_key(item), item)
+        related_source_id = _source_related_deadline_key(item)
+        if related_source_id:
+            completed_by_source_deadline[related_source_id] = item
+
+    for item in action_items:
+        if item.get("item_type") not in {"due_date", "deadline"}:
+            continue
+        if _is_completed_timeline_status(item):
+            continue
+        related = completed_by_source_deadline.get(str(item.get("source_id") or "")) or completed_by_key.get(_deadline_relation_key(item))
+        if not related:
+            continue
+        item["status"] = related.get("status")
+        metadata = dict(item.get("metadata") or {})
+        metadata["related_performance_item_id"] = related.get("id")
+        metadata["related_performance_item_type"] = related.get("item_type")
+        item["metadata"] = metadata
+
+
 def _without_legacy_generated_payment_sources(items, has_generated_repayment_schedule):
     if not has_generated_repayment_schedule:
         return items
@@ -354,11 +477,10 @@ def _grouped_views(grouped, events):
     all_items = [item for values in grouped.values() for item in values]
     has_generated_repayment_schedule = any(_is_generated_repayment_schedule_item(item) for item in grouped["payments"])
     action_items = _without_legacy_generated_payment_sources(all_items, has_generated_repayment_schedule)
+    _apply_related_deadline_statuses(action_items)
     due_dated_action_items = [
         item for item in action_items
         if item.get("due_date")
-        and _is_open_timeline_status(item)
-        and not _is_loan_delivery_work_item(item)
         and item.get("item_type") in {"payment", "service", "service_work", "responsibility", "obligation", "due_date", "deadline"}
     ]
     upcoming = sorted(due_dated_action_items, key=lambda item: item.get("due_date") or "")[:10]
@@ -390,7 +512,7 @@ def lifecycle_payload(agreement, user=None):
             str(state.lifecycle_item_id): state
             for state in LifecycleItemUserState.objects.filter(lifecycle_item__lifecycle_agreement=agreement, user=user)
         }
-    grouped = _group_items(agreement, overlays_by_item_id)
+    grouped = _group_items(agreement, overlays_by_item_id, user)
     events = [_serialize_event(event) for event in agreement.events.all()]
     return {
         "contract": _contract_summary(contract),
@@ -417,7 +539,7 @@ def performance_agreement_payload(agreement):
     views = _grouped_views(grouped, events)
     payment_count = len([item for item in views["payments"] if item.get("item_type") == "payment"])
     work_item_count = len([item for item in views["work_services"] if item.get("item_type") in {"service", "service_work"}])
-    due_date_count = len(views["due_dates"])
+    due_date_count = len([item for item in views["due_dates"] if _is_open_timeline_status(item)])
     status_label = "Waiting for first performed obligation"
     if agreement.status == LifecycleAgreement.STATUS_ACTIVE:
         status_label = "In progress"
@@ -529,7 +651,7 @@ class LifecycleItemCreateAPIView(APIView):
             item = create_timeline_item(agreement, request.user, request.data)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(_serialize_lifecycle_item(item), status=status.HTTP_201_CREATED)
+        return Response(_serialize_lifecycle_item(item, user=request.user), status=status.HTTP_201_CREATED)
 
 
 class LifecycleItemDetailAPIView(APIView):
@@ -544,10 +666,90 @@ class LifecycleItemDetailAPIView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         overlay = LifecycleItemUserState.objects.filter(lifecycle_item=item, user=request.user).first()
-        return Response(_serialize_lifecycle_item(item, overlay), status=status.HTTP_200_OK)
+        return Response(_serialize_lifecycle_item(item, overlay, request.user), status=status.HTTP_200_OK)
+
+
+class LifecycleItemAttachmentAPIView(APIView):
+    parser_classes = [MultiPartParser, FormParser]
+
+    def _get_item(self, request, item_id):
+        item = get_object_or_404(
+            LifecycleItem.objects.select_related(
+                "lifecycle_agreement",
+                "lifecycle_agreement__contract",
+                "lifecycle_agreement__contract__initiator",
+            ),
+            pk=item_id,
+        )
+        if not is_party(request.user, item.lifecycle_agreement.contract):
+            return None, contract_party_response()
+        return item, None
+
+    def get(self, request, item_id):
+        item, error_response = self._get_item(request, item_id)
+        if error_response is not None:
+            return error_response
+        attachments = item.attachments.select_related("uploaded_by").order_by("-created_at")
+        return Response({"results": [_attachment_summary(attachment) for attachment in attachments]}, status=status.HTTP_200_OK)
+
+    def post(self, request, item_id):
+        item, error_response = self._get_item(request, item_id)
+        if error_response is not None:
+            return error_response
+        uploaded_file = request.FILES.get("file")
+        if not uploaded_file:
+            return Response({"detail": "file is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            attachment = upload_lifecycle_item_attachment(item, request.user, uploaded_file, request.data.get("note") or "")
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(_attachment_summary(attachment), status=status.HTTP_201_CREATED)
+
+
+class LifecycleItemResponseAPIView(APIView):
+    def _get_item(self, request, item_id):
+        item = get_object_or_404(
+            LifecycleItem.objects.select_related(
+                "lifecycle_agreement",
+                "lifecycle_agreement__contract",
+                "lifecycle_agreement__contract__initiator",
+            ),
+            pk=item_id,
+        )
+        if not is_party(request.user, item.lifecycle_agreement.contract):
+            return None, contract_party_response()
+        return item, None
+
+    def get(self, request, item_id):
+        item, error_response = self._get_item(request, item_id)
+        if error_response is not None:
+            return error_response
+        responses = item.counterparty_responses.select_related("responder").order_by("-updated_at", "-created_at")
+        return Response({"results": [_response_summary(response) for response in responses]}, status=status.HTTP_200_OK)
+
+    def post(self, request, item_id):
+        item, error_response = self._get_item(request, item_id)
+        if error_response is not None:
+            return error_response
+        try:
+            item_response = submit_lifecycle_item_response(
+                item,
+                request.user,
+                request.data.get("response"),
+                request.data.get("note") or "",
+            )
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(_response_summary(item_response), status=status.HTTP_200_OK)
 
 
 class LifecycleItemActionAPIView(APIView):
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+
     def post(self, request, item_id):
         item = get_object_or_404(LifecycleItem.objects.select_related("lifecycle_agreement", "lifecycle_agreement__contract"), pk=item_id)
         if not is_party(request.user, item.lifecycle_agreement.contract):
@@ -561,4 +763,4 @@ class LifecycleItemActionAPIView(APIView):
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response(_serialize_lifecycle_item(item), status=status.HTTP_200_OK)
+        return Response(_serialize_lifecycle_item(item, user=request.user), status=status.HTTP_200_OK)

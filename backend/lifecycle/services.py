@@ -9,7 +9,7 @@ from django.utils import timezone
 
 from backend.agreement_exchange.models import AgreementExchange
 from backend.agreement_exchange.notifications import find_user_by_email, notify_exchange_recipient
-from backend.contracts.models import ContractVersion, LifecycleAgreement, LifecycleEvent, LifecycleItem, LifecycleItemUserState
+from backend.contracts.models import ContractVersion, LifecycleAgreement, LifecycleEvent, LifecycleItem, LifecycleItemAttachment, LifecycleItemResponse, LifecycleItemUserState
 from backend.notifications.models import Notification
 
 
@@ -715,6 +715,39 @@ ACTION_STATUSES = {
 }
 
 
+DOCUMENT_IMAGE_MAX_SIZE = 25 * 1024 * 1024
+VIDEO_MAX_SIZE = 100 * 1024 * 1024
+
+ALLOWED_PROOF_CONTENT_TYPES = {
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+    "video/mp4",
+    "video/quicktime",
+    "video/webm",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+PROOF_EXTENSION_CONTENT_TYPES = {
+    ".pdf": "application/pdf",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".heic": "image/heic",
+    ".heif": "image/heif",
+    ".mp4": "video/mp4",
+    ".mov": "video/quicktime",
+    ".webm": "video/webm",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+
 def _actor_label(actor):
     name = " ".join(part for part in [getattr(actor, "first_name", ""), getattr(actor, "last_name", "")] if part).strip()
     return name or getattr(actor, "email", "") or "A party"
@@ -743,13 +776,7 @@ def _counterparty_user(contract):
     return find_user_by_email(contract.counterparty_email)
 
 
-def _responsible_party_matches_user(agreement, item, user):
-    if not getattr(user, "is_authenticated", False):
-        return False
-    responsible = _normalise_party_token(item.responsible_party)
-    if not responsible:
-        return False
-
+def _party_value_sets(agreement):
     contract = agreement.contract
     counterparty = _counterparty_user(contract)
     initiator_values = {
@@ -773,12 +800,56 @@ def _responsible_party_matches_user(agreement, item, user):
     }
     initiator_values.discard("")
     counterparty_values.discard("")
+    return initiator_values, counterparty_values, counterparty
+
+
+def _responsible_party_matches_user(agreement, item, user):
+    if not getattr(user, "is_authenticated", False):
+        return False
+    responsible = _normalise_party_token(item.responsible_party)
+    if not responsible:
+        return False
+
+    contract = agreement.contract
+    initiator_values, counterparty_values, _counterparty = _party_value_sets(agreement)
 
     if contract.initiator_id == user.id and responsible in initiator_values:
         return True
     if _normalise_party_token(getattr(user, "email", "")) == _normalise_party_token(contract.counterparty_email) and responsible in counterparty_values:
         return True
     return False
+
+
+def _responsible_party_user(agreement, item):
+    responsible = _normalise_party_token(item.responsible_party)
+    if not responsible:
+        return None
+    initiator_values, counterparty_values, counterparty = _party_value_sets(agreement)
+    if responsible in initiator_values:
+        return agreement.contract.initiator
+    if responsible in counterparty_values:
+        return counterparty
+    return None
+
+
+def can_user_upload_lifecycle_item_proof(item, user):
+    agreement = item.lifecycle_agreement
+    return _responsible_party_matches_user(agreement, item, user)
+
+
+def can_user_respond_to_lifecycle_item_proof(item, user):
+    if not getattr(user, "is_authenticated", False):
+        return False
+    agreement = item.lifecycle_agreement
+    if _responsible_party_matches_user(agreement, item, user):
+        return False
+    contract = agreement.contract
+    user_email = _normalise_party_token(getattr(user, "email", ""))
+    is_counterparty = user_email and user_email == _normalise_party_token(contract.counterparty_email)
+    is_initiator = contract.initiator_id == user.id
+    if not (is_counterparty or is_initiator):
+        return False
+    return item.attachments.exists()
 
 
 def _performance_target_url():
@@ -791,12 +862,41 @@ def _performance_metadata_action(action):
     return action
 
 
-def _performance_notification_title(action):
+def _performance_action_result_label(item, action):
     if action == "mark_paid":
-        return "Payment marked paid"
-    if action == "mark_work_performed":
-        return "Work marked performed"
+        return "Paid"
+    if action in {"mark_work_performed", "mark_completed"}:
+        return "Performed"
     return ACTION_TITLES.get(action, humanize_timeline_action(action))
+
+
+def _proof_content_type(uploaded_file):
+    filename = (getattr(uploaded_file, "name", "") or "").lower()
+    content_type = (getattr(uploaded_file, "content_type", "") or "").lower().strip()
+    if content_type in ALLOWED_PROOF_CONTENT_TYPES:
+        return content_type
+    for extension, extension_content_type in PROOF_EXTENSION_CONTENT_TYPES.items():
+        if filename.endswith(extension):
+            return extension_content_type
+    return content_type
+
+
+def validate_lifecycle_item_attachment_file(uploaded_file):
+    if not uploaded_file:
+        raise ValueError("Proof file is required.")
+    content_type = _proof_content_type(uploaded_file)
+    if content_type not in ALLOWED_PROOF_CONTENT_TYPES:
+        raise ValueError("Unsupported proof file type. Upload a PDF, image, video, DOC, or DOCX file.")
+    size = getattr(uploaded_file, "size", 0) or 0
+    limit = VIDEO_MAX_SIZE if content_type.startswith("video/") else DOCUMENT_IMAGE_MAX_SIZE
+    if size > limit:
+        max_mb = limit // (1024 * 1024)
+        raise ValueError(f"Proof file is too large. Maximum size is {max_mb} MB for this file type.")
+    return content_type, size
+
+
+def _performance_notification_title(item, action):
+    return _performance_action_result_label(item, action)
 
 
 def _performance_notification_message(agreement, item, *, actor, action_title):
@@ -805,7 +905,6 @@ def _performance_notification_message(agreement, item, *, actor, action_title):
         f"Item: {item.title}",
         f"Marked by: {_actor_label(actor)}",
         f"Action: {action_title}",
-        "Awaiting counterparty review.",
     ])
 
 
@@ -813,7 +912,7 @@ def notify_agreement_performance_counterparty(agreement, item, *, actor, action,
     recipient, _email = _timeline_recipient(agreement, actor)
     if not recipient or (getattr(actor, "is_authenticated", False) and recipient.id == actor.id):
         return None
-    action_title = _performance_notification_title(action)
+    action_title = _performance_notification_title(item, action)
     notification = Notification.objects.create(
         user=recipient,
         notification_type="agreement_timeline",
@@ -824,6 +923,154 @@ def notify_agreement_performance_counterparty(agreement, item, *, actor, action,
             "source": "agreement_performance_action",
             "action": _performance_metadata_action(action),
             "api_action": action,
+            "contract_id": str(agreement.contract_id),
+            "lifecycle_agreement_id": str(agreement.id),
+            "lifecycle_item_id": str(item.id),
+            "lifecycle_event_id": str(event.id),
+            "attachment_id": str((event.metadata or {}).get("attachment_id") or "") or None,
+            "item_title": item.title,
+            "actor_id": str(actor.id) if getattr(actor, "is_authenticated", False) else None,
+            "actor_label": _actor_label(actor),
+            "target_url": _performance_target_url(),
+            "redirect_url": _performance_target_url(),
+        },
+    )
+    return {
+        "in_app_created": True,
+        "notification_id": str(notification.id),
+        "recipient_id": str(recipient.id),
+    }
+
+
+def _proof_upload_message(agreement, item, *, actor, attachment):
+    return "\n".join([
+        f"Agreement: {agreement.contract.title or 'Untitled contract'}",
+        f"Item: {item.title}",
+        f"Uploaded by: {_actor_label(actor)}",
+        f"File: {attachment.original_filename}",
+    ])
+
+
+def notify_agreement_performance_proof_counterparty(agreement, item, *, actor, attachment, event):
+    recipient, _email = _timeline_recipient(agreement, actor)
+    if not recipient or (getattr(actor, "is_authenticated", False) and recipient.id == actor.id):
+        return None
+    notification = Notification.objects.create(
+        user=recipient,
+        notification_type="agreement_timeline",
+        title="Proof uploaded",
+        message=_proof_upload_message(agreement, item, actor=actor, attachment=attachment),
+        related_contract=agreement.contract,
+        metadata={
+            "source": "agreement_performance_proof",
+            "action": "upload_proof",
+            "contract_id": str(agreement.contract_id),
+            "lifecycle_agreement_id": str(agreement.id),
+            "lifecycle_item_id": str(item.id),
+            "attachment_id": str(attachment.id),
+            "lifecycle_event_id": str(event.id),
+            "item_title": item.title,
+            "actor_id": str(actor.id) if getattr(actor, "is_authenticated", False) else None,
+            "actor_label": _actor_label(actor),
+            "target_url": _performance_target_url(),
+            "redirect_url": _performance_target_url(),
+        },
+    )
+    return {
+        "in_app_created": True,
+        "notification_id": str(notification.id),
+        "recipient_id": str(recipient.id),
+    }
+
+
+@transaction.atomic
+def upload_lifecycle_item_attachment(item, user, uploaded_file, note="", *, create_event=True, notify_counterparty=True):
+    agreement = LifecycleAgreement.objects.select_for_update(of=("self",)).select_related("contract", "contract__initiator").get(pk=item.lifecycle_agreement_id)
+    item = LifecycleItem.objects.select_related("lifecycle_agreement", "lifecycle_agreement__contract").get(pk=item.pk)
+    filename = getattr(uploaded_file, "name", "") or "proof"
+    if not can_user_upload_lifecycle_item_proof(item, user):
+        raise PermissionError("Only the responsible party can upload proof for this obligation.")
+    content_type, file_size = validate_lifecycle_item_attachment_file(uploaded_file)
+    attachment = LifecycleItemAttachment.objects.create(
+        lifecycle_item=item,
+        lifecycle_agreement=agreement,
+        contract=agreement.contract,
+        uploaded_by=user if getattr(user, "is_authenticated", False) else None,
+        file=uploaded_file,
+        original_filename=filename[:255],
+        content_type=content_type[:120],
+        file_size=file_size,
+        note=(note or "").strip(),
+    )
+    if create_event:
+        actor_label = _actor_label(user)
+        event = create_timeline_event(
+            agreement,
+            event_type="proof_uploaded",
+            title="Proof uploaded",
+            description=f'{actor_label} uploaded proof for "{item.title}".',
+            metadata={
+                "source": "agreement_performance_proof",
+                "action": "upload_proof",
+                "contract_id": str(agreement.contract_id),
+                "lifecycle_agreement_id": str(agreement.id),
+                "item_id": str(item.id),
+                "lifecycle_item_id": str(item.id),
+                "item_type": item.item_type,
+                "item_title": item.title,
+                "attachment_id": str(attachment.id),
+                "filename": attachment.original_filename,
+                "actor_id": str(user.id) if getattr(user, "is_authenticated", False) else None,
+                "actor_label": actor_label,
+            },
+        )
+        notification = notify_agreement_performance_proof_counterparty(agreement, item, actor=user, attachment=attachment, event=event) if notify_counterparty else None
+        if notification:
+            event.metadata = {**(event.metadata or {}), "notification": notification}
+            event.save(update_fields=["metadata"])
+    return attachment
+
+
+
+
+def _response_label(response):
+    return {
+        LifecycleItemResponse.RESPONSE_RECEIVED: "Received",
+        LifecycleItemResponse.RESPONSE_STILL_WAITING: "Still waiting",
+        LifecycleItemResponse.RESPONSE_NOT_RECEIVED: "Not received",
+    }.get(response, humanize_timeline_action(response))
+
+
+def _response_event_title(response):
+    if response == LifecycleItemResponse.RESPONSE_RECEIVED:
+        return "Received"
+    if response == LifecycleItemResponse.RESPONSE_NOT_RECEIVED:
+        return "Not received"
+    return "Still waiting"
+
+
+def _performance_response_message(agreement, item, *, actor, response):
+    return "\n".join([
+        f"Agreement: {agreement.contract.title or 'Untitled contract'}",
+        f"Item: {item.title}",
+        f"Response by: {_actor_label(actor)}",
+        f"Response: {_response_label(response)}",
+    ])
+
+
+def notify_agreement_performance_response_recipient(agreement, item, *, actor, response, event):
+    recipient = _responsible_party_user(agreement, item)
+    if not recipient or (getattr(actor, "is_authenticated", False) and recipient.id == actor.id):
+        return None
+    notification = Notification.objects.create(
+        user=recipient,
+        notification_type="agreement_timeline",
+        title=f"Response: {_response_label(response)}",
+        message=_performance_response_message(agreement, item, actor=actor, response=response),
+        related_contract=agreement.contract,
+        metadata={
+            "source": "agreement_performance_response",
+            "action": response,
             "contract_id": str(agreement.contract_id),
             "lifecycle_agreement_id": str(agreement.id),
             "lifecycle_item_id": str(item.id),
@@ -840,6 +1087,55 @@ def notify_agreement_performance_counterparty(agreement, item, *, actor, action,
         "notification_id": str(notification.id),
         "recipient_id": str(recipient.id),
     }
+
+
+@transaction.atomic
+def submit_lifecycle_item_response(item, user, response, note=""):
+    if response not in {choice[0] for choice in LifecycleItemResponse.RESPONSE_CHOICES}:
+        raise ValueError("Unsupported response.")
+    agreement = LifecycleAgreement.objects.select_for_update(of=("self",)).select_related("contract", "contract__initiator").get(pk=item.lifecycle_agreement_id)
+    item = LifecycleItem.objects.select_for_update(of=("self",)).select_related("lifecycle_agreement", "lifecycle_agreement__contract").get(pk=item.pk)
+    if not can_user_respond_to_lifecycle_item_proof(item, user):
+        raise PermissionError("Only the counterparty can respond to proof for this obligation.")
+
+    item_response, _created = LifecycleItemResponse.objects.update_or_create(
+        lifecycle_item=item,
+        responder=user,
+        defaults={
+            "lifecycle_agreement": agreement,
+            "contract": agreement.contract,
+            "response": response,
+            "note": (note or "").strip(),
+        },
+    )
+    label = _response_event_title(response)
+    actor_label = _actor_label(user)
+    event = create_timeline_event(
+        agreement,
+        event_type="proof_response",
+        title=label,
+        description=f'{actor_label} responded "{label}" for "{item.title}".',
+        metadata={
+            "source": "agreement_performance_response",
+            "action": response,
+            "contract_id": str(agreement.contract_id),
+            "lifecycle_agreement_id": str(agreement.id),
+            "item_id": str(item.id),
+            "lifecycle_item_id": str(item.id),
+            "item_type": item.item_type,
+            "item_title": item.title,
+            "response_id": str(item_response.id),
+            "response": response,
+            "response_label": label,
+            "actor_id": str(user.id) if getattr(user, "is_authenticated", False) else None,
+            "actor_label": actor_label,
+        },
+    )
+    notification = notify_agreement_performance_response_recipient(agreement, item, actor=user, response=response, event=event)
+    if notification:
+        event.metadata = {**(event.metadata or {}), "notification": notification}
+        event.save(update_fields=["metadata"])
+    return item_response
 
 
 def _timeline_notification_message(agreement, item, *, actor, action_title):
@@ -1094,6 +1390,11 @@ def perform_timeline_item_action(item, user, action, data=None):
         target_status = ACTION_STATUSES.get(action)
         if target_status and item.status == target_status:
             return item
+        uploaded_file = data.get("file") if hasattr(data, "get") else None
+        if uploaded_file:
+            validate_lifecycle_item_attachment_file(uploaded_file)
+        elif not LifecycleItemAttachment.objects.filter(lifecycle_item=item, uploaded_by=user).exists():
+            raise ValueError("Upload proof or receipt below before marking this obligation performed.")
 
     metadata = dict(item.metadata or {})
     note = data.get("note") or data.get("message") or ""
@@ -1106,6 +1407,25 @@ def perform_timeline_item_action(item, user, action, data=None):
         item.due_date = parse_datetime(due_date) if isinstance(due_date, str) else due_date
     if action in {"upload_or_attach_document"}:
         metadata.setdefault("documents", []).append({"title": data.get("document_title") or data.get("title") or "Document", "url": data.get("document_url") or ""})
+    attachment = None
+    if action in PERFORMANCE_ACTIONS:
+        uploaded_file = data.get("file") if hasattr(data, "get") else None
+        if uploaded_file:
+            attachment = upload_lifecycle_item_attachment(
+                item,
+                user,
+                uploaded_file,
+                note,
+                create_event=False,
+                notify_counterparty=False,
+            )
+        else:
+            attachment = (
+                LifecycleItemAttachment.objects
+                .filter(lifecycle_item=item, uploaded_by=user)
+                .order_by("-created_at")
+                .first()
+            )
     if action in ACTION_STATUSES:
         item.status = ACTION_STATUSES[action]
     if action in PERFORMANCE_ACTIONS:
@@ -1113,6 +1433,7 @@ def perform_timeline_item_action(item, user, action, data=None):
             "status": item.status,
             "acted_at": timezone.now().isoformat(),
             "actor_id": str(user.id) if getattr(user, "is_authenticated", False) else None,
+            "attachment_id": str(attachment.id) if attachment else None,
         }
     if action == "propose_change_order":
         item.item_type = LifecycleItem.TYPE_CHANGE_ORDER
@@ -1122,7 +1443,7 @@ def perform_timeline_item_action(item, user, action, data=None):
     item.save(update_fields=["item_type", "status", "due_date", "metadata", "updated_at"])
 
     event_type = ACTION_EVENT_MAP[action]
-    title = ACTION_TITLES[action]
+    title = _performance_action_result_label(item, action) if action in PERFORMANCE_ACTIONS else ACTION_TITLES[action]
     performance_started = False
     if action in PERFORMANCE_ACTIONS:
         performance_started = maybe_start_agreement_performance(agreement, action, user)
@@ -1138,8 +1459,11 @@ def perform_timeline_item_action(item, user, action, data=None):
             "item_type": item.item_type,
             "action": action,
             "actor_id": str(user.id) if getattr(user, "is_authenticated", False) else None,
+            "actor_label": _actor_label(user),
             "status": item.status,
             "result_status": item.status,
+            "result_label": title,
+            "attachment_id": str(attachment.id) if attachment else None,
             "performance_started": performance_started,
         },
     )

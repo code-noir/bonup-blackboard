@@ -1038,6 +1038,106 @@ class LifecycleItemUserState(models.Model):
         return f"{self.lifecycle_item_id} - {self.user_id}"
 
 
+class LifecycleItemAttachment(models.Model):
+    KIND_PROOF_RECEIPT = "proof_receipt"
+    KIND_CHOICES = [
+        (KIND_PROOF_RECEIPT, "Proof / Receipt"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    lifecycle_item = models.ForeignKey(
+        LifecycleItem,
+        on_delete=models.CASCADE,
+        related_name="attachments",
+    )
+    lifecycle_agreement = models.ForeignKey(
+        LifecycleAgreement,
+        on_delete=models.CASCADE,
+        related_name="item_attachments",
+    )
+    contract = models.ForeignKey(
+        Contract,
+        on_delete=models.CASCADE,
+        related_name="lifecycle_item_attachments",
+    )
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="uploaded_lifecycle_item_attachments",
+    )
+    file = models.FileField(upload_to="lifecycle_item_attachments/%Y/%m/%d/")
+    original_filename = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=120, blank=True, default="")
+    file_size = models.PositiveBigIntegerField(default=0)
+    kind = models.CharField(max_length=40, choices=KIND_CHOICES, default=KIND_PROOF_RECEIPT)
+    note = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["lifecycle_item", "-created_at"], name="lifec_attach_item_idx"),
+            models.Index(fields=["lifecycle_agreement", "-created_at"], name="lifec_attach_agree_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.original_filename} - {self.lifecycle_item_id}"
+
+
+class LifecycleItemResponse(models.Model):
+    RESPONSE_RECEIVED = "received"
+    RESPONSE_STILL_WAITING = "still_waiting"
+    RESPONSE_NOT_RECEIVED = "not_received"
+
+    RESPONSE_CHOICES = [
+        (RESPONSE_RECEIVED, "Received"),
+        (RESPONSE_STILL_WAITING, "Still waiting"),
+        (RESPONSE_NOT_RECEIVED, "Not received"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    lifecycle_item = models.ForeignKey(
+        LifecycleItem,
+        on_delete=models.CASCADE,
+        related_name="counterparty_responses",
+    )
+    lifecycle_agreement = models.ForeignKey(
+        LifecycleAgreement,
+        on_delete=models.CASCADE,
+        related_name="item_responses",
+    )
+    contract = models.ForeignKey(
+        Contract,
+        on_delete=models.CASCADE,
+        related_name="lifecycle_item_responses",
+    )
+    responder = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="lifecycle_item_responses",
+    )
+    response = models.CharField(max_length=40, choices=RESPONSE_CHOICES)
+    note = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["lifecycle_item", "responder"], name="lifec_item_response_unique"),
+        ]
+        ordering = ["-updated_at", "-created_at"]
+        indexes = [
+            models.Index(fields=["lifecycle_item", "-updated_at"], name="lifec_resp_item_idx"),
+            models.Index(fields=["lifecycle_agreement", "-updated_at"], name="lifec_resp_agree_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.response} - {self.lifecycle_item_id}"
+
+
 class LifecycleEvent(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     lifecycle_agreement = models.ForeignKey(

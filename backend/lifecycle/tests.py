@@ -11,7 +11,7 @@ from backend.agreement_exchange.models import AgreementExchange
 from backend.agreement_exchange.services import sign_exchange
 from backend.api.contracts.services.visibility_service import resolve_contract_dashboard_status
 from backend.api.tests.helpers import authed_client, make_contract, make_user, make_version
-from backend.contracts.models import ContractObligation, ContractServiceObligation, LifecycleAgreement, LifecycleEvent, LifecycleItem, LifecycleItemAttachment, LifecycleItemResponse, LifecycleItemUserState
+from backend.contracts.models import ContractObligation, ContractServiceObligation, LifecycleAgreement, LifecycleEvent, LifecycleItem, LifecycleItemAttachment, LifecycleItemMessage, LifecycleItemResponse, LifecycleItemUserState
 from backend.notifications.models import Notification
 from backend.lifecycle.services import LifecycleNotReadyError, get_or_create_lifecycle_for_signed_contract
 
@@ -835,6 +835,72 @@ class LifecycleFoundationTests(TestCase):
         self.assertEqual(stranger_response.status_code, 403)
         self.assertEqual(LifecycleItemResponse.objects.filter(lifecycle_item=item).count(), 0)
         self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type="proof_response").count(), 0)
+
+    def test_lifecycle_item_messages_are_shared_between_parties_and_notify_counterparty(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_SERVICE_WORK,
+            title="Provide loan funds",
+            responsible_party=str(self.initiator.id),
+            status=LifecycleItem.STATUS_COMPLETED,
+            created_by=self.initiator,
+        )
+
+        response = self.initiator_client.post(
+            f"/api/lifecycle/items/{item.id}/messages/",
+            {"body": "Please confirm once the deposit clears."},
+            format="json",
+        )
+        counterparty_messages = self.counterparty_client.get(f"/api/lifecycle/items/{item.id}/messages/")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(counterparty_messages.status_code, 200)
+        self.assertEqual(counterparty_messages.data["results"][0]["body"], "Please confirm once the deposit clears.")
+        self.assertFalse(counterparty_messages.data["results"][0]["is_mine"])
+        message = LifecycleItemMessage.objects.get(pk=response.data["id"])
+        self.assertEqual(message.lifecycle_item, item)
+        self.assertEqual(message.lifecycle_agreement, agreement)
+        self.assertEqual(message.contract, self.contract)
+        self.assertEqual(message.sender, self.initiator)
+        notification = Notification.objects.get(user=self.counterparty, metadata__source="agreement_performance_message")
+        self.assertEqual(notification.metadata["lifecycle_item_id"], str(item.id))
+        self.assertEqual(notification.metadata["message_id"], str(message.id))
+        self.assertEqual(notification.metadata["redirect_url"], "/agreement-performance")
+        self.assertEqual(Notification.objects.filter(user=self.initiator, metadata__source="agreement_performance_message").count(), 0)
+        item.refresh_from_db()
+        agreement.refresh_from_db()
+        self.contract.refresh_from_db()
+        self.assertEqual(item.status, LifecycleItem.STATUS_COMPLETED)
+        self.assertEqual(agreement.status, LifecycleAgreement.STATUS_SETUP)
+        self.assertEqual(self.contract.status, "signed")
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type__icontains="message").count(), 0)
+
+    def test_lifecycle_item_message_rejects_blank_and_unrelated_users(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_SERVICE_WORK,
+            title="Provide loan funds",
+            responsible_party=str(self.initiator.id),
+            created_by=self.initiator,
+        )
+
+        blank = self.initiator_client.post(
+            f"/api/lifecycle/items/{item.id}/messages/",
+            {"body": "   "},
+            format="json",
+        )
+        stranger = self.stranger_client.post(
+            f"/api/lifecycle/items/{item.id}/messages/",
+            {"body": "Not a party"},
+            format="json",
+        )
+
+        self.assertEqual(blank.status_code, 400)
+        self.assertEqual(stranger.status_code, 403)
+        self.assertEqual(LifecycleItemMessage.objects.filter(lifecycle_item=item).count(), 0)
+        self.assertEqual(Notification.objects.filter(metadata__source="agreement_performance_message").count(), 0)
 
     def test_change_order_proposal_and_acceptance_create_events_and_notifications(self):
         agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)

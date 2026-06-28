@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import api, { tokenStorage } from '@/api/client'
 
 type BoardTab = 'payments' | 'work' | 'due_dates' | 'activity' | 'changes'
@@ -85,6 +85,21 @@ type LifecycleAttachment = {
 }
 
 type AttachmentListResponse = { results: LifecycleAttachment[] }
+
+type LifecycleMessage = {
+  id: string
+  lifecycle_item_id?: string
+  lifecycle_agreement_id?: string
+  contract_id?: string
+  body: string
+  sender?: { id?: string; email?: string; name?: string } | null
+  sender_email?: string | null
+  created_at?: string
+  updated_at?: string
+  is_mine?: boolean
+}
+
+type MessageListResponse = { results: LifecycleMessage[] }
 
 type LifecycleBoardResponse = {
   contract?: { id: string; title?: string; counterparty_name?: string | null; counterparty_email?: string | null; status?: string }
@@ -452,6 +467,10 @@ export default function AgreementPerformance() {
   const [responseBusy, setResponseBusy] = useState('')
   const [attachmentLoading, setAttachmentLoading] = useState('')
   const [attachmentsByItemId, setAttachmentsByItemId] = useState<Record<string, LifecycleAttachment[]>>({})
+  const [messagesByItemId, setMessagesByItemId] = useState<Record<string, LifecycleMessage[]>>({})
+  const [messageLoading, setMessageLoading] = useState('')
+  const [messageSending, setMessageSending] = useState('')
+  const [messageError, setMessageError] = useState('')
   const [error, setError] = useState('')
   const [boardError, setBoardError] = useState('')
   const [feedback, setFeedback] = useState('')
@@ -604,12 +623,58 @@ export default function AgreementPerformance() {
     }
   }
 
+  async function loadMessages(itemId: string, options: { quiet?: boolean } = {}) {
+    if (!itemId) return
+    if (!options.quiet) {
+      setMessageLoading(itemId)
+      setMessageError('')
+    }
+    try {
+      const response = await api.get<MessageListResponse>(`/lifecycle/items/${itemId}/messages/`)
+      setMessagesByItemId((current) => ({ ...current, [itemId]: response.data.results || [] }))
+    } catch (err) {
+      if (!options.quiet) setMessageError(getErrorMessage(err, 'Unable to load messages.'))
+    } finally {
+      if (!options.quiet) setMessageLoading('')
+    }
+  }
+
+  async function sendMessage(item: TimelineItem, body: string) {
+    if (!item?.id) {
+      setMessageError('Unable to send message for this obligation.')
+      return
+    }
+    const trimmed = body.trim()
+    if (!trimmed) return
+    setMessageSending(item.id)
+    setMessageError('')
+    try {
+      const response = await api.post<LifecycleMessage>(`/lifecycle/items/${item.id}/messages/`, { body: trimmed })
+      setMessagesByItemId((current) => ({ ...current, [item.id]: [...(current[item.id] || []), response.data] }))
+      void loadMessages(item.id, { quiet: true })
+    } catch (err) {
+      setMessageError(getErrorMessage(err, 'Unable to send message.'))
+    } finally {
+      setMessageSending('')
+    }
+  }
+
   useEffect(() => {
     void loadPerformanceAgreements()
   }, [])
 
   useEffect(() => {
     if (selectedItem) void loadAttachments(selectedItem.id)
+  }, [selectedItem?.id])
+
+  useEffect(() => {
+    const selectedItemId = selectedItem?.id
+    if (!selectedItemId) return
+    void loadMessages(selectedItemId)
+    const intervalId = window.setInterval(() => {
+      void loadMessages(selectedItemId, { quiet: true })
+    }, 4000)
+    return () => window.clearInterval(intervalId)
   }, [selectedItem?.id])
 
   const rawBoardItems = useMemo(() => ([
@@ -624,6 +689,7 @@ export default function AgreementPerformance() {
 
   const selectedItemEvents = selectedItem ? itemHistoryEvents(events, selectedItem) : []
   const selectedItemAttachments = selectedItem ? attachmentsByItemId[selectedItem.id] || [] : []
+  const selectedItemMessages = selectedItem ? messagesByItemId[selectedItem.id] || [] : []
   const activeItems = activeTab === 'payments' ? payments : activeTab === 'work' ? workItems : []
   const sourceText = signedAgreementText(boardData?.signed_version?.content_snapshot)
 
@@ -726,12 +792,17 @@ export default function AgreementPerformance() {
                 attachments={selectedItemAttachments}
                 attachmentsLoading={attachmentLoading === selectedItem.id}
                 attachmentBusy={attachmentBusy === selectedItem.id}
+                messages={selectedItemMessages}
+                messagesLoading={messageLoading === selectedItem.id}
+                messageSending={messageSending === selectedItem.id}
+                messageError={messageError}
                 responseBusy={responseBusy}
                 busy={actionBusy}
                 onBack={() => setSelectedItem(null)}
                 onViewSource={() => setShowSource(true)}
                 onAction={(action) => void runAction(selectedItem, action)}
                 onUploadProof={(file, note) => uploadProof(selectedItem, file, note)}
+                onSendMessage={(body) => void sendMessage(selectedItem, body)}
                 onRespond={(response, note) => void submitProofResponse(selectedItem, response, note)}
               />
             ) : activeTab === 'activity' ? (
@@ -1170,6 +1241,91 @@ function CounterpartyReviewSection({
 }
 
 
+function MessagesPanel({
+  messages,
+  loading,
+  sending,
+  error,
+  onSend,
+}: {
+  messages: LifecycleMessage[]
+  loading: boolean
+  sending: boolean
+  error: string
+  onSend: (body: string) => void
+}) {
+  const [draft, setDraft] = useState('')
+  const listRef = useRef<HTMLDivElement | null>(null)
+  const safeMessages = Array.isArray(messages) ? messages.filter(Boolean) : []
+
+  useEffect(() => {
+    const node = listRef.current
+    if (node) node.scrollTop = node.scrollHeight
+  }, [safeMessages.length])
+
+  function submit() {
+    const trimmed = draft.trim()
+    if (!trimmed || sending) return
+    onSend(trimmed)
+    setDraft('')
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== 'Enter' || event.shiftKey) return
+    event.preventDefault()
+    submit()
+  }
+
+  return (
+    <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 10 }}>
+        <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Messages</p>
+        {loading && <span style={{ fontSize: 11, color: '#64748B', fontWeight: 800 }}>Loading...</span>}
+      </div>
+      <div ref={listRef} style={{ display: 'grid', gap: 10, maxHeight: 320, overflowY: 'auto', background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 8, padding: 12 }}>
+        {safeMessages.length === 0 ? (
+          <p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>No messages yet. Start the conversation.</p>
+        ) : safeMessages.map((message, index) => {
+          const mine = Boolean(message.is_mine)
+          const sender = message.sender?.name || message.sender?.email || message.sender_email || 'A party'
+          const createdAt = message.created_at || message.updated_at || ''
+          const body = typeof message.body === 'string' ? message.body : ''
+          return (
+            <div key={message.id || `${createdAt}-${index}`} style={{ display: 'grid', justifyItems: mine ? 'end' : 'start' }}>
+              <div style={{ maxWidth: '78%', background: mine ? '#0F1F3D' : '#FFFFFF', color: mine ? '#FFFFFF' : '#0F1F3D', border: mine ? '1px solid #0F1F3D' : '1px solid #E5E7EB', borderRadius: 8, padding: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 11, fontWeight: 900, color: mine ? '#DBEAFE' : '#334155' }}>{mine ? 'You' : sender}</span>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: mine ? '#BFDBFE' : '#94A3B8' }}>{eventTimeLabel(createdAt)}</span>
+                </div>
+                <p style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', margin: 0 }}>{body}</p>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      {error && <p style={{ fontSize: 12, color: '#B91C1C', margin: '10px 0 0', fontWeight: 800 }}>{error}</p>}
+      <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+        <textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Write a message"
+          maxLength={2000}
+          rows={3}
+          style={{ border: '1px solid #CBD5E1', borderRadius: 8, padding: 10, background: '#FFFFFF', color: '#0F1F3D', fontSize: 13, resize: 'vertical', fontFamily: 'inherit' }}
+        />
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, color: '#94A3B8' }}>Press Enter to send. Shift+Enter adds a line.</span>
+          <button type="button" onClick={submit} disabled={sending || !draft.trim()} style={{ ...primaryButtonStyle, opacity: sending || !draft.trim() ? 0.65 : 1, cursor: sending || !draft.trim() ? 'default' : 'pointer' }}>
+            {sending ? 'Sending...' : 'Send'}
+          </button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+
 function PlaceholderPanel({ title }: { title: string }) {
   return (
     <section style={{ background: '#FFFFFF', border: '1px dashed #CBD5E1', borderRadius: 8, padding: 14 }}>
@@ -1186,12 +1342,17 @@ function PerformanceThread({
   attachments,
   attachmentsLoading,
   attachmentBusy,
+  messages,
+  messagesLoading,
+  messageSending,
+  messageError,
   responseBusy,
   busy,
   onBack,
   onViewSource,
   onAction,
   onUploadProof,
+  onSendMessage,
   onRespond,
 }: {
   agreementTitle: string
@@ -1200,12 +1361,17 @@ function PerformanceThread({
   attachments: LifecycleAttachment[]
   attachmentsLoading: boolean
   attachmentBusy: boolean
+  messages: LifecycleMessage[]
+  messagesLoading: boolean
+  messageSending: boolean
+  messageError: string
   responseBusy: string
   busy: string
   onBack: () => void
   onViewSource: () => void
   onAction: (action: string) => void
   onUploadProof: (file: File, note: string) => Promise<void>
+  onSendMessage: (body: string) => void
   onRespond: (response: string, note: string) => void
 }) {
   const action = itemAction(item)
@@ -1248,7 +1414,7 @@ function PerformanceThread({
           )}
 
           <ProofReceiptsSection attachments={attachments} loading={attachmentsLoading} busy={attachmentBusy} canUpload={Boolean(item.can_upload_proof)} onUpload={onUploadProof} />
-          <PlaceholderPanel title="Messages" />
+          <MessagesPanel messages={messages} loading={messagesLoading} sending={messageSending} error={messageError} onSend={onSendMessage} />
           <CounterpartyReviewSection item={item} busy={responseBusy} onRespond={onRespond} />
 
           <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>

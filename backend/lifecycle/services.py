@@ -9,7 +9,7 @@ from django.utils import timezone
 
 from backend.agreement_exchange.models import AgreementExchange
 from backend.agreement_exchange.notifications import find_user_by_email, notify_exchange_recipient
-from backend.contracts.models import ContractVersion, LifecycleAgreement, LifecycleEvent, LifecycleItem, LifecycleItemAttachment, LifecycleItemResponse, LifecycleItemUserState
+from backend.contracts.models import ContractVersion, LifecycleAgreement, LifecycleEvent, LifecycleItem, LifecycleItemAttachment, LifecycleItemMessage, LifecycleItemResponse, LifecycleItemUserState
 from backend.notifications.models import Notification
 
 
@@ -1136,6 +1136,70 @@ def submit_lifecycle_item_response(item, user, response, note=""):
         event.metadata = {**(event.metadata or {}), "notification": notification}
         event.save(update_fields=["metadata"])
     return item_response
+
+
+
+
+def _performance_message_notification_message(agreement, item, *, actor, body):
+    preview = " ".join(str(body or "").split())[:240]
+    return "\n".join([
+        f"Agreement: {agreement.contract.title or 'Untitled contract'}",
+        f"Item: {item.title}",
+        f"Message from: {_actor_label(actor)}",
+        preview,
+    ])
+
+
+def notify_agreement_performance_message_counterparty(agreement, item, *, actor, message):
+    recipient, _email = _timeline_recipient(agreement, actor)
+    if not recipient or (getattr(actor, "is_authenticated", False) and recipient.id == actor.id):
+        return None
+    notification = Notification.objects.create(
+        user=recipient,
+        notification_type="agreement_timeline",
+        title="New Agreement Performance message",
+        message=_performance_message_notification_message(agreement, item, actor=actor, body=message.body),
+        related_contract=agreement.contract,
+        metadata={
+            "source": "agreement_performance_message",
+            "contract_id": str(agreement.contract_id),
+            "lifecycle_agreement_id": str(agreement.id),
+            "lifecycle_item_id": str(item.id),
+            "message_id": str(message.id),
+            "item_title": item.title,
+            "actor_id": str(actor.id) if getattr(actor, "is_authenticated", False) else None,
+            "actor_label": _actor_label(actor),
+            "target_url": _performance_target_url(),
+            "redirect_url": _performance_target_url(),
+        },
+    )
+    return {
+        "in_app_created": True,
+        "notification_id": str(notification.id),
+        "recipient_id": str(recipient.id),
+    }
+
+
+@transaction.atomic
+def create_lifecycle_item_message(item, user, body):
+    if not getattr(user, "is_authenticated", False):
+        raise PermissionError("Only agreement participants can send messages.")
+    text = (body or "").strip()
+    if not text:
+        raise ValueError("Message body is required.")
+    if len(text) > 2000:
+        raise ValueError("Message must be 2000 characters or fewer.")
+
+    agreement = LifecycleAgreement.objects.select_for_update(of=("self",)).select_related("contract", "contract__initiator").get(pk=item.lifecycle_agreement_id)
+    message = LifecycleItemMessage.objects.create(
+        lifecycle_item=item,
+        lifecycle_agreement=agreement,
+        contract=agreement.contract,
+        sender=user,
+        body=text,
+    )
+    notify_agreement_performance_message_counterparty(agreement, item, actor=user, message=message)
+    return message
 
 
 def _timeline_notification_message(agreement, item, *, actor, action_title):

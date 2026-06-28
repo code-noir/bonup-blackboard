@@ -14,6 +14,7 @@ from backend.contracts.models import (
     ContractServiceObligation,
     LifecycleAgreement,
     LifecycleItem,
+    LifecycleItemMessage,
     LifecycleItemResponse,
     LifecycleItemUserState,
 )
@@ -21,6 +22,7 @@ from backend.lifecycle.services import (
     LifecycleNotReadyError,
     can_user_respond_to_lifecycle_item_proof,
     can_user_upload_lifecycle_item_proof,
+    create_lifecycle_item_message,
     create_timeline_item,
     get_or_create_lifecycle_for_signed_contract,
     perform_timeline_item_action,
@@ -86,6 +88,21 @@ def _attachment_summary(attachment):
         "created_at": _iso(attachment.created_at),
         "updated_at": _iso(attachment.updated_at),
         "file_url": file_url,
+    }
+
+
+def _message_summary(message, user=None):
+    return {
+        "id": str(message.id),
+        "lifecycle_item_id": str(message.lifecycle_item_id),
+        "lifecycle_agreement_id": str(message.lifecycle_agreement_id),
+        "contract_id": str(message.contract_id),
+        "body": message.body,
+        "sender": _party_summary(message.sender),
+        "sender_email": message.sender.email if message.sender else None,
+        "created_at": _iso(message.created_at),
+        "updated_at": _iso(message.updated_at),
+        "is_mine": bool(user and getattr(user, "is_authenticated", False) and message.sender_id == user.id),
     }
 
 
@@ -706,6 +723,40 @@ class LifecycleItemAttachmentAPIView(APIView):
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(_attachment_summary(attachment), status=status.HTTP_201_CREATED)
+
+
+class LifecycleItemMessageAPIView(APIView):
+    def _get_item(self, request, item_id):
+        item = get_object_or_404(
+            LifecycleItem.objects.select_related(
+                "lifecycle_agreement",
+                "lifecycle_agreement__contract",
+                "lifecycle_agreement__contract__initiator",
+            ),
+            pk=item_id,
+        )
+        if not is_party(request.user, item.lifecycle_agreement.contract):
+            return None, contract_party_response()
+        return item, None
+
+    def get(self, request, item_id):
+        item, error_response = self._get_item(request, item_id)
+        if error_response is not None:
+            return error_response
+        messages = item.messages.select_related("sender").order_by("created_at", "id")
+        return Response({"results": [_message_summary(message, request.user) for message in messages]}, status=status.HTTP_200_OK)
+
+    def post(self, request, item_id):
+        item, error_response = self._get_item(request, item_id)
+        if error_response is not None:
+            return error_response
+        try:
+            message = create_lifecycle_item_message(item, request.user, request.data.get("body"))
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(_message_summary(message, request.user), status=status.HTTP_201_CREATED)
 
 
 class LifecycleItemResponseAPIView(APIView):

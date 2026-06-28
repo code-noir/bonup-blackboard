@@ -1138,6 +1138,43 @@ class LifecycleItemResponse(models.Model):
         return f"{self.response} - {self.lifecycle_item_id}"
 
 
+class LifecycleItemMessage(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    lifecycle_item = models.ForeignKey(
+        LifecycleItem,
+        on_delete=models.CASCADE,
+        related_name="messages",
+    )
+    lifecycle_agreement = models.ForeignKey(
+        LifecycleAgreement,
+        on_delete=models.CASCADE,
+        related_name="item_messages",
+    )
+    contract = models.ForeignKey(
+        Contract,
+        on_delete=models.CASCADE,
+        related_name="lifecycle_item_messages",
+    )
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="lifecycle_item_messages",
+    )
+    body = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        indexes = [
+            models.Index(fields=["lifecycle_item", "created_at"], name="lifec_msg_item_idx"),
+            models.Index(fields=["lifecycle_agreement", "created_at"], name="lifec_msg_agree_idx"),
+        ]
+
+    def __str__(self):
+        return f"Message {self.id} - {self.lifecycle_item_id}"
+
+
 class LifecycleEvent(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     lifecycle_agreement = models.ForeignKey(

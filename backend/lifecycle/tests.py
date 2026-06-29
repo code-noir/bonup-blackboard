@@ -11,7 +11,7 @@ from backend.agreement_exchange.models import AgreementExchange
 from backend.agreement_exchange.services import sign_exchange
 from backend.api.contracts.services.visibility_service import resolve_contract_dashboard_status
 from backend.api.tests.helpers import authed_client, make_contract, make_user, make_version
-from backend.contracts.models import ContractObligation, ContractServiceObligation, LifecycleAgreement, LifecycleEvent, LifecycleItem, LifecycleItemAttachment, LifecycleItemMessage, LifecycleItemResponse, LifecycleItemUserState
+from backend.contracts.models import ContractObligation, ContractServiceObligation, LifecycleAgreement, LifecycleChangeProposal, LifecycleChangeProposalMessage, LifecycleEvent, LifecycleItem, LifecycleItemAttachment, LifecycleItemMessage, LifecycleItemResponse, LifecycleItemUserState
 from backend.notifications.models import Notification
 from backend.lifecycle.services import LifecycleNotReadyError, get_or_create_lifecycle_for_signed_contract
 
@@ -958,6 +958,305 @@ class LifecycleFoundationTests(TestCase):
         self.assertEqual(agreement.status, LifecycleAgreement.STATUS_SETUP)
         notification = Notification.objects.get(notification_type="agreement_timeline")
         self.assertIn("Weekly cleanup add-on", notification.message)
+
+    def test_add_on_change_proposal_create_lists_and_notifies_counterparty(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+
+        response = self.initiator_client.post(
+            f"/api/lifecycle/agreements/{agreement.id}/proposals/",
+            {
+                "proposal_type": "add_on",
+                "title": "Extend rental two days",
+                "description": "Add two more performance days.",
+                "responsible_party": "counterparty",
+                "amount": "125.50",
+                "due_date": "2026-07-15",
+                "note": "Please review this add-on.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        proposal = LifecycleChangeProposal.objects.get(pk=response.data["id"])
+        self.contract.refresh_from_db()
+        agreement.refresh_from_db()
+        self.assertEqual(proposal.proposal_type, LifecycleChangeProposal.TYPE_ADD_ON)
+        self.assertEqual(proposal.status, LifecycleChangeProposal.STATUS_PROPOSED)
+        self.assertIsNone(proposal.affected_item_id)
+        self.assertEqual(self.contract.status, "signed")
+        self.assertEqual(agreement.status, LifecycleAgreement.STATUS_SETUP)
+        self.assertEqual(LifecycleItem.objects.filter(lifecycle_agreement=agreement, source_type=LifecycleItem.SOURCE_ADD_ON).count(), 0)
+
+        notification = Notification.objects.get(user=self.counterparty, metadata__source="agreement_performance_change_proposal")
+        self.assertEqual(notification.metadata["action"], "create_add_on")
+        self.assertEqual(notification.metadata["proposal_id"], str(proposal.id))
+        self.assertEqual(notification.metadata["redirect_url"], "/agreement-performance")
+        self.assertEqual(Notification.objects.filter(user=self.initiator, metadata__source="agreement_performance_change_proposal").count(), 0)
+
+        initiator_list = self.initiator_client.get(f"/api/lifecycle/agreements/{agreement.id}/proposals/")
+        counterparty_list = self.counterparty_client.get(f"/api/lifecycle/agreements/{agreement.id}/proposals/")
+        stranger_list = self.stranger_client.get(f"/api/lifecycle/agreements/{agreement.id}/proposals/")
+        self.assertEqual(initiator_list.status_code, 200)
+        self.assertEqual(counterparty_list.status_code, 200)
+        self.assertEqual(stranger_list.status_code, 403)
+        self.assertEqual(initiator_list.data["results"][0]["id"], str(proposal.id))
+        self.assertEqual(counterparty_list.data["results"][0]["id"], str(proposal.id))
+
+    def test_change_order_proposal_requires_affected_item_and_does_not_mutate_item(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_SERVICE_WORK,
+            title="Initial service scope",
+            description="Original scope",
+            status=LifecycleItem.STATUS_PENDING,
+            created_by=self.initiator,
+        )
+
+        missing = self.initiator_client.post(
+            f"/api/lifecycle/agreements/{agreement.id}/proposals/",
+            {"proposal_type": "change_order", "title": "Split work", "description": "Split the scope."},
+            format="json",
+        )
+        self.assertEqual(missing.status_code, 400)
+
+        response = self.counterparty_client.post(
+            f"/api/lifecycle/agreements/{agreement.id}/proposals/",
+            {
+                "proposal_type": "change_order",
+                "affected_item_id": str(item.id),
+                "title": "Split work",
+                "description": "Split the scope into two milestones.",
+                "amount": "50.00",
+                "due_date": "2026-08-01",
+                "responsible_party": "initiator",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        item.refresh_from_db()
+        self.contract.refresh_from_db()
+        agreement.refresh_from_db()
+        proposal = LifecycleChangeProposal.objects.get(pk=response.data["id"])
+        self.assertEqual(proposal.affected_item_id, item.id)
+        self.assertEqual(item.item_type, LifecycleItem.TYPE_SERVICE_WORK)
+        self.assertEqual(item.status, LifecycleItem.STATUS_PENDING)
+        self.assertEqual(self.contract.status, "signed")
+        self.assertEqual(agreement.status, LifecycleAgreement.STATUS_SETUP)
+        notification = Notification.objects.get(user=self.initiator, metadata__source="agreement_performance_change_proposal")
+        self.assertEqual(notification.metadata["action"], "create_change_order")
+        self.assertEqual(notification.metadata["affected_item_id"], str(item.id))
+
+    def test_unrelated_user_cannot_create_or_retrieve_change_proposal(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        response = self.initiator_client.post(
+            f"/api/lifecycle/agreements/{agreement.id}/proposals/",
+            {
+                "proposal_type": "add_on",
+                "title": "Extra service",
+                "description": "Add extra service.",
+                "responsible_party": "initiator",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+
+        stranger_create = self.stranger_client.post(
+            f"/api/lifecycle/agreements/{agreement.id}/proposals/",
+            {
+                "proposal_type": "add_on",
+                "title": "Bad proposal",
+                "description": "Should fail.",
+                "responsible_party": "initiator",
+            },
+            format="json",
+        )
+        stranger_detail = self.stranger_client.get(f"/api/lifecycle/proposals/{response.data['id']}/")
+        self.assertEqual(stranger_create.status_code, 403)
+        self.assertEqual(stranger_detail.status_code, 403)
+        self.assertEqual(LifecycleChangeProposal.objects.count(), 1)
+
+    def test_change_proposal_messages_are_proposal_scoped_and_notify_other_party(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        proposal = LifecycleChangeProposal.objects.create(
+            lifecycle_agreement=agreement,
+            contract=self.contract,
+            proposal_type=LifecycleChangeProposal.TYPE_ADD_ON,
+            status=LifecycleChangeProposal.STATUS_PROPOSED,
+            proposed_by=self.counterparty,
+            title="Monthly check-in",
+            description="Add a recurring performance check-in.",
+            responsible_party=LifecycleChangeProposal.RESPONSIBLE_COUNTERPARTY,
+        )
+
+        empty = self.initiator_client.get(f"/api/lifecycle/proposals/{proposal.id}/messages/")
+        response = self.counterparty_client.post(
+            f"/api/lifecycle/proposals/{proposal.id}/messages/",
+            {"body": "Please review this add-on before the next deadline."},
+            format="json",
+        )
+        initiator_list = self.initiator_client.get(f"/api/lifecycle/proposals/{proposal.id}/messages/")
+        stranger_list = self.stranger_client.get(f"/api/lifecycle/proposals/{proposal.id}/messages/")
+
+        self.assertEqual(empty.status_code, 200)
+        self.assertEqual(empty.data["results"], [])
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["body"], "Please review this add-on before the next deadline.")
+        self.assertTrue(response.data["is_mine"])
+        self.assertEqual(initiator_list.status_code, 200)
+        self.assertEqual(initiator_list.data["results"][0]["id"], response.data["id"])
+        self.assertFalse(initiator_list.data["results"][0]["is_mine"])
+        self.assertEqual(stranger_list.status_code, 403)
+        self.assertEqual(LifecycleChangeProposalMessage.objects.filter(proposal=proposal).count(), 1)
+
+        proposal.refresh_from_db()
+        self.contract.refresh_from_db()
+        self.assertEqual(proposal.status, LifecycleChangeProposal.STATUS_PROPOSED)
+        self.assertEqual(self.contract.status, "signed")
+        notification = Notification.objects.get(user=self.initiator, metadata__source="agreement_performance_change_proposal_message")
+        self.assertEqual(notification.metadata["proposal_id"], str(proposal.id))
+        self.assertEqual(Notification.objects.filter(user=self.counterparty, metadata__source="agreement_performance_change_proposal_message").count(), 0)
+
+    def test_non_proposer_can_accept_change_order_and_update_affected_obligation(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            title="Payment installment 1",
+            due_date=datetime(2026, 7, 31, 0, 0, tzinfo=dt_timezone.utc),
+            amount="400.00",
+            responsible_party="Original responsible party",
+            status=LifecycleItem.STATUS_PENDING,
+            created_by=self.initiator,
+        )
+        LifecycleItemUserState.objects.create(
+            lifecycle_item=item,
+            user=self.initiator,
+            due_date_override=datetime(2026, 6, 26, 0, 0, tzinfo=dt_timezone.utc),
+            amount_override="400.00",
+            responsible_party_override="Borrower",
+            status_override=LifecycleItem.STATUS_PENDING,
+        )
+        proposal = LifecycleChangeProposal.objects.create(
+            lifecycle_agreement=agreement,
+            contract=self.contract,
+            proposal_type=LifecycleChangeProposal.TYPE_CHANGE_ORDER,
+            status=LifecycleChangeProposal.STATUS_PROPOSED,
+            proposed_by=self.counterparty,
+            affected_item=item,
+            title="Move first repayment deadline",
+            description="Change the first due date.",
+            due_date="2026-08-01",
+            amount="400.00",
+            responsible_party=LifecycleChangeProposal.RESPONSIBLE_INITIATOR,
+        )
+
+        proposer_attempt = self.counterparty_client.post(
+            f"/api/lifecycle/proposals/{proposal.id}/decision/",
+            {"decision": "accepted", "note": "I accept my own proposal."},
+            format="json",
+        )
+        response = self.initiator_client.post(
+            f"/api/lifecycle/proposals/{proposal.id}/decision/",
+            {
+                "decision": "accepted",
+                "note": "Based on the proposal chat, first repayment deadline moves to August 6, 2026.",
+                "final_due_date": "2026-08-06",
+                "final_amount": "400.00",
+                "final_responsible_party": LifecycleChangeProposal.RESPONSIBLE_COUNTERPARTY,
+            },
+            format="json",
+        )
+        second_decision = self.initiator_client.post(
+            f"/api/lifecycle/proposals/{proposal.id}/decision/",
+            {"decision": "rejected"},
+            format="json",
+        )
+        stranger_decision = self.stranger_client.post(
+            f"/api/lifecycle/proposals/{proposal.id}/decision/",
+            {"decision": "rejected"},
+            format="json",
+        )
+
+        self.assertEqual(proposer_attempt.status_code, 403)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], LifecycleChangeProposal.STATUS_ACCEPTED)
+        self.assertEqual(response.data["decision_note"], "Based on the proposal chat, first repayment deadline moves to August 6, 2026.")
+        self.assertEqual(response.data["final_due_date"], "2026-08-06")
+        self.assertEqual(response.data["final_amount"], "400.00")
+        self.assertEqual(response.data["can_decide"], False)
+        self.assertEqual(second_decision.status_code, 400)
+        self.assertEqual(stranger_decision.status_code, 403)
+
+        proposal.refresh_from_db()
+        item.refresh_from_db()
+        overlay = LifecycleItemUserState.objects.get(lifecycle_item=item, user=self.initiator)
+        self.contract.refresh_from_db()
+        agreement.refresh_from_db()
+        self.assertEqual(proposal.status, LifecycleChangeProposal.STATUS_ACCEPTED)
+        self.assertEqual(proposal.decided_by, self.initiator)
+        self.assertIsNotNone(proposal.decided_at)
+        self.assertEqual(proposal.final_due_date.isoformat(), "2026-08-06")
+        self.assertEqual(str(proposal.final_amount), "400.00")
+        self.assertEqual(item.due_date.date().isoformat(), "2026-08-06")
+        self.assertEqual(str(item.amount), "400.00")
+        self.assertEqual(item.status, LifecycleItem.STATUS_PENDING)
+        self.assertEqual(overlay.due_date_override.isoformat(), "2026-08-06T00:00:00+00:00")
+        self.assertEqual(item.title, "Payment installment 1")
+        self.assertEqual(LifecycleItem.objects.filter(lifecycle_agreement=agreement).count(), 1)
+        self.assertEqual(self.contract.status, "signed")
+        self.assertEqual(agreement.status, LifecycleAgreement.STATUS_SETUP)
+        event = LifecycleEvent.objects.get(lifecycle_agreement=agreement, event_type="change_order_accepted")
+        self.assertEqual(event.metadata["proposal_id"], str(proposal.id))
+        self.assertEqual(event.metadata["affected_item_id"], str(item.id))
+        self.assertEqual(event.metadata["old_due_date"], "2026-07-31T00:00:00+00:00")
+        self.assertIn("2026-08-06T00:00:00", event.metadata["new_due_date"])
+        self.assertEqual(event.metadata["old_amount"], "400.00")
+        self.assertEqual(event.metadata["new_amount"], "400.00")
+        notification = Notification.objects.get(user=self.counterparty, metadata__source="agreement_performance_change_proposal", metadata__action=LifecycleChangeProposal.STATUS_ACCEPTED)
+        self.assertEqual(notification.metadata["proposal_id"], str(proposal.id))
+        self.assertEqual(notification.metadata["affected_item_id"], str(item.id))
+        self.assertEqual(notification.metadata["lifecycle_event_id"], str(event.id))
+        self.assertEqual(Notification.objects.filter(user=self.initiator, metadata__source="agreement_performance_change_proposal", metadata__action=LifecycleChangeProposal.STATUS_ACCEPTED).count(), 0)
+
+        board = self.initiator_client.get(f"/api/lifecycle/?contract={self.contract.id}")
+        self.assertEqual(board.status_code, 200)
+        payment = next(row for row in board.data["views"]["payments"] if row["id"] == str(item.id))
+        deadline = next(row for row in board.data["views"]["due_dates"] if row["id"] == str(item.id))
+        self.assertIn("2026-08-06T00:00:00", payment["due_date"])
+        self.assertIn("2026-08-06T00:00:00", deadline["due_date"])
+        self.assertNotIn("2026-07-31", [row.get("due_date", "")[:10] for row in board.data["views"]["due_dates"] if row["id"] == str(item.id)])
+
+    def test_change_proposal_can_be_rejected_by_non_proposer(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        proposal = LifecycleChangeProposal.objects.create(
+            lifecycle_agreement=agreement,
+            contract=self.contract,
+            proposal_type=LifecycleChangeProposal.TYPE_ADD_ON,
+            status=LifecycleChangeProposal.STATUS_PROPOSED,
+            proposed_by=self.initiator,
+            title="Extra check-in",
+            description="Add an extra check-in.",
+            responsible_party=LifecycleChangeProposal.RESPONSIBLE_INITIATOR,
+        )
+
+        response = self.counterparty_client.post(
+            f"/api/lifecycle/proposals/{proposal.id}/decision/",
+            {"decision": "rejected", "note": "Not needed for this agreement."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], LifecycleChangeProposal.STATUS_REJECTED)
+        proposal.refresh_from_db()
+        self.contract.refresh_from_db()
+        self.assertEqual(proposal.status, LifecycleChangeProposal.STATUS_REJECTED)
+        self.assertEqual(proposal.decision_note, "Not needed for this agreement.")
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement, event_type="change_proposal_rejected").count(), 1)
+        self.assertEqual(self.contract.status, "signed")
+        notification = Notification.objects.get(user=self.initiator, metadata__source="agreement_performance_change_proposal")
+        self.assertEqual(notification.metadata["action"], LifecycleChangeProposal.STATUS_REJECTED)
 
     def test_manual_timeline_item_defaults_origin_fields(self):
         agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)

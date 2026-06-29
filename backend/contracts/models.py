@@ -1073,6 +1073,10 @@ class LifecycleItemAttachment(models.Model):
     file_size = models.PositiveBigIntegerField(default=0)
     kind = models.CharField(max_length=40, choices=KIND_CHOICES, default=KIND_PROOF_RECEIPT)
     note = models.TextField(blank=True, default="")
+    decision_note = models.TextField(blank=True, default="")
+    final_due_date = models.DateField(null=True, blank=True)
+    final_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    final_responsible_party = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1121,6 +1125,10 @@ class LifecycleItemResponse(models.Model):
     )
     response = models.CharField(max_length=40, choices=RESPONSE_CHOICES)
     note = models.TextField(blank=True, default="")
+    decision_note = models.TextField(blank=True, default="")
+    final_due_date = models.DateField(null=True, blank=True)
+    final_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    final_responsible_party = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1173,6 +1181,127 @@ class LifecycleItemMessage(models.Model):
 
     def __str__(self):
         return f"Message {self.id} - {self.lifecycle_item_id}"
+
+
+class LifecycleChangeProposal(models.Model):
+    TYPE_ADD_ON = "add_on"
+    TYPE_CHANGE_ORDER = "change_order"
+
+    PROPOSAL_TYPE_CHOICES = [
+        (TYPE_ADD_ON, "Add-on"),
+        (TYPE_CHANGE_ORDER, "Change Order"),
+    ]
+
+    STATUS_PROPOSED = "proposed"
+    STATUS_ACCEPTED = "accepted"
+    STATUS_REJECTED = "rejected"
+
+    STATUS_CHOICES = [
+        (STATUS_PROPOSED, "Proposed"),
+        (STATUS_ACCEPTED, "Accepted"),
+        (STATUS_REJECTED, "Rejected"),
+    ]
+
+    RESPONSIBLE_INITIATOR = "initiator"
+    RESPONSIBLE_COUNTERPARTY = "counterparty"
+
+    RESPONSIBLE_PARTY_CHOICES = [
+        (RESPONSIBLE_INITIATOR, "Initiator"),
+        (RESPONSIBLE_COUNTERPARTY, "Counterparty"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    lifecycle_agreement = models.ForeignKey(
+        LifecycleAgreement,
+        on_delete=models.CASCADE,
+        related_name="change_proposals",
+    )
+    contract = models.ForeignKey(
+        Contract,
+        on_delete=models.CASCADE,
+        related_name="lifecycle_change_proposals",
+    )
+    proposal_type = models.CharField(max_length=20, choices=PROPOSAL_TYPE_CHOICES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PROPOSED)
+    proposed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="lifecycle_change_proposals",
+    )
+    affected_item = models.ForeignKey(
+        LifecycleItem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="change_proposals",
+    )
+    title = models.CharField(max_length=255)
+    description = models.TextField()
+    responsible_party = models.CharField(max_length=20, choices=RESPONSIBLE_PARTY_CHOICES, blank=True, default="")
+    amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    due_date = models.DateField(null=True, blank=True)
+    note = models.TextField(blank=True, default="")
+    decision_note = models.TextField(blank=True, default="")
+    final_due_date = models.DateField(null=True, blank=True)
+    final_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    final_responsible_party = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="decided_lifecycle_change_proposals",
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-updated_at"]
+        indexes = [
+            models.Index(fields=["lifecycle_agreement", "status"], name="lifec_change_agree_status_idx"),
+            models.Index(fields=["contract", "-created_at"], name="lifec_change_contract_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.proposal_type} - {self.title}"
+
+
+class LifecycleChangeProposalMessage(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    proposal = models.ForeignKey(
+        LifecycleChangeProposal,
+        on_delete=models.CASCADE,
+        related_name="messages",
+    )
+    lifecycle_agreement = models.ForeignKey(
+        LifecycleAgreement,
+        on_delete=models.CASCADE,
+        related_name="change_proposal_messages",
+    )
+    contract = models.ForeignKey(
+        Contract,
+        on_delete=models.CASCADE,
+        related_name="lifecycle_change_proposal_messages",
+    )
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="lifecycle_change_proposal_messages",
+    )
+    body = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        indexes = [
+            models.Index(fields=["proposal", "created_at"], name="lifec_chmsg_prop_idx"),
+            models.Index(fields=["lifecycle_agreement", "created_at"], name="lifec_chmsg_agree_idx"),
+        ]
+
+    def __str__(self):
+        return f"Proposal message {self.id} - {self.proposal_id}"
 
 
 class LifecycleEvent(models.Model):

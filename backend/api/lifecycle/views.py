@@ -13,6 +13,8 @@ from backend.contracts.models import (
     ContractObligation,
     ContractServiceObligation,
     LifecycleAgreement,
+    LifecycleChangeProposal,
+    LifecycleChangeProposalMessage,
     LifecycleItem,
     LifecycleItemMessage,
     LifecycleItemResponse,
@@ -22,6 +24,9 @@ from backend.lifecycle.services import (
     LifecycleNotReadyError,
     can_user_respond_to_lifecycle_item_proof,
     can_user_upload_lifecycle_item_proof,
+    create_lifecycle_change_proposal,
+    create_lifecycle_change_proposal_message,
+    decide_lifecycle_change_proposal,
     create_lifecycle_item_message,
     create_timeline_item,
     get_or_create_lifecycle_for_signed_contract,
@@ -104,6 +109,97 @@ def _message_summary(message, user=None):
         "updated_at": _iso(message.updated_at),
         "is_mine": bool(user and getattr(user, "is_authenticated", False) and message.sender_id == user.id),
     }
+
+
+def _responsible_party_label(agreement, value):
+    if value == LifecycleChangeProposal.RESPONSIBLE_INITIATOR:
+        user = agreement.contract.initiator
+        return (" ".join(part for part in [user.first_name, user.last_name] if part).strip() or user.email or "Initiator") if user else "Initiator"
+    if value == LifecycleChangeProposal.RESPONSIBLE_COUNTERPARTY:
+        return agreement.contract.counterparty_name or agreement.contract.counterparty_email or "Counterparty"
+    return ""
+
+
+def _proposal_party_option_label(role_label, display_label):
+    cleaned = (display_label or "").strip()
+    if cleaned and cleaned.lower() != role_label.lower():
+        return f"{role_label} / {cleaned}"
+    return role_label
+
+
+def _proposal_party_options(agreement):
+    initiator = agreement.contract.initiator
+    initiator_name = (" ".join(part for part in [initiator.first_name, initiator.last_name] if part).strip() or initiator.email or "") if initiator else ""
+    counterparty_name = agreement.contract.counterparty_name or agreement.contract.counterparty_email or ""
+    return [
+        {"value": LifecycleChangeProposal.RESPONSIBLE_INITIATOR, "label": _proposal_party_option_label("Initiator", initiator_name), "email": initiator.email if initiator else None},
+        {"value": LifecycleChangeProposal.RESPONSIBLE_COUNTERPARTY, "label": _proposal_party_option_label("Counterparty", counterparty_name), "email": agreement.contract.counterparty_email},
+    ]
+
+
+def _proposal_affected_item_summary(item):
+    if not item:
+        return None
+    return {
+        "id": str(item.id),
+        "title": item.title,
+        "item_type": item.item_type,
+        "status": item.status,
+        "due_date": _iso(item.due_date),
+        "amount": _money(item.amount),
+        "responsible_party": item.responsible_party,
+    }
+
+
+def _change_proposal_summary(proposal, user=None):
+    agreement = proposal.lifecycle_agreement
+    is_proposer = bool(user and getattr(user, "is_authenticated", False) and proposal.proposed_by_id == user.id)
+    can_decide = bool(user and getattr(user, "is_authenticated", False) and proposal.status == LifecycleChangeProposal.STATUS_PROPOSED and proposal.proposed_by_id != user.id)
+    return {
+        "id": str(proposal.id),
+        "lifecycle_agreement_id": str(proposal.lifecycle_agreement_id),
+        "contract_id": str(proposal.contract_id),
+        "contract_title": proposal.contract.title if proposal.contract else None,
+        "proposal_type": proposal.proposal_type,
+        "status": proposal.status,
+        "proposed_by": _party_summary(proposal.proposed_by),
+        "proposed_by_email": proposal.proposed_by.email if proposal.proposed_by else None,
+        "affected_item": _proposal_affected_item_summary(proposal.affected_item),
+        "affected_item_id": str(proposal.affected_item_id) if proposal.affected_item_id else None,
+        "title": proposal.title,
+        "description": proposal.description,
+        "responsible_party": proposal.responsible_party,
+        "responsible_party_label": _responsible_party_label(agreement, proposal.responsible_party),
+        "amount": _money(proposal.amount),
+        "due_date": proposal.due_date.isoformat() if proposal.due_date else None,
+        "note": proposal.note,
+        "final_due_date": proposal.final_due_date.isoformat() if getattr(proposal, "final_due_date", None) else None,
+        "final_amount": _money(getattr(proposal, "final_amount", None)),
+        "final_responsible_party": getattr(proposal, "final_responsible_party", "") or "",
+        "created_at": _iso(proposal.created_at),
+        "updated_at": _iso(proposal.updated_at),
+        "decided_by": _party_summary(proposal.decided_by),
+        "decided_at": _iso(proposal.decided_at),
+        "decision_note": getattr(proposal, "decision_note", "") or "",
+        "is_proposer": is_proposer,
+        "can_decide": can_decide,
+    }
+
+
+def _change_proposal_message_summary(message, user=None):
+    return {
+        "id": str(message.id),
+        "proposal_id": str(message.proposal_id),
+        "lifecycle_agreement_id": str(message.lifecycle_agreement_id),
+        "contract_id": str(message.contract_id),
+        "body": message.body,
+        "sender": _party_summary(message.sender),
+        "sender_email": message.sender.email if message.sender else None,
+        "created_at": _iso(message.created_at),
+        "updated_at": _iso(message.updated_at),
+        "is_mine": bool(user and getattr(user, "is_authenticated", False) and message.sender_id == user.id),
+    }
+
 
 
 def _response_summary(response):
@@ -645,6 +741,150 @@ class LifecycleAgreementAPIView(APIView):
             .get(pk=agreement.pk)
         )
         return Response(lifecycle_payload(agreement, request.user), status=status.HTTP_200_OK)
+
+
+class LifecycleChangeProposalAPIView(APIView):
+    def _get_agreement(self, request, lifecycle_id):
+        agreement = get_object_or_404(
+            LifecycleAgreement.objects.select_related("contract", "contract__initiator"),
+            pk=lifecycle_id,
+        )
+        if not is_party(request.user, agreement.contract):
+            return None, contract_party_response()
+        return agreement, None
+
+    def get(self, request, lifecycle_id):
+        agreement, error_response = self._get_agreement(request, lifecycle_id)
+        if error_response is not None:
+            return error_response
+        proposals = (
+            LifecycleChangeProposal.objects
+            .filter(lifecycle_agreement=agreement)
+            .select_related("lifecycle_agreement", "lifecycle_agreement__contract", "lifecycle_agreement__contract__initiator", "contract", "proposed_by", "affected_item", "decided_by")
+            .order_by("-created_at", "-updated_at")
+        )
+        return Response({
+            "results": [_change_proposal_summary(proposal, request.user) for proposal in proposals],
+            "party_options": _proposal_party_options(agreement),
+        }, status=status.HTTP_200_OK)
+
+    def post(self, request, lifecycle_id):
+        agreement, error_response = self._get_agreement(request, lifecycle_id)
+        if error_response is not None:
+            return error_response
+        try:
+            proposal = create_lifecycle_change_proposal(agreement, request.user, request.data)
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        proposal = (
+            LifecycleChangeProposal.objects
+            .select_related("lifecycle_agreement", "lifecycle_agreement__contract", "lifecycle_agreement__contract__initiator", "contract", "proposed_by", "affected_item", "decided_by")
+            .get(pk=proposal.pk)
+        )
+        return Response(_change_proposal_summary(proposal, request.user), status=status.HTTP_201_CREATED)
+
+
+class LifecycleChangeProposalDetailAPIView(APIView):
+    def get(self, request, proposal_id):
+        proposal = get_object_or_404(
+            LifecycleChangeProposal.objects.select_related(
+                "lifecycle_agreement",
+                "lifecycle_agreement__contract",
+                "lifecycle_agreement__contract__initiator",
+                "contract",
+                "proposed_by",
+                "affected_item",
+                "decided_by",
+            ),
+            pk=proposal_id,
+        )
+        if not is_party(request.user, proposal.contract):
+            return contract_party_response()
+        return Response(_change_proposal_summary(proposal, request.user), status=status.HTTP_200_OK)
+
+
+class LifecycleChangeProposalMessageAPIView(APIView):
+    def _get_proposal(self, request, proposal_id):
+        proposal = get_object_or_404(
+            LifecycleChangeProposal.objects.select_related(
+                "lifecycle_agreement",
+                "lifecycle_agreement__contract",
+                "lifecycle_agreement__contract__initiator",
+                "contract",
+                "proposed_by",
+            ),
+            pk=proposal_id,
+        )
+        if not is_party(request.user, proposal.contract):
+            return None, contract_party_response()
+        return proposal, None
+
+    def get(self, request, proposal_id):
+        proposal, error_response = self._get_proposal(request, proposal_id)
+        if error_response is not None:
+            return error_response
+        messages = (
+            LifecycleChangeProposalMessage.objects
+            .filter(proposal=proposal)
+            .select_related("sender")
+            .order_by("created_at", "id")
+        )
+        return Response({"results": [_change_proposal_message_summary(message, request.user) for message in messages]}, status=status.HTTP_200_OK)
+
+    def post(self, request, proposal_id):
+        proposal, error_response = self._get_proposal(request, proposal_id)
+        if error_response is not None:
+            return error_response
+        try:
+            message = create_lifecycle_change_proposal_message(proposal, request.user, request.data.get("body"))
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(_change_proposal_message_summary(message, request.user), status=status.HTTP_201_CREATED)
+
+
+class LifecycleChangeProposalDecisionAPIView(APIView):
+    def post(self, request, proposal_id):
+        proposal = get_object_or_404(
+            LifecycleChangeProposal.objects.select_related(
+                "lifecycle_agreement",
+                "lifecycle_agreement__contract",
+                "lifecycle_agreement__contract__initiator",
+                "contract",
+                "proposed_by",
+                "decided_by",
+                "affected_item",
+            ),
+            pk=proposal_id,
+        )
+        if not is_party(request.user, proposal.contract):
+            return contract_party_response()
+        try:
+            proposal = decide_lifecycle_change_proposal(
+                proposal,
+                request.user,
+                request.data.get("decision"),
+                request.data.get("note") or "",
+                final_terms={
+                    key: request.data[key]
+                    for key in ("final_due_date", "final_amount", "final_responsible_party")
+                    if key in request.data
+                },
+            )
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        proposal = (
+            LifecycleChangeProposal.objects
+            .select_related("lifecycle_agreement", "lifecycle_agreement__contract", "lifecycle_agreement__contract__initiator", "contract", "proposed_by", "affected_item", "decided_by")
+            .get(pk=proposal.pk)
+        )
+        return Response(_change_proposal_summary(proposal, request.user), status=status.HTTP_200_OK)
+
 
 
 class LifecycleItemCreateAPIView(APIView):

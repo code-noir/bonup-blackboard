@@ -101,10 +101,64 @@ type LifecycleMessage = {
 
 type MessageListResponse = { results: LifecycleMessage[] }
 
+type LifecycleChangeProposalMessage = {
+  id: string
+  proposal_id?: string
+  lifecycle_agreement_id?: string
+  contract_id?: string
+  body: string
+  sender?: { id?: string; email?: string; name?: string } | null
+  sender_email?: string | null
+  created_at?: string
+  updated_at?: string
+  is_mine?: boolean
+}
+
+type ProposalMessageListResponse = { results: LifecycleChangeProposalMessage[] }
+
+type PartyOption = {
+  value: 'initiator' | 'counterparty' | string
+  label: string
+  email?: string | null
+}
+
+type LifecycleChangeProposal = {
+  id: string
+  lifecycle_agreement_id?: string
+  contract_id?: string
+  contract_title?: string | null
+  proposal_type: 'add_on' | 'change_order' | string
+  status: 'proposed' | 'accepted' | 'rejected' | string
+  proposed_by?: { id?: string; email?: string; name?: string } | null
+  proposed_by_email?: string | null
+  affected_item?: { id: string; title?: string; item_type?: string; status?: string; due_date?: string | null; amount?: string | null; responsible_party?: string | null } | null
+  affected_item_id?: string | null
+  title: string
+  description: string
+  responsible_party?: string | null
+  responsible_party_label?: string | null
+  amount?: string | null
+  due_date?: string | null
+  note?: string | null
+  decision_note?: string | null
+  final_due_date?: string | null
+  final_amount?: string | null
+  final_responsible_party?: string | null
+  created_at?: string
+  updated_at?: string
+  decided_by?: { id?: string; email?: string; name?: string } | null
+  decided_at?: string | null
+  is_proposer?: boolean
+  can_decide?: boolean
+}
+
+type ProposalListResponse = { results: LifecycleChangeProposal[]; party_options?: PartyOption[] }
+
 type LifecycleBoardResponse = {
   contract?: { id: string; title?: string; counterparty_name?: string | null; counterparty_email?: string | null; status?: string }
   signed_version?: { label?: string; content_snapshot?: string }
   lifecycle_agreement?: { id: string; status?: string; performance_ready?: boolean }
+  parties?: { initiator?: { id?: string; email?: string; name?: string } | null; counterparty?: { email?: string | null; name?: string | null } | null }
   views?: Partial<Record<'payments' | 'work_services' | 'due_dates' | 'activity' | 'changes_add_ons', TimelineItem[] | TimelineEvent[]>>
   events?: TimelineEvent[]
 }
@@ -201,6 +255,51 @@ function formatMoney(amount?: string | null, currency = 'USD') {
 function humanize(value?: string) {
   if (!value) return 'Planned'
   return value.replaceAll('_', ' ').replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function proposalTypeLabel(value?: string) {
+  if (value === 'add_on') return 'Add-on'
+  if (value === 'change_order') return 'Change Order'
+  return humanize(value)
+}
+
+function proposalStatusLabel(value?: string) {
+  if (value === 'proposed') return 'Proposed'
+  if (value === 'accepted') return 'Accepted'
+  if (value === 'rejected') return 'Rejected'
+  return humanize(value)
+}
+
+function proposalActionLabel(value?: string) {
+  if (value === 'add_on') return 'Submit Add-on Proposal'
+  return 'Submit Change Order Proposal'
+}
+
+function isLifecycleTimelineItem(item: TimelineItem) {
+  const source = item.source || item.source_type
+  return Boolean(item.id && source !== 'contract_payment_obligation' && source !== 'payment_record')
+}
+
+function proposalPartyLabel(options: PartyOption[], value?: string | null) {
+  if (!value) return ''
+  return options.find((option) => option.value === value)?.label || humanize(value)
+}
+
+function partyOptionLabel(role: 'initiator' | 'counterparty', label?: string | null) {
+  const roleLabel = role === 'initiator' ? 'Initiator' : 'Counterparty'
+  const cleaned = (label || '').trim()
+  return cleaned && cleaned.toLowerCase() !== roleLabel.toLowerCase() ? `${roleLabel} / ${cleaned}` : roleLabel
+}
+
+function dateInputValue(value?: string | null) {
+  if (!value) return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function htmlToReadableText(value: string) {
@@ -337,11 +436,14 @@ function performanceEventActionLabel(event: TimelineEvent) {
   if (event.event_type === 'item_completed') return 'Performed'
   if (event.event_type === 'proof_uploaded') return 'Proof uploaded'
   if (event.event_type === 'proof_response') return metadataString(event.metadata, 'response_label') || 'Response recorded'
+  if (event.event_type === 'change_order_accepted') return 'Change Order accepted'
+  if (event.event_type === 'change_proposal_accepted') return 'Proposal accepted'
+  if (event.event_type === 'change_proposal_rejected') return 'Proposal rejected'
   return event.title || humanize(event.event_type)
 }
 
 function isPerformanceActivityEvent(event: TimelineEvent) {
-  return ['payment_marked_paid', 'work_marked_performed', 'item_completed', 'proof_uploaded', 'proof_response'].includes(event.event_type || '')
+  return ['payment_marked_paid', 'work_marked_performed', 'item_completed', 'proof_uploaded', 'proof_response', 'change_order_accepted', 'change_proposal_accepted', 'change_proposal_rejected'].includes(event.event_type || '')
 }
 
 function eventItemId(event: TimelineEvent) {
@@ -471,6 +573,19 @@ export default function AgreementPerformance() {
   const [messageLoading, setMessageLoading] = useState('')
   const [messageSending, setMessageSending] = useState('')
   const [messageError, setMessageError] = useState('')
+  const [proposals, setProposals] = useState<LifecycleChangeProposal[]>([])
+  const [proposalPartyOptions, setProposalPartyOptions] = useState<PartyOption[]>([])
+  const [proposalLoading, setProposalLoading] = useState(false)
+  const [proposalSaving, setProposalSaving] = useState(false)
+  const [proposalError, setProposalError] = useState('')
+  const [proposalMode, setProposalMode] = useState<'add_on' | 'change_order' | null>(null)
+  const [selectedProposal, setSelectedProposal] = useState<LifecycleChangeProposal | null>(null)
+  const [proposalMessagesByProposalId, setProposalMessagesByProposalId] = useState<Record<string, LifecycleChangeProposalMessage[]>>({})
+  const [proposalMessageLoading, setProposalMessageLoading] = useState('')
+  const [proposalMessageSending, setProposalMessageSending] = useState('')
+  const [proposalMessageError, setProposalMessageError] = useState('')
+  const [decisionBusy, setDecisionBusy] = useState('')
+  const [decisionError, setDecisionError] = useState('')
   const [error, setError] = useState('')
   const [boardError, setBoardError] = useState('')
   const [feedback, setFeedback] = useState('')
@@ -497,7 +612,14 @@ export default function AgreementPerformance() {
     if (options.resetView !== false) {
       setActiveTab('payments')
       setSelectedItem(null)
+      setSelectedProposal(null)
+      setProposalMode(null)
+      setProposalMessageError('')
+      setDecisionError('')
     }
+    setProposals([])
+    setProposalPartyOptions([])
+    setProposalError('')
     try {
       const response = await api.get<LifecycleBoardResponse>('/lifecycle/', { params: { contract: contractId } })
       setBoardData(response.data)
@@ -639,6 +761,102 @@ export default function AgreementPerformance() {
     }
   }
 
+  async function loadProposals(lifecycleAgreementId?: string) {
+    if (!lifecycleAgreementId) return
+    setProposalLoading(true)
+    setProposalError('')
+    try {
+      const response = await api.get<ProposalListResponse>(`/lifecycle/agreements/${lifecycleAgreementId}/proposals/`)
+      setProposals(response.data.results || [])
+      setProposalPartyOptions(response.data.party_options || [])
+    } catch (err) {
+      setProposalError(getErrorMessage(err, 'Unable to load change proposals.'))
+    } finally {
+      setProposalLoading(false)
+    }
+  }
+
+  function updateProposalState(updated: LifecycleChangeProposal) {
+    setProposals((current) => current.map((proposal) => (proposal.id === updated.id ? updated : proposal)))
+    setSelectedProposal((current) => (current?.id === updated.id ? updated : current))
+  }
+
+  async function submitProposal(payload: Record<string, string>) {
+    const lifecycleAgreementId = boardData?.lifecycle_agreement?.id
+    if (!lifecycleAgreementId || !proposalMode) return
+    setProposalSaving(true)
+    setProposalError('')
+    setFeedback('')
+    try {
+      const response = await api.post<LifecycleChangeProposal>(`/lifecycle/agreements/${lifecycleAgreementId}/proposals/`, {
+        ...payload,
+        proposal_type: proposalMode,
+      })
+      setProposals((current) => [response.data, ...current])
+      setSelectedProposal(response.data)
+      setProposalMode(null)
+      setFeedback(`${proposalTypeLabel(response.data.proposal_type)} proposal submitted.`)
+      void loadProposals(lifecycleAgreementId)
+      void loadPerformanceAgreements()
+    } catch (err) {
+      setProposalError(getErrorMessage(err, 'Unable to submit proposal.'))
+    } finally {
+      setProposalSaving(false)
+    }
+  }
+
+  async function loadProposalMessages(proposalId?: string, options: { quiet?: boolean } = {}) {
+    if (!proposalId) return
+    if (!options.quiet) {
+      setProposalMessageLoading(proposalId)
+      setProposalMessageError('')
+    }
+    try {
+      const response = await api.get<ProposalMessageListResponse>(`/lifecycle/proposals/${proposalId}/messages/`)
+      setProposalMessagesByProposalId((current) => ({ ...current, [proposalId]: response.data.results || [] }))
+    } catch (err) {
+      if (!options.quiet) setProposalMessageError(getErrorMessage(err, 'Unable to load proposal messages.'))
+    } finally {
+      if (!options.quiet) setProposalMessageLoading('')
+    }
+  }
+
+  async function sendProposalMessage(proposal: LifecycleChangeProposal, body: string) {
+    const trimmed = body.trim()
+    if (!proposal?.id || !trimmed) return
+    setProposalMessageSending(proposal.id)
+    setProposalMessageError('')
+    try {
+      const response = await api.post<LifecycleChangeProposalMessage>(`/lifecycle/proposals/${proposal.id}/messages/`, { body: trimmed })
+      setProposalMessagesByProposalId((current) => ({ ...current, [proposal.id]: [...(current[proposal.id] || []), response.data] }))
+      setFeedback('Proposal message sent.')
+      void loadProposalMessages(proposal.id, { quiet: true })
+    } catch (err) {
+      setProposalMessageError(getErrorMessage(err, 'Unable to send proposal message.'))
+    } finally {
+      setProposalMessageSending('')
+    }
+  }
+
+  async function decideProposal(proposal: LifecycleChangeProposal, decision: 'accepted' | 'rejected', note: string, finalTerms: Record<string, string> = {}) {
+    if (!proposal?.id) return
+    setDecisionBusy(`${proposal.id}:${decision}`)
+    setDecisionError('')
+    setFeedback('')
+    try {
+      const response = await api.post<LifecycleChangeProposal>(`/lifecycle/proposals/${proposal.id}/decision/`, { decision, note: note.trim(), ...finalTerms })
+      updateProposalState(response.data)
+      setFeedback(decision === 'accepted' ? 'Proposal accepted.' : 'Proposal rejected.')
+      if (boardData?.lifecycle_agreement?.id) void loadProposals(boardData.lifecycle_agreement.id)
+      const refreshed = await refreshBoard({ resetView: false })
+      if (selectedItem?.id) setSelectedItem(findBoardItem(refreshed, selectedItem.id) || selectedItem)
+    } catch (err) {
+      setDecisionError(getErrorMessage(err, 'Unable to save proposal decision.'))
+    } finally {
+      setDecisionBusy('')
+    }
+  }
+
   async function sendMessage(item: TimelineItem, body: string) {
     if (!item?.id) {
       setMessageError('Unable to send message for this obligation.')
@@ -664,6 +882,16 @@ export default function AgreementPerformance() {
   }, [])
 
   useEffect(() => {
+    if (!feedback) return undefined
+    const timer = window.setTimeout(() => setFeedback(''), 4000)
+    return () => window.clearTimeout(timer)
+  }, [feedback])
+
+  useEffect(() => {
+    if (boardData?.lifecycle_agreement?.id) void loadProposals(boardData.lifecycle_agreement.id)
+  }, [boardData?.lifecycle_agreement?.id])
+
+  useEffect(() => {
     if (selectedItem) void loadAttachments(selectedItem.id)
   }, [selectedItem?.id])
 
@@ -677,6 +905,16 @@ export default function AgreementPerformance() {
     return () => window.clearInterval(intervalId)
   }, [selectedItem?.id])
 
+  useEffect(() => {
+    const selectedProposalId = selectedProposal?.id
+    if (!selectedProposalId) return
+    void loadProposalMessages(selectedProposalId)
+    const intervalId = window.setInterval(() => {
+      void loadProposalMessages(selectedProposalId, { quiet: true })
+    }, 4000)
+    return () => window.clearInterval(intervalId)
+  }, [selectedProposal?.id])
+
   const rawBoardItems = useMemo(() => ([
     ...((boardData?.views?.payments || []) as TimelineItem[]),
     ...((boardData?.views?.work_services || []) as TimelineItem[]),
@@ -686,6 +924,16 @@ export default function AgreementPerformance() {
   const workItems = useMemo(() => ((boardData?.views?.work_services || []) as TimelineItem[]).filter(isDisplayableItem), [boardData])
   const dueDates = useMemo(() => ((boardData?.views?.due_dates || []) as TimelineItem[]).filter(isDisplayableItem), [boardData])
   const events = useMemo(() => ((boardData?.views?.activity || boardData?.events || []) as TimelineEvent[]), [boardData])
+  const proposalAffectedItems = useMemo(() => rawBoardItems.filter(isLifecycleTimelineItem), [rawBoardItems])
+  const availablePartyOptions = useMemo(() => {
+    if (proposalPartyOptions.length > 0) return proposalPartyOptions
+    const initiator = boardData?.parties?.initiator
+    const counterparty = boardData?.parties?.counterparty || boardData?.contract || selectedAgreement?.counterparty || selectedAgreement?.contract
+    return [
+      { value: 'initiator', label: partyOptionLabel('initiator', initiator?.name || initiator?.email), email: initiator?.email || null },
+      { value: 'counterparty', label: partyOptionLabel('counterparty', counterparty?.name || counterparty?.counterparty_name || counterparty?.email || counterparty?.counterparty_email), email: counterparty?.email || counterparty?.counterparty_email || null },
+    ]
+  }, [boardData, proposalPartyOptions, selectedAgreement])
 
   const selectedItemEvents = selectedItem ? itemHistoryEvents(events, selectedItem) : []
   const selectedItemAttachments = selectedItem ? attachmentsByItemId[selectedItem.id] || [] : []
@@ -726,7 +974,7 @@ export default function AgreementPerformance() {
             const counterparty = agreement.counterparty?.name || agreement.counterparty?.email || agreement.contract.counterparty_name || agreement.contract.counterparty_email || 'Counterparty not set'
             const selected = selectedAgreement?.id === agreement.id
             return (
-              <section key={agreement.id} style={{ background: selected ? '#F0FDF4' : 'white', border: `1px solid ${selected ? '#86EFAC' : '#E5E7EB'}`, borderRadius: 8, padding: 18 }}>
+              <section key={agreement.id} style={{ background: selected ? '#FFF7ED' : 'white', border: `1px solid ${selected ? '#FED7AA' : '#E5E7EB'}`, borderRadius: 8, padding: 18 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
                   <div style={{ minWidth: 0 }}>
                     <p style={{ fontSize: 11, fontWeight: 800, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 6px' }}>Ready for tracking</p>
@@ -772,7 +1020,7 @@ export default function AgreementPerformance() {
               <button type="button" onClick={() => setShowSource(true)} style={secondaryButtonStyle}>View Signed Source</button>
             </div>
 
-            {feedback && <div style={{ background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: 8, padding: 12, marginBottom: 12 }}><p style={{ fontSize: 13, color: '#047857', margin: 0 }}>{feedback}</p></div>}
+            {feedback && <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: 8, padding: 12, marginBottom: 12 }}><p style={{ fontSize: 13, color: '#334155', margin: 0, fontWeight: 800 }}>{feedback}</p></div>}
 
             {!selectedItem && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -808,9 +1056,28 @@ export default function AgreementPerformance() {
             ) : activeTab === 'activity' ? (
               <ActivityPanel events={events} items={rawBoardItems} agreementTitle={boardData.contract?.title || selectedAgreement.contract.title || selectedAgreement.title} />
             ) : activeTab === 'changes' ? (
-              <div style={{ border: '1px dashed #CBD5E1', borderRadius: 8, padding: 18, background: '#FFFFFF' }}>
-                <p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>Changes and add-ons will be managed here.</p>
-              </div>
+              <ChangesAddOnsWorkspace
+                proposals={proposals}
+                loading={proposalLoading}
+                saving={proposalSaving}
+                error={proposalError}
+                mode={proposalMode}
+                selectedProposal={selectedProposal}
+                proposalMessages={selectedProposal ? proposalMessagesByProposalId[selectedProposal.id] || [] : []}
+                proposalMessagesLoading={selectedProposal ? proposalMessageLoading === selectedProposal.id : false}
+                proposalMessageSending={selectedProposal ? proposalMessageSending === selectedProposal.id : false}
+                proposalMessageError={proposalMessageError}
+                decisionBusy={decisionBusy}
+                decisionError={decisionError}
+                partyOptions={availablePartyOptions}
+                affectedItems={proposalAffectedItems}
+                onModeChange={(mode) => { setProposalMode(mode); setSelectedProposal(null); setProposalError(''); setProposalMessageError(''); setDecisionError('') }}
+                onSelectProposal={(proposal) => { setSelectedProposal(proposal); setProposalMode(null); setProposalMessageError(''); setDecisionError('') }}
+                onBackToList={() => { setSelectedProposal(null); setProposalMode(null); setProposalMessageError(''); setDecisionError('') }}
+                onSubmit={(payload) => void submitProposal(payload)}
+                onSendProposalMessage={(proposal, body) => void sendProposalMessage(proposal, body)}
+                onDecideProposal={(proposal, decision, note) => void decideProposal(proposal, decision, note)}
+              />
             ) : activeTab === 'due_dates' ? (
               <DeadlinesPanel items={dueDates} onOpen={setSelectedItem} onViewSource={() => setShowSource(true)} />
             ) : activeItems.length === 0 ? (
@@ -842,6 +1109,371 @@ export default function AgreementPerformance() {
       )}
     </div>
   )
+}
+
+function ChangesAddOnsWorkspace({
+  proposals,
+  loading,
+  saving,
+  error,
+  mode,
+  selectedProposal,
+  proposalMessages,
+  proposalMessagesLoading,
+  proposalMessageSending,
+  proposalMessageError,
+  decisionBusy,
+  decisionError,
+  partyOptions,
+  affectedItems,
+  onModeChange,
+  onSelectProposal,
+  onBackToList,
+  onSubmit,
+  onSendProposalMessage,
+  onDecideProposal,
+}: {
+  proposals: LifecycleChangeProposal[]
+  loading: boolean
+  saving: boolean
+  error: string
+  mode: 'add_on' | 'change_order' | null
+  selectedProposal: LifecycleChangeProposal | null
+  proposalMessages: LifecycleChangeProposalMessage[]
+  proposalMessagesLoading: boolean
+  proposalMessageSending: boolean
+  proposalMessageError: string
+  decisionBusy: string
+  decisionError: string
+  partyOptions: PartyOption[]
+  affectedItems: TimelineItem[]
+  onModeChange: (mode: 'add_on' | 'change_order') => void
+  onSelectProposal: (proposal: LifecycleChangeProposal) => void
+  onBackToList: () => void
+  onSubmit: (payload: Record<string, string>) => void
+  onSendProposalMessage: (proposal: LifecycleChangeProposal, body: string) => void
+  onDecideProposal: (proposal: LifecycleChangeProposal, decision: 'accepted' | 'rejected', note: string, finalTerms?: Record<string, string>) => void
+}) {
+  if (selectedProposal) {
+    return (
+      <ProposalDetailCard
+        proposal={selectedProposal}
+        partyOptions={partyOptions}
+        messages={proposalMessages}
+        messagesLoading={proposalMessagesLoading}
+        messageSending={proposalMessageSending}
+        messageError={proposalMessageError}
+        decisionBusy={decisionBusy}
+        decisionError={decisionError}
+        onBack={onBackToList}
+        onSendMessage={(body) => onSendProposalMessage(selectedProposal, body)}
+        onDecide={(decision, note, finalTerms) => onDecideProposal(selectedProposal, decision, note, finalTerms)}
+      />
+    )
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 14 }}>
+      <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 18 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <div style={{ minWidth: 0 }}>
+            <h3 style={{ fontSize: 22, fontWeight: 900, color: '#0F1F3D', margin: 0 }}>Changes / Add-ons</h3>
+            <p style={{ fontSize: 13, color: '#64748B', margin: '8px 0 0', lineHeight: 1.55 }}>Propose new obligations or request changes to existing obligations during performance.</p>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => onModeChange('add_on')} style={mode === 'add_on' ? primaryButtonStyle : secondaryButtonStyle}>Create Add-on</button>
+            <button type="button" onClick={() => onModeChange('change_order')} style={mode === 'change_order' ? amberButtonStyle : secondaryButtonStyle}>Create Change Order</button>
+          </div>
+        </div>
+      </section>
+
+      {error && <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 12 }}><p style={{ fontSize: 13, color: '#B91C1C', margin: 0 }}>{error}</p></div>}
+
+      {mode && (
+        <ProposalForm
+          mode={mode}
+          saving={saving}
+          partyOptions={partyOptions}
+          affectedItems={affectedItems}
+          onSubmit={onSubmit}
+        />
+      )}
+
+      <ProposalList proposals={proposals} loading={loading} onOpen={onSelectProposal} />
+    </div>
+  )
+}
+
+function ProposalForm({
+  mode,
+  saving,
+  partyOptions,
+  affectedItems,
+  onSubmit,
+}: {
+  mode: 'add_on' | 'change_order'
+  saving: boolean
+  partyOptions: PartyOption[]
+  affectedItems: TimelineItem[]
+  onSubmit: (payload: Record<string, string>) => void
+}) {
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [responsibleParty, setResponsibleParty] = useState('')
+  const [amount, setAmount] = useState('')
+  const [dueDate, setDueDate] = useState('')
+  const [note, setNote] = useState('')
+  const [affectedItemId, setAffectedItemId] = useState('')
+  const [submitAttempted, setSubmitAttempted] = useState(false)
+  const isAddOn = mode === 'add_on'
+  const normalizedDueDate = dateInputValue(dueDate)
+  const validationMessages = [
+    !title.trim() ? 'Enter a title.' : '',
+    !description.trim() ? (isAddOn ? 'Enter a description / scope.' : 'Enter a description / reason.') : '',
+    isAddOn && !responsibleParty ? 'Select a responsible party.' : '',
+    !isAddOn && !affectedItemId ? 'Select an affected obligation.' : '',
+  ].filter(Boolean)
+  const canSubmit = validationMessages.length === 0
+
+  function submit() {
+    setSubmitAttempted(true)
+    if (!canSubmit || saving) return
+    onSubmit({
+      title: title.trim(),
+      description: description.trim(),
+      responsible_party: responsibleParty,
+      amount: amount.trim(),
+      due_date: normalizedDueDate,
+      note: note.trim(),
+      affected_item_id: affectedItemId,
+    })
+  }
+
+  return (
+    <section style={{ background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: 8, padding: 18 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+        <div>
+          <p style={{ fontSize: 11, color: '#64748B', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>{proposalTypeLabel(mode)}</p>
+          <h4 style={{ fontSize: 18, color: '#0F1F3D', margin: '5px 0 0', fontWeight: 900 }}>{isAddOn ? 'Create Add-on' : 'Create Change Order'}</h4>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gap: 12 }}>
+        {!isAddOn && (
+          <label style={fieldLabelStyle}>
+            Affected obligation
+            <select value={affectedItemId} onChange={(event) => setAffectedItemId(event.target.value)} style={inputStyle} required>
+              <option value="">Select an existing obligation</option>
+              {affectedItems.map((item) => (
+                <option key={item.id} value={item.id}>{item.title || humanize(item.item_type)}{item.due_date ? ` - ${dueDateLabel(item.due_date)}` : ''}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label style={fieldLabelStyle}>
+          Title
+          <input value={title} onChange={(event) => setTitle(event.target.value)} style={inputStyle} required />
+        </label>
+        <label style={fieldLabelStyle}>
+          {isAddOn ? 'Description / scope' : 'Description / reason'}
+          <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={4} style={textareaStyle} required />
+        </label>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
+          <label style={fieldLabelStyle}>
+            Responsible party{isAddOn ? '' : ' (optional)'}
+            <select value={responsibleParty} onChange={(event) => setResponsibleParty(event.target.value)} style={inputStyle} required={isAddOn}>
+              <option value="">{isAddOn ? 'Select a party' : 'No change'}</option>
+              {partyOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+          <label style={fieldLabelStyle}>
+            {isAddOn ? 'Amount (optional)' : 'Changed amount (optional)'}
+            <input type="number" step="0.01" min="0" value={amount} onChange={(event) => setAmount(event.target.value)} style={inputStyle} />
+          </label>
+          <label style={fieldLabelStyle}>
+            {isAddOn ? 'Due date (optional)' : 'Changed due date (optional)'}
+            <input type="date" value={normalizedDueDate} onChange={(event) => setDueDate(event.target.value)} style={inputStyle} />
+          </label>
+        </div>
+        <label style={fieldLabelStyle}>
+          Optional note / message to counterparty
+          <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} style={textareaStyle} />
+        </label>
+        {!isAddOn && affectedItems.length === 0 && (
+          <p style={{ fontSize: 12, color: '#B45309', margin: 0, fontWeight: 800 }}>No editable lifecycle obligations are available for a change order.</p>
+        )}
+        {(submitAttempted || validationMessages.length > 0) && validationMessages.length > 0 && (
+          <div style={{ border: '1px solid #FDE68A', background: '#FFFBEB', borderRadius: 8, padding: 10 }}>
+            {validationMessages.map((message) => (
+              <p key={message} style={{ fontSize: 12, color: '#92400E', margin: '0 0 4px', fontWeight: 800 }}>{message}</p>
+            ))}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button type="button" onClick={submit} disabled={!canSubmit || saving} style={{ ...(isAddOn ? primaryButtonStyle : amberButtonStyle), opacity: !canSubmit || saving ? 0.6 : 1, cursor: !canSubmit || saving ? 'default' : 'pointer' }}>
+            {saving ? 'Submitting...' : proposalActionLabel(mode)}
+          </button>
+          {saving && <span style={{ fontSize: 12, color: '#64748B', fontWeight: 800 }}>Submitting proposal...</span>}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function ProposalList({ proposals, loading, onOpen }: { proposals: LifecycleChangeProposal[]; loading: boolean; onOpen: (proposal: LifecycleChangeProposal) => void }) {
+  const groups = [
+    { key: 'proposed', label: 'Proposed' },
+    { key: 'accepted', label: 'Accepted' },
+    { key: 'rejected', label: 'Rejected' },
+  ]
+
+  return (
+    <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 18 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+        <h4 style={{ fontSize: 16, color: '#0F1F3D', margin: 0, fontWeight: 900 }}>Proposal list</h4>
+        {loading && <span style={{ fontSize: 12, color: '#64748B', fontWeight: 800 }}>Loading...</span>}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+        {groups.map((group) => {
+          const items = proposals.filter((proposal) => proposal.status === group.key)
+          return (
+            <div key={group.key} style={{ border: '1px solid #E5E7EB', borderRadius: 8, background: '#F8FAFC', padding: 12, minHeight: 130 }}>
+              <p style={{ fontSize: 12, color: '#0F1F3D', margin: 0, fontWeight: 900 }}>{group.label}</p>
+              <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+                {items.length === 0 ? (
+                  <p style={{ fontSize: 12, color: '#64748B', margin: 0 }}>No {group.label.toLowerCase()} proposals.</p>
+                ) : items.map((proposal) => (
+                  <button key={proposal.id} type="button" onClick={() => onOpen(proposal)} style={{ textAlign: 'left', border: '1px solid #CBD5E1', borderRadius: 8, background: '#FFFFFF', padding: 10, cursor: 'pointer' }}>
+                    <p style={{ fontSize: 13, color: '#0F1F3D', margin: 0, fontWeight: 900 }}>{proposal.title}</p>
+                    <p style={{ fontSize: 11, color: '#64748B', margin: '5px 0 0' }}>{proposalTypeLabel(proposal.proposal_type)} - {eventTimeLabel(proposal.created_at)}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function ProposalDetailCard({
+  proposal,
+  partyOptions,
+  messages,
+  messagesLoading,
+  messageSending,
+  messageError,
+  decisionBusy,
+  decisionError,
+  onBack,
+  onSendMessage,
+  onDecide,
+}: {
+  proposal: LifecycleChangeProposal
+  partyOptions: PartyOption[]
+  messages: LifecycleChangeProposalMessage[]
+  messagesLoading: boolean
+  messageSending: boolean
+  messageError: string
+  decisionBusy: string
+  decisionError: string
+  onBack: () => void
+  onSendMessage: (body: string) => void
+  onDecide: (decision: 'accepted' | 'rejected', note: string, finalTerms?: Record<string, string>) => void
+}) {
+  const proposedBy = proposal.proposed_by?.name || proposal.proposed_by?.email || proposal.proposed_by_email || 'A party'
+  const responsible = proposal.responsible_party_label || proposalPartyLabel(partyOptions, proposal.responsible_party) || ''
+  return (
+    <div style={{ display: 'grid', gap: 14 }}>
+      <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 18 }}>
+        <button type="button" onClick={onBack} style={{ ...secondaryButtonStyle, marginBottom: 12 }}>Back to Changes / Add-ons</button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <div style={{ minWidth: 0 }}>
+            <h3 style={{ fontSize: 22, fontWeight: 900, color: '#0F1F3D', margin: 0 }}>{proposal.title}</h3>
+            <p style={{ fontSize: 13, color: '#64748B', margin: '7px 0 0' }}>{proposalTypeLabel(proposal.proposal_type)} proposed by {proposedBy}</p>
+          </div>
+          <span style={{ borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 900, ...statusStyle(proposal.status) }}>{proposalStatusLabel(proposal.status)}</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginTop: 14 }}>
+          <SummaryCell label="Proposal Type" value={proposalTypeLabel(proposal.proposal_type)} />
+          <SummaryCell label="Status" value={proposalStatusLabel(proposal.status)} />
+          <SummaryCell label="Proposed By" value={proposedBy} />
+          <SummaryCell label="Created" value={eventTimeLabel(proposal.created_at)} />
+          <SummaryCell label="Responsible" value={responsible || 'Not provided'} />
+          <SummaryCell label="Amount" value={proposal.amount ? formatMoney(proposal.amount) : 'Not provided'} />
+          <SummaryCell label="Due Date" value={proposal.due_date ? dueDateLabel(proposal.due_date) : 'Not provided'} />
+        </div>
+        {proposal.affected_item && (
+          <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 8, padding: 12, marginTop: 14 }}>
+            <p style={{ fontSize: 11, color: '#64748B', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Affected obligation</p>
+            <p style={{ fontSize: 13, color: '#0F1F3D', margin: '6px 0 0', fontWeight: 900 }}>{proposal.affected_item.title || 'Selected obligation'}</p>
+            <p style={{ fontSize: 12, color: '#64748B', margin: '5px 0 0' }}>{humanize(proposal.affected_item.item_type)} - {proposalStatusLabel(proposal.affected_item.status)}</p>
+          </div>
+        )}
+        <div style={{ marginTop: 14 }}>
+          <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Description / reason</p>
+          <p style={{ fontSize: 13, color: '#334155', lineHeight: 1.6, whiteSpace: 'pre-wrap', margin: '7px 0 0' }}>{proposal.description}</p>
+        </div>
+        {proposal.note && (
+          <div style={{ marginTop: 14 }}>
+            <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Latest note / message</p>
+            <p style={{ fontSize: 13, color: '#334155', lineHeight: 1.6, whiteSpace: 'pre-wrap', margin: '7px 0 0' }}>{proposal.note}</p>
+          </div>
+        )}
+      </section>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.45fr) minmax(260px, 0.85fr)', gap: 12 }}>
+        <ProposalMessagesPanel
+          messages={messages}
+          loading={messagesLoading}
+          sending={messageSending}
+          error={messageError}
+          onSend={onSendMessage}
+        />
+        <ProposalDecisionPanel
+          proposal={proposal}
+          partyOptions={partyOptions}
+          busy={decisionBusy}
+          error={decisionError}
+          onDecide={onDecide}
+        />
+      </div>
+      <PlaceholderPanel title="Attachments" />
+    </div>
+  )
+}
+
+const fieldLabelStyle = {
+  display: 'grid',
+  gap: 6,
+  fontSize: 12,
+  fontWeight: 900,
+  color: '#334155',
+}
+
+const inputStyle = {
+  width: '100%',
+  boxSizing: 'border-box' as const,
+  height: 38,
+  border: '1px solid #CBD5E1',
+  borderRadius: 8,
+  padding: '0 10px',
+  fontSize: 13,
+  color: '#0F1F3D',
+  background: '#FFFFFF',
+}
+
+const textareaStyle = {
+  width: '100%',
+  boxSizing: 'border-box' as const,
+  border: '1px solid #CBD5E1',
+  borderRadius: 8,
+  padding: 10,
+  fontSize: 13,
+  color: '#0F1F3D',
+  background: '#FFFFFF',
+  resize: 'vertical' as const,
+  fontFamily: 'inherit',
 }
 
 function SummaryCell({ label, value }: { label: string; value: string }) {
@@ -983,13 +1615,20 @@ function ActivityPanel({ events, items, agreementTitle }: { events: TimelineEven
   return (
     <div style={{ display: 'grid', gap: 8 }}>
       {performanceEvents.map((event) => {
-        const itemId = metadataString(event.metadata, 'lifecycle_item_id') || metadataString(event.metadata, 'item_id')
+        const itemId = metadataString(event.metadata, 'lifecycle_item_id') || metadataString(event.metadata, 'item_id') || metadataString(event.metadata, 'affected_item_id')
         const item = itemById.get(itemId)
         const itemTitle = item?.title || metadataString(event.metadata, 'item_title') || event.description || 'this obligation'
+        const proposalTitle = metadataString(event.metadata, 'proposal_title')
         const actor = metadataString(event.metadata, 'actor_label') || item?.responsible_party || 'A party'
         const verb = performanceEventVerb(event)
-        const result = metadataString(event.metadata, 'result_status') || metadataString(event.metadata, 'status')
-        const sentence = verb ? `${actor} marked "${itemTitle}" as ${verb}.` : event.description || performanceEventActionLabel(event)
+        const result = metadataString(event.metadata, 'result_status') || metadataString(event.metadata, 'status') || metadataString(event.metadata, 'decision')
+        const sentence = proposalTitle && event.event_type === 'change_order_accepted'
+          ? `${actor} accepted Change Order: ${proposalTitle}.`
+          : proposalTitle && event.event_type === 'change_proposal_accepted'
+            ? `${actor} accepted proposal: ${proposalTitle}.`
+            : proposalTitle && event.event_type === 'change_proposal_rejected'
+            ? `${actor} rejected proposal: ${proposalTitle}.`
+            : verb ? `${actor} marked "${itemTitle}" as ${verb}.` : event.description || performanceEventActionLabel(event)
         return (
           <div key={event.id} style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
@@ -1325,6 +1964,224 @@ function MessagesPanel({
   )
 }
 
+
+
+function ProposalMessagesPanel({
+  messages,
+  loading,
+  sending,
+  error,
+  onSend,
+}: {
+  messages: LifecycleChangeProposalMessage[]
+  loading: boolean
+  sending: boolean
+  error: string
+  onSend: (body: string) => void
+}) {
+  const [draft, setDraft] = useState('')
+  const listRef = useRef<HTMLDivElement | null>(null)
+  const safeMessages = Array.isArray(messages) ? messages.filter(Boolean) : []
+
+  useEffect(() => {
+    const node = listRef.current
+    if (node) node.scrollTop = node.scrollHeight
+  }, [safeMessages.length])
+
+  function submit() {
+    const trimmed = draft.trim()
+    if (!trimmed || sending) return
+    onSend(trimmed)
+    setDraft('')
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== 'Enter' || event.shiftKey) return
+    event.preventDefault()
+    submit()
+  }
+
+  return (
+    <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 10 }}>
+        <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Proposal Chat</p>
+        {loading && <span style={{ fontSize: 11, color: '#64748B', fontWeight: 800 }}>Loading...</span>}
+      </div>
+      <div ref={listRef} style={{ display: 'grid', gap: 10, maxHeight: 320, overflowY: 'auto', background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 8, padding: 12 }}>
+        {safeMessages.length === 0 ? (
+          <p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>No proposal messages yet.</p>
+        ) : safeMessages.map((message, index) => {
+          const mine = Boolean(message.is_mine)
+          const sender = message.sender?.name || message.sender?.email || message.sender_email || 'A party'
+          const createdAt = message.created_at || message.updated_at || ''
+          const body = typeof message.body === 'string' ? message.body : ''
+          return (
+            <div key={message.id || `${createdAt}-${index}`} style={{ display: 'grid', justifyItems: mine ? 'end' : 'start' }}>
+              <div style={{ maxWidth: '78%', background: mine ? '#0F1F3D' : '#FFFFFF', color: mine ? '#FFFFFF' : '#0F1F3D', border: mine ? '1px solid #0F1F3D' : '1px solid #E5E7EB', borderRadius: 8, padding: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 11, fontWeight: 900, color: mine ? '#DBEAFE' : '#334155' }}>{mine ? 'You' : sender}</span>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: mine ? '#BFDBFE' : '#94A3B8' }}>{eventTimeLabel(createdAt)}</span>
+                </div>
+                <p style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', margin: 0 }}>{body}</p>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      {error && <p style={{ fontSize: 12, color: '#B91C1C', margin: '10px 0 0', fontWeight: 800 }}>{error}</p>}
+      <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+        <textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Write a proposal message"
+          maxLength={2000}
+          rows={3}
+          style={{ border: '1px solid #CBD5E1', borderRadius: 8, padding: 10, background: '#FFFFFF', color: '#0F1F3D', fontSize: 13, resize: 'vertical', fontFamily: 'inherit' }}
+        />
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, color: '#94A3B8' }}>Press Enter to send. Shift+Enter adds a line.</span>
+          <button type="button" onClick={submit} disabled={sending || !draft.trim()} style={{ ...primaryButtonStyle, opacity: sending || !draft.trim() ? 0.65 : 1, cursor: sending || !draft.trim() ? 'default' : 'pointer' }}>
+            {sending ? 'Sending...' : 'Send'}
+          </button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function ProposalDecisionPanel({
+  proposal,
+  partyOptions,
+  busy,
+  error,
+  onDecide,
+}: {
+  proposal: LifecycleChangeProposal
+  partyOptions: PartyOption[]
+  busy: string
+  error: string
+  onDecide: (decision: 'accepted' | 'rejected', note: string, finalTerms?: Record<string, string>) => void
+}) {
+  const [note, setNote] = useState('')
+  const [finalDueDate, setFinalDueDate] = useState(dateInputValue(proposal.due_date))
+  const [finalAmount, setFinalAmount] = useState(proposal.amount || '')
+  const [finalResponsibleParty, setFinalResponsibleParty] = useState(proposal.responsible_party || '')
+  const isProposed = proposal.status === 'proposed'
+  const canDecide = Boolean(proposal.can_decide)
+  const isProposer = Boolean(proposal.is_proposer)
+  const isChangeOrder = proposal.proposal_type === 'change_order'
+  const acceptBusy = busy === `${proposal.id}:accepted`
+  const rejectBusy = busy === `${proposal.id}:rejected`
+  const decidedBy = proposal.decided_by?.name || proposal.decided_by?.email || 'A party'
+  const currentItem = proposal.affected_item
+  const currentItemStatus = currentItem ? performanceStatusLabel(currentItem as TimelineItem) : 'Not provided'
+
+  useEffect(() => {
+    setNote('')
+    setFinalDueDate(dateInputValue(proposal.final_due_date || proposal.due_date))
+    setFinalAmount(proposal.final_amount || proposal.amount || '')
+    setFinalResponsibleParty(proposal.final_responsible_party || proposal.responsible_party || '')
+  }, [proposal.id, proposal.due_date, proposal.amount, proposal.responsible_party, proposal.final_due_date, proposal.final_amount, proposal.final_responsible_party])
+
+  function acceptProposal() {
+    if (!isChangeOrder) {
+      onDecide('accepted', note)
+      return
+    }
+    const finalTerms: Record<string, string> = {}
+    if (finalDueDate) finalTerms.final_due_date = finalDueDate
+    if (finalAmount.trim()) finalTerms.final_amount = finalAmount.trim()
+    if (finalResponsibleParty.trim()) finalTerms.final_responsible_party = finalResponsibleParty.trim()
+    onDecide('accepted', note, finalTerms)
+  }
+
+  return (
+    <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
+      <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Decision</p>
+      {isProposed && canDecide ? (
+        <div style={{ display: 'grid', gap: 12, marginTop: 10 }}>
+          {isChangeOrder ? (
+            <div style={{ display: 'grid', gap: 12 }}>
+              <p style={{ fontSize: 13, color: '#334155', lineHeight: 1.5, margin: 0 }}>Chat can clarify terms. Enter the final accepted terms here before accepting this Change Order.</p>
+              {currentItem && (
+                <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 8, padding: 12 }}>
+                  <p style={{ fontSize: 11, color: '#64748B', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Current affected obligation</p>
+                  <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+                    <SummaryCell label="Agreement" value={proposal.contract_title || 'Not provided'} />
+                    <SummaryCell label="Obligation" value={currentItem.title || 'Not provided'} />
+                    <SummaryCell label="Current Due Date" value={currentItem.due_date ? dueDateLabel(currentItem.due_date) : 'Not provided'} />
+                    <SummaryCell label="Current Amount" value={currentItem.amount ? formatMoney(currentItem.amount) : 'Not provided'} />
+                    <SummaryCell label="Current Responsible" value={currentItem.responsible_party || 'Not provided'} />
+                    <SummaryCell label="Current Status" value={currentItemStatus} />
+                  </div>
+                </div>
+              )}
+              <div style={{ background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 8, padding: 12, display: 'grid', gap: 10 }}>
+                <p style={{ fontSize: 12, color: '#9A3412', margin: 0, fontWeight: 900 }}>Final accepted terms</p>
+                <label style={fieldLabelStyle}>
+                  Final due date
+                  <input type="date" value={finalDueDate} onChange={(event) => setFinalDueDate(event.target.value)} style={inputStyle} />
+                </label>
+                <label style={fieldLabelStyle}>
+                  Final amount
+                  <input type="number" step="0.01" min="0" value={finalAmount} onChange={(event) => setFinalAmount(event.target.value)} style={inputStyle} />
+                </label>
+                <label style={fieldLabelStyle}>
+                  Final responsible party
+                  <select value={finalResponsibleParty} onChange={(event) => setFinalResponsibleParty(event.target.value)} style={inputStyle}>
+                    <option value="">No change</option>
+                    {partyOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              </div>
+            </div>
+          ) : (
+            <p style={{ fontSize: 13, color: '#334155', lineHeight: 1.5, margin: 0 }}>Accepting this Add-on records proposal status only. It does not create a new active obligation in this slice.</p>
+          )}
+          <textarea
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="Decision note"
+            rows={3}
+            style={{ border: '1px solid #CBD5E1', borderRadius: 8, padding: 10, background: '#FFFFFF', color: '#0F1F3D', fontSize: 13, resize: 'vertical', fontFamily: 'inherit' }}
+          />
+          {error && <p style={{ fontSize: 12, color: '#B91C1C', margin: 0, fontWeight: 800 }}>{error}</p>}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" onClick={acceptProposal} disabled={Boolean(busy)} style={{ ...primaryButtonStyle, opacity: busy && !acceptBusy ? 0.55 : 1, cursor: busy ? 'default' : 'pointer' }}>
+              {acceptBusy ? 'Accepting...' : isChangeOrder ? 'Accept Change Order' : 'Accept'}
+            </button>
+            <button type="button" onClick={() => onDecide('rejected', note)} disabled={Boolean(busy)} style={{ ...amberButtonStyle, opacity: busy && !rejectBusy ? 0.55 : 1, cursor: busy ? 'default' : 'pointer' }}>
+              {rejectBusy ? 'Rejecting...' : isChangeOrder ? 'Reject Change Order' : 'Reject'}
+            </button>
+          </div>
+        </div>
+      ) : isProposed && isProposer ? (
+        <p style={{ fontSize: 13, color: '#64748B', lineHeight: 1.5, margin: '10px 0 0' }}>Waiting for counterparty decision.</p>
+      ) : isProposed ? (
+        <p style={{ fontSize: 13, color: '#64748B', lineHeight: 1.5, margin: '10px 0 0' }}>Only the non-proposing agreement party can decide this proposal.</p>
+      ) : (
+        <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 8, padding: 12, marginTop: 10, display: 'grid', gap: 10 }}>
+          <div>
+            <p style={{ fontSize: 14, color: '#0F1F3D', margin: 0, fontWeight: 900 }}>{proposalStatusLabel(proposal.status)}</p>
+            <p style={{ fontSize: 12, color: '#64748B', margin: '6px 0 0' }}>Decided by {decidedBy} · {eventTimeLabel(proposal.decided_at || undefined)}</p>
+          </div>
+          {isChangeOrder && proposal.status === 'accepted' && (
+            <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 12 }}>
+              <p style={{ fontSize: 11, color: '#64748B', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Accepted final terms</p>
+              <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+                <SummaryCell label="Final Due Date" value={proposal.final_due_date ? dueDateLabel(proposal.final_due_date) : 'Unchanged'} />
+                <SummaryCell label="Final Amount" value={proposal.final_amount ? formatMoney(proposal.final_amount) : 'Unchanged'} />
+                <SummaryCell label="Final Responsible" value={proposal.final_responsible_party || 'Unchanged'} />
+              </div>
+            </div>
+          )}
+          {proposal.decision_note && <p style={{ fontSize: 12, color: '#334155', lineHeight: 1.5, whiteSpace: 'pre-wrap', margin: 0 }}>{proposal.decision_note}</p>}
+        </div>
+      )}
+    </section>
+  )
+}
 
 function PlaceholderPanel({ title }: { title: string }) {
   return (

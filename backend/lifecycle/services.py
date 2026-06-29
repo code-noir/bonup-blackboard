@@ -1,15 +1,16 @@
 import json
 import re
-from datetime import datetime
+from datetime import datetime, time
 from decimal import Decimal
 from html import unescape
 
 from django.db import transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_date, parse_datetime
 
 from backend.agreement_exchange.models import AgreementExchange
 from backend.agreement_exchange.notifications import find_user_by_email, notify_exchange_recipient
-from backend.contracts.models import ContractVersion, LifecycleAgreement, LifecycleEvent, LifecycleItem, LifecycleItemAttachment, LifecycleItemMessage, LifecycleItemResponse, LifecycleItemUserState
+from backend.contracts.models import ContractVersion, LifecycleAgreement, LifecycleChangeProposal, LifecycleChangeProposalMessage, LifecycleEvent, LifecycleItem, LifecycleItemAttachment, LifecycleItemMessage, LifecycleItemResponse, LifecycleItemUserState
 from backend.notifications.models import Notification
 
 
@@ -1137,6 +1138,425 @@ def submit_lifecycle_item_response(item, user, response, note=""):
         event.save(update_fields=["metadata"])
     return item_response
 
+
+
+
+def _change_proposal_type_label(proposal_type):
+    if proposal_type == LifecycleChangeProposal.TYPE_ADD_ON:
+        return "add-on"
+    if proposal_type == LifecycleChangeProposal.TYPE_CHANGE_ORDER:
+        return "change order"
+    return "proposal"
+
+
+def _change_proposal_title(proposal_type):
+    if proposal_type == LifecycleChangeProposal.TYPE_ADD_ON:
+        return "Add-on proposed"
+    if proposal_type == LifecycleChangeProposal.TYPE_CHANGE_ORDER:
+        return "Change order proposed"
+    return "Change proposed"
+
+
+def _change_proposal_message(agreement, proposal, *, actor):
+    return "\n".join([
+        f"Agreement: {agreement.contract.title or 'Untitled contract'}",
+        f"From: {_actor_label(actor)}",
+        f"Proposal: {proposal.title}",
+        f"Type: {_change_proposal_type_label(proposal.proposal_type).title()}",
+    ])
+
+
+def notify_agreement_performance_change_proposal_counterparty(agreement, proposal, *, actor):
+    recipient, _email = _timeline_recipient(agreement, actor)
+    if not recipient or (getattr(actor, "is_authenticated", False) and recipient.id == actor.id):
+        return None
+    action = "create_add_on" if proposal.proposal_type == LifecycleChangeProposal.TYPE_ADD_ON else "create_change_order"
+    notification = Notification.objects.create(
+        user=recipient,
+        notification_type="agreement_timeline",
+        title=_change_proposal_title(proposal.proposal_type),
+        message=_change_proposal_message(agreement, proposal, actor=actor),
+        related_contract=agreement.contract,
+        metadata={
+            "source": "agreement_performance_change_proposal",
+            "action": action,
+            "contract_id": str(agreement.contract_id),
+            "lifecycle_agreement_id": str(agreement.id),
+            "proposal_id": str(proposal.id),
+            "affected_item_id": str(proposal.affected_item_id) if proposal.affected_item_id else None,
+            "proposal_type": proposal.proposal_type,
+            "proposal_title": proposal.title,
+            "actor_id": str(actor.id) if getattr(actor, "is_authenticated", False) else None,
+            "actor_label": _actor_label(actor),
+            "target_url": _performance_target_url(),
+            "redirect_url": _performance_target_url(),
+        },
+    )
+    return {
+        "in_app_created": True,
+        "notification_id": str(notification.id),
+        "recipient_id": str(recipient.id),
+    }
+
+
+def _parse_change_proposal_amount(value):
+    if value in (None, ""):
+        return None
+    try:
+        return Decimal(str(value))
+    except Exception as exc:
+        raise ValueError("amount must be a valid decimal.") from exc
+
+
+def _parse_change_proposal_due_date(value):
+    from django.utils.dateparse import parse_date, parse_datetime
+
+    if value in (None, ""):
+        return None
+    if hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
+        return value
+    parsed_date = parse_date(str(value))
+    if parsed_date:
+        return parsed_date
+    parsed_datetime = parse_datetime(str(value))
+    if parsed_datetime:
+        return parsed_datetime.date()
+    raise ValueError("Due date must be a valid date in YYYY-MM-DD format.")
+
+
+@transaction.atomic
+def create_lifecycle_change_proposal(agreement, user, data):
+    if not getattr(user, "is_authenticated", False):
+        raise PermissionError("Only agreement participants can create proposals.")
+
+    agreement = (
+        LifecycleAgreement.objects
+        .select_for_update(of=("self",))
+        .select_related("contract", "contract__initiator")
+        .get(pk=agreement.pk)
+    )
+
+    proposal_type = data.get("proposal_type")
+    if proposal_type not in {LifecycleChangeProposal.TYPE_ADD_ON, LifecycleChangeProposal.TYPE_CHANGE_ORDER}:
+        raise ValueError("proposal_type must be add_on or change_order.")
+
+    title = (data.get("title") or "").strip()
+    if not title:
+        raise ValueError("title is required.")
+
+    description = (data.get("description") or "").strip()
+    if not description:
+        if proposal_type == LifecycleChangeProposal.TYPE_ADD_ON:
+            raise ValueError("description is required.")
+        raise ValueError("description/reason is required.")
+
+    affected_item = None
+    affected_item_id = data.get("affected_item") or data.get("affected_item_id")
+    if proposal_type == LifecycleChangeProposal.TYPE_CHANGE_ORDER:
+        if not affected_item_id:
+            raise ValueError("Select an affected obligation.")
+        try:
+            affected_item = LifecycleItem.objects.get(pk=affected_item_id, lifecycle_agreement=agreement)
+        except LifecycleItem.DoesNotExist as exc:
+            raise ValueError("affected_item must belong to this lifecycle agreement.") from exc
+    elif affected_item_id:
+        try:
+            affected_item = LifecycleItem.objects.get(pk=affected_item_id, lifecycle_agreement=agreement)
+        except LifecycleItem.DoesNotExist as exc:
+            raise ValueError("affected_item must belong to this lifecycle agreement.") from exc
+
+    responsible_party = (data.get("responsible_party") or "").strip()
+    valid_responsible_parties = {"", LifecycleChangeProposal.RESPONSIBLE_INITIATOR, LifecycleChangeProposal.RESPONSIBLE_COUNTERPARTY}
+    if responsible_party not in valid_responsible_parties:
+        raise ValueError("Responsible party must be initiator or counterparty.")
+    if proposal_type == LifecycleChangeProposal.TYPE_ADD_ON and not responsible_party:
+        raise ValueError("Select a responsible party.")
+
+    proposal = LifecycleChangeProposal.objects.create(
+        lifecycle_agreement=agreement,
+        contract=agreement.contract,
+        proposal_type=proposal_type,
+        proposed_by=user,
+        affected_item=affected_item,
+        title=title,
+        description=description,
+        responsible_party=responsible_party,
+        amount=_parse_change_proposal_amount(data.get("amount")),
+        due_date=_parse_change_proposal_due_date(data.get("due_date")),
+        note=(data.get("note") or data.get("message") or "").strip(),
+    )
+    notify_agreement_performance_change_proposal_counterparty(agreement, proposal, actor=user)
+    return proposal
+
+
+def _proposal_message_notification_message(agreement, proposal, *, actor, body):
+    preview = " ".join(str(body or "").split())[:240]
+    return "\n".join([
+        f"Agreement: {agreement.contract.title or 'Untitled contract'}",
+        f"Proposal: {proposal.title}",
+        f"Message from: {_actor_label(actor)}",
+        preview,
+    ])
+
+
+def notify_agreement_performance_change_proposal_message_counterparty(agreement, proposal, *, actor, message):
+    recipient, _email = _timeline_recipient(agreement, actor)
+    if not recipient or (getattr(actor, "is_authenticated", False) and recipient.id == actor.id):
+        return None
+    notification = Notification.objects.create(
+        user=recipient,
+        notification_type="agreement_timeline",
+        title="New proposal message",
+        message=_proposal_message_notification_message(agreement, proposal, actor=actor, body=message.body),
+        related_contract=agreement.contract,
+        metadata={
+            "source": "agreement_performance_change_proposal_message",
+            "contract_id": str(agreement.contract_id),
+            "lifecycle_agreement_id": str(agreement.id),
+            "proposal_id": str(proposal.id),
+            "message_id": str(message.id),
+            "proposal_title": proposal.title,
+            "actor_id": str(actor.id) if getattr(actor, "is_authenticated", False) else None,
+            "actor_label": _actor_label(actor),
+            "target_url": _performance_target_url(),
+            "redirect_url": _performance_target_url(),
+        },
+    )
+    return {
+        "in_app_created": True,
+        "notification_id": str(notification.id),
+        "recipient_id": str(recipient.id),
+    }
+
+
+@transaction.atomic
+def create_lifecycle_change_proposal_message(proposal, user, body):
+    if not getattr(user, "is_authenticated", False):
+        raise PermissionError("Only agreement participants can send proposal messages.")
+    text = (body or "").strip()
+    if not text:
+        raise ValueError("Message body is required.")
+    if len(text) > 2000:
+        raise ValueError("Message must be 2000 characters or fewer.")
+
+    proposal = (
+        LifecycleChangeProposal.objects
+        .select_for_update(of=("self",))
+        .select_related("lifecycle_agreement", "lifecycle_agreement__contract", "lifecycle_agreement__contract__initiator", "contract", "proposed_by")
+        .get(pk=proposal.pk)
+    )
+    agreement = proposal.lifecycle_agreement
+    message = LifecycleChangeProposalMessage.objects.create(
+        proposal=proposal,
+        lifecycle_agreement=agreement,
+        contract=agreement.contract,
+        sender=user,
+        body=text,
+    )
+    notify_agreement_performance_change_proposal_message_counterparty(agreement, proposal, actor=user, message=message)
+    return message
+
+
+def _proposal_decision_notification_title(decision):
+    return "Proposal accepted" if decision == LifecycleChangeProposal.STATUS_ACCEPTED else "Proposal rejected"
+
+
+def _proposal_decision_notification_message(agreement, proposal, *, actor, decision, note=""):
+    lines = [
+        f"Agreement: {agreement.contract.title or 'Untitled contract'}",
+        f"Proposal: {proposal.title}",
+        f"Decision by: {_actor_label(actor)}",
+        f"Decision: {decision.title()}",
+    ]
+    if note:
+        lines.append(note)
+    return "\n".join(lines)
+
+
+def notify_agreement_performance_change_proposal_decision_proposer(agreement, proposal, *, actor, decision, note="", event=None):
+    recipient = proposal.proposed_by
+    if not recipient or (getattr(actor, "is_authenticated", False) and recipient.id == actor.id):
+        return None
+    notification = Notification.objects.create(
+        user=recipient,
+        notification_type="agreement_timeline",
+        title=_proposal_decision_notification_title(decision),
+        message=_proposal_decision_notification_message(agreement, proposal, actor=actor, decision=decision, note=note),
+        related_contract=agreement.contract,
+        metadata={
+            "source": "agreement_performance_change_proposal",
+            "action": decision,
+            "contract_id": str(agreement.contract_id),
+            "lifecycle_agreement_id": str(agreement.id),
+            "proposal_id": str(proposal.id),
+            "affected_item_id": str(proposal.affected_item_id) if proposal.affected_item_id else None,
+            "proposal_title": proposal.title,
+            "lifecycle_event_id": str(event.id) if event else None,
+            "actor_id": str(actor.id) if getattr(actor, "is_authenticated", False) else None,
+            "actor_label": _actor_label(actor),
+            "target_url": _performance_target_url(),
+            "redirect_url": _performance_target_url(),
+        },
+    )
+    return {
+        "in_app_created": True,
+        "notification_id": str(notification.id),
+        "recipient_id": str(recipient.id),
+    }
+
+
+def _date_to_item_datetime(value):
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    combined = datetime.combine(value, time.min)
+    if timezone.is_naive(combined):
+        return timezone.make_aware(combined, timezone.get_current_timezone())
+    return combined
+
+
+def _proposal_final_responsible_party_label(agreement, value):
+    cleaned = (value or "").strip()
+    if not cleaned:
+        return ""
+    if cleaned == LifecycleChangeProposal.RESPONSIBLE_INITIATOR:
+        user = agreement.contract.initiator
+        return (" ".join(part for part in [user.first_name, user.last_name] if part).strip() or user.email or "Initiator") if user else "Initiator"
+    if cleaned == LifecycleChangeProposal.RESPONSIBLE_COUNTERPARTY:
+        return agreement.contract.counterparty_name or agreement.contract.counterparty_email or "Counterparty"
+    if len(cleaned) > 255:
+        raise ValueError("final_responsible_party must be 255 characters or fewer.")
+    return cleaned
+
+
+def _money_string(value):
+    return str(value) if value is not None else None
+
+
+def _datetime_string(value):
+    return value.isoformat() if value else None
+
+
+def _sync_change_order_overlays(affected_item, *, due_date=None, amount=None, responsible_party=None):
+    if not affected_item:
+        return
+    for overlay in LifecycleItemUserState.objects.filter(lifecycle_item=affected_item):
+        changed = False
+        if due_date is not None and overlay.due_date_override != due_date:
+            overlay.due_date_override = due_date
+            changed = True
+        if amount is not None and overlay.amount_override != amount:
+            overlay.amount_override = amount
+            changed = True
+        if responsible_party is not None and overlay.responsible_party_override != responsible_party:
+            overlay.responsible_party_override = responsible_party
+            changed = True
+        if changed:
+            overlay.save()
+
+
+@transaction.atomic
+def decide_lifecycle_change_proposal(proposal, user, decision, note="", final_terms=None):
+    if not getattr(user, "is_authenticated", False):
+        raise PermissionError("Only agreement participants can decide proposals.")
+    if decision not in {LifecycleChangeProposal.STATUS_ACCEPTED, LifecycleChangeProposal.STATUS_REJECTED}:
+        raise ValueError("decision must be accepted or rejected.")
+
+    proposal = (
+        LifecycleChangeProposal.objects
+        .select_for_update(of=("self",))
+        .select_related("lifecycle_agreement", "lifecycle_agreement__contract", "lifecycle_agreement__contract__initiator", "contract", "proposed_by", "decided_by", "affected_item")
+        .get(pk=proposal.pk)
+    )
+    if proposal.proposed_by_id == user.id:
+        raise PermissionError("The proposer cannot decide their own proposal.")
+    if proposal.status != LifecycleChangeProposal.STATUS_PROPOSED:
+        raise ValueError("This proposal has already been decided.")
+
+    final_terms = final_terms or {}
+    decision_note = (note or "").strip()
+    accepted_change_order = decision == LifecycleChangeProposal.STATUS_ACCEPTED and proposal.proposal_type == LifecycleChangeProposal.TYPE_CHANGE_ORDER
+    affected_item = None
+    old_values = {}
+    new_values = {}
+    item_update_fields = []
+    final_due_date = None
+    final_amount = None
+    final_responsible_party = ""
+
+    if accepted_change_order:
+        if not proposal.affected_item_id:
+            raise ValueError("Accepted change orders require an affected obligation.")
+        affected_item = LifecycleItem.objects.select_for_update(of=("self",)).get(pk=proposal.affected_item_id, lifecycle_agreement=proposal.lifecycle_agreement)
+        old_values = {
+            "old_due_date": _datetime_string(affected_item.due_date),
+            "old_amount": _money_string(affected_item.amount),
+            "old_responsible_party": affected_item.responsible_party,
+        }
+        if "final_due_date" in final_terms:
+            final_due_date = _parse_change_proposal_due_date(final_terms.get("final_due_date"))
+            if final_due_date is not None:
+                affected_item.due_date = _date_to_item_datetime(final_due_date)
+                item_update_fields.append("due_date")
+        if "final_amount" in final_terms:
+            final_amount = _parse_change_proposal_amount(final_terms.get("final_amount"))
+            if final_amount is not None:
+                affected_item.amount = final_amount
+                item_update_fields.append("amount")
+        if "final_responsible_party" in final_terms:
+            final_responsible_party = _proposal_final_responsible_party_label(proposal.lifecycle_agreement, final_terms.get("final_responsible_party"))
+            if final_responsible_party:
+                affected_item.responsible_party = final_responsible_party
+                item_update_fields.append("responsible_party")
+        if item_update_fields:
+            affected_item.save(update_fields=[*item_update_fields, "updated_at"])
+        _sync_change_order_overlays(
+            affected_item,
+            due_date=affected_item.due_date if final_due_date is not None else None,
+            amount=affected_item.amount if final_amount is not None else None,
+            responsible_party=affected_item.responsible_party if final_responsible_party else None,
+        )
+        new_values = {
+            "new_due_date": _datetime_string(affected_item.due_date),
+            "new_amount": _money_string(affected_item.amount),
+            "new_responsible_party": affected_item.responsible_party,
+        }
+
+    proposal.status = decision
+    proposal.decided_by = user
+    proposal.decided_at = timezone.now()
+    proposal.decision_note = decision_note
+    proposal_update_fields = ["status", "decided_by", "decided_at", "decision_note", "updated_at"]
+    if accepted_change_order:
+        proposal.final_due_date = final_due_date
+        proposal.final_amount = final_amount
+        proposal.final_responsible_party = final_responsible_party
+        proposal_update_fields.extend(["final_due_date", "final_amount", "final_responsible_party"])
+    proposal.save(update_fields=proposal_update_fields)
+
+    event_type = "change_order_accepted" if accepted_change_order else ("change_proposal_accepted" if decision == LifecycleChangeProposal.STATUS_ACCEPTED else "change_proposal_rejected")
+    event = LifecycleEvent.objects.create(
+        lifecycle_agreement=proposal.lifecycle_agreement,
+        event_type=event_type,
+        title="Change Order accepted" if accepted_change_order else _proposal_decision_notification_title(decision),
+        description=f"{_actor_label(user)} {decision} proposal: {proposal.title}",
+        metadata={
+            "source": "agreement_performance_change_proposal",
+            "proposal_id": str(proposal.id),
+            "proposal_type": proposal.proposal_type,
+            "proposal_title": proposal.title,
+            "affected_item_id": str(proposal.affected_item_id) if proposal.affected_item_id else None,
+            "decision": decision,
+            "decision_note": decision_note,
+            "actor_id": str(user.id),
+            "actor_label": _actor_label(user),
+            **old_values,
+            **new_values,
+        },
+    )
+    notify_agreement_performance_change_proposal_decision_proposer(proposal.lifecycle_agreement, proposal, actor=user, decision=decision, note=decision_note, event=event)
+    return proposal
 
 
 

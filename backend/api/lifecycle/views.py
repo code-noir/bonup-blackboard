@@ -151,10 +151,28 @@ def _proposal_affected_item_summary(item):
     }
 
 
+def _accepted_add_on_items_for_proposal(proposal):
+    if proposal.proposal_type != LifecycleChangeProposal.TYPE_ADD_ON:
+        return []
+    source_prefix = f"lifecycle_change_proposal:{proposal.id}"
+    items = (
+        LifecycleItem.objects
+        .filter(
+            lifecycle_agreement=proposal.lifecycle_agreement,
+            source_type=LifecycleItem.SOURCE_ADD_ON,
+            source_id__startswith=source_prefix,
+        )
+        .order_by("due_date", "created_at")
+    )
+    return [item for item in items if not (item.metadata or {}).get("superseded_by_add_on_generation")]
+
+
 def _change_proposal_summary(proposal, user=None):
     agreement = proposal.lifecycle_agreement
     is_proposer = bool(user and getattr(user, "is_authenticated", False) and proposal.proposed_by_id == user.id)
     can_decide = bool(user and getattr(user, "is_authenticated", False) and proposal.status == LifecycleChangeProposal.STATUS_PROPOSED and proposal.proposed_by_id != user.id)
+    created_items = _accepted_add_on_items_for_proposal(proposal)
+    created_item = created_items[0] if created_items else None
     return {
         "id": str(proposal.id),
         "lifecycle_agreement_id": str(proposal.lifecycle_agreement_id),
@@ -166,6 +184,12 @@ def _change_proposal_summary(proposal, user=None):
         "proposed_by_email": proposal.proposed_by.email if proposal.proposed_by else None,
         "affected_item": _proposal_affected_item_summary(proposal.affected_item),
         "affected_item_id": str(proposal.affected_item_id) if proposal.affected_item_id else None,
+        "created_item": _proposal_affected_item_summary(created_item),
+        "created_item_id": str(created_item.id) if created_item else None,
+        "created_items": [_proposal_affected_item_summary(item) for item in created_items],
+        "created_item_ids": [str(item.id) for item in created_items],
+        "generated_item_count": len(created_items),
+        "generation_mode": getattr(proposal, "generation_mode", "single") or "single",
         "title": proposal.title,
         "description": proposal.description,
         "responsible_party": proposal.responsible_party,
@@ -586,8 +610,17 @@ def _without_legacy_generated_payment_sources(items, has_generated_repayment_sch
     ]
 
 
+def _is_superseded_add_on_item(item):
+    return bool((item.get("metadata") or {}).get("superseded_by_add_on_generation"))
+
+
+def _chronological_worklist_items(items):
+    return sorted(items, key=lambda item: (item.get("due_date") is None, item.get("due_date") or "", item.get("title") or "", item.get("id") or ""))
+
+
 def _grouped_views(grouped, events):
     all_items = [item for values in grouped.values() for item in values]
+    all_items = [item for item in all_items if not _is_superseded_add_on_item(item)]
     has_generated_repayment_schedule = any(_is_generated_repayment_schedule_item(item) for item in grouped["payments"])
     action_items = _without_legacy_generated_payment_sources(all_items, has_generated_repayment_schedule)
     _apply_related_deadline_statuses(action_items)
@@ -603,7 +636,8 @@ def _grouped_views(grouped, events):
         "to_dos": [item for item in grouped["obligations"] if item.get("item_type") in {"responsibility", "obligation"}],
         "payments": [item for item in payment_items if item.get("item_type") == "payment"],
         "due_dates": sorted(due_dated_action_items, key=lambda item: item.get("due_date") or ""),
-        "work_services": [item for item in grouped["services"] if item.get("item_type") in {"service", "service_work"}],
+        "work_services": [item for item in grouped["services"] if item.get("item_type") in {"service", "service_work"} and not _is_superseded_add_on_item(item)],
+        "my_obligations": _chronological_worklist_items([item for item in action_items if item.get("can_upload_proof")]),
         "changes_add_ons": [item for item in grouped["changes"] if item.get("item_type") in {"change_order", "add_on"}],
         "activity": events,
         "documents": [item for item in grouped["documents"] if item.get("item_type") == "document"],

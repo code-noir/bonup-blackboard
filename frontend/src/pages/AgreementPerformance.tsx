@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import api, { tokenStorage } from '@/api/client'
 
-type BoardTab = 'payments' | 'work' | 'due_dates' | 'activity' | 'changes'
+type BoardTab = 'payments' | 'work' | 'due_dates' | 'my_obligations' | 'activity' | 'changes'
 
 type BoardViewOptions = { resetView?: boolean }
 
@@ -133,6 +133,12 @@ type LifecycleChangeProposal = {
   proposed_by_email?: string | null
   affected_item?: { id: string; title?: string; item_type?: string; status?: string; due_date?: string | null; amount?: string | null; responsible_party?: string | null } | null
   affected_item_id?: string | null
+  created_item?: { id: string; title?: string; item_type?: string; status?: string; due_date?: string | null; amount?: string | null; responsible_party?: string | null } | null
+  created_item_id?: string | null
+  created_items?: Array<{ id: string; title?: string; item_type?: string; status?: string; due_date?: string | null; amount?: string | null; responsible_party?: string | null }>
+  created_item_ids?: string[]
+  generated_item_count?: number
+  generation_mode?: 'single' | 'before_each_payment_deadline' | string
   title: string
   description: string
   responsible_party?: string | null
@@ -159,7 +165,7 @@ type LifecycleBoardResponse = {
   signed_version?: { label?: string; content_snapshot?: string }
   lifecycle_agreement?: { id: string; status?: string; performance_ready?: boolean }
   parties?: { initiator?: { id?: string; email?: string; name?: string } | null; counterparty?: { email?: string | null; name?: string | null } | null }
-  views?: Partial<Record<'payments' | 'work_services' | 'due_dates' | 'activity' | 'changes_add_ons', TimelineItem[] | TimelineEvent[]>>
+  views?: Partial<Record<'payments' | 'work_services' | 'due_dates' | 'my_obligations' | 'activity' | 'changes_add_ons', TimelineItem[] | TimelineEvent[]>>
   events?: TimelineEvent[]
 }
 
@@ -167,6 +173,7 @@ const BOARD_TABS: Array<{ key: BoardTab; label: string }> = [
   { key: 'payments', label: 'Payments' },
   { key: 'work', label: 'Work / Services' },
   { key: 'due_dates', label: 'Deadlines' },
+  { key: 'my_obligations', label: 'My Obligations' },
   { key: 'activity', label: 'Activity' },
   { key: 'changes', label: 'Changes / Add-ons' },
 ]
@@ -275,9 +282,19 @@ function proposalActionLabel(value?: string) {
   return 'Submit Change Order Proposal'
 }
 
+function generationModeLabel(value?: string) {
+  if (value === 'before_each_payment_deadline') return 'Before each remaining payment deadline'
+  return 'One-time obligation'
+}
+
 function isLifecycleTimelineItem(item: TimelineItem) {
   const source = item.source || item.source_type
-  return Boolean(item.id && source !== 'contract_payment_obligation' && source !== 'payment_record')
+  return Boolean(
+    item.id &&
+      source !== 'contract_payment_obligation' &&
+      source !== 'contract_service_obligation' &&
+      source !== 'payment_record'
+  )
 }
 
 function proposalPartyLabel(options: PartyOption[], value?: string | null) {
@@ -421,6 +438,39 @@ function metadataString(metadata: Record<string, unknown> | undefined, key: stri
   return typeof value === 'string' ? value : ''
 }
 
+function metadataBoolean(metadata: Record<string, unknown> | undefined, key: string) {
+  const value = metadata?.[key]
+  return value === true || value === 'true'
+}
+
+function uniqueTimelineItems(items: TimelineItem[]) {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    if (seen.has(item.id)) return false
+    seen.add(item.id)
+    return true
+  })
+}
+
+function isGeneratedAddOnItem(item: TimelineItem) {
+  const source = item.source || item.source_type
+  return source === 'add_on' && metadataBoolean(item.metadata, 'generated_from_add_on') && Boolean(metadataString(item.metadata, 'target_item_id'))
+}
+
+function generatedAddOnTargetId(item: TimelineItem) {
+  return metadataString(item.metadata, 'target_item_id')
+}
+
+function generatedAddOnTargetTitle(item: TimelineItem) {
+  return metadataString(item.metadata, 'target_item_title')
+}
+
+function generatedAddOnContextLabel(item: TimelineItem) {
+  const targetTitle = generatedAddOnTargetTitle(item)
+  if (!targetTitle) return 'Generated Add-on'
+  return `for ${targetTitle}`
+}
+
 function performanceEventVerb(event: TimelineEvent) {
   if (event.event_type === 'payment_marked_paid') return 'paid'
   if (event.event_type === 'work_marked_performed') return 'performed'
@@ -437,13 +487,14 @@ function performanceEventActionLabel(event: TimelineEvent) {
   if (event.event_type === 'proof_uploaded') return 'Proof uploaded'
   if (event.event_type === 'proof_response') return metadataString(event.metadata, 'response_label') || 'Response recorded'
   if (event.event_type === 'change_order_accepted') return 'Change Order accepted'
+  if (event.event_type === 'add_on_accepted') return 'Add-on accepted'
   if (event.event_type === 'change_proposal_accepted') return 'Proposal accepted'
   if (event.event_type === 'change_proposal_rejected') return 'Proposal rejected'
   return event.title || humanize(event.event_type)
 }
 
 function isPerformanceActivityEvent(event: TimelineEvent) {
-  return ['payment_marked_paid', 'work_marked_performed', 'item_completed', 'proof_uploaded', 'proof_response', 'change_order_accepted', 'change_proposal_accepted', 'change_proposal_rejected'].includes(event.event_type || '')
+  return ['payment_marked_paid', 'work_marked_performed', 'item_completed', 'proof_uploaded', 'proof_response', 'change_order_accepted', 'add_on_accepted', 'change_proposal_accepted', 'change_proposal_rejected'].includes(event.event_type || '')
 }
 
 function eventItemId(event: TimelineEvent) {
@@ -569,6 +620,7 @@ export default function AgreementPerformance() {
   const [responseBusy, setResponseBusy] = useState('')
   const [attachmentLoading, setAttachmentLoading] = useState('')
   const [attachmentsByItemId, setAttachmentsByItemId] = useState<Record<string, LifecycleAttachment[]>>({})
+  const [attachmentErrorsByItemId, setAttachmentErrorsByItemId] = useState<Record<string, string>>({})
   const [messagesByItemId, setMessagesByItemId] = useState<Record<string, LifecycleMessage[]>>({})
   const [messageLoading, setMessageLoading] = useState('')
   const [messageSending, setMessageSending] = useState('')
@@ -636,6 +688,7 @@ export default function AgreementPerformance() {
       ...((data?.views?.payments || []) as TimelineItem[]),
       ...((data?.views?.work_services || []) as TimelineItem[]),
       ...((data?.views?.due_dates || []) as TimelineItem[]),
+      ...((data?.views?.my_obligations || []) as TimelineItem[]),
     ]
     return items.find((item) => item.id === itemId) || null
   }
@@ -671,7 +724,7 @@ export default function AgreementPerformance() {
     setBoardData((current) => {
       if (!current?.views) return current
       const nextViews = { ...current.views }
-      for (const key of ['payments', 'work_services', 'due_dates'] as const) {
+      for (const key of ['payments', 'work_services', 'due_dates', 'my_obligations'] as const) {
         const values = nextViews[key]
         if (!Array.isArray(values)) continue
         nextViews[key] = values.map((item) => ('id' in item && item.id === updated.id ? updated : item)) as TimelineItem[]
@@ -696,33 +749,47 @@ export default function AgreementPerformance() {
     }
   }
 
-  async function loadAttachments(itemId: string) {
-    setAttachmentLoading(itemId)
+  async function loadAttachments(item: TimelineItem) {
+    if (!item?.id) return
+    if (!isLifecycleTimelineItem(item)) {
+      setAttachmentsByItemId((current) => ({ ...current, [item.id]: [] }))
+      setAttachmentErrorsByItemId((current) => ({ ...current, [item.id]: '' }))
+      return
+    }
+    setAttachmentLoading(item.id)
+    setAttachmentErrorsByItemId((current) => ({ ...current, [item.id]: '' }))
     try {
-      const response = await api.get<AttachmentListResponse>(`/lifecycle/items/${itemId}/attachments/`)
-      setAttachmentsByItemId((current) => ({ ...current, [itemId]: response.data.results || [] }))
+      const response = await api.get<AttachmentListResponse>(`/lifecycle/items/${item.id}/attachments/`)
+      setAttachmentsByItemId((current) => ({ ...current, [item.id]: response.data.results || [] }))
     } catch (err) {
-      setBoardError(getErrorMessage(err, 'Unable to load proof and receipt attachments.'))
+      setAttachmentsByItemId((current) => ({ ...current, [item.id]: current[item.id] || [] }))
+      setAttachmentErrorsByItemId((current) => ({ ...current, [item.id]: getErrorMessage(err, 'Unable to load proof and receipt attachments.') }))
     } finally {
       setAttachmentLoading('')
     }
   }
 
   async function uploadProof(item: TimelineItem, file: File, note: string) {
-    setAttachmentBusy(item.id)
     setFeedback('')
     setBoardError('')
+    setAttachmentErrorsByItemId((current) => ({ ...current, [item.id]: '' }))
+    if (!isLifecycleTimelineItem(item)) {
+      const message = 'Proof and receipt uploads are only available for active lifecycle obligations.'
+      setAttachmentErrorsByItemId((current) => ({ ...current, [item.id]: message }))
+      throw new Error(message)
+    }
+    setAttachmentBusy(item.id)
     const formData = new FormData()
     formData.append('file', file)
     if (note.trim()) formData.append('note', note.trim())
     try {
       await postMultipart<LifecycleAttachment>(`/lifecycle/items/${item.id}/attachments/`, formData)
-      await loadAttachments(item.id)
+      await loadAttachments(item)
       const refreshed = await refreshBoard({ resetView: false })
       setSelectedItem(findBoardItem(refreshed, item.id) || item)
       setFeedback('Proof uploaded.')
     } catch (err) {
-      setBoardError(getFetchErrorMessage(err, 'Unable to upload proof or receipt.'))
+      setAttachmentErrorsByItemId((current) => ({ ...current, [item.id]: getFetchErrorMessage(err, 'Unable to upload proof or receipt.') }))
       throw err
     } finally {
       setAttachmentBusy('')
@@ -745,15 +812,20 @@ export default function AgreementPerformance() {
     }
   }
 
-  async function loadMessages(itemId: string, options: { quiet?: boolean } = {}) {
-    if (!itemId) return
+  async function loadMessages(item: TimelineItem, options: { quiet?: boolean } = {}) {
+    if (!item?.id) return
+    if (!isLifecycleTimelineItem(item)) {
+      setMessagesByItemId((current) => ({ ...current, [item.id]: [] }))
+      if (!options.quiet) setMessageError('')
+      return
+    }
     if (!options.quiet) {
-      setMessageLoading(itemId)
+      setMessageLoading(item.id)
       setMessageError('')
     }
     try {
-      const response = await api.get<MessageListResponse>(`/lifecycle/items/${itemId}/messages/`)
-      setMessagesByItemId((current) => ({ ...current, [itemId]: response.data.results || [] }))
+      const response = await api.get<MessageListResponse>(`/lifecycle/items/${item.id}/messages/`)
+      setMessagesByItemId((current) => ({ ...current, [item.id]: response.data.results || [] }))
     } catch (err) {
       if (!options.quiet) setMessageError(getErrorMessage(err, 'Unable to load messages.'))
     } finally {
@@ -858,8 +930,8 @@ export default function AgreementPerformance() {
   }
 
   async function sendMessage(item: TimelineItem, body: string) {
-    if (!item?.id) {
-      setMessageError('Unable to send message for this obligation.')
+    if (!item?.id || !isLifecycleTimelineItem(item)) {
+      setMessageError('Messages are only available for active lifecycle obligations.')
       return
     }
     const trimmed = body.trim()
@@ -869,7 +941,7 @@ export default function AgreementPerformance() {
     try {
       const response = await api.post<LifecycleMessage>(`/lifecycle/items/${item.id}/messages/`, { body: trimmed })
       setMessagesByItemId((current) => ({ ...current, [item.id]: [...(current[item.id] || []), response.data] }))
-      void loadMessages(item.id, { quiet: true })
+      void loadMessages(item, { quiet: true })
     } catch (err) {
       setMessageError(getErrorMessage(err, 'Unable to send message.'))
     } finally {
@@ -892,15 +964,15 @@ export default function AgreementPerformance() {
   }, [boardData?.lifecycle_agreement?.id])
 
   useEffect(() => {
-    if (selectedItem) void loadAttachments(selectedItem.id)
+    if (selectedItem) void loadAttachments(selectedItem)
   }, [selectedItem?.id])
 
   useEffect(() => {
-    const selectedItemId = selectedItem?.id
-    if (!selectedItemId) return
-    void loadMessages(selectedItemId)
+    if (!selectedItem?.id) return
+    void loadMessages(selectedItem)
+    if (!isLifecycleTimelineItem(selectedItem)) return
     const intervalId = window.setInterval(() => {
-      void loadMessages(selectedItemId, { quiet: true })
+      void loadMessages(selectedItem, { quiet: true })
     }, 4000)
     return () => window.clearInterval(intervalId)
   }, [selectedItem?.id])
@@ -919,10 +991,12 @@ export default function AgreementPerformance() {
     ...((boardData?.views?.payments || []) as TimelineItem[]),
     ...((boardData?.views?.work_services || []) as TimelineItem[]),
     ...((boardData?.views?.due_dates || []) as TimelineItem[]),
+    ...((boardData?.views?.my_obligations || []) as TimelineItem[]),
   ]), [boardData])
   const payments = useMemo(() => ((boardData?.views?.payments || []) as TimelineItem[]).filter(isDisplayableItem), [boardData])
   const workItems = useMemo(() => ((boardData?.views?.work_services || []) as TimelineItem[]).filter(isDisplayableItem), [boardData])
   const dueDates = useMemo(() => ((boardData?.views?.due_dates || []) as TimelineItem[]).filter(isDisplayableItem), [boardData])
+  const myObligations = useMemo(() => sortByDeadline(((boardData?.views?.my_obligations || []) as TimelineItem[]).filter(isDisplayableItem)), [boardData])
   const events = useMemo(() => ((boardData?.views?.activity || boardData?.events || []) as TimelineEvent[]), [boardData])
   const proposalAffectedItems = useMemo(() => rawBoardItems.filter(isLifecycleTimelineItem), [rawBoardItems])
   const availablePartyOptions = useMemo(() => {
@@ -938,7 +1012,8 @@ export default function AgreementPerformance() {
   const selectedItemEvents = selectedItem ? itemHistoryEvents(events, selectedItem) : []
   const selectedItemAttachments = selectedItem ? attachmentsByItemId[selectedItem.id] || [] : []
   const selectedItemMessages = selectedItem ? messagesByItemId[selectedItem.id] || [] : []
-  const activeItems = activeTab === 'payments' ? payments : activeTab === 'work' ? workItems : []
+  const selectedItemAttachmentError = selectedItem ? attachmentErrorsByItemId[selectedItem.id] || '' : ''
+  const activeItems = activeTab === 'payments' ? payments : activeTab === 'work' ? workItems : activeTab === 'my_obligations' ? myObligations : []
   const sourceText = signedAgreementText(boardData?.signed_version?.content_snapshot)
 
   return (
@@ -1039,6 +1114,7 @@ export default function AgreementPerformance() {
                 events={selectedItemEvents}
                 attachments={selectedItemAttachments}
                 attachmentsLoading={attachmentLoading === selectedItem.id}
+                attachmentError={selectedItemAttachmentError}
                 attachmentBusy={attachmentBusy === selectedItem.id}
                 messages={selectedItemMessages}
                 messagesLoading={messageLoading === selectedItem.id}
@@ -1076,7 +1152,7 @@ export default function AgreementPerformance() {
                 onBackToList={() => { setSelectedProposal(null); setProposalMode(null); setProposalMessageError(''); setDecisionError('') }}
                 onSubmit={(payload) => void submitProposal(payload)}
                 onSendProposalMessage={(proposal, body) => void sendProposalMessage(proposal, body)}
-                onDecideProposal={(proposal, decision, note) => void decideProposal(proposal, decision, note)}
+                onDecideProposal={(proposal, decision, note, finalTerms) => void decideProposal(proposal, decision, note, finalTerms)}
               />
             ) : activeTab === 'due_dates' ? (
               <DeadlinesPanel items={dueDates} onOpen={setSelectedItem} onViewSource={() => setShowSource(true)} />
@@ -1094,6 +1170,7 @@ export default function AgreementPerformance() {
                     onViewSource={() => setShowSource(true)}
                     reminderBusy={reminderBusy === item.id}
                     onReminder={(reminderAt) => void saveReminder(item, reminderAt)}
+                    showTypeLabel={activeTab === 'my_obligations'}
                   />
                 ))}
               </div>
@@ -1220,6 +1297,7 @@ function ProposalForm({
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [responsibleParty, setResponsibleParty] = useState('')
+  const [generationMode, setGenerationMode] = useState('single')
   const [amount, setAmount] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [note, setNote] = useState('')
@@ -1242,6 +1320,7 @@ function ProposalForm({
       title: title.trim(),
       description: description.trim(),
       responsible_party: responsibleParty,
+      generation_mode: isAddOn ? generationMode : 'single',
       amount: amount.trim(),
       due_date: normalizedDueDate,
       note: note.trim(),
@@ -1286,6 +1365,15 @@ function ProposalForm({
               {partyOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
+          {isAddOn && (
+            <label style={fieldLabelStyle}>
+              Add-on generation
+              <select value={generationMode} onChange={(event) => setGenerationMode(event.target.value)} style={inputStyle}>
+                <option value="single">One-time obligation</option>
+                <option value="before_each_payment_deadline">Before each remaining payment deadline</option>
+              </select>
+            </label>
+          )}
           <label style={fieldLabelStyle}>
             {isAddOn ? 'Amount (optional)' : 'Changed amount (optional)'}
             <input type="number" step="0.01" min="0" value={amount} onChange={(event) => setAmount(event.target.value)} style={inputStyle} />
@@ -1401,6 +1489,7 @@ function ProposalDetailCard({
           <SummaryCell label="Proposed By" value={proposedBy} />
           <SummaryCell label="Created" value={eventTimeLabel(proposal.created_at)} />
           <SummaryCell label="Responsible" value={responsible || 'Not provided'} />
+          <SummaryCell label="Generation" value={generationModeLabel(proposal.generation_mode)} />
           <SummaryCell label="Amount" value={proposal.amount ? formatMoney(proposal.amount) : 'Not provided'} />
           <SummaryCell label="Due Date" value={proposal.due_date ? dueDateLabel(proposal.due_date) : 'Not provided'} />
         </div>
@@ -1491,24 +1580,33 @@ function PerformanceCard({
   onViewSource,
   onReminder,
   reminderBusy,
+  variant = 'default',
+  contextLabel,
+  showTypeLabel = false,
 }: {
   item: TimelineItem
   onOpen: () => void
   onViewSource: () => void
   onReminder: (reminderAt: string | null) => void
   reminderBusy: boolean
+  variant?: 'default' | 'child'
+  contextLabel?: string
+  showTypeLabel?: boolean
 }) {
   const action = itemAction(item)
   const [reminderDraft, setReminderDraft] = useState(toDateTimeInput(item.reminder_at))
   useEffect(() => {
     setReminderDraft(toDateTimeInput(item.reminder_at))
   }, [item.id, item.reminder_at])
+  const isChild = variant === 'child'
   return (
-    <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
+    <div style={{ background: isChild ? '#FBFDFF' : '#FFFFFF', border: isChild ? '1px solid #D7E0E8' : '1px solid #E5E7EB', borderRadius: 8, padding: isChild ? 12 : 14, marginLeft: isChild ? 12 : 0, boxShadow: isChild ? 'inset 3px 0 0 #94A3B8' : 'none' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
-          <p style={{ fontSize: 15, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{item.title || humanize(item.item_type)}</p>
+          <p style={{ fontSize: isChild ? 14 : 15, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{item.title || humanize(item.item_type)}</p>
+          {contextLabel && <p style={{ fontSize: 11, color: '#64748B', margin: '5px 0 0', fontStyle: 'italic' }}>{contextLabel}</p>}
           <p style={{ fontSize: 11, color: '#94A3B8', margin: '5px 0 0' }}>{sourceLabel(item)}</p>
+          {showTypeLabel && <span style={{ display: 'inline-flex', marginTop: 7, borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 900, background: '#EFF6FF', color: '#1D4ED8' }}>{itemTypeLabel(item)}</span>}
         </div>
         <span style={{ alignSelf: 'flex-start', borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 800, ...statusStyle(item.status || item.lifecycle_state) }}>{performanceStatusLabel(item)}</span>
       </div>
@@ -1624,6 +1722,8 @@ function ActivityPanel({ events, items, agreementTitle }: { events: TimelineEven
         const result = metadataString(event.metadata, 'result_status') || metadataString(event.metadata, 'status') || metadataString(event.metadata, 'decision')
         const sentence = proposalTitle && event.event_type === 'change_order_accepted'
           ? `${actor} accepted Change Order: ${proposalTitle}.`
+          : proposalTitle && event.event_type === 'add_on_accepted'
+            ? `${actor} accepted Add-on: ${proposalTitle}. New obligation added.`
           : proposalTitle && event.event_type === 'change_proposal_accepted'
             ? `${actor} accepted proposal: ${proposalTitle}.`
             : proposalTitle && event.event_type === 'change_proposal_rejected'
@@ -1720,12 +1820,14 @@ function fileSizeLabel(value?: number) {
 function ProofReceiptsSection({
   attachments,
   loading,
+  loadError,
   busy,
   canUpload,
   onUpload,
 }: {
   attachments: LifecycleAttachment[]
   loading: boolean
+  loadError: string
   busy: boolean
   canUpload: boolean
   onUpload: (file: File, note: string) => Promise<void>
@@ -1753,7 +1855,7 @@ function ProofReceiptsSection({
       setError('')
       setInputKey((value) => value + 1)
     } catch {
-      // The page-level error banner reports the upload failure.
+      // The proof section reports upload failures inline.
     }
   }
 
@@ -1761,6 +1863,11 @@ function ProofReceiptsSection({
     <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
       <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Proof / Receipt</p>
       <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+        {loadError && (
+          <div style={{ border: '1px solid #FECACA', borderRadius: 8, padding: 12, background: '#FEF2F2' }}>
+            <p style={{ fontSize: 13, color: '#B91C1C', margin: 0 }}>{loadError}</p>
+          </div>
+        )}
         {loading ? (
           <p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>Loading proof and receipts...</p>
         ) : attachments.length === 0 ? (
@@ -2066,11 +2173,13 @@ function ProposalDecisionPanel({
   const [note, setNote] = useState('')
   const [finalDueDate, setFinalDueDate] = useState(dateInputValue(proposal.due_date))
   const [finalAmount, setFinalAmount] = useState(proposal.amount || '')
-  const [finalResponsibleParty, setFinalResponsibleParty] = useState(proposal.responsible_party || '')
+  const [finalResponsibleParty, setFinalResponsibleParty] = useState(proposal.proposal_type === 'add_on' ? (proposal.final_responsible_party || '') : (proposal.responsible_party || ''))
   const isProposed = proposal.status === 'proposed'
   const canDecide = Boolean(proposal.can_decide)
   const isProposer = Boolean(proposal.is_proposer)
   const isChangeOrder = proposal.proposal_type === 'change_order'
+  const isAddOn = proposal.proposal_type === 'add_on'
+  const acceptsFinalTerms = isChangeOrder || isAddOn
   const acceptBusy = busy === `${proposal.id}:accepted`
   const rejectBusy = busy === `${proposal.id}:rejected`
   const decidedBy = proposal.decided_by?.name || proposal.decided_by?.email || 'A party'
@@ -2081,18 +2190,16 @@ function ProposalDecisionPanel({
     setNote('')
     setFinalDueDate(dateInputValue(proposal.final_due_date || proposal.due_date))
     setFinalAmount(proposal.final_amount || proposal.amount || '')
-    setFinalResponsibleParty(proposal.final_responsible_party || proposal.responsible_party || '')
+    setFinalResponsibleParty(proposal.proposal_type === 'add_on' ? (proposal.final_responsible_party || '') : (proposal.final_responsible_party || proposal.responsible_party || ''))
   }, [proposal.id, proposal.due_date, proposal.amount, proposal.responsible_party, proposal.final_due_date, proposal.final_amount, proposal.final_responsible_party])
 
   function acceptProposal() {
-    if (!isChangeOrder) {
-      onDecide('accepted', note)
-      return
-    }
     const finalTerms: Record<string, string> = {}
-    if (finalDueDate) finalTerms.final_due_date = finalDueDate
-    if (finalAmount.trim()) finalTerms.final_amount = finalAmount.trim()
-    if (finalResponsibleParty.trim()) finalTerms.final_responsible_party = finalResponsibleParty.trim()
+    if (acceptsFinalTerms) {
+      if (finalDueDate) finalTerms.final_due_date = finalDueDate
+      if (finalAmount.trim()) finalTerms.final_amount = finalAmount.trim()
+      if (finalResponsibleParty.trim()) finalTerms.final_responsible_party = finalResponsibleParty.trim()
+    }
     onDecide('accepted', note, finalTerms)
   }
 
@@ -2101,10 +2208,10 @@ function ProposalDecisionPanel({
       <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Decision</p>
       {isProposed && canDecide ? (
         <div style={{ display: 'grid', gap: 12, marginTop: 10 }}>
-          {isChangeOrder ? (
+          {acceptsFinalTerms && (
             <div style={{ display: 'grid', gap: 12 }}>
-              <p style={{ fontSize: 13, color: '#334155', lineHeight: 1.5, margin: 0 }}>Chat can clarify terms. Enter the final accepted terms here before accepting this Change Order.</p>
-              {currentItem && (
+              <p style={{ fontSize: 13, color: '#334155', lineHeight: 1.5, margin: 0 }}>{isChangeOrder ? 'Chat can clarify terms. Enter the final accepted terms here before accepting this Change Order.' : 'Chat can clarify terms. Enter the final accepted terms for the new Add-on obligation.'}</p>
+              {isChangeOrder && currentItem && (
                 <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 8, padding: 12 }}>
                   <p style={{ fontSize: 11, color: '#64748B', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Current affected obligation</p>
                   <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
@@ -2136,8 +2243,6 @@ function ProposalDecisionPanel({
                 </label>
               </div>
             </div>
-          ) : (
-            <p style={{ fontSize: 13, color: '#334155', lineHeight: 1.5, margin: 0 }}>Accepting this Add-on records proposal status only. It does not create a new active obligation in this slice.</p>
           )}
           <textarea
             value={note}
@@ -2166,13 +2271,28 @@ function ProposalDecisionPanel({
             <p style={{ fontSize: 14, color: '#0F1F3D', margin: 0, fontWeight: 900 }}>{proposalStatusLabel(proposal.status)}</p>
             <p style={{ fontSize: 12, color: '#64748B', margin: '6px 0 0' }}>Decided by {decidedBy} · {eventTimeLabel(proposal.decided_at || undefined)}</p>
           </div>
-          {isChangeOrder && proposal.status === 'accepted' && (
+          {acceptsFinalTerms && proposal.status === 'accepted' && (
             <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 12 }}>
               <p style={{ fontSize: 11, color: '#64748B', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Accepted final terms</p>
               <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
                 <SummaryCell label="Final Due Date" value={proposal.final_due_date ? dueDateLabel(proposal.final_due_date) : 'Unchanged'} />
                 <SummaryCell label="Final Amount" value={proposal.final_amount ? formatMoney(proposal.final_amount) : 'Unchanged'} />
-                <SummaryCell label="Final Responsible" value={proposal.final_responsible_party || 'Unchanged'} />
+                <SummaryCell label="Final Responsible" value={proposal.final_responsible_party || proposal.responsible_party_label || 'Unchanged'} />
+                <SummaryCell label="Generation" value={generationModeLabel(proposal.generation_mode)} />
+              </div>
+            </div>
+          )}
+          {(proposal.created_items?.length || proposal.created_item) && (
+            <div style={{ background: '#FFFFFF', border: '1px solid #D1FAE5', borderRadius: 8, padding: 12 }}>
+              <p style={{ fontSize: 11, color: '#047857', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Created obligations</p>
+              <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+                <SummaryCell label="Count" value={`${proposal.generated_item_count || proposal.created_items?.length || 1}`} />
+                {(proposal.created_items && proposal.created_items.length > 0 ? proposal.created_items : proposal.created_item ? [proposal.created_item] : []).map((item) => (
+                  <div key={item.id} style={{ border: '1px solid #E5E7EB', borderRadius: 8, padding: 10, background: '#F8FAFC' }}>
+                    <p style={{ fontSize: 13, fontWeight: 900, color: '#0F1F3D', margin: 0 }}>{item.title || 'New obligation'}</p>
+                    <p style={{ fontSize: 12, color: '#64748B', margin: '5px 0 0' }}>{humanize(item.item_type)} · {item.due_date ? dueDateLabel(item.due_date) : 'No due date'} · Responsible: {item.responsible_party || 'Not provided'}</p>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -2198,6 +2318,7 @@ function PerformanceThread({
   events,
   attachments,
   attachmentsLoading,
+  attachmentError,
   attachmentBusy,
   messages,
   messagesLoading,
@@ -2217,6 +2338,7 @@ function PerformanceThread({
   events: TimelineEvent[]
   attachments: LifecycleAttachment[]
   attachmentsLoading: boolean
+  attachmentError: string
   attachmentBusy: boolean
   messages: LifecycleMessage[]
   messagesLoading: boolean
@@ -2270,7 +2392,7 @@ function PerformanceThread({
             />
           )}
 
-          <ProofReceiptsSection attachments={attachments} loading={attachmentsLoading} busy={attachmentBusy} canUpload={Boolean(item.can_upload_proof)} onUpload={onUploadProof} />
+          <ProofReceiptsSection attachments={attachments} loading={attachmentsLoading} loadError={attachmentError} busy={attachmentBusy} canUpload={Boolean(item.can_upload_proof)} onUpload={onUploadProof} />
           <MessagesPanel messages={messages} loading={messagesLoading} sending={messageSending} error={messageError} onSend={onSendMessage} />
           <CounterpartyReviewSection item={item} busy={responseBusy} onRespond={onRespond} />
 

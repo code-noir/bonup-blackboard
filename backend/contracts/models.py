@@ -1073,10 +1073,6 @@ class LifecycleItemAttachment(models.Model):
     file_size = models.PositiveBigIntegerField(default=0)
     kind = models.CharField(max_length=40, choices=KIND_CHOICES, default=KIND_PROOF_RECEIPT)
     note = models.TextField(blank=True, default="")
-    decision_note = models.TextField(blank=True, default="")
-    final_due_date = models.DateField(null=True, blank=True)
-    final_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    final_responsible_party = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1125,10 +1121,6 @@ class LifecycleItemResponse(models.Model):
     )
     response = models.CharField(max_length=40, choices=RESPONSE_CHOICES)
     note = models.TextField(blank=True, default="")
-    decision_note = models.TextField(blank=True, default="")
-    final_due_date = models.DateField(null=True, blank=True)
-    final_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    final_responsible_party = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1187,6 +1179,14 @@ class LifecycleChangeProposal(models.Model):
     TYPE_ADD_ON = "add_on"
     TYPE_CHANGE_ORDER = "change_order"
 
+    GENERATION_SINGLE = "single"
+    GENERATION_BEFORE_EACH_PAYMENT_DEADLINE = "before_each_payment_deadline"
+
+    GENERATION_MODE_CHOICES = [
+        (GENERATION_SINGLE, "One-time obligation"),
+        (GENERATION_BEFORE_EACH_PAYMENT_DEADLINE, "Before each payment deadline"),
+    ]
+
     PROPOSAL_TYPE_CHOICES = [
         (TYPE_ADD_ON, "Add-on"),
         (TYPE_CHANGE_ORDER, "Change Order"),
@@ -1238,6 +1238,7 @@ class LifecycleChangeProposal(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField()
     responsible_party = models.CharField(max_length=20, choices=RESPONSIBLE_PARTY_CHOICES, blank=True, default="")
+    generation_mode = models.CharField(max_length=40, choices=GENERATION_MODE_CHOICES, default=GENERATION_SINGLE)
     amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     due_date = models.DateField(null=True, blank=True)
     note = models.TextField(blank=True, default="")

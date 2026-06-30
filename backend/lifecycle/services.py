@@ -1,6 +1,6 @@
 import json
 import re
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from decimal import Decimal
 from html import unescape
 
@@ -777,6 +777,15 @@ def _counterparty_user(contract):
     return find_user_by_email(contract.counterparty_email)
 
 
+def _is_agreement_participant(agreement, user):
+    if not getattr(user, "is_authenticated", False):
+        return False
+    contract = agreement.contract
+    if contract.initiator_id == user.id:
+        return True
+    return _normalise_party_token(getattr(user, "email", "")) == _normalise_party_token(contract.counterparty_email)
+
+
 def _party_value_sets(agreement):
     contract = agreement.contract
     counterparty = _counterparty_user(contract)
@@ -1272,6 +1281,13 @@ def create_lifecycle_change_proposal(agreement, user, data):
     if proposal_type == LifecycleChangeProposal.TYPE_ADD_ON and not responsible_party:
         raise ValueError("Select a responsible party.")
 
+    generation_mode = (data.get("generation_mode") or LifecycleChangeProposal.GENERATION_SINGLE).strip()
+    valid_generation_modes = {LifecycleChangeProposal.GENERATION_SINGLE, LifecycleChangeProposal.GENERATION_BEFORE_EACH_PAYMENT_DEADLINE}
+    if generation_mode not in valid_generation_modes:
+        raise ValueError("generation_mode must be single or before_each_payment_deadline.")
+    if proposal_type != LifecycleChangeProposal.TYPE_ADD_ON:
+        generation_mode = LifecycleChangeProposal.GENERATION_SINGLE
+
     proposal = LifecycleChangeProposal.objects.create(
         lifecycle_agreement=agreement,
         contract=agreement.contract,
@@ -1281,6 +1297,7 @@ def create_lifecycle_change_proposal(agreement, user, data):
         title=title,
         description=description,
         responsible_party=responsible_party,
+        generation_mode=generation_mode,
         amount=_parse_change_proposal_amount(data.get("amount")),
         due_date=_parse_change_proposal_due_date(data.get("due_date")),
         note=(data.get("note") or data.get("message") or "").strip(),
@@ -1377,6 +1394,7 @@ def notify_agreement_performance_change_proposal_decision_proposer(agreement, pr
     recipient = proposal.proposed_by
     if not recipient or (getattr(actor, "is_authenticated", False) and recipient.id == actor.id):
         return None
+    metadata = event.metadata or {} if event else {}
     notification = Notification.objects.create(
         user=recipient,
         notification_type="agreement_timeline",
@@ -1386,10 +1404,12 @@ def notify_agreement_performance_change_proposal_decision_proposer(agreement, pr
         metadata={
             "source": "agreement_performance_change_proposal",
             "action": decision,
+            "proposal_type": proposal.proposal_type,
             "contract_id": str(agreement.contract_id),
             "lifecycle_agreement_id": str(agreement.id),
             "proposal_id": str(proposal.id),
             "affected_item_id": str(proposal.affected_item_id) if proposal.affected_item_id else None,
+            "created_item_id": metadata.get("created_item_id"),
             "proposal_title": proposal.title,
             "lifecycle_event_id": str(event.id) if event else None,
             "actor_id": str(actor.id) if getattr(actor, "is_authenticated", False) else None,
@@ -1456,6 +1476,257 @@ def _sync_change_order_overlays(affected_item, *, due_date=None, amount=None, re
             overlay.save()
 
 
+def _proposal_add_on_source_id(proposal, target_item=None):
+    base = f"lifecycle_change_proposal:{proposal.id}"
+    if target_item is None:
+        return base
+    return f"{base}:target:{target_item.id}"
+
+
+def _proposal_generation_mode(proposal):
+    return getattr(proposal, "generation_mode", "") or LifecycleChangeProposal.GENERATION_SINGLE
+
+
+def _proposal_final_due_date(proposal, final_terms):
+    if "final_due_date" in final_terms:
+        return _parse_change_proposal_due_date(final_terms.get("final_due_date"))
+    return proposal.due_date
+
+
+def _proposal_final_amount(proposal, final_terms):
+    if "final_amount" in final_terms:
+        return _parse_change_proposal_amount(final_terms.get("final_amount"))
+    return proposal.amount
+
+
+def _proposal_final_responsible_party(agreement, proposal, final_terms):
+    if "final_responsible_party" in final_terms:
+        return _proposal_final_responsible_party_label(agreement, final_terms.get("final_responsible_party"))
+    return _proposal_final_responsible_party_label(agreement, proposal.responsible_party)
+
+
+def _add_on_item_type_for_terms(*, amount, due_date):
+    if amount is not None:
+        return LifecycleItem.TYPE_PAYMENT
+    if due_date is not None:
+        return LifecycleItem.TYPE_SERVICE_WORK
+    return LifecycleItem.TYPE_RESPONSIBILITY
+
+
+def _active_add_on_payment_targets(proposal):
+    inactive_statuses = {
+        LifecycleItem.STATUS_COMPLETED,
+        LifecycleItem.STATUS_CONFIRMED,
+        LifecycleItem.STATUS_CANCELLED,
+        LifecycleItem.STATUS_REJECTED,
+    }
+    return list(
+        LifecycleItem.objects
+        .select_for_update(of=("self",))
+        .filter(
+            lifecycle_agreement=proposal.lifecycle_agreement,
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            due_date__isnull=False,
+        )
+        .exclude(status__in=inactive_statuses)
+        .exclude(source_type=LifecycleItem.SOURCE_ADD_ON)
+        .order_by("due_date", "created_at")
+    )
+
+
+def _recurring_add_on_due_date(target_item, *, offset_days=3):
+    return target_item.due_date - timedelta(days=offset_days)
+
+
+def _get_or_create_single_add_on_item(proposal, user, *, final_due_date, final_amount, final_responsible_party):
+    source_id = _proposal_add_on_source_id(proposal)
+    existing = (
+        LifecycleItem.objects
+        .select_for_update(of=("self",))
+        .filter(lifecycle_agreement=proposal.lifecycle_agreement, source_type=LifecycleItem.SOURCE_ADD_ON, source_id=source_id)
+        .first()
+    )
+    if existing:
+        return existing, False
+
+    item = LifecycleItem.objects.create(
+        lifecycle_agreement=proposal.lifecycle_agreement,
+        item_type=_add_on_item_type_for_terms(amount=final_amount, due_date=final_due_date),
+        title=proposal.title,
+        description=proposal.description,
+        responsible_party=final_responsible_party,
+        due_date=_date_to_item_datetime(final_due_date),
+        amount=final_amount,
+        status=LifecycleItem.STATUS_PENDING,
+        source_type=LifecycleItem.SOURCE_ADD_ON,
+        source_id=source_id,
+        source_label="Accepted Add-on proposal",
+        metadata={
+            "source": "agreement_performance_change_proposal",
+            "proposal_id": str(proposal.id),
+            "proposal_type": proposal.proposal_type,
+            "proposal_title": proposal.title,
+            "generation_mode": LifecycleChangeProposal.GENERATION_SINGLE,
+            "generated_from_add_on": False,
+            "proposed_by_id": str(proposal.proposed_by_id),
+            "decided_by_id": str(user.id) if getattr(user, "is_authenticated", False) else None,
+            "accepted_at": timezone.now().isoformat(),
+            "original_due_date": proposal.due_date.isoformat() if proposal.due_date else None,
+            "original_amount": _money_string(proposal.amount),
+            "original_responsible_party": proposal.responsible_party,
+            "final_due_date": final_due_date.isoformat() if final_due_date else None,
+            "final_amount": _money_string(final_amount),
+            "final_responsible_party": final_responsible_party,
+        },
+        created_by=proposal.proposed_by,
+        visibility=LifecycleItem.VISIBILITY_PARTIES,
+    )
+    return item, True
+
+
+def _supersede_single_add_on_item_for_recurring_generation(proposal, generated_items):
+    source_id = _proposal_add_on_source_id(proposal)
+    single_item = (
+        LifecycleItem.objects
+        .select_for_update(of=("self",))
+        .filter(lifecycle_agreement=proposal.lifecycle_agreement, source_type=LifecycleItem.SOURCE_ADD_ON, source_id=source_id)
+        .first()
+    )
+    if not single_item:
+        return None
+    generated_ids = [str(item.id) for item in generated_items]
+    metadata = dict(single_item.metadata or {})
+    metadata.update({
+        "superseded_by_add_on_generation": True,
+        "superseded_generation_mode": LifecycleChangeProposal.GENERATION_BEFORE_EACH_PAYMENT_DEADLINE,
+        "superseded_by_generated_item_ids": generated_ids,
+        "superseded_at": timezone.now().isoformat(),
+    })
+    single_item.status = LifecycleItem.STATUS_CANCELLED
+    single_item.metadata = metadata
+    single_item.save(update_fields=["status", "metadata", "updated_at"])
+    return single_item
+
+
+def _get_or_create_recurring_add_on_items(proposal, user, *, final_responsible_party):
+    items = []
+    created_count = 0
+    offset_days = 3
+    for target_item in _active_add_on_payment_targets(proposal):
+        source_id = _proposal_add_on_source_id(proposal, target_item)
+        existing = (
+            LifecycleItem.objects
+            .select_for_update(of=("self",))
+            .filter(lifecycle_agreement=proposal.lifecycle_agreement, source_type=LifecycleItem.SOURCE_ADD_ON, source_id=source_id)
+            .first()
+        )
+        if existing:
+            items.append(existing)
+            continue
+        generated_due_date = _recurring_add_on_due_date(target_item, offset_days=offset_days)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=proposal.lifecycle_agreement,
+            item_type=LifecycleItem.TYPE_SERVICE_WORK,
+            title=f"{proposal.title} — {target_item.title}",
+            description=proposal.description,
+            responsible_party=final_responsible_party,
+            due_date=generated_due_date,
+            amount=None,
+            status=LifecycleItem.STATUS_PENDING,
+            source_type=LifecycleItem.SOURCE_ADD_ON,
+            source_id=source_id,
+            source_label="Accepted Add-on proposal",
+            metadata={
+                "source": "agreement_performance_change_proposal",
+                "proposal_id": str(proposal.id),
+                "proposal_type": proposal.proposal_type,
+                "proposal_title": proposal.title,
+                "generation_mode": LifecycleChangeProposal.GENERATION_BEFORE_EACH_PAYMENT_DEADLINE,
+                "generated_from_add_on": True,
+                "recurrence_type": LifecycleChangeProposal.GENERATION_BEFORE_EACH_PAYMENT_DEADLINE,
+                "offset_days": offset_days,
+                "target_item_id": str(target_item.id),
+                "target_item_title": target_item.title,
+                "target_item_due_date": target_item.due_date.isoformat() if target_item.due_date else None,
+                "proposed_by_id": str(proposal.proposed_by_id),
+                "decided_by_id": str(user.id) if getattr(user, "is_authenticated", False) else None,
+                "accepted_at": timezone.now().isoformat(),
+                "original_responsible_party": proposal.responsible_party,
+                "final_responsible_party": final_responsible_party,
+            },
+            created_by=proposal.proposed_by,
+            visibility=LifecycleItem.VISIBILITY_PARTIES,
+        )
+        items.append(item)
+        created_count += 1
+    _supersede_single_add_on_item_for_recurring_generation(proposal, items)
+    return items, created_count
+
+
+def _get_or_create_accepted_add_on_items(proposal, user, *, final_due_date, final_amount, final_responsible_party, generation_mode):
+    if generation_mode == LifecycleChangeProposal.GENERATION_BEFORE_EACH_PAYMENT_DEADLINE:
+        items, created_count = _get_or_create_recurring_add_on_items(proposal, user, final_responsible_party=final_responsible_party)
+        if not items:
+            raise ValueError("No remaining payment deadlines are available for this Add-on.")
+        return items, created_count
+    item, created = _get_or_create_single_add_on_item(
+        proposal,
+        user,
+        final_due_date=final_due_date,
+        final_amount=final_amount,
+        final_responsible_party=final_responsible_party,
+    )
+    return [item], 1 if created else 0
+
+
+def _get_or_create_add_on_accepted_event(proposal, user, items, *, decision_note, count_created, generation_mode):
+    item_ids = [str(item.id) for item in items]
+    first_item = items[0] if items else None
+    existing = (
+        LifecycleEvent.objects
+        .filter(
+            lifecycle_agreement=proposal.lifecycle_agreement,
+            event_type="add_on_accepted",
+            metadata__proposal_id=str(proposal.id),
+        )
+        .order_by("-created_at")
+        .first()
+    )
+    metadata_update = {
+        "generated_item_ids": item_ids,
+        "generation_mode": generation_mode,
+        "count_created": count_created,
+        "created_item_ids": item_ids,
+        "created_item_id": str(first_item.id) if first_item else None,
+        "item_id": str(first_item.id) if first_item else None,
+        "lifecycle_item_id": str(first_item.id) if first_item else None,
+    }
+    if existing:
+        existing.metadata = {**(existing.metadata or {}), **metadata_update}
+        existing.save(update_fields=["metadata"])
+        return existing, False
+    event = LifecycleEvent.objects.create(
+        lifecycle_agreement=proposal.lifecycle_agreement,
+        event_type="add_on_accepted",
+        title="Add-on accepted",
+        description=f"{_actor_label(user)} accepted Add-on: {proposal.title}. New obligation added.",
+        metadata={
+            "source": "agreement_performance_change_proposal",
+            "proposal_id": str(proposal.id),
+            "proposal_type": proposal.proposal_type,
+            "proposal_title": proposal.title,
+            "item_title": first_item.title if first_item else proposal.title,
+            "item_type": first_item.item_type if first_item else None,
+            "decision": LifecycleChangeProposal.STATUS_ACCEPTED,
+            "decision_note": decision_note,
+            "actor_id": str(user.id) if getattr(user, "is_authenticated", False) else None,
+            "actor_label": _actor_label(user),
+            **metadata_update,
+        },
+    )
+    return event, True
+
+
 @transaction.atomic
 def decide_lifecycle_change_proposal(proposal, user, decision, note="", final_terms=None):
     if not getattr(user, "is_authenticated", False):
@@ -1469,6 +1740,8 @@ def decide_lifecycle_change_proposal(proposal, user, decision, note="", final_te
         .select_related("lifecycle_agreement", "lifecycle_agreement__contract", "lifecycle_agreement__contract__initiator", "contract", "proposed_by", "decided_by", "affected_item")
         .get(pk=proposal.pk)
     )
+    if not _is_agreement_participant(proposal.lifecycle_agreement, user):
+        raise PermissionError("Only agreement participants can decide proposals.")
     if proposal.proposed_by_id == user.id:
         raise PermissionError("The proposer cannot decide their own proposal.")
     if proposal.status != LifecycleChangeProposal.STATUS_PROPOSED:
@@ -1477,7 +1750,11 @@ def decide_lifecycle_change_proposal(proposal, user, decision, note="", final_te
     final_terms = final_terms or {}
     decision_note = (note or "").strip()
     accepted_change_order = decision == LifecycleChangeProposal.STATUS_ACCEPTED and proposal.proposal_type == LifecycleChangeProposal.TYPE_CHANGE_ORDER
+    accepted_add_on = decision == LifecycleChangeProposal.STATUS_ACCEPTED and proposal.proposal_type == LifecycleChangeProposal.TYPE_ADD_ON
     affected_item = None
+    created_add_on_items = []
+    created_add_on_count = 0
+    add_on_generation_mode = LifecycleChangeProposal.GENERATION_SINGLE
     old_values = {}
     new_values = {}
     item_update_fields = []
@@ -1522,39 +1799,64 @@ def decide_lifecycle_change_proposal(proposal, user, decision, note="", final_te
             "new_amount": _money_string(affected_item.amount),
             "new_responsible_party": affected_item.responsible_party,
         }
+    elif accepted_add_on:
+        add_on_generation_mode = _proposal_generation_mode(proposal)
+        final_due_date = _proposal_final_due_date(proposal, final_terms)
+        final_amount = _proposal_final_amount(proposal, final_terms)
+        final_responsible_party = _proposal_final_responsible_party(proposal.lifecycle_agreement, proposal, final_terms)
+        if not final_responsible_party:
+            raise ValueError("Accepted Add-ons require a responsible party.")
+        created_add_on_items, created_add_on_count = _get_or_create_accepted_add_on_items(
+            proposal,
+            user,
+            final_due_date=final_due_date,
+            final_amount=final_amount,
+            final_responsible_party=final_responsible_party,
+            generation_mode=add_on_generation_mode,
+        )
 
     proposal.status = decision
     proposal.decided_by = user
     proposal.decided_at = timezone.now()
     proposal.decision_note = decision_note
     proposal_update_fields = ["status", "decided_by", "decided_at", "decision_note", "updated_at"]
-    if accepted_change_order:
+    if accepted_change_order or accepted_add_on:
         proposal.final_due_date = final_due_date
         proposal.final_amount = final_amount
         proposal.final_responsible_party = final_responsible_party
         proposal_update_fields.extend(["final_due_date", "final_amount", "final_responsible_party"])
     proposal.save(update_fields=proposal_update_fields)
 
-    event_type = "change_order_accepted" if accepted_change_order else ("change_proposal_accepted" if decision == LifecycleChangeProposal.STATUS_ACCEPTED else "change_proposal_rejected")
-    event = LifecycleEvent.objects.create(
-        lifecycle_agreement=proposal.lifecycle_agreement,
-        event_type=event_type,
-        title="Change Order accepted" if accepted_change_order else _proposal_decision_notification_title(decision),
-        description=f"{_actor_label(user)} {decision} proposal: {proposal.title}",
-        metadata={
-            "source": "agreement_performance_change_proposal",
-            "proposal_id": str(proposal.id),
-            "proposal_type": proposal.proposal_type,
-            "proposal_title": proposal.title,
-            "affected_item_id": str(proposal.affected_item_id) if proposal.affected_item_id else None,
-            "decision": decision,
-            "decision_note": decision_note,
-            "actor_id": str(user.id),
-            "actor_label": _actor_label(user),
-            **old_values,
-            **new_values,
-        },
-    )
+    if accepted_add_on:
+        event, _event_created = _get_or_create_add_on_accepted_event(
+            proposal,
+            user,
+            created_add_on_items,
+            decision_note=decision_note,
+            count_created=created_add_on_count,
+            generation_mode=add_on_generation_mode,
+        )
+    else:
+        event_type = "change_order_accepted" if accepted_change_order else ("change_proposal_accepted" if decision == LifecycleChangeProposal.STATUS_ACCEPTED else "change_proposal_rejected")
+        event = LifecycleEvent.objects.create(
+            lifecycle_agreement=proposal.lifecycle_agreement,
+            event_type=event_type,
+            title="Change Order accepted" if accepted_change_order else _proposal_decision_notification_title(decision),
+            description=f"{_actor_label(user)} {decision} proposal: {proposal.title}",
+            metadata={
+                "source": "agreement_performance_change_proposal",
+                "proposal_id": str(proposal.id),
+                "proposal_type": proposal.proposal_type,
+                "proposal_title": proposal.title,
+                "affected_item_id": str(proposal.affected_item_id) if proposal.affected_item_id else None,
+                "decision": decision,
+                "decision_note": decision_note,
+                "actor_id": str(user.id),
+                "actor_label": _actor_label(user),
+                **old_values,
+                **new_values,
+            },
+        )
     notify_agreement_performance_change_proposal_decision_proposer(proposal.lifecycle_agreement, proposal, actor=user, decision=decision, note=decision_note, event=event)
     return proposal
 

@@ -1001,6 +1001,195 @@ class LifecycleItem(models.Model):
         return f"{self.item_type} - {self.title}"
 
 
+class ContractExtractionRun(models.Model):
+    STAGE_PREPARE = "prepare"
+    STAGE_FINAL_PRE_SIGN = "final_pre_sign"
+    STAGE_POST_SIGN_BACKFILL = "post_sign_backfill"
+    STAGE_EXTERNAL_IMPORT = "external_import"
+
+    STAGE_CHOICES = [
+        (STAGE_PREPARE, "Prepare"),
+        (STAGE_FINAL_PRE_SIGN, "Final Pre-Sign"),
+        (STAGE_POST_SIGN_BACKFILL, "Post-Sign Backfill"),
+        (STAGE_EXTERNAL_IMPORT, "External Import"),
+    ]
+
+    SOURCE_EDITOR_HTML = "editor_html"
+    SOURCE_FINAL_EDITOR_HTML = "final_editor_html"
+    SOURCE_UPLOADED_CONTRACT = "uploaded_contract"
+    SOURCE_AGREEMENT_EXCHANGE_VERSION = "agreement_exchange_version"
+    SOURCE_SIGNED_VERSION = "signed_version"
+    SOURCE_PASTED_TEXT = "pasted_text"
+
+    SOURCE_KIND_CHOICES = [
+        (SOURCE_EDITOR_HTML, "Editor HTML"),
+        (SOURCE_FINAL_EDITOR_HTML, "Final Editor HTML"),
+        (SOURCE_UPLOADED_CONTRACT, "Uploaded Contract"),
+        (SOURCE_AGREEMENT_EXCHANGE_VERSION, "Agreement Exchange Version"),
+        (SOURCE_SIGNED_VERSION, "Signed Version"),
+        (SOURCE_PASTED_TEXT, "Pasted Text"),
+    ]
+
+    STATUS_RUNNING = "running"
+    STATUS_COMPLETED = "completed"
+    STATUS_FAILED = "failed"
+    STATUS_SUPERSEDED = "superseded"
+
+    STATUS_CHOICES = [
+        (STATUS_RUNNING, "Running"),
+        (STATUS_COMPLETED, "Completed"),
+        (STATUS_FAILED, "Failed"),
+        (STATUS_SUPERSEDED, "Superseded"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    contract = models.ForeignKey(
+        Contract,
+        on_delete=models.CASCADE,
+        related_name="extraction_runs",
+    )
+    contract_version = models.ForeignKey(
+        ContractVersion,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="extraction_runs",
+    )
+    stage = models.CharField(max_length=40, choices=STAGE_CHOICES)
+    source_kind = models.CharField(max_length=40, choices=SOURCE_KIND_CHOICES)
+    source_hash = models.CharField(max_length=128, blank=True, default="")
+    engine_name = models.CharField(max_length=120, blank=True, default="")
+    engine_version = models.CharField(max_length=80, blank=True, default="")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_RUNNING)
+    warnings = models.JSONField(default=list, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_contract_extraction_runs",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["contract", "stage", "status"], name="contract_extract_run_state_idx"),
+            models.Index(fields=["contract_version", "stage"], name="contract_extract_run_ver_idx"),
+            models.Index(fields=["source_hash"], name="contract_extract_run_hash_idx"),
+            models.Index(fields=["created_at"], name="contract_extract_run_created_idx"),
+        ]
+
+    def __str__(self):
+        title = self.contract.title or "Untitled contract"
+        return f"{title} - {self.stage} - {self.status}"
+
+
+class ContractExtractionCandidate(models.Model):
+    TYPE_PAYMENT = "payment"
+    TYPE_SERVICE_WORK = "service_work"
+    TYPE_DEADLINE = "deadline"
+    TYPE_RESPONSIBILITY = "responsibility"
+    TYPE_NOTICE = "notice"
+    TYPE_DEPOSIT = "deposit"
+    TYPE_INSPECTION = "inspection"
+    TYPE_DELIVERY = "delivery"
+    TYPE_RECURRING_OBLIGATION = "recurring_obligation"
+    TYPE_OTHER = "other"
+
+    CANDIDATE_TYPE_CHOICES = [
+        (TYPE_PAYMENT, "Payment"),
+        (TYPE_SERVICE_WORK, "Service Work"),
+        (TYPE_DEADLINE, "Deadline"),
+        (TYPE_RESPONSIBILITY, "Responsibility"),
+        (TYPE_NOTICE, "Notice"),
+        (TYPE_DEPOSIT, "Deposit"),
+        (TYPE_INSPECTION, "Inspection"),
+        (TYPE_DELIVERY, "Delivery"),
+        (TYPE_RECURRING_OBLIGATION, "Recurring Obligation"),
+        (TYPE_OTHER, "Other"),
+    ]
+
+    REVIEW_PENDING = "pending"
+    REVIEW_APPROVED = "approved"
+    REVIEW_REJECTED = "rejected"
+    REVIEW_EDITED = "edited"
+
+    REVIEW_STATUS_CHOICES = [
+        (REVIEW_PENDING, "Pending"),
+        (REVIEW_APPROVED, "Approved"),
+        (REVIEW_REJECTED, "Rejected"),
+        (REVIEW_EDITED, "Edited"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    run = models.ForeignKey(
+        ContractExtractionRun,
+        on_delete=models.CASCADE,
+        related_name="candidates",
+    )
+    contract = models.ForeignKey(
+        Contract,
+        on_delete=models.CASCADE,
+        related_name="extraction_candidates",
+    )
+    contract_version = models.ForeignKey(
+        ContractVersion,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="extraction_candidates",
+    )
+    candidate_type = models.CharField(max_length=40, choices=CANDIDATE_TYPE_CHOICES)
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default="")
+    responsible_party = models.CharField(max_length=255, blank=True, default="")
+    beneficiary_party = models.CharField(max_length=255, blank=True, default="")
+    due_date = models.DateField(null=True, blank=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    currency = models.CharField(max_length=8, blank=True, default="")
+    recurrence = models.JSONField(default=dict, blank=True)
+    source_clause_text = models.TextField(blank=True, default="")
+    source_clause_key = models.CharField(max_length=255, blank=True, default="")
+    source_location = models.JSONField(default=dict, blank=True)
+    confidence_score = models.DecimalField(max_digits=5, decimal_places=4, null=True, blank=True)
+    missing_terms = models.JSONField(default=list, blank=True)
+    raw_payload = models.JSONField(default=dict, blank=True)
+    review_status = models.CharField(max_length=20, choices=REVIEW_STATUS_CHOICES, default=REVIEW_PENDING)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_contract_extraction_candidates",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    approved_lifecycle_item = models.ForeignKey(
+        "LifecycleItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="approved_extraction_candidates",
+    )
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["contract", "review_status"], name="contract_extract_cand_review_idx"),
+            models.Index(fields=["run", "candidate_type"], name="contract_extract_cand_type_idx"),
+            models.Index(fields=["contract_version", "review_status"], name="contract_extract_cand_ver_idx"),
+            models.Index(fields=["due_date"], name="contract_extract_cand_due_idx"),
+            models.Index(fields=["confidence_score"], name="contract_extract_cand_conf_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.title} - {self.candidate_type} - {self.review_status}"
+
+
 class LifecycleItemUserState(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     lifecycle_item = models.ForeignKey(

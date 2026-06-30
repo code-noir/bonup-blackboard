@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import date, datetime, timedelta, timezone as dt_timezone
 from io import StringIO
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -11,7 +11,7 @@ from backend.agreement_exchange.models import AgreementExchange
 from backend.agreement_exchange.services import sign_exchange
 from backend.api.contracts.services.visibility_service import resolve_contract_dashboard_status
 from backend.api.tests.helpers import authed_client, make_contract, make_user, make_version
-from backend.contracts.models import ContractObligation, ContractServiceObligation, LifecycleAgreement, LifecycleChangeProposal, LifecycleChangeProposalMessage, LifecycleEvent, LifecycleItem, LifecycleItemAttachment, LifecycleItemMessage, LifecycleItemResponse, LifecycleItemUserState
+from backend.contracts.models import ContractExtractionCandidate, ContractExtractionRun, ContractObligation, ContractServiceObligation, LifecycleAgreement, LifecycleChangeProposal, LifecycleChangeProposalMessage, LifecycleEvent, LifecycleItem, LifecycleItemAttachment, LifecycleItemMessage, LifecycleItemResponse, LifecycleItemUserState
 from backend.notifications.models import Notification
 from backend.lifecycle.services import LifecycleNotReadyError, get_or_create_lifecycle_for_signed_contract
 
@@ -31,6 +31,124 @@ class LifecycleFoundationTests(TestCase):
         self.version = make_version(self.contract, self.initiator, content_snapshot=self.snapshot, status="signed")
         self.contract.status = "signed"
         self.contract.save(update_fields=["status"])
+
+    def test_contract_extraction_run_can_be_created_without_lifecycle_side_effects(self):
+        run = ContractExtractionRun.objects.create(
+            contract=self.contract,
+            contract_version=self.version,
+            stage=ContractExtractionRun.STAGE_PREPARE,
+            source_kind=ContractExtractionRun.SOURCE_EDITOR_HTML,
+            source_hash="snapshot-sha",
+            engine_name="storage-foundation-test",
+            engine_version="0.1",
+            status=ContractExtractionRun.STATUS_COMPLETED,
+            created_by=self.initiator,
+        )
+
+        self.assertEqual(run.contract, self.contract)
+        self.assertEqual(run.contract_version, self.version)
+        self.assertEqual(run.stage, ContractExtractionRun.STAGE_PREPARE)
+        self.assertEqual(run.source_kind, ContractExtractionRun.SOURCE_EDITOR_HTML)
+        self.assertEqual(run.status, ContractExtractionRun.STATUS_COMPLETED)
+        self.assertEqual(run.warnings, [])
+        self.assertEqual(run.metadata, {})
+        self.assertFalse(LifecycleAgreement.objects.filter(contract=self.contract).exists())
+        self.contract.refresh_from_db()
+        self.assertEqual(self.contract.status, "signed")
+
+    def test_contract_extraction_candidate_can_link_to_run_version_and_lifecycle_item(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        lifecycle_item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            title="Payment installment 1",
+            created_by=self.initiator,
+        )
+        run = ContractExtractionRun.objects.create(
+            contract=self.contract,
+            contract_version=self.version,
+            stage=ContractExtractionRun.STAGE_FINAL_PRE_SIGN,
+            source_kind=ContractExtractionRun.SOURCE_SIGNED_VERSION,
+            created_by=self.initiator,
+        )
+
+        candidate = ContractExtractionCandidate.objects.create(
+            run=run,
+            contract=self.contract,
+            contract_version=self.version,
+            candidate_type=ContractExtractionCandidate.TYPE_PAYMENT,
+            title="Payment installment 1",
+            description="First extracted payment candidate.",
+            responsible_party="Borrower",
+            beneficiary_party="Lender",
+            due_date=date(2026, 8, 5),
+            amount="400.00",
+            currency="USD",
+            source_clause_text="Borrower pays $400 on August 5, 2026.",
+            source_clause_key="payment-1",
+            confidence_score="0.9500",
+            reviewed_by=self.initiator,
+            review_status=ContractExtractionCandidate.REVIEW_APPROVED,
+            approved_lifecycle_item=lifecycle_item,
+        )
+
+        self.assertEqual(candidate.run, run)
+        self.assertEqual(candidate.contract, self.contract)
+        self.assertEqual(candidate.contract_version, self.version)
+        self.assertEqual(candidate.approved_lifecycle_item, lifecycle_item)
+        self.assertEqual(candidate.review_status, ContractExtractionCandidate.REVIEW_APPROVED)
+        self.assertEqual(candidate.missing_terms, [])
+        self.assertEqual(candidate.raw_payload, {})
+        self.assertEqual(candidate.metadata, {})
+        self.assertEqual(run.candidates.get(), candidate)
+
+    def test_contract_extraction_json_defaults_are_independent_objects(self):
+        first_run = ContractExtractionRun.objects.create(
+            contract=self.contract,
+            contract_version=self.version,
+            stage=ContractExtractionRun.STAGE_PREPARE,
+            source_kind=ContractExtractionRun.SOURCE_EDITOR_HTML,
+        )
+        second_run = ContractExtractionRun.objects.create(
+            contract=self.contract,
+            contract_version=self.version,
+            stage=ContractExtractionRun.STAGE_PREPARE,
+            source_kind=ContractExtractionRun.SOURCE_EDITOR_HTML,
+        )
+        first_candidate = ContractExtractionCandidate.objects.create(
+            run=first_run,
+            contract=self.contract,
+            contract_version=self.version,
+            candidate_type=ContractExtractionCandidate.TYPE_DEADLINE,
+            title="Inspection deadline",
+        )
+        second_candidate = ContractExtractionCandidate.objects.create(
+            run=second_run,
+            contract=self.contract,
+            contract_version=self.version,
+            candidate_type=ContractExtractionCandidate.TYPE_DEADLINE,
+            title="Delivery deadline",
+        )
+
+        first_run.warnings.append({"message": "missing payment method"})
+        first_run.metadata["engine"] = "test"
+        first_run.save(update_fields=["warnings", "metadata", "updated_at"])
+        first_candidate.missing_terms.append("due_date")
+        first_candidate.raw_payload["source"] = "test"
+        first_candidate.metadata["review"] = "pending"
+        first_candidate.recurrence["interval"] = "monthly"
+        first_candidate.source_location["section"] = "2"
+        first_candidate.save(update_fields=["missing_terms", "raw_payload", "metadata", "recurrence", "source_location", "updated_at"])
+
+        second_run.refresh_from_db()
+        second_candidate.refresh_from_db()
+        self.assertEqual(second_run.warnings, [])
+        self.assertEqual(second_run.metadata, {})
+        self.assertEqual(second_candidate.missing_terms, [])
+        self.assertEqual(second_candidate.raw_payload, {})
+        self.assertEqual(second_candidate.metadata, {})
+        self.assertEqual(second_candidate.recurrence, {})
+        self.assertEqual(second_candidate.source_location, {})
 
     def test_signed_contract_can_create_lifecycle_agreement(self):
         agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)

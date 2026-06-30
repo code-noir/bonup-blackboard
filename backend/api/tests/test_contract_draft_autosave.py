@@ -5,7 +5,14 @@ import json
 from django.test import TestCase
 
 from backend.agreement_exchange.models import AgreementExchange
-from backend.contracts.models import Contract, ContractObligation, ContractServiceObligation, ContractVersion
+from backend.contracts.models import (
+    Contract,
+    ContractExtractionCandidate,
+    ContractExtractionRun,
+    ContractObligation,
+    ContractServiceObligation,
+    ContractVersion,
+)
 from backend.payments.models import Payment
 
 from .helpers import authed_client, make_subscription, make_user
@@ -200,6 +207,76 @@ class ContractPrepareTests(TestCase):
         obligation = ContractObligation.objects.get(contract=contract)
         self.assertEqual(payment.payment_obligation, obligation)
         self.assertEqual(payment.metadata["contract_version_id"], str(obligation.version_id))
+
+    def test_prepare_shadow_writes_extraction_run_and_candidates(self):
+        contract = self._make_contract(
+            title="Personal Loan Agreement",
+            contract_type="Loan Agreement",
+        )
+        text = (
+            "Payment Terms. The borrower shall pay USD 2500.00 on 2026-09-15. "
+            "The lender shall provide the loan funds after signing."
+        )
+        self._autosave(contract, f"<h2>Payment Terms</h2><p>{text}</p>")
+
+        response = self._prepare(contract, text)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("prepared_terms", response.data)
+        self.assertIn("created_records", response.data)
+        self.assertNotIn("extraction_run", response.data)
+        version = contract.versions.get()
+        run = ContractExtractionRun.objects.get(contract=contract, stage=ContractExtractionRun.STAGE_PREPARE)
+        self.assertEqual(run.contract_version, version)
+        self.assertEqual(run.source_kind, ContractExtractionRun.SOURCE_EDITOR_HTML)
+        self.assertEqual(run.engine_name, "prepare_shadow_extractor")
+        self.assertEqual(run.engine_version, "v1")
+        self.assertEqual(run.status, ContractExtractionRun.STATUS_COMPLETED)
+        self.assertEqual(run.created_by, self.user)
+        self.assertTrue(run.completed_at)
+        self.assertTrue(run.source_hash)
+        self.assertEqual(run.metadata["shadow_write"], True)
+        self.assertEqual(run.metadata["prepare_version_id"], str(version.id))
+        self.assertEqual(run.metadata["source"], "ContractPrepareAPIView")
+
+        candidates = ContractExtractionCandidate.objects.filter(contract=contract, run=run)
+        candidate_types = set(candidates.values_list("candidate_type", flat=True))
+        self.assertIn(ContractExtractionCandidate.TYPE_PAYMENT, candidate_types)
+        self.assertIn(ContractExtractionCandidate.TYPE_SERVICE_WORK, candidate_types)
+        payment_candidate = candidates.get(candidate_type=ContractExtractionCandidate.TYPE_PAYMENT)
+        self.assertEqual(payment_candidate.review_status, ContractExtractionCandidate.REVIEW_PENDING)
+        self.assertEqual(payment_candidate.amount, 2500)
+        self.assertEqual(str(payment_candidate.due_date), "2026-09-15")
+        self.assertEqual(payment_candidate.currency, "USD")
+        self.assertEqual(payment_candidate.metadata["shadow_write"], True)
+        self.assertEqual(payment_candidate.metadata["original_model"], "ContractObligation")
+        self.assertEqual(payment_candidate.raw_payload["amount"], "2500.00")
+
+    def test_prepare_shadow_write_is_idempotent_for_same_source(self):
+        contract = self._make_contract(
+            title="Personal Loan Agreement",
+            contract_type="Loan Agreement",
+        )
+        text = "Payment Terms. The borrower shall pay USD 400.00 on 2026-08-01."
+        self._autosave(contract, f"<p>{text}</p>")
+
+        first = self._prepare(contract, text)
+        first_run = ContractExtractionRun.objects.get(contract=contract, stage=ContractExtractionRun.STAGE_PREPARE)
+        first_candidate_ids = set(
+            ContractExtractionCandidate.objects.filter(contract=contract).values_list("id", flat=True)
+        )
+        second = self._prepare(contract, text)
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(ContractExtractionRun.objects.filter(contract=contract).count(), 1)
+        self.assertEqual(
+            set(ContractExtractionCandidate.objects.filter(contract=contract).values_list("id", flat=True)),
+            first_candidate_ids,
+        )
+        self.assertEqual(ContractExtractionRun.objects.get(contract=contract).id, first_run.id)
+        self.assertEqual(ContractObligation.objects.filter(contract=contract).count(), 1)
+        self.assertEqual(Payment.objects.filter(contract=contract).count(), 1)
 
     def test_prepare_missing_registered_counterparty_returns_clear_error(self):
         contract = self._make_contract(counterparty_email="missing@example.com")

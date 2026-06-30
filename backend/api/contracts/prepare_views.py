@@ -1,6 +1,8 @@
 # backend/api/contracts/prepare_views.py
 
+import hashlib
 import json
+import logging
 import re
 from datetime import datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
@@ -18,10 +20,19 @@ from rest_framework.views import APIView
 from backend.activity.log import log_activity
 from backend.api.contracts.permissions import contract_party_response, is_party
 from backend.api.contracts.serializers import ContractVersionSerializer
-from backend.contracts.models import Contract, ContractObligation, ContractServiceObligation, ContractVersion
+from backend.contracts.models import (
+    Contract,
+    ContractExtractionCandidate,
+    ContractExtractionRun,
+    ContractObligation,
+    ContractServiceObligation,
+    ContractVersion,
+)
 from backend.contract_pro.models import ContractProOversightEvent
 from backend.contract_pro.services import ContractProEditingService, ContractProOversightService
 from backend.payments.models import Payment
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_snapshot(raw):
@@ -424,6 +435,225 @@ def _create_prepared_records(contract, version, prepared_terms, clause_map=None)
     }
 
 
+
+def _prepare_shadow_source_hash(snapshot, draft_text, prepared_terms):
+    source_payload = {
+        "draft_text": draft_text or "",
+        "editor_html": snapshot.get("editor_html") or "",
+        "raw_content": snapshot.get("raw_content") or "",
+        "sections": snapshot.get("sections") if isinstance(snapshot.get("sections"), list) else [],
+        "summary": snapshot.get("summary") or "",
+        "prepared_terms": prepared_terms or {},
+    }
+    encoded = json.dumps(source_payload, sort_keys=True, default=str, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _candidate_title(term, fallback):
+    title = str(term.get("clause_title") or term.get("title") or "").strip()
+    if not title:
+        description = str(term.get("description") or "").strip()
+        title = description[:80].strip()
+    return (title or fallback)[:255]
+
+
+def _candidate_due_date(raw_due, contract):
+    due_at = _due_datetime(raw_due, contract)
+    return due_at.date() if due_at else None
+
+
+def _candidate_missing_terms(term, required_fields, due_date=None, amount=None):
+    missing = []
+    for field in required_fields:
+        if field == "due_date":
+            if due_date is None:
+                missing.append(field)
+            continue
+        if field == "amount":
+            if amount is None:
+                missing.append(field)
+            continue
+        if term.get(field) in (None, ""):
+            missing.append(field)
+    return missing
+
+
+def _candidate_metadata(prepared_terms_key, index, original_model):
+    return {
+        "shadow_write": True,
+        "source": "prepare",
+        "prepared_terms_key": prepared_terms_key,
+        "prepared_terms_index": index,
+        "original_model": original_model,
+    }
+
+
+def _candidate_source_location(term):
+    location = {}
+    if term.get("clause_number"):
+        location["clause_number"] = term.get("clause_number")
+    if term.get("clause_title"):
+        location["clause_title"] = term.get("clause_title")
+    if term.get("clause_type"):
+        location["clause_type"] = term.get("clause_type")
+    return location
+
+
+def _build_prepare_shadow_candidates(contract, version, run, prepared_terms):
+    candidates = []
+    represented_deadlines = set()
+    represented_clause_keys = set()
+
+    for index, term in enumerate(prepared_terms.get("payment_terms") or [], start=1):
+        if not isinstance(term, dict):
+            continue
+        raw_due = term.get("due_date")
+        if raw_due:
+            represented_deadlines.add(str(raw_due))
+        if term.get("clause_key"):
+            represented_clause_keys.add(str(term.get("clause_key")))
+        due_date = _candidate_due_date(raw_due, contract)
+        amount = _to_decimal(term.get("amount"))
+        candidates.append(ContractExtractionCandidate(
+            run=run,
+            contract=contract,
+            contract_version=version,
+            candidate_type=ContractExtractionCandidate.TYPE_PAYMENT,
+            title=_candidate_title(term, f"Payment term {index}"),
+            description=term.get("description", ""),
+            responsible_party=term.get("responsible_party", ""),
+            beneficiary_party=str(contract.initiator) if contract.initiator else "",
+            due_date=due_date,
+            amount=amount,
+            currency=term.get("currency") or contract.currency or "",
+            source_clause_text=term.get("description", "") or term.get("trigger_condition", ""),
+            source_clause_key=term.get("clause_key") or "",
+            source_location=_candidate_source_location(term),
+            missing_terms=_candidate_missing_terms(term, ["amount", "due_date"], due_date=due_date, amount=amount),
+            raw_payload=term,
+            metadata=_candidate_metadata("payment_terms", index, "ContractObligation"),
+        ))
+
+    for index, term in enumerate(prepared_terms.get("service_obligations") or [], start=1):
+        if not isinstance(term, dict):
+            continue
+        raw_due = term.get("due_date")
+        if raw_due:
+            represented_deadlines.add(str(raw_due))
+        if term.get("clause_key"):
+            represented_clause_keys.add(str(term.get("clause_key")))
+        due_date = _candidate_due_date(raw_due, contract)
+        candidates.append(ContractExtractionCandidate(
+            run=run,
+            contract=contract,
+            contract_version=version,
+            candidate_type=ContractExtractionCandidate.TYPE_SERVICE_WORK,
+            title=_candidate_title(term, f"Service obligation {index}"),
+            description=term.get("description", ""),
+            responsible_party=term.get("responsible_party", ""),
+            beneficiary_party=contract.counterparty_name or contract.counterparty_email or "",
+            due_date=due_date,
+            currency=term.get("currency") or contract.currency or "",
+            source_clause_text=term.get("description", "") or term.get("trigger_condition", ""),
+            source_clause_key=term.get("clause_key") or "",
+            source_location=_candidate_source_location(term),
+            missing_terms=_candidate_missing_terms(term, ["description", "due_date"], due_date=due_date),
+            raw_payload=term,
+            metadata=_candidate_metadata("service_obligations", index, "ContractServiceObligation"),
+        ))
+
+    for index, term in enumerate(prepared_terms.get("milestones") or [], start=1):
+        if not isinstance(term, dict):
+            continue
+        clause_key = str(term.get("clause_key") or "")
+        if clause_key and clause_key in represented_clause_keys:
+            continue
+        raw_due = term.get("deadline") or term.get("due_date")
+        due_date = _candidate_due_date(raw_due, contract)
+        candidates.append(ContractExtractionCandidate(
+            run=run,
+            contract=contract,
+            contract_version=version,
+            candidate_type=ContractExtractionCandidate.TYPE_DEADLINE if due_date else ContractExtractionCandidate.TYPE_OTHER,
+            title=_candidate_title(term, f"Milestone {index}"),
+            description=term.get("description", ""),
+            due_date=due_date,
+            currency=contract.currency or "",
+            source_clause_text=term.get("description", "") or term.get("trigger_condition", ""),
+            source_clause_key=term.get("clause_key") or "",
+            source_location=_candidate_source_location(term),
+            missing_terms=_candidate_missing_terms(term, ["description", "due_date"], due_date=due_date),
+            raw_payload=term,
+            metadata=_candidate_metadata("milestones", index, "prepared_terms.milestones"),
+        ))
+
+    for index, raw_deadline in enumerate(prepared_terms.get("deadlines") or [], start=1):
+        if not raw_deadline or str(raw_deadline) in represented_deadlines:
+            continue
+        due_date = _candidate_due_date(raw_deadline, contract)
+        candidates.append(ContractExtractionCandidate(
+            run=run,
+            contract=contract,
+            contract_version=version,
+            candidate_type=ContractExtractionCandidate.TYPE_DEADLINE,
+            title=f"Deadline {raw_deadline}"[:255],
+            description=str(raw_deadline),
+            due_date=due_date,
+            currency=contract.currency or "",
+            missing_terms=[] if due_date else ["due_date"],
+            raw_payload={"deadline": raw_deadline},
+            metadata=_candidate_metadata("deadlines", index, "prepared_terms.deadlines"),
+        ))
+
+    return candidates
+
+
+def _persist_prepare_extraction_shadow(contract, version, snapshot, draft_text, prepared_terms, created_records, user):
+    source_hash = _prepare_shadow_source_hash(snapshot, draft_text, prepared_terms)
+    existing_run = ContractExtractionRun.objects.filter(
+        contract=contract,
+        contract_version=version,
+        stage=ContractExtractionRun.STAGE_PREPARE,
+        source_hash=source_hash,
+        status=ContractExtractionRun.STATUS_COMPLETED,
+    ).first()
+    if existing_run:
+        return existing_run
+
+    ContractExtractionRun.objects.filter(
+        contract=contract,
+        contract_version=version,
+        stage=ContractExtractionRun.STAGE_PREPARE,
+    ).exclude(source_hash=source_hash).exclude(status=ContractExtractionRun.STATUS_SUPERSEDED).update(
+        status=ContractExtractionRun.STATUS_SUPERSEDED,
+    )
+
+    run = ContractExtractionRun.objects.create(
+        contract=contract,
+        contract_version=version,
+        stage=ContractExtractionRun.STAGE_PREPARE,
+        source_kind=ContractExtractionRun.SOURCE_EDITOR_HTML,
+        source_hash=source_hash,
+        engine_name="prepare_shadow_extractor",
+        engine_version="v1",
+        status=ContractExtractionRun.STATUS_COMPLETED,
+        warnings=list(created_records.get("skipped") or []),
+        metadata={
+            "shadow_write": True,
+            "prepare_version_id": str(version.id),
+            "prepared_terms_keys": sorted(prepared_terms.keys()),
+            "source": "ContractPrepareAPIView",
+        },
+        created_by=user,
+        completed_at=timezone.now(),
+    )
+
+    for candidate in _build_prepare_shadow_candidates(contract, version, run, prepared_terms):
+        candidate.save()
+
+    return run
+
+
 class ContractPrepareAPIView(APIView):
     """
     POST /api/contracts/<contract_id>/prepare/
@@ -511,6 +741,20 @@ class ContractPrepareAPIView(APIView):
                 }
                 ContractVersion.objects.filter(pk=version.pk).update(content_snapshot=json.dumps(prepared_snapshot))
                 version.refresh_from_db()
+
+                try:
+                    with transaction.atomic():
+                        _persist_prepare_extraction_shadow(
+                            contract,
+                            version,
+                            prepared_snapshot,
+                            draft_text,
+                            prepared_terms,
+                            created_records,
+                            request.user,
+                        )
+                except Exception:
+                    logger.exception("Prepare extraction shadow persistence failed for contract %s", contract.id)
 
                 contract.status = "draft"
                 contract.state = "prepared"

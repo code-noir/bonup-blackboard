@@ -476,6 +476,95 @@ Tenant must return the keys and remove personal belongings by March 31, 2027.
             self.assertTrue(candidate.source_clause_text)
             self.assertIn("sentence", candidate.raw_payload)
 
+    def test_prepare_shadow_extracts_construction_subcontractor_candidates(self):
+        contract = self._make_contract(
+            title="Subcontractor Painting Agreement",
+            contract_type="Construction Subcontractor Agreement",
+            counterparty_name="Nova Paint Crew",
+        )
+        text = """Subcontractor Painting Agreement
+
+General Contractor: Blue Ridge Builders
+Subcontractor: Nova Paint Crew
+
+Subcontractor agrees to furnish labor and materials to paint the interior walls of three residential units located at 88 Pine Avenue.
+
+Subcontractor must complete primer coat work by November 10, 2026.
+
+Subcontractor must complete final paint coat work by November 20, 2026.
+
+General Contractor agrees to pay Subcontractor $2,000 after primer coat work passes inspection.
+
+General Contractor agrees to pay Subcontractor $3,500 after final paint coat work is completed and approved.
+
+General Contractor may withhold 10% retainage until all punch-list items are completed.
+
+Subcontractor must correct punch-list items within 5 days after receiving written notice.
+
+Subcontractor must provide proof of insurance before starting work.
+
+Any change order must be approved in writing by both parties before extra work begins.
+""".strip()
+        self._autosave(contract, "".join(f"<p>{line}</p>" if line else "<p></p>" for line in text.splitlines()))
+
+        response = self._prepare(contract, text)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("prepared_terms", response.data)
+        self.assertIn("created_records", response.data)
+        self.assertNotIn("extraction_run", response.data)
+        run = ContractExtractionRun.objects.get(contract=contract, stage=ContractExtractionRun.STAGE_PREPARE)
+        candidates = {candidate.title: candidate for candidate in ContractExtractionCandidate.objects.filter(run=run)}
+        self.assertGreaterEqual(len(candidates), 8)
+
+        primer = candidates["Complete primer coat work"]
+        self.assertEqual(primer.candidate_type, ContractExtractionCandidate.TYPE_SERVICE_WORK)
+        self.assertEqual(primer.responsible_party, "Subcontractor / Nova Paint Crew")
+        self.assertEqual(primer.beneficiary_party, "General Contractor / Blue Ridge Builders")
+        self.assertEqual(str(primer.due_date), "2026-11-10")
+
+        final = candidates["Complete final paint coat work"]
+        self.assertEqual(final.candidate_type, ContractExtractionCandidate.TYPE_SERVICE_WORK)
+        self.assertEqual(final.responsible_party, "Subcontractor / Nova Paint Crew")
+        self.assertEqual(final.beneficiary_party, "General Contractor / Blue Ridge Builders")
+        self.assertEqual(str(final.due_date), "2026-11-20")
+
+        primer_pay = candidates["Pay $2,000 after primer coat inspection"]
+        self.assertEqual(primer_pay.candidate_type, ContractExtractionCandidate.TYPE_PAYMENT)
+        self.assertEqual(primer_pay.responsible_party, "General Contractor / Blue Ridge Builders")
+        self.assertEqual(primer_pay.beneficiary_party, "Subcontractor / Nova Paint Crew")
+        self.assertEqual(primer_pay.amount, 2000)
+        self.assertIsNone(primer_pay.due_date)
+        self.assertIn("primer coat work passes inspection", primer_pay.metadata["due_trigger"])
+
+        final_pay = candidates["Pay $3,500 after final paint completion and approval"]
+        self.assertEqual(final_pay.candidate_type, ContractExtractionCandidate.TYPE_PAYMENT)
+        self.assertEqual(final_pay.amount, 3500)
+        self.assertIn("final paint coat work completed and approved", final_pay.metadata["due_trigger"])
+
+        retainage = candidates["Withhold 10% retainage until punch-list completion"]
+        self.assertEqual(retainage.metadata["retainage_percent"], 10)
+        self.assertEqual(retainage.metadata["payment_kind"], "retainage")
+        self.assertEqual(retainage.metadata["condition"], "until all punch-list items are completed")
+
+        punch = candidates["Correct punch-list items after written notice"]
+        self.assertEqual(punch.candidate_type, ContractExtractionCandidate.TYPE_SERVICE_WORK)
+        self.assertEqual(punch.metadata["relative_due"], {
+            "amount": 5,
+            "unit": "days",
+            "direction": "after",
+            "event": "receiving written notice",
+        })
+
+        insurance = candidates["Provide proof of insurance before starting work"]
+        self.assertIn("before starting work", insurance.metadata["due_trigger"])
+
+        change_order = candidates["Approve change orders in writing before extra work"]
+        self.assertEqual(change_order.metadata["rule_type"], "change_order_approval")
+        self.assertEqual(change_order.metadata["approval_required"], True)
+        self.assertEqual(change_order.metadata["approval_format"], "writing")
+        self.assertEqual(change_order.metadata["due_trigger"], "before extra work begins")
+
     def test_prepare_missing_registered_counterparty_returns_clear_error(self):
         contract = self._make_contract(counterparty_email="missing@example.com")
         text = "Payment Terms. The client shall pay USD 400.00 on 2026-08-01."

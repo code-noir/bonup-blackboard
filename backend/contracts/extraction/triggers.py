@@ -52,3 +52,10 @@ def monthly_rent_recurrence(text, amount):
 def due_rule(text):
     match = re.search(r"\bdue on the [^.]+", text or "", re.IGNORECASE)
     return match.group(0).strip() if match else ""
+
+
+def after_trigger(text):
+    match = re.search(r"\bafter\s+(?P<trigger>[^.]+?)(?:\.|$)", text or "", re.IGNORECASE)
+    if not match:
+        return ""
+    return f"after {match.group('trigger').strip()}"

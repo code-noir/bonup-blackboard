@@ -4,11 +4,19 @@ from backend.contracts.models import ContractExtractionCandidate
 
 from .amounts import extract_amounts, money_title_amount, to_decimal
 from .dates import due_datetime, fixed_due_date, fixed_due_dates
+from .domains.construction import (
+    change_order_metadata,
+    construction_before_trigger,
+    construction_candidate_type,
+    construction_payment_trigger,
+    construction_title,
+    retainage_metadata,
+)
 from .domains.rental import is_rental_term, rental_candidate_type, rental_title
 from .domains.service import service_candidate_type, service_title
 from .roles import parse_roles, parties_for_sentence
 from .text import prepared_source_text, split_sentences
-from .triggers import before_trigger, due_rule, due_trigger, monthly_rent_recurrence, relative_due_rule
+from .triggers import after_trigger, before_trigger, due_rule, due_trigger, monthly_rent_recurrence, relative_due_rule
 
 
 def _candidate_title(term, fallback):
@@ -91,6 +99,9 @@ def _raw_sentence_payload(sentence, source_index, amount_info=None, trigger="", 
 
 
 def _title_for_sentence(candidate_type, sentence, amount_info=None):
+    construction = construction_title(sentence, candidate_type, amount_info or {}, ContractExtractionCandidate)
+    if construction:
+        return construction
     rental = rental_title(sentence, candidate_type, ContractExtractionCandidate)
     if rental:
         return rental
@@ -110,6 +121,9 @@ def _title_for_sentence(candidate_type, sentence, amount_info=None):
 
 def _sentence_candidate_type(sentence):
     lowered = sentence.lower()
+    construction_type = construction_candidate_type(sentence, ContractExtractionCandidate)
+    if construction_type:
+        return construction_type
     rental_type = rental_candidate_type(sentence, ContractExtractionCandidate)
     if rental_type:
         return rental_type
@@ -152,7 +166,7 @@ def build_sentence_candidates(contract, version, run, prepared_terms, draft_text
     candidates = []
     for index, sentence in enumerate(split_sentences(source_text), start=1):
         lowered = sentence.lower()
-        if re.match(r"^(website design service agreement|residential room rental agreement|client:\s*|contractor:\s*|landlord:\s*|tenant:\s*)", sentence, re.IGNORECASE):
+        if re.match(r"^(website design service agreement|residential room rental agreement|subcontractor painting agreement|client:\s*|contractor:\s*|landlord:\s*|tenant:\s*|general contractor:\s*|subcontractor:\s*)", sentence, re.IGNORECASE):
             continue
         if re.match(r"^[A-Z][A-Za-z /-]{2,60} Terms\.$", sentence):
             continue
@@ -164,7 +178,7 @@ def build_sentence_candidates(contract, version, run, prepared_terms, draft_text
 
         fixed = fixed_due_date(sentence)
         relative = relative_due_rule(sentence)
-        trigger = due_trigger(sentence)
+        trigger = construction_payment_trigger(sentence) or due_trigger(sentence)
         responsible, beneficiary = parties_for_sentence(sentence, candidate_type, roles, contract, ContractExtractionCandidate)
         metadata_extra = {"role_map": roles}
         if trigger:
@@ -176,9 +190,35 @@ def build_sentence_candidates(contract, version, run, prepared_terms, draft_text
             candidates.extend(_build_rental_term_candidates(contract, version, run, sentence, index, metadata_extra))
             continue
 
+        if candidate_type == ContractExtractionCandidate.TYPE_OTHER and retainage_metadata(sentence):
+            metadata = dict(metadata_extra)
+            metadata.update(retainage_metadata(sentence))
+            candidates.append(ContractExtractionCandidate(
+                run=run, contract=contract, contract_version=version, candidate_type=candidate_type,
+                title=_title_for_sentence(candidate_type, sentence), description=sentence,
+                responsible_party=responsible, beneficiary_party=beneficiary,
+                currency=contract.currency or "", source_clause_text=sentence, source_clause_key=f"sentence-{index:03d}",
+                source_location={"sentence_index": index}, missing_terms=[], raw_payload={"sentence": sentence, "source_index": index},
+                metadata=_metadata_for_sentence(index, "prepared_terms.retainage", metadata),
+            ))
+            continue
+
+        if candidate_type == ContractExtractionCandidate.TYPE_RESPONSIBILITY and change_order_metadata(sentence):
+            metadata = dict(metadata_extra)
+            metadata.update(change_order_metadata(sentence))
+            candidates.append(ContractExtractionCandidate(
+                run=run, contract=contract, contract_version=version, candidate_type=candidate_type,
+                title=_title_for_sentence(candidate_type, sentence), description=sentence,
+                responsible_party=responsible, beneficiary_party=beneficiary,
+                currency=contract.currency or "", source_clause_text=sentence, source_clause_key=f"sentence-{index:03d}",
+                source_location={"sentence_index": index}, missing_terms=[], raw_payload={"sentence": sentence, "source_index": index},
+                metadata=_metadata_for_sentence(index, "prepared_terms.change_order_rule", metadata),
+            ))
+            continue
+
         if candidate_type in {ContractExtractionCandidate.TYPE_PAYMENT, ContractExtractionCandidate.TYPE_DEPOSIT}:
             amounts = extract_amounts(sentence) or [{"raw": "", "amount": None, "currency": contract.currency or ""}]
-            before = before_trigger(sentence)
+            before = construction_before_trigger(sentence) or before_trigger(sentence)
             for amount_index, amount_info in enumerate(amounts, start=1):
                 amount = to_decimal(amount_info.get("amount"))
                 missing_terms = [] if amount is not None else ["amount"]
@@ -206,6 +246,8 @@ def build_sentence_candidates(contract, version, run, prepared_terms, draft_text
                 ))
             continue
 
+        if construction_before_trigger(sentence):
+            metadata_extra["due_trigger"] = construction_before_trigger(sentence)
         original_model = "ContractServiceObligation" if candidate_type == ContractExtractionCandidate.TYPE_SERVICE_WORK else "prepared_terms.responsibility"
         candidates.append(ContractExtractionCandidate(
             run=run, contract=contract, contract_version=version, candidate_type=candidate_type,

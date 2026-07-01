@@ -365,6 +365,117 @@ Client must review each delivery within 5 days.
             self.assertTrue(candidate.source_clause_text)
             self.assertIn("sentence", candidate.raw_payload)
 
+    def test_prepare_shadow_extracts_rental_contract_candidates(self):
+        contract = self._make_contract(
+            title="Residential Room Rental Agreement",
+            contract_type="Lease Agreement",
+            counterparty_name="Marcus Paul",
+        )
+        text = """Residential Room Rental Agreement
+
+Landlord: Elise Laurent
+Tenant: Marcus Paul
+
+Landlord agrees to rent one furnished bedroom at 25 Palm Street, Miami, Florida to Tenant.
+
+The rental term begins on October 1, 2026 and ends on March 31, 2027.
+
+Tenant agrees to pay Landlord $900 per month, due on the 1st day of each month.
+
+Tenant agrees to pay a security deposit of $900 before move-in.
+
+Landlord must provide working keys and access to the bedroom by October 1, 2026.
+
+Tenant must keep the bedroom clean and report damage within 3 days after discovering it.
+
+Landlord must repair essential utilities within 5 days after receiving written notice.
+
+Tenant must return the keys and remove personal belongings by March 31, 2027.
+""".strip()
+        self._autosave(contract, "".join(f"<p>{line}</p>" if line else "<p></p>" for line in text.splitlines()))
+
+        response = self._prepare(contract, text)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("prepared_terms", response.data)
+        self.assertIn("created_records", response.data)
+        self.assertNotIn("extraction_run", response.data)
+        run = ContractExtractionRun.objects.get(contract=contract, stage=ContractExtractionRun.STAGE_PREPARE)
+        candidates = {candidate.title: candidate for candidate in ContractExtractionCandidate.objects.filter(run=run)}
+        self.assertEqual(len(candidates), 8)
+
+        start = candidates["Rental term begins"]
+        self.assertEqual(start.candidate_type, ContractExtractionCandidate.TYPE_DEADLINE)
+        self.assertEqual(str(start.due_date), "2026-10-01")
+        self.assertEqual(start.metadata["term_start_date"], "2026-10-01")
+
+        end = candidates["Rental term ends"]
+        self.assertEqual(end.candidate_type, ContractExtractionCandidate.TYPE_DEADLINE)
+        self.assertEqual(str(end.due_date), "2027-03-31")
+        self.assertEqual(end.metadata["term_end_date"], "2027-03-31")
+
+        rent = candidates["Pay monthly rent"]
+        self.assertEqual(rent.candidate_type, ContractExtractionCandidate.TYPE_PAYMENT)
+        self.assertEqual(rent.responsible_party, "Tenant / Marcus Paul")
+        self.assertEqual(rent.beneficiary_party, "Landlord / Elise Laurent")
+        self.assertEqual(rent.amount, 900)
+        self.assertIsNone(rent.due_date)
+        self.assertEqual(rent.recurrence["frequency"], "monthly")
+        self.assertEqual(rent.recurrence["due_day"], 1)
+        self.assertEqual(rent.recurrence["unit"], "month")
+        self.assertEqual(rent.metadata["payment_kind"], "rent")
+        self.assertEqual(rent.metadata["due_rule"], "due on the 1st day of each month")
+
+        deposit = candidates["Pay security deposit"]
+        self.assertEqual(deposit.candidate_type, ContractExtractionCandidate.TYPE_DEPOSIT)
+        self.assertEqual(deposit.responsible_party, "Tenant / Marcus Paul")
+        self.assertEqual(deposit.beneficiary_party, "Landlord / Elise Laurent")
+        self.assertEqual(deposit.amount, 900)
+        self.assertIsNone(deposit.due_date)
+        self.assertEqual(deposit.metadata["payment_kind"], "security_deposit")
+        self.assertEqual(deposit.metadata["due_trigger"], "before move-in")
+
+        access = candidates["Provide keys and bedroom access"]
+        self.assertEqual(access.candidate_type, ContractExtractionCandidate.TYPE_SERVICE_WORK)
+        self.assertEqual(access.responsible_party, "Landlord / Elise Laurent")
+        self.assertEqual(access.beneficiary_party, "Tenant / Marcus Paul")
+        self.assertEqual(str(access.due_date), "2026-10-01")
+
+        damage = candidates["Keep bedroom clean and report damage"]
+        self.assertEqual(damage.candidate_type, ContractExtractionCandidate.TYPE_RESPONSIBILITY)
+        self.assertEqual(damage.responsible_party, "Tenant / Marcus Paul")
+        self.assertEqual(damage.beneficiary_party, "Landlord / Elise Laurent")
+        self.assertIsNone(damage.due_date)
+        self.assertEqual(damage.metadata["relative_due"], {
+            "amount": 3,
+            "unit": "days",
+            "direction": "after",
+            "event": "discovering damage",
+        })
+
+        utilities = candidates["Repair essential utilities after written notice"]
+        self.assertEqual(utilities.candidate_type, ContractExtractionCandidate.TYPE_SERVICE_WORK)
+        self.assertEqual(utilities.responsible_party, "Landlord / Elise Laurent")
+        self.assertEqual(utilities.beneficiary_party, "Tenant / Marcus Paul")
+        self.assertIsNone(utilities.due_date)
+        self.assertEqual(utilities.metadata["relative_due"], {
+            "amount": 5,
+            "unit": "days",
+            "direction": "after",
+            "event": "receiving written notice",
+        })
+
+        returns = candidates["Return keys and remove belongings"]
+        self.assertEqual(returns.candidate_type, ContractExtractionCandidate.TYPE_RESPONSIBILITY)
+        self.assertEqual(returns.responsible_party, "Tenant / Marcus Paul")
+        self.assertEqual(returns.beneficiary_party, "Landlord / Elise Laurent")
+        self.assertEqual(str(returns.due_date), "2027-03-31")
+
+        for candidate in candidates.values():
+            self.assertEqual(candidate.metadata["extraction_level"], "sentence")
+            self.assertTrue(candidate.source_clause_text)
+            self.assertIn("sentence", candidate.raw_payload)
+
     def test_prepare_missing_registered_counterparty_returns_clear_error(self):
         contract = self._make_contract(counterparty_email="missing@example.com")
         text = "Payment Terms. The client shall pay USD 400.00 on 2026-08-01."

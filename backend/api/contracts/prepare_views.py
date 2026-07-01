@@ -528,7 +528,7 @@ def _shadow_sentences(source_text):
 
 def _parse_shadow_roles(source_text, contract):
     roles = {}
-    for match in re.finditer(r"^\s*(?P<label>client|contractor|customer|provider|owner)\s*:\s*(?P<name>[^\n]+?)\s*$", source_text or "", re.IGNORECASE | re.MULTILINE):
+    for match in re.finditer(r"^\s*(?P<label>client|contractor|customer|provider|owner|landlord|tenant)\s*:\s*(?P<name>[^\n]+?)\s*$", source_text or "", re.IGNORECASE | re.MULTILINE):
         label = match.group("label").strip().title()
         name = match.group("name").strip().rstrip(".")
         roles[label.lower()] = {"label": label, "name": name, "display": f"{label} / {name}"}
@@ -546,14 +546,7 @@ def _role_display(roles, role, fallback=""):
         return value["display"]
     return fallback
 
-def _extract_fixed_due_date(text):
-    iso = re.search(r"\b(20[0-9]{2}-[01][0-9]-[0-3][0-9])\b", text or "")
-    if iso:
-        return parse_date(iso.group(1))
-
-    match = MONTH_NAME_RE.search(text or "")
-    if not match:
-        return None
+def _date_from_month_match(match):
     month_key = match.group("month").lower().rstrip(".")
     month = MONTH_NUMBERS.get(month_key)
     if not month:
@@ -562,6 +555,24 @@ def _extract_fixed_due_date(text):
         return datetime(int(match.group("year")), month, int(match.group("day"))).date()
     except ValueError:
         return None
+
+
+def _extract_fixed_due_dates(text):
+    dates = []
+    for iso in re.finditer(r"\b(20[0-9]{2}-[01][0-9]-[0-3][0-9])\b", text or ""):
+        parsed = parse_date(iso.group(1))
+        if parsed:
+            dates.append(parsed)
+    for match in MONTH_NAME_RE.finditer(text or ""):
+        parsed = _date_from_month_match(match)
+        if parsed:
+            dates.append(parsed)
+    return dates
+
+
+def _extract_fixed_due_date(text):
+    dates = _extract_fixed_due_dates(text)
+    return dates[0] if dates else None
 
 def _extract_relative_due_rule(text):
     match = re.search(
@@ -573,7 +584,10 @@ def _extract_relative_due_rule(text):
     if not match:
         return None
     event = (match.group("event") or "").strip()
-    if not event and "delivery" in (text or "").lower():
+    lowered = (text or "").lower()
+    if event.lower() == "discovering it" and "damage" in lowered:
+        event = "discovering damage"
+    if not event and "delivery" in lowered:
         event = "delivery"
     return {
         "amount": int(match.group("amount")),
@@ -588,6 +602,32 @@ def _extract_due_trigger(text):
         return ""
     trigger = match.group("trigger").strip()
     return f"when {trigger}"
+
+def _extract_before_trigger(text):
+    match = re.search(r"\bbefore\s+(?P<trigger>[^.]+?)(?:\.|$)", text or "", re.IGNORECASE)
+    if not match:
+        return ""
+    return f"before {match.group('trigger').strip()}"
+
+
+def _extract_monthly_rent_recurrence(text, amount):
+    lowered = (text or "").lower()
+    if "per month" not in lowered and "each month" not in lowered and "monthly" not in lowered:
+        return {}
+    recurrence = {
+        "frequency": "monthly",
+        "amount": str(amount) if amount is not None else "",
+        "unit": "month",
+    }
+    due_day = re.search(r"due on the (?P<day>\d{1,2})(?:st|nd|rd|th)? day of each month", text or "", re.IGNORECASE)
+    if due_day:
+        recurrence["due_day"] = int(due_day.group("day"))
+    return recurrence
+
+
+def _extract_due_rule(text):
+    match = re.search(r"\bdue on the [^.]+", text or "", re.IGNORECASE)
+    return match.group(0).strip() if match else ""
 
 def _extract_all_amounts(text):
     amounts = []
@@ -622,6 +662,9 @@ def _object_from_text(text):
         ("reasonable bugs", "reasonable bugs"),
         ("each delivery", "each delivery"),
         ("loan funds", "loan funds"),
+        ("working keys and access", "working keys and access"),
+        ("essential utilities", "essential utilities"),
+        ("personal belongings", "personal belongings"),
     ]
     for key, value in object_patterns:
         if key in lowered:
@@ -637,13 +680,29 @@ def _object_from_text(text):
 def _title_for_shadow_sentence(candidate_type, sentence, amount_info=None):
     lowered = sentence.lower()
     obj = _object_from_text(sentence)
+    if "rental term begins" in lowered or "term begins" in lowered:
+        return "Rental term begins"
+    if "rental term ends" in lowered or "term ends" in lowered:
+        return "Rental term ends"
+    if candidate_type == ContractExtractionCandidate.TYPE_DEPOSIT:
+        return "Pay security deposit"
     if candidate_type == ContractExtractionCandidate.TYPE_PAYMENT:
         amount = _money_title_amount(amount_info or {})
+        if "per month" in lowered or "each month" in lowered or ("rent" in lowered and "monthly" in lowered):
+            return "Pay monthly rent"
         if "homepage mockup" in lowered:
             return f"Pay {amount} for homepage mockup"
         if "full website" in lowered:
             return f"Pay {amount} for full website"
         return f"Pay {amount}".strip()
+    if "provide" in lowered and "keys" in lowered and "access" in lowered:
+        return "Provide keys and bedroom access"
+    if "keep" in lowered and "bedroom clean" in lowered and "report damage" in lowered:
+        return "Keep bedroom clean and report damage"
+    if "repair" in lowered and "essential utilities" in lowered:
+        return "Repair essential utilities after written notice"
+    if "return" in lowered and "keys" in lowered and "belongings" in lowered:
+        return "Return keys and remove belongings"
     if re.search(r"\bdeliver\b", lowered) and obj:
         return f"Deliver {obj}"
     if "fix" in lowered and "bug" in lowered:
@@ -658,13 +717,19 @@ def _title_for_shadow_sentence(candidate_type, sentence, amount_info=None):
 
 def _sentence_candidate_type(sentence):
     lowered = sentence.lower()
+    if "security deposit" in lowered and _extract_all_amounts(sentence):
+        return ContractExtractionCandidate.TYPE_DEPOSIT
     if _extract_all_amounts(sentence) or re.search(r"\bpay\b|\bpayment\b", lowered):
         return ContractExtractionCandidate.TYPE_PAYMENT
     if "client" in lowered and "review" in lowered:
         return ContractExtractionCandidate.TYPE_RESPONSIBILITY
+    if "tenant" in lowered and any(word in lowered for word in ["keep", "report", "return", "remove", "must"]):
+        return ContractExtractionCandidate.TYPE_RESPONSIBILITY
+    if "landlord" in lowered and any(word in lowered for word in ["provide", "repair", "must"]):
+        return ContractExtractionCandidate.TYPE_SERVICE_WORK
     if "contractor" in lowered and any(word in lowered for word in ["deliver", "fix", "provide", "perform", "must"]):
         return ContractExtractionCandidate.TYPE_SERVICE_WORK
-    if any(word in lowered for word in ["deliver", "fix", "provide", "perform"]):
+    if any(word in lowered for word in ["deliver", "fix", "provide", "perform", "repair", "return"]):
         return ContractExtractionCandidate.TYPE_SERVICE_WORK
     if _extract_fixed_due_date(sentence):
         return ContractExtractionCandidate.TYPE_DEADLINE
@@ -674,8 +739,16 @@ def _shadow_parties_for_sentence(sentence, candidate_type, roles, contract):
     lowered = sentence.lower()
     client = _role_display(roles, "client", str(contract.initiator) if contract.initiator else "")
     contractor = _role_display(roles, "contractor", contract.counterparty_name or contract.counterparty_email or "")
+    landlord = _role_display(roles, "landlord", "")
+    tenant = _role_display(roles, "tenant", "")
 
+    if "tenant" in lowered and (candidate_type in {ContractExtractionCandidate.TYPE_PAYMENT, ContractExtractionCandidate.TYPE_DEPOSIT, ContractExtractionCandidate.TYPE_RESPONSIBILITY}):
+        return tenant or client, landlord or contractor
+    if "landlord" in lowered and candidate_type in {ContractExtractionCandidate.TYPE_SERVICE_WORK, ContractExtractionCandidate.TYPE_RESPONSIBILITY}:
+        return landlord or contractor, tenant or client
     if candidate_type == ContractExtractionCandidate.TYPE_PAYMENT:
+        return client or "payer/client", contractor
+    if candidate_type == ContractExtractionCandidate.TYPE_DEPOSIT:
         return client or "payer/client", contractor
     if candidate_type == ContractExtractionCandidate.TYPE_RESPONSIBILITY:
         if "client" in lowered:
@@ -718,7 +791,7 @@ def _build_sentence_shadow_candidates(contract, version, run, prepared_terms, dr
 
     for index, sentence in enumerate(_shadow_sentences(source_text), start=1):
         lowered = sentence.lower()
-        if re.match(r"^(website design service agreement|client:\s*|contractor:\s*)", sentence, re.IGNORECASE):
+        if re.match(r"^(website design service agreement|residential room rental agreement|client:\s*|contractor:\s*|landlord:\s*|tenant:\s*)", sentence, re.IGNORECASE):
             continue
         if re.match(r"^[A-Z][A-Za-z /-]{2,60} Terms\.$", sentence):
             continue
@@ -739,11 +812,52 @@ def _build_sentence_shadow_candidates(contract, version, run, prepared_terms, dr
             metadata_extra["relative_due"] = relative_due
         metadata_extra["role_map"] = roles
 
-        if candidate_type == ContractExtractionCandidate.TYPE_PAYMENT:
+        if "rental term" in lowered and "begins" in lowered and "ends" in lowered:
+            term_dates = _extract_fixed_due_dates(sentence)
+            term_specs = [
+                ("Rental term begins", term_dates[0] if len(term_dates) > 0 else None, "term_start_date"),
+                ("Rental term ends", term_dates[1] if len(term_dates) > 1 else None, "term_end_date"),
+            ]
+            for term_title, term_date, metadata_key in term_specs:
+                term_metadata = dict(metadata_extra)
+                if term_date:
+                    term_metadata[metadata_key] = term_date.isoformat()
+                candidates.append(ContractExtractionCandidate(
+                    run=run,
+                    contract=contract,
+                    contract_version=version,
+                    candidate_type=ContractExtractionCandidate.TYPE_DEADLINE,
+                    title=term_title,
+                    description=sentence,
+                    due_date=term_date,
+                    currency=contract.currency or "",
+                    source_clause_text=sentence,
+                    source_clause_key=f"sentence-{index:03d}",
+                    source_location={"sentence_index": index, "term_marker": metadata_key},
+                    missing_terms=[] if term_date else ["due_date"],
+                    raw_payload={"sentence": sentence, "source_index": index, metadata_key: term_date.isoformat() if term_date else None},
+                    metadata=_metadata_for_shadow_sentence(index, "prepared_terms.rental_term", term_metadata),
+                ))
+            continue
+
+        if candidate_type in {ContractExtractionCandidate.TYPE_PAYMENT, ContractExtractionCandidate.TYPE_DEPOSIT}:
             amounts = _extract_all_amounts(sentence) or [{"raw": "", "amount": None, "currency": contract.currency or ""}]
+            before_trigger = _extract_before_trigger(sentence)
             for amount_index, amount_info in enumerate(amounts, start=1):
                 amount = _to_decimal(amount_info.get("amount"))
                 missing_terms = [] if amount is not None else ["amount"]
+                recurrence = _extract_monthly_rent_recurrence(sentence, amount)
+                payment_metadata = dict(metadata_extra)
+                if recurrence:
+                    payment_metadata["payment_kind"] = "rent"
+                    payment_metadata["due_rule"] = _extract_due_rule(sentence)
+                if before_trigger:
+                    payment_metadata["due_trigger"] = before_trigger
+                if candidate_type == ContractExtractionCandidate.TYPE_DEPOSIT:
+                    payment_metadata["payment_kind"] = "security_deposit"
+                raw_payload = _raw_sentence_payload(sentence, index, amount_info, due_trigger or before_trigger, relative_due)
+                if recurrence:
+                    raw_payload["recurrence"] = recurrence
                 candidates.append(ContractExtractionCandidate(
                     run=run,
                     contract=contract,
@@ -753,15 +867,16 @@ def _build_sentence_shadow_candidates(contract, version, run, prepared_terms, dr
                     description=sentence,
                     responsible_party=responsible_party,
                     beneficiary_party=beneficiary_party,
-                    due_date=fixed_due_date if not (due_trigger or relative_due) else None,
+                    due_date=fixed_due_date if not (due_trigger or relative_due or before_trigger or recurrence) else None,
                     amount=amount,
                     currency=amount_info.get("currency") or contract.currency or "",
+                    recurrence=recurrence,
                     source_clause_text=sentence,
                     source_clause_key=f"sentence-{index:03d}",
                     source_location={"sentence_index": index, "amount_index": amount_index},
                     missing_terms=missing_terms,
-                    raw_payload=_raw_sentence_payload(sentence, index, amount_info, due_trigger, relative_due),
-                    metadata=_metadata_for_shadow_sentence(index, "ContractObligation", metadata_extra),
+                    raw_payload=raw_payload,
+                    metadata=_metadata_for_shadow_sentence(index, "ContractObligation", payment_metadata),
                 ))
             continue
 

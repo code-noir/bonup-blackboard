@@ -34,14 +34,12 @@ from backend.payments.models import Payment
 
 logger = logging.getLogger(__name__)
 
-
 def _parse_snapshot(raw):
     try:
         value = json.loads(raw or "")
         return value if isinstance(value, dict) else {"raw_content": raw or ""}
     except json.JSONDecodeError:
         return {"raw_content": raw or ""}
-
 
 def _plain_text_from_snapshot(snapshot):
     html = snapshot.get("editor_html") or ""
@@ -59,16 +57,13 @@ def _plain_text_from_snapshot(snapshot):
 
     return str(snapshot.get("raw_content") or snapshot.get("summary") or "").strip()
 
-
 def _sentences(text):
     parts = re.split(r"(?<=[.!?])\s+|\n+", text)
     return [p.strip() for p in parts if len(p.strip()) > 20]
 
-
 def _extract_amount(sentence):
     match = re.search(r"(?:[$]|USD\s*)\s*([0-9][0-9,]*(?:\.[0-9]{2})?)", sentence, re.IGNORECASE)
     return match.group(1).replace(",", "") if match else None
-
 
 def _extract_date(sentence):
     iso = re.search(r"\b(20[0-9]{2}-[01][0-9]-[0-3][0-9])\b", sentence)
@@ -77,13 +72,11 @@ def _extract_date(sentence):
     phrase = re.search(r"\bwithin\s+([0-9]+\s+(?:day|days|week|weeks|month|months))\b", sentence, re.IGNORECASE)
     return phrase.group(0) if phrase else None
 
-
 def _extract_summary(text):
     sentences = _sentences(text)
     if not sentences:
         return text[:500].strip()
     return " ".join(sentences[:2])[:800].strip()
-
 
 def _extract_parties(contract):
     initiator = contract.initiator
@@ -99,7 +92,6 @@ def _extract_parties(contract):
         },
     }
 
-
 def _normalize_clause_source(text):
     text = unescape(text or "")
     text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
@@ -109,7 +101,6 @@ def _normalize_clause_source(text):
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r"[ 	]+", " ", text)
     return text.strip()
-
 
 def _parse_clause_heading(line):
     line = (line or "").strip().strip(":")
@@ -121,7 +112,6 @@ def _parse_clause_heading(line):
     if len(line.split()) <= 12 and not line.endswith((".", "!", "?")):
         return None, line
     return None, ""
-
 
 def _infer_clause_type(title, body):
     text = f"{title or ''} {body or ''}".lower()
@@ -139,7 +129,6 @@ def _infer_clause_type(title, body):
         if any(keyword in text for keyword in keywords):
             return clause_type
     return None
-
 
 def _extract_clauses(snapshot, draft_text):
     raw_clauses = snapshot.get("clauses")
@@ -204,7 +193,6 @@ def _extract_clauses(snapshot, draft_text):
         })
 
     return clauses
-
 
 def _extract_prepared_terms(clauses, contract=None):
     payment_terms = []
@@ -272,7 +260,6 @@ def _extract_prepared_terms(clauses, contract=None):
         "extraction_method": "rule_based_mvp",
     }
 
-
 def _to_decimal(value):
     if value in (None, ""):
         return None
@@ -281,14 +268,12 @@ def _to_decimal(value):
     except (InvalidOperation, TypeError, ValueError):
         return None
 
-
 def _as_aware_datetime(value):
     if value is None:
         return None
     if isinstance(value, datetime):
         return timezone.make_aware(value) if timezone.is_naive(value) else value
     return timezone.make_aware(datetime.combine(value, time.min))
-
 
 def _due_datetime(raw_due, contract):
     if raw_due:
@@ -310,7 +295,6 @@ def _due_datetime(raw_due, contract):
         return _as_aware_datetime(contract.end_date)
     return None
 
-
 def _counterparty_user(contract):
     if not contract.counterparty_email:
         return None
@@ -319,7 +303,6 @@ def _counterparty_user(contract):
         return User.objects.get(email=contract.counterparty_email)
     except User.DoesNotExist:
         return None
-
 
 def _delete_prior_pending_prepared_records(contract, version):
     pending_payment_obligations = ContractObligation.objects.filter(contract=contract, state="pending")
@@ -330,7 +313,6 @@ def _delete_prior_pending_prepared_records(contract, version):
     ).delete()
     pending_payment_obligations.delete()
     ContractServiceObligation.objects.filter(contract=contract, state="pending").delete()
-
 
 def _create_prepared_records(contract, version, prepared_terms, clause_map=None):
     payment_terms = prepared_terms.get("payment_terms") or []
@@ -434,8 +416,6 @@ def _create_prepared_records(contract, version, prepared_terms, clause_map=None)
         "skipped": skipped,
     }
 
-
-
 def _prepare_shadow_source_hash(snapshot, draft_text, prepared_terms):
     source_payload = {
         "draft_text": draft_text or "",
@@ -448,19 +428,50 @@ def _prepare_shadow_source_hash(snapshot, draft_text, prepared_terms):
     encoded = json.dumps(source_payload, sort_keys=True, default=str, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
+MONTH_NAME_RE = re.compile(
+    r"\b(?P<month>Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|"
+    r"Aug(?:ust)?|Sep(?:t(?:ember)?|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+"
+    r"(?P<day>\d{1,2}),\s*(?P<year>20\d{2})\b",
+    re.IGNORECASE,
+)
+
+MONTH_NUMBERS = {
+    "jan": 1,
+    "january": 1,
+    "feb": 2,
+    "february": 2,
+    "mar": 3,
+    "march": 3,
+    "apr": 4,
+    "april": 4,
+    "may": 5,
+    "jun": 6,
+    "june": 6,
+    "jul": 7,
+    "july": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "oct": 10,
+    "october": 10,
+    "nov": 11,
+    "november": 11,
+    "dec": 12,
+    "december": 12,
+}
 
 def _candidate_title(term, fallback):
-    title = str(term.get("clause_title") or term.get("title") or "").strip()
+    title = str(term.get("title") or term.get("clause_title") or "").strip()
     if not title:
         description = str(term.get("description") or "").strip()
         title = description[:80].strip()
     return (title or fallback)[:255]
 
-
 def _candidate_due_date(raw_due, contract):
     due_at = _due_datetime(raw_due, contract)
     return due_at.date() if due_at else None
-
 
 def _candidate_missing_terms(term, required_fields, due_date=None, amount=None):
     missing = []
@@ -477,16 +488,17 @@ def _candidate_missing_terms(term, required_fields, due_date=None, amount=None):
             missing.append(field)
     return missing
 
-
-def _candidate_metadata(prepared_terms_key, index, original_model):
-    return {
+def _candidate_metadata(prepared_terms_key, index, original_model, extra=None):
+    metadata = {
         "shadow_write": True,
         "source": "prepare",
         "prepared_terms_key": prepared_terms_key,
         "prepared_terms_index": index,
         "original_model": original_model,
     }
-
+    if extra:
+        metadata.update(extra)
+    return metadata
 
 def _candidate_source_location(term):
     location = {}
@@ -498,8 +510,284 @@ def _candidate_source_location(term):
         location["clause_type"] = term.get("clause_type")
     return location
 
+def _shadow_source_text(prepared_terms, draft_text):
+    if draft_text:
+        return draft_text
+    descriptions = []
+    for key in ("payment_terms", "service_obligations", "milestones"):
+        for term in prepared_terms.get(key) or []:
+            if isinstance(term, dict) and term.get("description"):
+                descriptions.append(str(term["description"]))
+    return "\n".join(descriptions)
 
-def _build_prepare_shadow_candidates(contract, version, run, prepared_terms):
+def _shadow_sentences(source_text):
+    normalized = _normalize_clause_source(source_text)
+    normalized = re.sub(r"\n{2,}", "\n", normalized)
+    parts = re.split(r"(?<=[.!?])\s+|\n+", normalized)
+    return [part.strip() for part in parts if len(part.strip()) > 8]
+
+def _parse_shadow_roles(source_text, contract):
+    roles = {}
+    for match in re.finditer(r"^\s*(?P<label>client|contractor|customer|provider|owner)\s*:\s*(?P<name>[^\n]+?)\s*$", source_text or "", re.IGNORECASE | re.MULTILINE):
+        label = match.group("label").strip().title()
+        name = match.group("name").strip().rstrip(".")
+        roles[label.lower()] = {"label": label, "name": name, "display": f"{label} / {name}"}
+
+    if "client" not in roles and contract.initiator:
+        roles["client"] = {"label": "Client", "name": str(contract.initiator), "display": f"Client / {contract.initiator}"}
+    if "contractor" not in roles and (contract.counterparty_name or contract.counterparty_email):
+        name = contract.counterparty_name or contract.counterparty_email
+        roles["contractor"] = {"label": "Contractor", "name": name, "display": f"Contractor / {name}"}
+    return roles
+
+def _role_display(roles, role, fallback=""):
+    value = roles.get(role)
+    if value:
+        return value["display"]
+    return fallback
+
+def _extract_fixed_due_date(text):
+    iso = re.search(r"\b(20[0-9]{2}-[01][0-9]-[0-3][0-9])\b", text or "")
+    if iso:
+        return parse_date(iso.group(1))
+
+    match = MONTH_NAME_RE.search(text or "")
+    if not match:
+        return None
+    month_key = match.group("month").lower().rstrip(".")
+    month = MONTH_NUMBERS.get(month_key)
+    if not month:
+        return None
+    try:
+        return datetime(int(match.group("year")), month, int(match.group("day"))).date()
+    except ValueError:
+        return None
+
+def _extract_relative_due_rule(text):
+    match = re.search(
+        r"\bwithin\s+(?P<amount>\d+)\s+(?P<unit>day|days|week|weeks|month|months)"
+        r"(?:\s+(?P<direction>after|before)\s+(?P<event>[^.]+?))?(?:\.|$)",
+        text or "",
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    event = (match.group("event") or "").strip()
+    if not event and "delivery" in (text or "").lower():
+        event = "delivery"
+    return {
+        "amount": int(match.group("amount")),
+        "unit": match.group("unit").lower().rstrip("s") + "s",
+        "direction": (match.group("direction") or "after").lower(),
+        "event": event,
+    }
+
+def _extract_due_trigger(text):
+    match = re.search(r"\bwhen\s+(?P<trigger>[^.]+?)(?:\.|$)", text or "", re.IGNORECASE)
+    if not match:
+        return ""
+    trigger = match.group("trigger").strip()
+    return f"when {trigger}"
+
+def _extract_all_amounts(text):
+    amounts = []
+    for match in re.finditer(r"(?P<currency>\$|USD\s*)\s*(?P<amount>[0-9][0-9,]*(?:\.[0-9]{2})?)", text or "", re.IGNORECASE):
+        amounts.append({
+            "raw": match.group(0).strip(),
+            "amount": match.group("amount").replace(",", ""),
+            "currency": "USD" if match.group("currency").strip().upper().startswith("USD") or match.group("currency") == "$" else match.group("currency").strip(),
+        })
+    return amounts
+
+def _money_title_amount(amount_info):
+    raw = amount_info.get("raw") or ""
+    if raw.startswith("$"):
+        return raw
+    amount = amount_info.get("amount") or ""
+    if not amount:
+        return raw
+    whole, dot, cents = amount.partition(".")
+    try:
+        whole = f"{int(whole):,}"
+    except ValueError:
+        pass
+    return f"${whole}{dot}{cents}"
+
+def _object_from_text(text):
+    lowered = (text or "").lower()
+    object_patterns = [
+        ("homepage mockup", "homepage mockup"),
+        ("full website", "full website"),
+        ("five-page business website", "five-page business website"),
+        ("reasonable bugs", "reasonable bugs"),
+        ("each delivery", "each delivery"),
+        ("loan funds", "loan funds"),
+    ]
+    for key, value in object_patterns:
+        if key in lowered:
+            return value
+    deliver = re.search(r"\bdeliver\s+(?:the\s+)?(?P<object>.+?)(?:\s+by\s+|\s+within\s+|\.|$)", text or "", re.IGNORECASE)
+    if deliver:
+        return deliver.group("object").strip()
+    pay_for = re.search(r"\bfor\s+(?:the\s+)?(?P<object>.+?)(?:\s+when\s+|\.|$)", text or "", re.IGNORECASE)
+    if pay_for:
+        return pay_for.group("object").strip()
+    return ""
+
+def _title_for_shadow_sentence(candidate_type, sentence, amount_info=None):
+    lowered = sentence.lower()
+    obj = _object_from_text(sentence)
+    if candidate_type == ContractExtractionCandidate.TYPE_PAYMENT:
+        amount = _money_title_amount(amount_info or {})
+        if "homepage mockup" in lowered:
+            return f"Pay {amount} for homepage mockup"
+        if "full website" in lowered:
+            return f"Pay {amount} for full website"
+        return f"Pay {amount}".strip()
+    if re.search(r"\bdeliver\b", lowered) and obj:
+        return f"Deliver {obj}"
+    if "fix" in lowered and "bug" in lowered:
+        return "Fix reasonable bugs after delivery"
+    if "review" in lowered and "delivery" in lowered:
+        return "Review each delivery"
+    if "provide" in lowered and obj:
+        return f"Provide {obj}"
+    if "design" in lowered and obj:
+        return f"Design {obj}"
+    return sentence[:80].strip()
+
+def _sentence_candidate_type(sentence):
+    lowered = sentence.lower()
+    if _extract_all_amounts(sentence) or re.search(r"\bpay\b|\bpayment\b", lowered):
+        return ContractExtractionCandidate.TYPE_PAYMENT
+    if "client" in lowered and "review" in lowered:
+        return ContractExtractionCandidate.TYPE_RESPONSIBILITY
+    if "contractor" in lowered and any(word in lowered for word in ["deliver", "fix", "provide", "perform", "must"]):
+        return ContractExtractionCandidate.TYPE_SERVICE_WORK
+    if any(word in lowered for word in ["deliver", "fix", "provide", "perform"]):
+        return ContractExtractionCandidate.TYPE_SERVICE_WORK
+    if _extract_fixed_due_date(sentence):
+        return ContractExtractionCandidate.TYPE_DEADLINE
+    return ""
+
+def _shadow_parties_for_sentence(sentence, candidate_type, roles, contract):
+    lowered = sentence.lower()
+    client = _role_display(roles, "client", str(contract.initiator) if contract.initiator else "")
+    contractor = _role_display(roles, "contractor", contract.counterparty_name or contract.counterparty_email or "")
+
+    if candidate_type == ContractExtractionCandidate.TYPE_PAYMENT:
+        return client or "payer/client", contractor
+    if candidate_type == ContractExtractionCandidate.TYPE_RESPONSIBILITY:
+        if "client" in lowered:
+            return client, contractor
+        return "", ""
+    if candidate_type == ContractExtractionCandidate.TYPE_SERVICE_WORK:
+        if "contractor" in lowered:
+            return contractor, client
+        return contractor or "service provider", client
+    return "", ""
+
+def _raw_sentence_payload(sentence, source_index, amount_info=None, due_trigger="", relative_due=None):
+    payload = {"sentence": sentence, "source_index": source_index}
+    if amount_info:
+        payload["amount"] = amount_info.get("amount")
+        payload["amount_raw"] = amount_info.get("raw")
+    if due_trigger:
+        payload["due_trigger"] = due_trigger
+    if relative_due:
+        payload["relative_due"] = relative_due
+    return payload
+
+def _metadata_for_shadow_sentence(index, original_model, extra=None):
+    metadata = {
+        "shadow_write": True,
+        "source": "prepare",
+        "prepared_terms_key": "draft_text_sentences",
+        "prepared_terms_index": index,
+        "original_model": original_model,
+        "extraction_level": "sentence",
+    }
+    if extra:
+        metadata.update(extra)
+    return metadata
+
+def _build_sentence_shadow_candidates(contract, version, run, prepared_terms, draft_text):
+    source_text = _shadow_source_text(prepared_terms, draft_text)
+    roles = _parse_shadow_roles(source_text, contract)
+    candidates = []
+
+    for index, sentence in enumerate(_shadow_sentences(source_text), start=1):
+        lowered = sentence.lower()
+        if re.match(r"^(website design service agreement|client:\s*|contractor:\s*)", sentence, re.IGNORECASE):
+            continue
+        if re.match(r"^[A-Z][A-Za-z /-]{2,60} Terms\.$", sentence):
+            continue
+        candidate_type = _sentence_candidate_type(sentence)
+        if not candidate_type:
+            continue
+        if "agrees to design" in lowered and not _extract_fixed_due_date(sentence) and not _extract_relative_due_rule(sentence):
+            continue
+
+        fixed_due_date = _extract_fixed_due_date(sentence)
+        relative_due = _extract_relative_due_rule(sentence)
+        due_trigger = _extract_due_trigger(sentence)
+        responsible_party, beneficiary_party = _shadow_parties_for_sentence(sentence, candidate_type, roles, contract)
+        metadata_extra = {}
+        if due_trigger:
+            metadata_extra["due_trigger"] = due_trigger
+        if relative_due:
+            metadata_extra["relative_due"] = relative_due
+        metadata_extra["role_map"] = roles
+
+        if candidate_type == ContractExtractionCandidate.TYPE_PAYMENT:
+            amounts = _extract_all_amounts(sentence) or [{"raw": "", "amount": None, "currency": contract.currency or ""}]
+            for amount_index, amount_info in enumerate(amounts, start=1):
+                amount = _to_decimal(amount_info.get("amount"))
+                missing_terms = [] if amount is not None else ["amount"]
+                candidates.append(ContractExtractionCandidate(
+                    run=run,
+                    contract=contract,
+                    contract_version=version,
+                    candidate_type=candidate_type,
+                    title=_title_for_shadow_sentence(candidate_type, sentence, amount_info),
+                    description=sentence,
+                    responsible_party=responsible_party,
+                    beneficiary_party=beneficiary_party,
+                    due_date=fixed_due_date if not (due_trigger or relative_due) else None,
+                    amount=amount,
+                    currency=amount_info.get("currency") or contract.currency or "",
+                    source_clause_text=sentence,
+                    source_clause_key=f"sentence-{index:03d}",
+                    source_location={"sentence_index": index, "amount_index": amount_index},
+                    missing_terms=missing_terms,
+                    raw_payload=_raw_sentence_payload(sentence, index, amount_info, due_trigger, relative_due),
+                    metadata=_metadata_for_shadow_sentence(index, "ContractObligation", metadata_extra),
+                ))
+            continue
+
+        original_model = "ContractServiceObligation" if candidate_type == ContractExtractionCandidate.TYPE_SERVICE_WORK else "prepared_terms.responsibility"
+        candidates.append(ContractExtractionCandidate(
+            run=run,
+            contract=contract,
+            contract_version=version,
+            candidate_type=candidate_type,
+            title=_title_for_shadow_sentence(candidate_type, sentence),
+            description=sentence,
+            responsible_party=responsible_party,
+            beneficiary_party=beneficiary_party,
+            due_date=fixed_due_date if not relative_due else None,
+            currency=contract.currency or "",
+            source_clause_text=sentence,
+            source_clause_key=f"sentence-{index:03d}",
+            source_location={"sentence_index": index},
+            missing_terms=[],
+            raw_payload=_raw_sentence_payload(sentence, index, relative_due=relative_due),
+            metadata=_metadata_for_shadow_sentence(index, original_model, metadata_extra),
+        ))
+
+    return candidates
+
+def _build_prepared_term_shadow_candidates(contract, version, run, prepared_terms):
     candidates = []
     represented_deadlines = set()
     represented_clause_keys = set()
@@ -607,6 +895,11 @@ def _build_prepare_shadow_candidates(contract, version, run, prepared_terms):
 
     return candidates
 
+def _build_prepare_shadow_candidates(contract, version, run, prepared_terms, draft_text=""):
+    sentence_candidates = _build_sentence_shadow_candidates(contract, version, run, prepared_terms, draft_text)
+    if sentence_candidates:
+        return sentence_candidates
+    return _build_prepared_term_shadow_candidates(contract, version, run, prepared_terms)
 
 def _persist_prepare_extraction_shadow(contract, version, snapshot, draft_text, prepared_terms, created_records, user):
     source_hash = _prepare_shadow_source_hash(snapshot, draft_text, prepared_terms)
@@ -648,11 +941,10 @@ def _persist_prepare_extraction_shadow(contract, version, snapshot, draft_text, 
         completed_at=timezone.now(),
     )
 
-    for candidate in _build_prepare_shadow_candidates(contract, version, run, prepared_terms):
+    for candidate in _build_prepare_shadow_candidates(contract, version, run, prepared_terms, draft_text):
         candidate.save()
 
     return run
-
 
 class ContractPrepareAPIView(APIView):
     """

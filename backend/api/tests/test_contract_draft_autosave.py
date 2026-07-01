@@ -278,6 +278,93 @@ class ContractPrepareTests(TestCase):
         self.assertEqual(ContractObligation.objects.filter(contract=contract).count(), 1)
         self.assertEqual(Payment.objects.filter(contract=contract).count(), 1)
 
+    def test_prepare_shadow_splits_service_contract_candidates(self):
+        contract = self._make_contract(
+            title="Website Design Service Agreement",
+            contract_type="Service Agreement",
+            counterparty_name="Maria Jean",
+        )
+        text = """Website Design Service Agreement
+
+Client: Alcide
+Contractor: Maria Jean
+
+Contractor agrees to design a five-page business website for Client.
+
+Contractor must deliver the homepage mockup by August 10, 2026.
+Contractor must deliver the full website by September 1, 2026.
+
+Client agrees to pay Contractor $500 when the homepage mockup is delivered.
+Client agrees to pay Contractor $1,000 when the full website is completed.
+
+Contractor must fix reasonable bugs reported within 7 days after delivery.
+Client must review each delivery within 5 days.
+""".strip()
+        self._autosave(contract, "".join(f"<p>{line}</p>" if line else "<p></p>" for line in text.splitlines()))
+
+        response = self._prepare(contract, text)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("prepared_terms", response.data)
+        self.assertIn("created_records", response.data)
+        self.assertNotIn("extraction_run", response.data)
+        run = ContractExtractionRun.objects.get(contract=contract, stage=ContractExtractionRun.STAGE_PREPARE)
+        candidates = {candidate.title: candidate for candidate in ContractExtractionCandidate.objects.filter(run=run)}
+        self.assertEqual(len(candidates), 6)
+
+        homepage = candidates["Deliver homepage mockup"]
+        self.assertEqual(homepage.candidate_type, ContractExtractionCandidate.TYPE_SERVICE_WORK)
+        self.assertEqual(homepage.responsible_party, "Contractor / Maria Jean")
+        self.assertEqual(homepage.beneficiary_party, "Client / Alcide")
+        self.assertEqual(str(homepage.due_date), "2026-08-10")
+
+        full_site = candidates["Deliver full website"]
+        self.assertEqual(full_site.candidate_type, ContractExtractionCandidate.TYPE_SERVICE_WORK)
+        self.assertEqual(str(full_site.due_date), "2026-09-01")
+
+        payment_500 = candidates["Pay $500 for homepage mockup"]
+        self.assertEqual(payment_500.candidate_type, ContractExtractionCandidate.TYPE_PAYMENT)
+        self.assertEqual(payment_500.responsible_party, "Client / Alcide")
+        self.assertEqual(payment_500.beneficiary_party, "Contractor / Maria Jean")
+        self.assertEqual(payment_500.amount, 500)
+        self.assertIsNone(payment_500.due_date)
+        self.assertIn("homepage mockup", payment_500.metadata["due_trigger"])
+
+        payment_1000 = candidates["Pay $1,000 for full website"]
+        self.assertEqual(payment_1000.candidate_type, ContractExtractionCandidate.TYPE_PAYMENT)
+        self.assertEqual(payment_1000.amount, 1000)
+        self.assertIsNone(payment_1000.due_date)
+        self.assertIn("full website", payment_1000.metadata["due_trigger"])
+
+        bug_fix = candidates["Fix reasonable bugs after delivery"]
+        self.assertEqual(bug_fix.candidate_type, ContractExtractionCandidate.TYPE_SERVICE_WORK)
+        self.assertEqual(bug_fix.responsible_party, "Contractor / Maria Jean")
+        self.assertEqual(bug_fix.beneficiary_party, "Client / Alcide")
+        self.assertIsNone(bug_fix.due_date)
+        self.assertEqual(bug_fix.metadata["relative_due"], {
+            "amount": 7,
+            "unit": "days",
+            "direction": "after",
+            "event": "delivery",
+        })
+
+        review = candidates["Review each delivery"]
+        self.assertEqual(review.candidate_type, ContractExtractionCandidate.TYPE_RESPONSIBILITY)
+        self.assertEqual(review.responsible_party, "Client / Alcide")
+        self.assertEqual(review.beneficiary_party, "Contractor / Maria Jean")
+        self.assertIsNone(review.due_date)
+        self.assertEqual(review.metadata["relative_due"], {
+            "amount": 5,
+            "unit": "days",
+            "direction": "after",
+            "event": "delivery",
+        })
+
+        for candidate in candidates.values():
+            self.assertEqual(candidate.metadata["extraction_level"], "sentence")
+            self.assertTrue(candidate.source_clause_text)
+            self.assertIn("sentence", candidate.raw_payload)
+
     def test_prepare_missing_registered_counterparty_returns_clear_error(self):
         contract = self._make_contract(counterparty_email="missing@example.com")
         text = "Payment Terms. The client shall pay USD 400.00 on 2026-08-01."

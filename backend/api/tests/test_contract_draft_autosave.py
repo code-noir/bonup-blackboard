@@ -1,6 +1,7 @@
 # Regression tests for the draft autosave endpoint.
 
 import json
+from types import SimpleNamespace
 
 from django.test import TestCase
 
@@ -14,8 +15,66 @@ from backend.contracts.models import (
     ContractVersion,
 )
 from backend.payments.models import Payment
+from backend.contracts.extraction.roles import parse_roles, parties_for_sentence, payment_parties_for_sentence
 
 from .helpers import authed_client, make_subscription, make_user
+
+
+class SharedPartyFoundationTests(TestCase):
+    def _contract(self):
+        return SimpleNamespace(initiator=None, counterparty_name="", counterparty_email="")
+
+    def _roles(self, text):
+        return parse_roles(text, self._contract())
+
+    def test_parse_roles_returns_canonical_entries(self):
+        cases = [
+            ("Client: Alcide\nContractor: Maria Jean", "client", "Client", "Alcide"),
+            ("Landlord: Elise Laurent\nTenant: Marcus Paul", "landlord", "Landlord", "Elise Laurent"),
+            ("General Contractor: Blue Ridge Builders\nSubcontractor: Nova Paint Crew", "general_contractor", "General Contractor", "Blue Ridge Builders"),
+            ("Owner: Harbor Tool Rentals\nRenter: North Pier Events", "owner", "Owner", "Harbor Tool Rentals"),
+            ("Borrower: Mina Stone\nLender: Coral Credit", "borrower", "Borrower", "Mina Stone"),
+            ("Buyer: Rita Chen\nSeller: West End Supply", "buyer", "Buyer", "Rita Chen"),
+        ]
+        for text, key, label, name in cases:
+            with self.subTest(key=key):
+                roles = self._roles(text)
+                self.assertEqual(roles[key], {
+                    "key": key,
+                    "label": label,
+                    "name": name,
+                    "display": f"{label} / {name}",
+                })
+
+    def test_payment_parties_for_sentence_uses_explicit_role_direction(self):
+        cases = [
+            ("Owner: Harbor Tool Rentals\nRenter: North Pier Events", "Renter pays Owner $1,200.", "Renter / North Pier Events", "Owner / Harbor Tool Rentals"),
+            ("General Contractor: Blue Ridge Builders\nSubcontractor: Nova Paint Crew", "General Contractor pays Subcontractor $2,000.", "General Contractor / Blue Ridge Builders", "Subcontractor / Nova Paint Crew"),
+            ("Landlord: Elise Laurent\nTenant: Marcus Paul", "Tenant shall pay Landlord $900.", "Tenant / Marcus Paul", "Landlord / Elise Laurent"),
+            ("Client: Alcide\nContractor: Maria Jean", "Client agrees to pay Contractor $500.", "Client / Alcide", "Contractor / Maria Jean"),
+            ("Borrower: Mina Stone\nLender: Coral Credit", "Borrower pays Lender $100.", "Borrower / Mina Stone", "Lender / Coral Credit"),
+            ("Buyer: Rita Chen\nSeller: West End Supply", "Buyer pays Seller $2,000.", "Buyer / Rita Chen", "Seller / West End Supply"),
+        ]
+        for role_text, sentence, responsible, beneficiary in cases:
+            with self.subTest(sentence=sentence):
+                self.assertEqual(
+                    payment_parties_for_sentence(sentence, self._roles(role_text), self._contract()),
+                    (responsible, beneficiary),
+                )
+
+    def test_parties_for_sentence_uses_explicit_responsibility_roles(self):
+        cases = [
+            ("General Contractor: Blue Ridge Builders\nSubcontractor: Nova Paint Crew", "Subcontractor must complete work.", ContractExtractionCandidate.TYPE_SERVICE_WORK, "Subcontractor / Nova Paint Crew", "General Contractor / Blue Ridge Builders"),
+            ("Landlord: Elise Laurent\nTenant: Marcus Paul", "Landlord must repair essential utilities.", ContractExtractionCandidate.TYPE_SERVICE_WORK, "Landlord / Elise Laurent", "Tenant / Marcus Paul"),
+            ("Landlord: Elise Laurent\nTenant: Marcus Paul", "Tenant must return keys.", ContractExtractionCandidate.TYPE_RESPONSIBILITY, "Tenant / Marcus Paul", "Landlord / Elise Laurent"),
+            ("Client: Alcide\nContractor: Maria Jean", "Contractor must deliver the homepage mockup.", ContractExtractionCandidate.TYPE_SERVICE_WORK, "Contractor / Maria Jean", "Client / Alcide"),
+        ]
+        for role_text, sentence, candidate_type, responsible, beneficiary in cases:
+            with self.subTest(sentence=sentence):
+                self.assertEqual(
+                    parties_for_sentence(sentence, candidate_type, self._roles(role_text), self._contract(), ContractExtractionCandidate),
+                    (responsible, beneficiary),
+                )
 
 
 class ContractDraftAutosaveTests(TestCase):
@@ -515,7 +574,7 @@ Any change order must be approved in writing by both parties before extra work b
         self.assertNotIn("extraction_run", response.data)
         run = ContractExtractionRun.objects.get(contract=contract, stage=ContractExtractionRun.STAGE_PREPARE)
         candidates = {candidate.title: candidate for candidate in ContractExtractionCandidate.objects.filter(run=run)}
-        self.assertGreaterEqual(len(candidates), 8)
+        self.assertEqual(len(candidates), 8)
 
         primer = candidates["Complete primer coat work"]
         self.assertEqual(primer.candidate_type, ContractExtractionCandidate.TYPE_SERVICE_WORK)

@@ -14,7 +14,7 @@ from .domains.construction import (
 )
 from .domains.rental import is_rental_term, rental_candidate_type, rental_title
 from .domains.service import service_candidate_type, service_title
-from .roles import parse_roles, parties_for_sentence
+from .roles import parse_roles, parties_for_sentence, payment_parties_for_sentence
 from .text import prepared_source_text, split_sentences
 from .triggers import after_trigger, before_trigger, due_rule, due_trigger, monthly_rent_recurrence, relative_due_rule
 
@@ -179,7 +179,12 @@ def build_sentence_candidates(contract, version, run, prepared_terms, draft_text
         fixed = fixed_due_date(sentence)
         relative = relative_due_rule(sentence)
         trigger = construction_payment_trigger(sentence) or due_trigger(sentence)
-        responsible, beneficiary = parties_for_sentence(sentence, candidate_type, roles, contract, ContractExtractionCandidate)
+        if candidate_type in {ContractExtractionCandidate.TYPE_PAYMENT, ContractExtractionCandidate.TYPE_DEPOSIT}:
+            responsible, beneficiary = payment_parties_for_sentence(sentence, roles, contract)
+            if not (responsible or beneficiary):
+                responsible, beneficiary = parties_for_sentence(sentence, candidate_type, roles, contract, ContractExtractionCandidate)
+        else:
+            responsible, beneficiary = parties_for_sentence(sentence, candidate_type, roles, contract, ContractExtractionCandidate)
         metadata_extra = {"role_map": roles}
         if trigger:
             metadata_extra["due_trigger"] = trigger

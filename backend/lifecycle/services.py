@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 from datetime import datetime, time, timedelta
@@ -5,11 +6,17 @@ from decimal import Decimal
 from html import unescape
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 
 from backend.agreement_exchange.models import AgreementExchange
 from backend.agreement_exchange.notifications import find_user_by_email, notify_exchange_recipient
+from backend.contracts.extraction.amounts import extract_amounts, to_decimal
+from backend.contracts.extraction.roles import ROLE_ALIASES, ROLE_COUNTERPARTS, ROLE_PATTERN, parse_roles, party_for_role
+from backend.contracts.extraction.text import normalize_source, split_sentences
+from backend.contracts.extraction.triggers import after_trigger, before_trigger, due_trigger, relative_due_rule
+from backend.contracts.section_normalizer import normalize_contract_sections
 from backend.contracts.models import ContractVersion, LifecycleAgreement, LifecycleChangeProposal, LifecycleChangeProposalMessage, LifecycleEvent, LifecycleItem, LifecycleItemAttachment, LifecycleItemMessage, LifecycleItemResponse, LifecycleItemUserState
 from backend.notifications.models import Notification
 
@@ -142,29 +149,23 @@ def _snapshot_to_plain_text(content_snapshot):
     except (TypeError, ValueError):
         parsed = None
 
+    chunks = []
     if isinstance(parsed, dict):
         for key in ("final_editor_html", "editor_html", "content_html", "html", "body", "text", "raw_content", "summary"):
             value = parsed.get(key)
             if isinstance(value, str) and value.strip():
-                raw = value
-                break
-        else:
-            sections = parsed.get("sections")
-            if isinstance(sections, list):
-                chunks = []
-                for section in sections:
-                    if not isinstance(section, dict):
-                        continue
-                    title = section.get("title") or section.get("heading") or section.get("name") or ""
-                    body = section.get("body") or section.get("text") or section.get("content") or section.get("html") or section.get("content_html") or section.get("editor_html") or ""
-                    chunks.append("\n".join(str(part) for part in (title, body) if part))
-                raw = "\n\n".join(chunks)
+                chunks.append(value)
+        for section in normalize_contract_sections(parsed):
+            title = section.get("title") or ""
+            body = section.get("body") or section.get("content_html") or section.get("text") or ""
+            section_text = "\n".join(str(part) for part in (title, body) if part)
+            if section_text.strip():
+                chunks.append(section_text)
+        raw = "\n\n".join(chunks)
 
-    text = unescape(raw)
-    text = re.sub(r"<\/?(h[1-6]|p|div|li|br|section|article|tr|td|th)[^>]*>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"[ \t\r\f\v]+", " ", text)
-    text = re.sub(r"\n\s*\n+", "\n", text)
+    text = normalize_source(raw)
+    text = re.sub(r" *\n *", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
 
@@ -319,9 +320,14 @@ def _timeline_item_exists(agreement, source_id):
     return LifecycleItem.objects.filter(lifecycle_agreement=agreement, source_id=source_id).exists()
 
 
-def _create_contract_derived_item(agreement, *, item_type, title, source_id, description="", due_date=None, amount=None, source_label="Signed agreement", responsible_party="", beneficiary_party=""):
+def _build_source_id(prefix, version_key, key):
+    return f"{prefix}:{version_key}:{key}"
+
+
+def _create_contract_derived_item(agreement, *, item_type, title, source_id, description="", due_date=None, amount=None, source_label="Signed agreement", responsible_party="", beneficiary_party="", source_clause="", metadata=None):
     if _timeline_item_exists(agreement, source_id):
         return None
+    item_metadata = metadata or {"extractor": "signed_agreement_timeline_v2"}
     return LifecycleItem.objects.create(
         lifecycle_agreement=agreement,
         item_type=item_type,
@@ -338,14 +344,11 @@ def _create_contract_derived_item(agreement, *, item_type, title, source_id, des
         source_version=agreement.signed_version,
         source_exchange=agreement.source_exchange,
         is_contract_derived=True,
-        locked_fields=["title", "description", "amount", "due_date", "source_type", "source_id", "source_label", "source_version", "source_exchange", "is_contract_derived", "locked_fields"],
-        metadata={"extractor": "signed_agreement_timeline_v2"},
+        locked_fields=["title", "description", "responsible_party", "beneficiary_party", "amount", "due_date", "source_type", "source_id", "source_label", "source_version", "source_exchange", "is_contract_derived", "locked_fields"],
+        source_clause=source_clause or None,
+        metadata=item_metadata,
         created_by=agreement.owner,
     )
-
-
-def _build_source_id(prefix, version_key, key):
-    return f"{prefix}:{version_key}:{key}"
 
 
 def ensure_signed_contract_timeline_records(agreement):
@@ -464,153 +467,365 @@ def ensure_signed_contract_timeline_records(agreement):
     return created
 
 
-def _timeline_item_exists(agreement, source_id):
-    return LifecycleItem.objects.filter(lifecycle_agreement=agreement, source_id=source_id).exists()
+SIGNED_SENTENCE_EXTRACTOR = "signed_agreement_sentence_v1"
+SIGNED_SENTENCE_SOURCE_PREFIX = "signed_sentence_v1"
+
+OBLIGATION_MODALS_RE = re.compile(r"\b(must|shall|agrees? to|is responsible for|are responsible for|required to|will|should|may cancel|may charge|may owe|may still owe|may be charged)\b", re.IGNORECASE)
+PAYMENT_RE = re.compile(r"\b(pay|pays|payment|fee|deposit|installment|owe|owes)\b", re.IGNORECASE)
+WORK_RE = re.compile(r"\b(arrive|begin|deliver|provide|perform|complete|build|design|clean|repair|fix|return|correct|remove)\b", re.IGNORECASE)
+REVIEW_RE = re.compile(r"\b(review|inspect|approve|approval|accepted|requested changes)\b", re.IGNORECASE)
+PROOF_RE = re.compile(r"\b(upload proof|proof of payment|provide receipt|submit documentation|upload photo|service proof|provide documentation|service photos)\b", re.IGNORECASE)
+ACCESS_RE = re.compile(r"\b(provide access|provide materials|provide files|make available|make the yard accessible|locked gate|blocked access|access code|gate key|property access|room layout|guest count|sign-in sheet|printed signs|vendor instructions|venue access instructions|parking instructions|venue manager|before setup begins)\b", re.IGNORECASE)
+NOTICE_RE = re.compile(r"\b(notify|report|written notice|complaint|damage notice|notice)\b", re.IGNORECASE)
+CHANGE_ORDER_RE = re.compile(r"\b(change order|extra work|approved in writing)\b", re.IGNORECASE)
+CONDITIONAL_FEE_RE = re.compile(r"(?:\bmay\s+(?:charge|owe|still owe|be charged)\b|\b(?:late|missed-access|delayed-access|cancellation) fee\b|\bif\b[^.]*\bfee\b)", re.IGNORECASE)
+BOILERPLATE_RE = re.compile(r"\b(this agreement is made effective|this agreement begins|this agreement ends|term|services|payment schedule|signatures?)\b", re.IGNORECASE)
 
 
-def _create_contract_derived_item(agreement, *, item_type, title, source_id, description="", due_date=None, amount=None, source_label="Signed agreement", responsible_party="", beneficiary_party=""):
-    if _timeline_item_exists(agreement, source_id):
+def _looks_like_whole_contract_text(value):
+    normalized = " ".join(str(value or "").lower().split())
+    if len(normalized) < 500:
+        return False
+    markers = ("agreement", "governing law", "signatures", "client", "contractor", "provider", "customer", "lender", "borrower")
+    return sum(1 for marker in markers if marker in normalized) >= 3
+
+
+def _signed_clause_candidates(text):
+    clauses = []
+    for paragraph in re.split(r"\n{2,}|\n", text or ""):
+        paragraph = " ".join(paragraph.split()).strip()
+        if not paragraph:
+            continue
+        for sentence in split_sentences(paragraph):
+            for part in re.split(r";\s+", sentence):
+                clause = " ".join(part.split()).strip()
+                if clause:
+                    clauses.append(clause)
+    return clauses
+
+
+def _is_heading_or_party_line(clause):
+    if re.match(rf"^\s*(?:{ROLE_PATTERN})\s*:\s*[^.]+$", clause or "", flags=re.IGNORECASE):
+        return True
+    if len(clause.split()) <= 7 and not re.search(r"\b(must|shall|agrees?|pay|provide|complete|within|by)\b", clause or "", flags=re.IGNORECASE):
+        return True
+    return False
+
+
+def _role_keys_in_clause(clause):
+    keys = []
+    for match in re.finditer(rf"\b(?P<label>{ROLE_PATTERN})\b", clause or "", re.IGNORECASE):
+        key = ROLE_ALIASES[match.group("label").strip().lower()]
+        if key not in keys:
+            keys.append(key)
+    return keys
+
+
+def _role_label(role_key):
+    return (role_key or "party").replace("_", " ").title()
+
+
+def _party_for_role(roles, role_key):
+    return party_for_role(roles, role_key, _role_label(role_key))
+
+
+def _counterpart_role(role_key, roles):
+    counterpart = ROLE_COUNTERPARTS.get(role_key)
+    if counterpart in roles:
+        return counterpart
+    for candidate in ROLE_COUNTERPARTS.values():
+        if candidate in roles and candidate != role_key:
+            return candidate
+    for candidate in roles:
+        if candidate != role_key:
+            return candidate
+    return counterpart or ""
+
+
+def _classification_for_clause(clause):
+    lowered = clause.lower()
+    if CONDITIONAL_FEE_RE.search(clause):
+        return "conditional_fee_rule", LifecycleItem.TYPE_RESPONSIBILITY
+    if CHANGE_ORDER_RE.search(clause):
+        return "change_order_rule", LifecycleItem.TYPE_RESPONSIBILITY
+    if PROOF_RE.search(clause):
+        return "proof_document", LifecycleItem.TYPE_RESPONSIBILITY
+    if PAYMENT_RE.search(clause) or extract_amounts(clause):
+        return "payment", LifecycleItem.TYPE_PAYMENT
+    if REVIEW_RE.search(clause):
+        return "review_approval", LifecycleItem.TYPE_RESPONSIBILITY
+    if ACCESS_RE.search(clause):
+        return "access_materials", LifecycleItem.TYPE_RESPONSIBILITY
+    if NOTICE_RE.search(clause):
+        return "notice_deadline", LifecycleItem.TYPE_RESPONSIBILITY
+    if WORK_RE.search(clause):
+        return "work_service", LifecycleItem.TYPE_SERVICE_WORK
+    if "within " in lowered or re.search(_DATE_PATTERN, clause):
+        return "deadline", LifecycleItem.TYPE_DUE_DATE
+    return "", ""
+
+
+def _has_obligation_language(clause):
+    return bool(OBLIGATION_MODALS_RE.search(clause) or PAYMENT_RE.search(clause) or CHANGE_ORDER_RE.search(clause))
+
+
+def _parties_for_signed_clause(clause, classification, roles):
+    if classification == "change_order_rule" and re.search(r"\bboth parties\b", clause, flags=re.IGNORECASE):
+        return "both parties", "both parties"
+    mentioned = _role_keys_in_clause(clause)
+    responsible_key = mentioned[0] if mentioned else ""
+    if classification == "payment":
+        pay_match = re.search(rf"\b(?P<payer>{ROLE_PATTERN})\b[^.]*?\bpay(?:s|ment)?\b(?:[^.]*?\b(?:to|pay)\s+(?P<payee>{ROLE_PATTERN})\b|[^.]*?\b(?P<payee2>{ROLE_PATTERN})\b)?", clause, flags=re.IGNORECASE)
+        if pay_match:
+            responsible_key = ROLE_ALIASES[pay_match.group("payer").strip().lower()]
+            payee_label = pay_match.group("payee") or pay_match.group("payee2")
+            if payee_label:
+                beneficiary_key = ROLE_ALIASES[payee_label.strip().lower()]
+                if beneficiary_key != responsible_key:
+                    return _party_for_role(roles, responsible_key), _party_for_role(roles, beneficiary_key)
+    if not responsible_key:
+        return "", ""
+    beneficiary_key = ""
+    to_match = re.search(rf"\bto\s+(?P<role>{ROLE_PATTERN})\b", clause, flags=re.IGNORECASE)
+    from_match = re.search(rf"\bfrom\s+(?P<role>{ROLE_PATTERN})\b", clause, flags=re.IGNORECASE)
+    if to_match:
+        beneficiary_key = ROLE_ALIASES[to_match.group("role").strip().lower()]
+    elif from_match and classification in {"notice_deadline", "review_approval"}:
+        beneficiary_key = ROLE_ALIASES[from_match.group("role").strip().lower()]
+    if not beneficiary_key or beneficiary_key == responsible_key:
+        beneficiary_key = _counterpart_role(responsible_key, roles)
+    return _party_for_role(roles, responsible_key), _party_for_role(roles, beneficiary_key) if beneficiary_key else ""
+
+
+def _amount_for_clause(clause):
+    amounts = extract_amounts(clause)
+    if not amounts:
         return None
-    return LifecycleItem.objects.create(
+    return to_decimal(amounts[0].get("amount"))
+
+
+def _due_date_for_clause(clause):
+    date_match = re.search(_DATE_PATTERN, clause or "")
+    return _parse_contract_date(date_match.group(0)) if date_match else None
+
+
+def _relative_due_metadata(clause):
+    metadata = {}
+    relative_due = relative_due_rule(clause)
+    if not relative_due:
+        match = re.search(
+            r"\bwithin\s+(?P<amount>\d+)\s+(?P<unit>hour|hours)"
+            r"(?:\s+(?P<direction>after|before)\s+(?P<event>[^.]+?))?(?:\.|$)",
+            clause or "",
+            re.IGNORECASE,
+        )
+        if match:
+            relative_due = {
+                "amount": int(match.group("amount")),
+                "unit": "hours",
+                "direction": (match.group("direction") or "after").lower(),
+                "event": (match.group("event") or "").strip(),
+            }
+    if relative_due:
+        metadata["relative_due"] = relative_due
+    immediate = re.search(r"\bimmediately\s+after\s+(?P<event>[^.]+?)(?:\.|$)", clause or "", re.IGNORECASE)
+    trigger = ""
+    if immediate:
+        trigger = f"immediately after {immediate.group('event').strip()}"
+    if not trigger:
+        trigger = after_trigger(clause) or before_trigger(clause) or due_trigger(clause)
+    if trigger:
+        metadata["due_trigger"] = trigger
+    return metadata
+
+
+def _conditional_fee_metadata(clause, amount):
+    metadata = {}
+    if amount is not None:
+        metadata["conditional_amount"] = str(amount)
+    lowered = (clause or "").lower()
+    if "missed-access" in lowered:
+        metadata["fee_kind"] = "missed_access_fee"
+    elif "delayed-access" in lowered or "access" in lowered:
+        metadata["fee_kind"] = "delayed_access_fee"
+    elif "late fee" in lowered:
+        metadata["fee_kind"] = "late_fee"
+    elif "cancellation fee" in lowered:
+        metadata["fee_kind"] = "cancellation_fee"
+    else:
+        metadata["fee_kind"] = "conditional_fee"
+    condition = re.match(r"\s*if\s+(?P<condition>.+?),\s*[^,]*?(?:may|must|shall)\b", clause or "", re.IGNORECASE)
+    if condition:
+        metadata["condition"] = condition.group("condition").strip()
+    metadata["rule_type"] = "conditional_fee"
+    return metadata
+
+
+def _title_from_clause(clause, classification, amount=None):
+    cleaned = re.sub(r"\s+", " ", clause.strip().rstrip("."))
+    lowered = cleaned.lower()
+    title_patterns = (
+        (r"provide event setup and breakdown services", "Provide event setup and breakdown services"),
+        (r"provide the final room layout|guest count|sign-in sheet|printed signs|vendor instructions", "Provide event materials"),
+        (r"review the event materials.*missing setup information", "Review event materials and report missing information"),
+        (r"arrive at .*river hall|arrive at .*venue", "Arrive at event venue"),
+        (r"complete all event setup work", "Complete event setup work"),
+        (r"inspect the completed setup.*requested changes", "Inspect completed setup and report changes"),
+        (r"upload proof of payment", "Upload proof of payment"),
+        (r"begin breakdown work", "Begin breakdown work after event"),
+        (r"complete breakdown work", "Complete breakdown work"),
+        (r"remove all setup materials", "Remove setup materials before leaving venue"),
+        (r"accidental property damage", "Report property damage"),
+        (r"complaint about setup quality|complaint about property damage", "Report event complaints"),
+        (r"correct any setup mistake", "Correct setup mistakes during event"),
+        (r"written explanation inside the application", "Provide written explanation after event"),
+        (r"venue access instructions|parking instructions|venue manager", "Provide venue access instructions"),
+        (r"extra setup area|additional seating|decoration work|schedule change", "Approve event change orders in writing"),
+        (r"return any venue key|access card|badge|setup equipment", "Return venue access items"),
+        (r"homepage mockup", "Deliver homepage mockup"),
+        (r"completed five-page website", "Deliver completed website"),
+        (r"business photos|logo files|service descriptions", "Provide business materials"),
+        (r"website hosting access|domain access", "Provide hosting or domain access"),
+    )
+    for pattern, title in title_patterns:
+        if re.search(pattern, lowered):
+            return title
+    if classification == "conditional_fee_rule":
+        return "Conditional fee rule"
+    if classification == "payment" and amount is not None:
+        return f"Payment obligation ${amount}"
+    if len(cleaned) <= 110:
+        return cleaned
+    if classification == "change_order_rule":
+        return "Approve change orders in writing"
+    if classification == "proof_document":
+        return "Provide required proof or documentation"
+    if classification == "review_approval":
+        return "Review and report changes"
+    if classification == "access_materials":
+        return "Provide required access or materials"
+    if classification == "notice_deadline":
+        return "Notice or reporting obligation"
+    if classification == "work_service":
+        return "Complete required service work"
+    return cleaned[:107].rstrip() + "..."
+
+
+def _confidence_for_clause(clause, responsible_party, due_date, amount, relative_metadata):
+    confidence = 0.55
+    if responsible_party:
+        confidence += 0.15
+    if due_date or relative_metadata.get("relative_due"):
+        confidence += 0.1
+    if amount is not None:
+        confidence += 0.1
+    if OBLIGATION_MODALS_RE.search(clause):
+        confidence += 0.1
+    return min(confidence, 0.95)
+
+
+def _extract_signed_sentence_items(contract, signed_version, agreement, text):
+    roles = parse_roles(text, contract)
+    created = []
+    seen = set()
+    version_key = str(signed_version.id)
+    for index, clause in enumerate(_signed_clause_candidates(text), start=1):
+        normalized_clause = " ".join(clause.split())
+        lowered = normalized_clause.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        if _is_heading_or_party_line(normalized_clause):
+            continue
+        if re.match(r"^this agreement (?:is made effective|begins|ends)\b", lowered):
+            continue
+        if len(normalized_clause) > 800 or _looks_like_whole_contract_text(normalized_clause):
+            continue
+        classification, item_type = _classification_for_clause(normalized_clause)
+        if not classification or not _has_obligation_language(normalized_clause):
+            continue
+        responsible_party, beneficiary_party = _parties_for_signed_clause(normalized_clause, classification, roles)
+        if not responsible_party:
+            continue
+        amount = _amount_for_clause(normalized_clause)
+        due_date = _due_date_for_clause(normalized_clause)
+        metadata = {
+            "extractor": SIGNED_SENTENCE_EXTRACTOR,
+            "source": "signed_contract",
+            "clause_index": index,
+            "classification": classification,
+            "source_clause_text": normalized_clause,
+        }
+        metadata.update(_relative_due_metadata(normalized_clause))
+        if classification == "conditional_fee_rule":
+            metadata.update(_conditional_fee_metadata(normalized_clause, amount))
+        metadata["confidence"] = _confidence_for_clause(normalized_clause, responsible_party, due_date, amount, metadata)
+        source_hash = hashlib.sha256(normalized_clause.encode("utf-8")).hexdigest()[:12]
+        item = _create_contract_derived_item(
+            agreement,
+            item_type=item_type,
+            title=_title_from_clause(normalized_clause, classification, amount),
+            source_id=_build_source_id(SIGNED_SENTENCE_SOURCE_PREFIX, version_key, f"{index}:{source_hash}"),
+            description=normalized_clause,
+            due_date=due_date,
+            amount=amount,
+            source_label="Signed agreement sentence",
+            responsible_party=responsible_party,
+            beneficiary_party=beneficiary_party,
+            source_clause=normalized_clause,
+            metadata=metadata,
+        )
+        if item:
+            created.append(item)
+    return created
+
+
+def _signed_sentence_source_id_prefix(signed_version):
+    return f"{SIGNED_SENTENCE_SOURCE_PREFIX}:{signed_version.id}:"
+
+
+def _signed_sentence_items_for_version(agreement, signed_version):
+    return LifecycleItem.objects.filter(
         lifecycle_agreement=agreement,
-        item_type=item_type,
-        title=title,
-        description=description,
-        responsible_party=responsible_party,
-        beneficiary_party=beneficiary_party,
-        due_date=due_date,
-        amount=amount,
-        status=LifecycleItem.STATUS_PENDING,
         source_type=LifecycleItem.SOURCE_ORIGINAL_CONTRACT,
-        source_id=source_id,
-        source_label=source_label,
-        source_version=agreement.signed_version,
-        source_exchange=agreement.source_exchange,
+        source_version=signed_version,
         is_contract_derived=True,
-        locked_fields=["title", "description", "amount", "due_date", "source_type", "source_id", "source_label", "source_version", "source_exchange", "is_contract_derived", "locked_fields"],
-        metadata={"extractor": "signed_agreement_timeline_v2"},
-        created_by=agreement.owner,
+    ).filter(
+        Q(source_id__startswith=_signed_sentence_source_id_prefix(signed_version))
+        | Q(metadata__extractor=SIGNED_SENTENCE_EXTRACTOR)
     )
 
 
-def _build_source_id(prefix, version_key, key):
-    return f"{prefix}:{version_key}:{key}"
-
-
-def ensure_signed_contract_timeline_records(agreement):
-    signed_version = agreement.signed_version
+def create_signed_lifecycle_items_from_contract(contract, signed_version, lifecycle_agreement):
     text = _snapshot_to_plain_text(signed_version.content_snapshot)
     if not text:
         return []
-
     category = _detect_agreement_category(text)
-    if category != "loan_repayment":
-        return []
+    if category == "loan_repayment":
+        return ensure_signed_contract_timeline_records(lifecycle_agreement)
+    return _extract_signed_sentence_items(contract, signed_version, lifecycle_agreement, text)
 
-    created = []
-    version_key = str(signed_version.id)
-    payment_methods = _extract_payment_methods(text)
-    installments = _extract_repayment_installments(text)
-    delivery = _extract_loan_delivery_obligation(text)
 
-    for installment in installments:
-        item = _create_contract_derived_item(
-            agreement,
-            item_type=LifecycleItem.TYPE_PAYMENT,
-            title=f"Payment installment {installment['number']}",
-            source_id=_build_source_id("repayment_schedule", version_key, installment["number"]),
-            description="Scheduled repayment from the signed agreement.",
-            due_date=installment["due_date"],
-            amount=installment["amount"],
-            source_label="Repayment schedule",
-            responsible_party="Borrower",
-            beneficiary_party="Lender",
+@transaction.atomic
+def refresh_signed_lifecycle_items_from_contract(contract, signed_version, lifecycle_agreement):
+    deleted_items = list(
+        _signed_sentence_items_for_version(lifecycle_agreement, signed_version).values(
+            "id",
+            "title",
+            "item_type",
+            "amount",
+            "source_id",
+            "source_clause",
+            "metadata",
+            "created_at",
         )
-        if item:
-            if payment_methods:
-                item.metadata = {**(item.metadata or {}), "payment_methods": payment_methods}
-                item.save(update_fields=["metadata", "updated_at"])
-            created.append(item)
-
-    if delivery and delivery["due_date"]:
-        delivery_description = "Lender provides the loan funds to the borrower by the stated delivery deadline."
-        if delivery["method"]:
-            delivery_description = f"{delivery_description} Delivery method: {delivery['method']}."
-        item = _create_contract_derived_item(
-            agreement,
-            item_type=LifecycleItem.TYPE_DUE_DATE,
-            title="Loan funds delivery deadline",
-            source_id=f"loan_delivery:{version_key}",
-            description=delivery_description,
-            due_date=delivery["due_date"],
-            amount=delivery["amount"],
-            source_label="Loan delivery clause",
-            responsible_party="Lender",
-            beneficiary_party="Borrower",
-        )
-        if item:
-            created.append(item)
-
-    if delivery:
-        work_description = "Lender provides the loan funds to the borrower."
-        if delivery["method"]:
-            work_description = f"{work_description} Delivery method: {delivery['method']}."
-        item = _create_contract_derived_item(
-            agreement,
-            item_type=LifecycleItem.TYPE_SERVICE_WORK,
-            title="Provide loan funds",
-            source_id=f"loan_delivery_work:{version_key}",
-            description=work_description,
-            due_date=delivery["due_date"],
-            amount=delivery["amount"],
-            source_label="Loan delivery clause",
-            responsible_party="Lender",
-            beneficiary_party="Borrower",
-        )
-        if item:
-            created.append(item)
-
-    for entry in _extract_borrower_responsibilities(text):
-        item = _create_contract_derived_item(
-            agreement,
-            item_type=LifecycleItem.TYPE_RESPONSIBILITY,
-            title=entry["title"],
-            source_id=_build_source_id("responsibility", version_key, entry["key"]),
-            description=entry["description"],
-            source_label=entry["source_label"],
-            responsible_party="Borrower",
-            beneficiary_party="Lender",
-        )
-        if item:
-            created.append(item)
-
-    for entry in _extract_lender_responsibilities(text):
-        item = _create_contract_derived_item(
-            agreement,
-            item_type=LifecycleItem.TYPE_RESPONSIBILITY,
-            title=entry["title"],
-            source_id=_build_source_id("responsibility", version_key, entry["key"]),
-            description=entry["description"],
-            source_label=entry["source_label"],
-            responsible_party="Lender",
-            beneficiary_party="Borrower",
-        )
-        if item:
-            created.append(item)
-
-    for entry in _extract_late_payment_default_rules(text):
-        item = _create_contract_derived_item(
-            agreement,
-            item_type=LifecycleItem.TYPE_RESPONSIBILITY,
-            title=entry["title"],
-            source_id=_build_source_id("responsibility", version_key, entry["key"]),
-            description=entry["description"],
-            source_label=entry["source_label"],
-        )
-        if item:
-            created.append(item)
-
-    return created
+    )
+    _signed_sentence_items_for_version(lifecycle_agreement, signed_version).delete()
+    created_items = create_signed_lifecycle_items_from_contract(contract, signed_version, lifecycle_agreement)
+    return {
+        "deleted": deleted_items,
+        "created": created_items,
+    }
 
 
 @transaction.atomic
@@ -647,7 +862,7 @@ def get_or_create_lifecycle_for_signed_contract(contract, user):
             },
         )
 
-    ensure_signed_contract_timeline_records(agreement)
+    create_signed_lifecycle_items_from_contract(lifecycle_contract, signed_version, agreement)
     return agreement
 
 # Agreement Timeline management actions

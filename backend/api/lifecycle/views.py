@@ -503,6 +503,10 @@ def _is_signed_contract_document(item):
     )
 
 
+def _is_signed_contract_lifecycle(agreement):
+    return (agreement.metadata or {}).get("source") == "signed_contract"
+
+
 def _group_items(agreement, overlays_by_item_id=None, user=None):
     grouped = _empty_groups()
     overlays_by_item_id = overlays_by_item_id or {}
@@ -511,6 +515,9 @@ def _group_items(agreement, overlays_by_item_id=None, user=None):
             continue
         overlay = overlays_by_item_id.get(str(item.id))
         _append_timeline_item(grouped, _GROUPS[item.item_type], _serialize_lifecycle_item(item, overlay, user))
+
+    if _is_signed_contract_lifecycle(agreement):
+        return grouped
 
     for obligation in ContractObligation.objects.filter(contract=agreement.contract).order_by("due_date"):
         grouped["payments"].append(_serialize_payment_obligation(obligation))

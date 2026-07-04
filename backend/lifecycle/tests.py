@@ -13,7 +13,8 @@ from backend.api.contracts.services.visibility_service import resolve_contract_d
 from backend.api.tests.helpers import authed_client, make_contract, make_user, make_version
 from backend.contracts.models import ContractExtractionCandidate, ContractExtractionRun, ContractObligation, ContractServiceObligation, LifecycleAgreement, LifecycleChangeProposal, LifecycleChangeProposalMessage, LifecycleEvent, LifecycleItem, LifecycleItemAttachment, LifecycleItemMessage, LifecycleItemResponse, LifecycleItemUserState
 from backend.notifications.models import Notification
-from backend.lifecycle.services import LifecycleNotReadyError, get_or_create_lifecycle_for_signed_contract
+from backend.lifecycle.services import LifecycleNotReadyError, get_or_create_lifecycle_for_signed_contract, refresh_signed_lifecycle_items_from_contract
+from backend.payments.models import Payment
 
 
 class LifecycleFoundationTests(TestCase):
@@ -2155,6 +2156,481 @@ class LifecycleFoundationTests(TestCase):
         agreement.refresh_from_db()
         self.assertEqual(loan_contract.status, "signed")
         self.assertEqual(agreement.status, LifecycleAgreement.STATUS_SETUP)
+
+
+    def _timeline_response_items(self, response):
+        return [item for values in response.data["items"].values() for item in values]
+
+    def _assert_no_signed_legacy_pollution(self, response):
+        response_titles = [item["title"] for item in self._timeline_response_items(response)]
+        self.assertNotIn("Payment installment 1", response_titles)
+        self.assertNotIn("Payment draft", response_titles)
+        self.assertFalse(any("Work / Services" in title for title in response_titles))
+
+    def _assert_no_numeric_responsible_parties(self, response):
+        for item in self._timeline_response_items(response):
+            self.assertNotEqual(item.get("responsible_party"), str(self.initiator.id))
+            self.assertNotEqual(item.get("responsible_party"), str(self.counterparty.id))
+            self.assertNotEqual(item.get("beneficiary_party"), str(self.initiator.id))
+            self.assertNotEqual(item.get("beneficiary_party"), str(self.counterparty.id))
+
+    def test_signed_service_agreement_creates_sentence_lifecycle_items_without_legacy_pollution(self):
+        website_contract = make_contract(self.initiator, counterparty_email=self.counterparty.email)
+        website_contract.title = "Website Design Service Agreement"
+        website_contract.counterparty_name = "Linda Charles"
+        website_contract.status = "signed"
+        website_contract.save(update_fields=["title", "counterparty_name", "status"])
+        website_text = """
+Website Design Service Agreement
+
+Client: Jason Pete
+Contractor: Linda Charles
+
+This Website Design Service Agreement is made effective on October 1, 2026.
+
+SERVICES
+
+Contractor agrees to design and build a five-page business website for Client's home services business. The website must include a homepage, about page, services page, booking/contact page, and mobile-friendly layout.
+
+HOMEPAGE MOCKUP
+
+Contractor must deliver the homepage mockup to Client by October 10, 2026.
+
+Client must review the homepage mockup and provide approval or requested changes within 3 days after delivery.
+
+FULL WEBSITE DELIVERY
+
+Contractor must deliver the completed five-page website to Client by October 25, 2026.
+
+Client must review the completed website and provide approval or requested changes within 5 days after delivery.
+
+PAYMENT
+
+Client agrees to pay Contractor $500 after the homepage mockup is delivered.
+
+Client agrees to pay Contractor $1,000 after the completed five-page website is delivered and approved.
+
+Client must upload proof of payment within 2 days after each payment is made.
+
+REVISIONS AND BUG FIXES
+
+Contractor must correct reasonable bugs or layout issues within 7 days after receiving written notice from Client.
+
+CLIENT MATERIALS
+
+Client must provide all business photos, logo files, and written service descriptions to Contractor by October 5, 2026.
+
+HOSTING AND ACCESS
+
+Client must provide website hosting access or domain access to Contractor before work begins.
+
+CHANGE ORDERS
+
+Any extra page, booking-system integration, logo redesign, or new feature outside this agreement must be approved in writing by both parties before extra work begins.
+
+FINAL HANDOFF
+
+Contractor must provide final website login information, source files, and handoff instructions to Client within 2 days after final payment is received.
+
+TERM
+
+This agreement ends when Contractor completes the final handoff and Client has paid all approved amounts.
+"""
+        website_snapshot = json.dumps({"editor_html": "<p>Legacy editor placeholder.</p>", "sections": [{"title": "Signed terms", "body": website_text}]})
+        website_version = make_version(website_contract, self.initiator, content_snapshot=website_snapshot, status="signed")
+        ContractObligation.objects.create(
+            contract=website_contract,
+            version=website_version,
+            obligor=self.counterparty,
+            obligee=self.initiator,
+            installment_number=1,
+            amount_due="9999.00",
+            due_date=datetime(2026, 10, 1, 12, 0, tzinfo=dt_timezone.utc),
+            state="active",
+        )
+        ContractServiceObligation.objects.create(
+            contract=website_contract,
+            version=website_version,
+            obligor=self.counterparty,
+            obligee=self.initiator,
+            description="Work / Services " + website_text * 10,
+            due_date=datetime(2026, 10, 2, 12, 0, tzinfo=dt_timezone.utc),
+            state="active",
+        )
+        Payment.objects.create(
+            contract=website_contract,
+            payer=self.initiator,
+            payee=self.counterparty,
+            amount="88.00",
+            status="draft",
+            reference="legacy draft payment",
+        )
+
+        first_response = self.initiator_client.get(f"/api/lifecycle/?contract={website_contract.id}")
+        second_response = self.initiator_client.get(f"/api/lifecycle/?contract={website_contract.id}")
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        agreement = LifecycleAgreement.objects.get(contract=website_contract)
+        generated_items = LifecycleItem.objects.filter(
+            lifecycle_agreement=agreement,
+            source_id__startswith=f"signed_sentence_v1:{website_version.id}:",
+        )
+        self.assertGreaterEqual(generated_items.count(), 12)
+        self.assertEqual(generated_items.count(), LifecycleItem.objects.filter(lifecycle_agreement=agreement, source_id__startswith=f"signed_sentence_v1:{website_version.id}:").count())
+        self.assertTrue(generated_items.filter(item_type=LifecycleItem.TYPE_SERVICE_WORK, description__icontains="homepage mockup", due_date__date=date(2026, 10, 10)).exists())
+        self.assertTrue(generated_items.filter(item_type=LifecycleItem.TYPE_SERVICE_WORK, description__icontains="completed five-page website", due_date__date=date(2026, 10, 25)).exists())
+        self.assertTrue(generated_items.filter(item_type=LifecycleItem.TYPE_PAYMENT, amount="500.00", description__icontains="homepage mockup").exists())
+        self.assertTrue(generated_items.filter(item_type=LifecycleItem.TYPE_PAYMENT, amount="1000.00", description__icontains="completed five-page website").exists())
+        self.assertTrue(generated_items.filter(description__icontains="proof of payment").exists())
+        self.assertTrue(generated_items.filter(description__icontains="business photos", due_date__date=date(2026, 10, 5)).exists())
+        self.assertTrue(generated_items.filter(description__icontains="approved in writing by both parties").exists())
+        homepage = generated_items.get(description__icontains="homepage mockup to Client by October 10")
+        self.assertEqual(homepage.responsible_party, "Contractor / Linda Charles")
+        self.assertEqual(homepage.beneficiary_party, "Client / Jason Pete")
+        review = generated_items.get(description__icontains="within 3 days after delivery")
+        self.assertEqual(review.metadata["relative_due"], {"amount": 3, "unit": "days", "direction": "after", "event": "delivery"})
+        self.assertEqual(review.metadata["extractor"], "signed_agreement_sentence_v1")
+        self._assert_no_signed_legacy_pollution(first_response)
+        self._assert_no_numeric_responsible_parties(first_response)
+        response_text = json.dumps(self._timeline_response_items(first_response))
+        self.assertIn("Client / Jason Pete", response_text)
+        self.assertIn("Contractor / Linda Charles", response_text)
+
+    def test_signed_lawn_care_agreement_creates_sentence_lifecycle_items_from_varied_snapshot_shapes(self):
+        lawn_text = """
+Monthly Lawn Care Service Agreement
+
+Client: Jason Pete
+Contractor: Linda Charles
+
+This Monthly Lawn Care Service Agreement is made effective on December 1, 2026.
+
+SERVICES
+
+Contractor agrees to provide lawn care and yard maintenance services for Client's property located at 318 Oak Avenue.
+
+The services include grass cutting, edging, weed trimming, leaf cleanup, and removal of small yard debris.
+
+SERVICE SCHEDULE
+
+Contractor must complete the first lawn care visit by December 5, 2026.
+
+Contractor must complete one lawn care visit each month after the first visit until this agreement ends.
+
+The monthly visits must be completed on or before the 5th day of each month.
+
+PAYMENT SCHEDULE
+
+Client agrees to pay Contractor $150 after the December 2026 lawn care visit is completed.
+
+Client agrees to pay Contractor $150 after the January 2027 lawn care visit is completed.
+
+Client agrees to pay Contractor $150 after the February 2027 lawn care visit is completed.
+
+Client agrees to pay Contractor $150 after the March 2027 lawn care visit is completed.
+
+Client agrees to pay Contractor $150 after the April 2027 lawn care visit is completed.
+
+Client agrees to pay Contractor $150 after the May 2027 lawn care visit is completed.
+
+PROOF OF PAYMENT
+
+Client must upload proof of payment within 2 days after each payment is made.
+
+SERVICE PROOF
+
+Contractor must upload at least one photo showing completed lawn care work within 1 day after each service visit.
+
+CLIENT REVIEW
+
+Client must review each completed lawn care visit within 3 days after Contractor uploads service proof.
+
+If Client does not report an issue within 3 days after service proof is uploaded, the visit will be considered accepted.
+
+MISSED SERVICE
+
+If Contractor misses a monthly lawn care visit, Contractor must complete the missed service within 3 days after receiving written notice from Client.
+
+If Contractor cannot complete the missed service within 3 days after written notice, Client may cancel the remaining services.
+
+ACCESS
+
+Client must make the yard accessible before each scheduled lawn care visit.
+
+Client must remove locked gate restrictions, pets, or blocked access before each scheduled visit.
+
+If Client does not provide access, the visit may be rescheduled and Client may still owe a $40 missed-access fee.
+
+EQUIPMENT AND SUPPLIES
+
+Contractor must provide ordinary lawn care tools and equipment needed to complete the services.
+
+Contractor is responsible for safe operation of all tools and equipment used during the work.
+
+DAMAGE NOTICE
+
+Contractor must report any accidental property damage to Client within 24 hours after discovering the damage.
+
+Client must report any complaint about property damage within 5 days after the service visit is completed.
+
+CORRECTION WORK
+
+Contractor must correct any missed lawn area, poor edging, or incomplete cleanup within 2 days after receiving written notice from Client.
+
+CHANGE ORDERS
+
+Any extra landscaping work, mulch installation, tree trimming, planting, hauling, or special cleanup outside this agreement must be approved in writing by both parties before extra work begins.
+
+FINAL VISIT
+
+Contractor must complete the final lawn care visit by May 5, 2027.
+
+Contractor must return any gate key, access code, or property access device to Client within 1 day after the final service visit.
+
+COMMUNICATION AND PROOF
+
+All payment proof, service photos, access notices, complaints, correction requests, damage notices, and approvals should be made inside the application so both parties have a clear record.
+
+TERM
+
+This agreement begins on December 1, 2026 and ends on May 31, 2027 unless both parties agree in writing to extend it.
+"""
+        snapshot_shapes = [
+            lawn_text,
+            json.dumps({"editor_html": "<p>" + lawn_text.replace("\n\n", "</p><p>") + "</p>"}),
+            json.dumps({"sections": [{"title": "Lawn Care", "content_html": "<p>" + lawn_text.replace("\n\n", "</p><p>") + "</p>"}]}),
+            json.dumps({"sections": {"lawn": {"title": "Lawn Care", "body": lawn_text}}}),
+        ]
+        for index, snapshot in enumerate(snapshot_shapes, start=1):
+            lawn_contract = make_contract(self.initiator, counterparty_email=self.counterparty.email)
+            lawn_contract.title = f"Monthly Lawn Care Service Agreement {index}"
+            lawn_contract.counterparty_name = "Linda Charles"
+            lawn_contract.status = "signed"
+            lawn_contract.save(update_fields=["title", "counterparty_name", "status"])
+            lawn_version = make_version(lawn_contract, self.initiator, content_snapshot=snapshot, status="signed")
+
+            first_response = self.initiator_client.get(f"/api/lifecycle/?contract={lawn_contract.id}")
+            second_response = self.initiator_client.get(f"/api/lifecycle/?contract={lawn_contract.id}")
+
+            self.assertEqual(first_response.status_code, 200)
+            self.assertEqual(second_response.status_code, 200)
+            agreement = LifecycleAgreement.objects.get(contract=lawn_contract)
+            generated_items = LifecycleItem.objects.filter(lifecycle_agreement=agreement, source_id__startswith=f"signed_sentence_v1:{lawn_version.id}:")
+            self.assertGreaterEqual(generated_items.count(), 18)
+            self.assertEqual(generated_items.count(), LifecycleItem.objects.filter(lifecycle_agreement=agreement, source_id__startswith=f"signed_sentence_v1:{lawn_version.id}:").count())
+            self.assertTrue(generated_items.filter(description__icontains="first lawn care visit", due_date__date=date(2026, 12, 5)).exists())
+            self.assertTrue(generated_items.filter(description__icontains="one lawn care visit each month").exists())
+            self.assertEqual(generated_items.filter(item_type=LifecycleItem.TYPE_PAYMENT, amount="150.00").count(), 6)
+            self.assertTrue(generated_items.filter(description__icontains="proof of payment").exists())
+            self.assertTrue(generated_items.filter(description__icontains="upload at least one photo").exists())
+            self.assertTrue(generated_items.filter(description__icontains="review each completed lawn care visit").exists())
+            self.assertTrue(generated_items.filter(description__icontains="missed service within 3 days").exists())
+            self.assertTrue(generated_items.filter(description__icontains="yard accessible").exists())
+            self.assertTrue(generated_items.filter(description__icontains="locked gate restrictions").exists())
+            self.assertFalse(generated_items.filter(item_type=LifecycleItem.TYPE_PAYMENT, amount="40.00", description__icontains="missed-access fee").exists())
+            self.assertTrue(generated_items.filter(item_type=LifecycleItem.TYPE_RESPONSIBILITY, amount="40.00", metadata__rule_type="conditional_fee").exists())
+            self.assertTrue(generated_items.filter(description__icontains="ordinary lawn care tools").exists())
+            self.assertTrue(generated_items.filter(description__icontains="accidental property damage").exists())
+            self.assertTrue(generated_items.filter(description__icontains="complaint about property damage").exists())
+            self.assertTrue(generated_items.filter(description__icontains="incomplete cleanup").exists())
+            self.assertTrue(generated_items.filter(description__icontains="approved in writing by both parties").exists())
+            self.assertTrue(generated_items.filter(description__icontains="final lawn care visit", due_date__date=date(2027, 5, 5)).exists())
+            self.assertTrue(generated_items.filter(description__icontains="return any gate key").exists())
+            first_visit = generated_items.get(description__icontains="first lawn care visit by December 5")
+            self.assertEqual(first_visit.responsible_party, "Contractor / Linda Charles")
+            self.assertEqual(first_visit.beneficiary_party, "Client / Jason Pete")
+            photo = generated_items.get(description__icontains="upload at least one photo")
+            self.assertEqual(photo.metadata["relative_due"]["amount"], 1)
+            self._assert_no_signed_legacy_pollution(first_response)
+            self._assert_no_numeric_responsible_parties(first_response)
+
+    def test_signed_event_setup_agreement_refines_titles_triggers_and_conditional_fee(self):
+        event_contract = make_contract(self.initiator, counterparty_email=self.counterparty.email)
+        event_contract.title = "Event Setup Service Agreement"
+        event_contract.counterparty_name = "Linda Charles"
+        event_contract.status = "signed"
+        event_contract.save(update_fields=["title", "counterparty_name", "status"])
+        event_text = """
+Event Setup Service Agreement
+
+Client: Jason Pete
+Contractor: Linda Charles
+
+This Event Setup Service Agreement is made effective on February 1, 2027.
+
+SERVICES
+
+Contractor agrees to provide event setup and breakdown services for Client’s community workshop event at 500 River Hall.
+
+The services include arranging tables, setting up chairs, placing signs, preparing the registration table, setting up refreshment stations, and removing setup materials after the event.
+
+PRE-EVENT MATERIALS
+
+Client must provide the final room layout, guest count, sign-in sheet, printed signs, and vendor instructions to Contractor by February 5, 2027.
+
+Contractor must review the event materials and report any missing setup information within 2 days after receiving the materials.
+
+SETUP VISIT
+
+Contractor must arrive at 500 River Hall by 8:00 AM on February 12, 2027.
+
+Contractor must complete all event setup work by 10:00 AM on February 12, 2027.
+
+Client must inspect the completed setup and report any requested changes within 1 hour after setup is completed.
+
+PAYMENT SCHEDULE
+
+Client agrees to pay Contractor $200 after the setup work is completed.
+
+Client agrees to pay Contractor $150 after the breakdown work is completed.
+
+Client must upload proof of payment within 1 day after each payment is made.
+
+EVENT BREAKDOWN
+
+Contractor must begin breakdown work after the event ends on February 12, 2027.
+
+Contractor must complete breakdown work by 6:00 PM on February 12, 2027.
+
+Contractor must remove all setup materials, trash from setup areas, signs, and unused refreshment supplies before leaving the venue.
+
+DAMAGE AND NOTICE
+
+Contractor must report any accidental property damage to Client immediately after discovering the damage.
+
+Client must report any complaint about setup quality, missing items, or venue condition within 2 days after the event ends.
+
+CORRECTION WORK
+
+Contractor must correct any setup mistake within 1 hour after receiving notice from Client during the event.
+
+If a correction cannot be completed during the event, Contractor must provide a written explanation inside the application within 1 day after the event ends.
+
+ACCESS
+
+Client must provide venue access instructions, parking instructions, and contact information for the venue manager before setup begins.
+
+If Client does not provide access to the venue by 8:00 AM on February 12, 2027, Contractor may charge a $50 delayed-access fee.
+
+CHANGE ORDERS
+
+Any extra setup area, additional seating, decoration work, vendor table, cleanup work, or schedule change outside this agreement must be approved in writing by both parties before extra work begins.
+
+FINAL HANDOFF
+
+Contractor must return any venue key, access card, badge, or setup equipment borrowed from Client within 1 day after breakdown is completed.
+
+COMMUNICATION AND PROOF
+
+All payment proof, access notices, requested changes, damage notices, setup photos, breakdown confirmations, and approvals should be made inside the application so both parties have a clear record.
+
+TERM
+
+This agreement begins on February 1, 2027 and ends when Contractor completes breakdown work, returns borrowed access items, and Client has paid all approved amounts.
+"""
+        event_version = make_version(event_contract, self.initiator, content_snapshot=event_text, status="signed")
+        ContractObligation.objects.create(
+            contract=event_contract,
+            version=event_version,
+            obligor=self.counterparty,
+            obligee=self.initiator,
+            installment_number=1,
+            amount_due="9999.00",
+            due_date=datetime(2027, 2, 1, 12, 0, tzinfo=dt_timezone.utc),
+            state="active",
+        )
+        ContractServiceObligation.objects.create(
+            contract=event_contract,
+            version=event_version,
+            obligor=self.counterparty,
+            obligee=self.initiator,
+            description="Work / Services " + event_text * 10,
+            due_date=datetime(2027, 2, 2, 12, 0, tzinfo=dt_timezone.utc),
+            state="active",
+        )
+        Payment.objects.create(
+            contract=event_contract,
+            payer=self.initiator,
+            payee=self.counterparty,
+            amount="88.00",
+            status="draft",
+            reference="legacy draft payment",
+        )
+
+        response = self.initiator_client.get(f"/api/lifecycle/?contract={event_contract.id}")
+
+        self.assertEqual(response.status_code, 200)
+        agreement = LifecycleAgreement.objects.get(contract=event_contract)
+        generated_items = LifecycleItem.objects.filter(lifecycle_agreement=agreement, source_id__startswith=f"signed_sentence_v1:{event_version.id}:")
+        self.assertTrue(generated_items.filter(item_type=LifecycleItem.TYPE_PAYMENT, amount="200.00", description__icontains="setup work is completed").exists())
+        self.assertTrue(generated_items.filter(item_type=LifecycleItem.TYPE_PAYMENT, amount="150.00", description__icontains="breakdown work is completed").exists())
+        self.assertFalse(generated_items.filter(item_type=LifecycleItem.TYPE_PAYMENT, amount="50.00", description__icontains="delayed-access fee").exists())
+        fee_rule = generated_items.get(item_type=LifecycleItem.TYPE_RESPONSIBILITY, amount="50.00", description__icontains="delayed-access fee")
+        self.assertEqual(fee_rule.metadata["rule_type"], "conditional_fee")
+        self.assertEqual(fee_rule.metadata["fee_kind"], "delayed_access_fee")
+        titles = {item.title for item in generated_items}
+        self.assertTrue({
+            "Provide event setup and breakdown services",
+            "Provide event materials",
+            "Complete event setup work",
+            "Complete breakdown work",
+            "Provide venue access instructions",
+            "Return venue access items",
+            "Approve event change orders in writing",
+        }.issubset(titles))
+        obvious_titles = [item.title for item in generated_items if any(fragment in item.description for fragment in ["event setup work", "breakdown work", "venue access instructions", "venue key"])]
+        self.assertNotIn("Service work obligation", obvious_titles)
+        proof = generated_items.get(title="Upload proof of payment")
+        self.assertEqual(proof.metadata["relative_due"], {"amount": 1, "unit": "days", "direction": "after", "event": "each payment is made"})
+        inspect = generated_items.get(title="Inspect completed setup and report changes")
+        self.assertEqual(inspect.metadata["relative_due"], {"amount": 1, "unit": "hours", "direction": "after", "event": "setup is completed"})
+        access = generated_items.get(title="Provide venue access instructions")
+        self.assertEqual(access.metadata["due_trigger"], "before setup begins")
+        change_order = generated_items.get(title="Approve event change orders in writing")
+        self.assertEqual(change_order.metadata["due_trigger"], "before extra work begins")
+        handoff = generated_items.get(title="Return venue access items")
+        self.assertEqual(handoff.metadata["relative_due"], {"amount": 1, "unit": "days", "direction": "after", "event": "breakdown is completed"})
+        damage = generated_items.get(title="Report property damage")
+        self.assertEqual(damage.metadata["due_trigger"], "immediately after discovering the damage")
+        materials = generated_items.get(title="Provide event materials")
+        self.assertEqual(materials.responsible_party, "Client / Jason Pete")
+        self.assertEqual(materials.beneficiary_party, "Contractor / Linda Charles")
+        setup = generated_items.get(title="Complete event setup work")
+        self.assertEqual(setup.responsible_party, "Contractor / Linda Charles")
+        self.assertEqual(setup.beneficiary_party, "Client / Jason Pete")
+
+        LifecycleItem.objects.filter(pk=materials.pk).update(
+            title="Service work obligation",
+            item_type=LifecycleItem.TYPE_SERVICE_WORK,
+            metadata={
+                "source": "signed_contract",
+                "extractor": "signed_agreement_sentence_v1",
+                "classification": "work_service",
+                "source_clause_text": materials.source_clause,
+            },
+        )
+        LifecycleItem.objects.filter(pk=fee_rule.pk).update(
+            title="Payment obligation $50",
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            metadata={
+                "source": "signed_contract",
+                "extractor": "signed_agreement_sentence_v1",
+                "classification": "payment",
+                "source_clause_text": fee_rule.source_clause,
+            },
+        )
+        refresh_result = refresh_signed_lifecycle_items_from_contract(event_contract, event_version, agreement)
+        self.assertEqual(len(refresh_result["deleted"]), 20)
+        self.assertEqual(len(refresh_result["created"]), 20)
+        refreshed_items = LifecycleItem.objects.filter(lifecycle_agreement=agreement, source_id__startswith=f"signed_sentence_v1:{event_version.id}:")
+        self.assertFalse(refreshed_items.filter(item_type=LifecycleItem.TYPE_PAYMENT, amount="50.00", description__icontains="delayed-access fee").exists())
+        self.assertTrue(refreshed_items.filter(item_type=LifecycleItem.TYPE_RESPONSIBILITY, amount="50.00", metadata__rule_type="conditional_fee").exists())
+        self.assertTrue(refreshed_items.filter(title="Provide event materials").exists())
+        self.assertFalse(refreshed_items.filter(title="Service work obligation", description__icontains="final room layout").exists())
+
+        self._assert_no_signed_legacy_pollution(response)
+        self._assert_no_numeric_responsible_parties(response)
 
     def test_timeline_endpoint_returns_grouped_views(self):
         agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)

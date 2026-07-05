@@ -1589,18 +1589,256 @@ class LifecycleFoundationTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         item.refresh_from_db()
-        self.assertEqual(item.title, "Original manual note")
-        self.assertEqual(item.description, "Original description")
-        overlay = LifecycleItemUserState.objects.get(lifecycle_item=item, user=self.initiator)
-        self.assertEqual(overlay.title_override, "Updated manual note")
-        self.assertEqual(overlay.description_override, "Updated description")
-        self.assertEqual(overlay.notes, "Private note")
+        self.assertEqual(item.title, "Updated manual note")
+        self.assertEqual(item.description, "Updated description")
+        self.assertFalse(LifecycleItemUserState.objects.filter(lifecycle_item=item, user=self.initiator).exists())
+        self.assertEqual(item.metadata["manual_tracking_edit"], True)
+        self.assertEqual(item.metadata["original_extracted_values"]["title"], "Original manual note")
+        self.assertEqual(item.metadata["original_extracted_values"]["description"], "Original description")
+        self.assertEqual(item.metadata["contract_value_preserved"], True)
+        self.assertEqual(item.metadata["material_tracking_change"], False)
         self.assertEqual(response.data["title"], "Updated manual note")
         self.assertEqual(response.data["description"], "Updated description")
-        self.assertEqual(response.data["baseline_values"]["title"], "Original manual note")
-        self.assertEqual(response.data["baseline_values"]["description"], "Original description")
-        self.assertTrue(response.data["has_personal_overrides"])
-        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count(), before_events)
+        self.assertEqual(response.data["manual_tracking_edit"], True)
+        self.assertEqual(response.data["material_tracking_change"], False)
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count(), before_events + 1)
+
+    def test_timeline_setup_owner_edit_rules_and_tracking_metadata(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        fixed_item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            title="Extracted fixed payment",
+            description="Original fixed description",
+            responsible_party="Client / Jason Pete",
+            beneficiary_party="Contractor / Linda Charles",
+            due_date=datetime(2027, 2, 12, 0, 0, tzinfo=dt_timezone.utc),
+            amount="200.00",
+            source_type=LifecycleItem.SOURCE_ORIGINAL_CONTRACT,
+            source_id="signed_sentence_v1:test:fixed",
+            source_clause="Client agrees to pay Contractor $200 by February 12, 2027.",
+            source_version=self.version,
+            is_contract_derived=True,
+            created_by=self.initiator,
+            metadata={"extractor": "signed_agreement_sentence_v1", "source": "signed_contract"},
+        )
+        relative_item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_RESPONSIBILITY,
+            title="Upload proof",
+            responsible_party="Client / Jason Pete",
+            beneficiary_party="Contractor / Linda Charles",
+            source_type=LifecycleItem.SOURCE_ORIGINAL_CONTRACT,
+            source_id="signed_sentence_v1:test:relative",
+            source_clause="Client must upload proof of payment within 1 day after each payment is made.",
+            source_version=self.version,
+            is_contract_derived=True,
+            created_by=self.initiator,
+            metadata={"relative_due": {"amount": 1, "unit": "days", "direction": "after", "event": "each payment is made"}},
+        )
+
+        counterparty_response = self.counterparty_client.patch(
+            f"/api/lifecycle/items/{fixed_item.id}/",
+            {"title": "Counterparty edit"},
+            format="json",
+        )
+        self.assertEqual(counterparty_response.status_code, 403)
+
+        title_response = self.initiator_client.patch(
+            f"/api/lifecycle/items/{fixed_item.id}/",
+            {"title": "Clean fixed payment title", "tracking_edit_reason": "Cleaner tracking title"},
+            format="json",
+        )
+        self.assertEqual(title_response.status_code, 200)
+        fixed_item.refresh_from_db()
+        self.assertEqual(fixed_item.title, "Clean fixed payment title")
+        self.assertEqual(fixed_item.source_clause, "Client agrees to pay Contractor $200 by February 12, 2027.")
+        self.assertEqual(fixed_item.source_type, LifecycleItem.SOURCE_ORIGINAL_CONTRACT)
+        self.assertEqual(fixed_item.source_id, "signed_sentence_v1:test:fixed")
+        self.assertEqual(fixed_item.is_contract_derived, True)
+        self.assertEqual(fixed_item.metadata["manual_tracking_edit"], True)
+        self.assertEqual(fixed_item.metadata["tracking_edit_reason"], "Cleaner tracking title")
+        self.assertEqual(fixed_item.metadata["original_extracted_values"]["title"], "Extracted fixed payment")
+        self.assertEqual(fixed_item.metadata["contract_value_preserved"], True)
+        self.assertEqual(fixed_item.metadata["material_tracking_change"], False)
+        self.assertEqual(title_response.data["manual_tracking_edit"], True)
+        self.assertEqual(title_response.data["tracking_edit_reason"], "Cleaner tracking title")
+
+        amount_response = self.initiator_client.patch(
+            f"/api/lifecycle/items/{fixed_item.id}/",
+            {"amount": "250.00"},
+            format="json",
+        )
+        self.assertEqual(amount_response.status_code, 200)
+        fixed_item.refresh_from_db()
+        self.assertEqual(str(fixed_item.amount), "250.00")
+        self.assertEqual(fixed_item.metadata["material_tracking_change"], True)
+
+        responsible_response = self.initiator_client.patch(
+            f"/api/lifecycle/items/{fixed_item.id}/",
+            {"responsible_party": "Contractor / Linda Charles"},
+            format="json",
+        )
+        self.assertEqual(responsible_response.status_code, 200)
+        fixed_item.refresh_from_db()
+        self.assertEqual(fixed_item.responsible_party, "Contractor / Linda Charles")
+        self.assertEqual(fixed_item.metadata["material_tracking_change"], True)
+
+        due_response = self.initiator_client.patch(
+            f"/api/lifecycle/items/{fixed_item.id}/",
+            {"due_date": "2027-02-13T00:00:00Z"},
+            format="json",
+        )
+        self.assertEqual(due_response.status_code, 200)
+        fixed_item.refresh_from_db()
+        self.assertEqual(fixed_item.metadata["due_date_source"], "manual_tracking_date")
+        self.assertEqual(fixed_item.metadata["material_tracking_change"], True)
+
+        relative_response = self.initiator_client.patch(
+            f"/api/lifecycle/items/{relative_item.id}/",
+            {"due_date": "2027-02-14T00:00:00Z"},
+            format="json",
+        )
+        self.assertEqual(relative_response.status_code, 200)
+        relative_item.refresh_from_db()
+        self.assertEqual(relative_item.metadata["due_date_source"], "manual_tracking_date")
+        self.assertEqual(relative_item.metadata["material_tracking_change"], False)
+        self.assertEqual(relative_item.metadata["original_extracted_values"]["due_date"], None)
+
+        action_counterparty = self.counterparty_client.post(
+            f"/api/lifecycle/items/{relative_item.id}/action/",
+            {"action": "update_due_date", "due_date": "2027-02-15T00:00:00Z"},
+            format="json",
+        )
+        self.assertEqual(action_counterparty.status_code, 403)
+        action_owner = self.initiator_client.post(
+            f"/api/lifecycle/items/{relative_item.id}/action/",
+            {"action": "update_due_date", "due_date": "2027-02-16T00:00:00Z"},
+            format="json",
+        )
+        self.assertEqual(action_owner.status_code, 200)
+        relative_item.refresh_from_db()
+        self.assertEqual(relative_item.due_date.isoformat(), "2027-02-16T00:00:00+00:00")
+        self.assertEqual(relative_item.metadata["due_date_source"], "manual_tracking_date")
+
+    def test_post_ready_timeline_edit_updates_shared_item_for_performance(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_SERVICE_WORK,
+            title="Old setup work title",
+            description="Original service description",
+            responsible_party="Contractor / Linda Charles",
+            beneficiary_party="Client / Jason Pete",
+            due_date=datetime(2027, 2, 12, 0, 0, tzinfo=dt_timezone.utc),
+            source_type=LifecycleItem.SOURCE_ORIGINAL_CONTRACT,
+            source_id="signed_sentence_v1:test:work",
+            source_clause="Contractor must complete setup work by February 12, 2027.",
+            source_version=self.version,
+            is_contract_derived=True,
+            created_by=self.initiator,
+            metadata={"extractor": "signed_agreement_sentence_v1", "source": "signed_contract"},
+        )
+
+        ready_response = self.initiator_client.post(f"/api/lifecycle/{agreement.id}/ready-for-performance/", {}, format="json")
+        self.assertEqual(ready_response.status_code, 200)
+        agreement.refresh_from_db()
+        ready_at = agreement.performance_ready_at
+        LifecycleItemUserState.objects.create(
+            lifecycle_item=item,
+            user=self.initiator,
+            title_override="Stale overlay work title",
+            due_date_override=datetime(2027, 2, 13, 0, 0, tzinfo=dt_timezone.utc),
+            responsible_party_override="Stale overlay party",
+            status_override=LifecycleItem.STATUS_CONFIRMED,
+            notes="Personal note stays private",
+            metadata={"original_values": {"title": "Old setup work title"}},
+        )
+
+        counterparty_response = self.counterparty_client.patch(
+            f"/api/lifecycle/items/{item.id}/",
+            {"title": "Counterparty stale edit"},
+            format="json",
+        )
+        self.assertEqual(counterparty_response.status_code, 403)
+
+        edit_response = self.initiator_client.patch(
+            f"/api/lifecycle/items/{item.id}/",
+            {
+                "title": "Edited performance work title",
+                "due_date": "2027-02-14T00:00:00Z",
+                "tracking_edit_reason": "Owner cleanup after ready",
+            },
+            format="json",
+        )
+        self.assertEqual(edit_response.status_code, 200)
+        item.refresh_from_db()
+        agreement.refresh_from_db()
+        self.assertEqual(agreement.performance_ready_at, ready_at)
+        self.assertEqual(item.title, "Edited performance work title")
+        self.assertEqual(item.due_date.isoformat(), "2027-02-14T00:00:00+00:00")
+        self.assertEqual(item.source_clause, "Contractor must complete setup work by February 12, 2027.")
+        self.assertEqual(item.source_type, LifecycleItem.SOURCE_ORIGINAL_CONTRACT)
+        self.assertEqual(item.source_id, "signed_sentence_v1:test:work")
+        self.assertEqual(item.is_contract_derived, True)
+        self.assertEqual(item.metadata["manual_tracking_edit"], True)
+        self.assertEqual(item.metadata["due_date_source"], "manual_tracking_date")
+        self.assertEqual(item.metadata["tracking_edit_reason"], "Owner cleanup after ready")
+        self.assertEqual(item.metadata["original_extracted_values"]["title"], "Old setup work title")
+        self.assertEqual(item.metadata["original_extracted_values"]["due_date"], "2027-02-12T00:00:00+00:00")
+
+        timeline_response = self.initiator_client.get(f"/api/lifecycle/?contract={self.contract.id}")
+        self.assertEqual(timeline_response.status_code, 200)
+        timeline_item = next(value for value in timeline_response.data["views"]["work_services"] if value["id"] == str(item.id))
+        self.assertEqual(timeline_item["title"], "Edited performance work title")
+        self.assertEqual(timeline_item["due_date"], "2027-02-14T00:00:00+00:00")
+        self.assertEqual(timeline_item["responsible_party"], "Contractor / Linda Charles")
+        self.assertEqual(timeline_item["status"], LifecycleItem.STATUS_CONFIRMED)
+        self.assertEqual(timeline_item["notes"], "Personal note stays private")
+        self.assertTrue(timeline_item["has_personal_overrides"])
+
+        performance_response = self.initiator_client.get("/api/lifecycle/performance/")
+        self.assertEqual(performance_response.status_code, 200)
+        performance_agreement = next(value for value in performance_response.data["results"] if value["id"] == str(agreement.id))
+        performance_item = next(value for value in performance_agreement["views"]["work_services"] if value["id"] == str(item.id))
+        self.assertEqual(performance_item["title"], "Edited performance work title")
+        self.assertEqual(performance_item["due_date"], "2027-02-14T00:00:00+00:00")
+        self.assertEqual(performance_item["source_clause"], "Contractor must complete setup work by February 12, 2027.")
+        self.assertEqual(performance_item["manual_tracking_edit"], True)
+        self.assertTrue(LifecycleItemUserState.objects.filter(lifecycle_item=item, user=self.initiator).exists())
+
+    def test_timeline_setup_manual_item_and_ready_preserve_tracking_metadata(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+
+        counterparty_create = self.counterparty_client.post(
+            f"/api/lifecycle/{agreement.id}/items/",
+            {"item_type": LifecycleItem.TYPE_NOTE, "title": "Counterparty setup item"},
+            format="json",
+        )
+        self.assertEqual(counterparty_create.status_code, 403)
+
+        create_response = self.initiator_client.post(
+            f"/api/lifecycle/{agreement.id}/items/",
+            {"item_type": LifecycleItem.TYPE_NOTE, "title": "Owner tracking note", "due_date": "2027-02-15T00:00:00Z"},
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 201)
+        item = LifecycleItem.objects.get(pk=create_response.data["id"])
+        self.assertEqual(item.source_type, LifecycleItem.SOURCE_MANUAL)
+        self.assertEqual(item.source_clause, None)
+        self.assertEqual(item.metadata["manual_tracking_edit"], True)
+        self.assertEqual(item.metadata["manual_tracking_item"], True)
+        self.assertEqual(item.metadata["material_tracking_change"], True)
+        self.assertEqual(item.metadata["due_date_source"], "manual_tracking_date")
+
+        ready_response = self.initiator_client.post(f"/api/lifecycle/{agreement.id}/ready-for-performance/", {}, format="json")
+        self.assertEqual(ready_response.status_code, 200)
+        agreement.refresh_from_db()
+        item.refresh_from_db()
+        self.assertTrue(agreement.performance_ready)
+        self.assertIn(str(item.id), agreement.metadata["performance_source_item_ids"])
+        self.assertEqual(item.metadata["manual_tracking_edit"], True)
+        self.assertEqual(item.source_clause, None)
 
     def test_protected_origin_fields_cannot_be_patched(self):
         agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
@@ -1670,35 +1908,36 @@ class LifecycleFoundationTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         item.refresh_from_db()
-        self.assertEqual(item.title, "Extracted payment")
-        self.assertEqual(item.description, "Extracted description")
+        self.assertEqual(item.title, "Corrected payment installment 1")
+        self.assertEqual(item.description, "Corrected description")
         self.assertEqual(item.responsible_party, "Borrower")
-        self.assertEqual(str(item.amount), "400.00")
-        self.assertEqual(item.due_date.isoformat(), "2026-08-01T00:00:00+00:00")
+        self.assertEqual(str(item.amount), "450.00")
+        self.assertEqual(item.due_date.isoformat(), "2026-08-15T00:00:00+00:00")
         self.assertEqual(item.status, LifecycleItem.STATUS_PENDING)
+        self.assertEqual(item.source_clause, None)
+        self.assertEqual(item.source_type, LifecycleItem.SOURCE_ORIGINAL_CONTRACT)
+        self.assertEqual(item.source_id, "repayment_schedule:test:1")
+        self.assertEqual(item.is_contract_derived, True)
+        self.assertFalse(LifecycleItemUserState.objects.filter(lifecycle_item=item, user=self.initiator).exists())
         self.assertEqual(item.metadata["payment_method"], "bank transfer")
-        overlay = LifecycleItemUserState.objects.get(lifecycle_item=item, user=self.initiator)
-        self.assertEqual(overlay.title_override, "Corrected payment installment 1")
-        self.assertEqual(overlay.description_override, "Corrected description")
-        self.assertEqual(overlay.responsible_party_override, "Borrower")
-        self.assertEqual(str(overlay.amount_override), "450.00")
-        self.assertEqual(overlay.due_date_override.isoformat(), "2026-08-15T00:00:00+00:00")
-        self.assertEqual(overlay.status_override, LifecycleItem.STATUS_CONFIRMED)
-        self.assertEqual(overlay.payment_method_override, "ACH transfer")
-        self.assertEqual(overlay.notes, "Personal follow-up note")
-        self.assertEqual(overlay.metadata["original_values"]["title"], "Extracted payment")
-        self.assertEqual(overlay.metadata["original_values"]["amount"], "400.00")
-        self.assertEqual(overlay.metadata["original_values"]["due_date"], "2026-08-01T00:00:00+00:00")
-        self.assertEqual(overlay.metadata["corrections"][-1]["updated_fields"], ["title", "description", "responsible_party", "amount", "due_date", "status", "payment_method", "notes"])
-        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count(), before_events)
+        self.assertEqual(item.metadata["manual_tracking_edit"], True)
+        self.assertEqual(item.metadata["due_date_source"], "manual_tracking_date")
+        self.assertEqual(item.metadata["contract_value_preserved"], True)
+        self.assertEqual(item.metadata["material_tracking_change"], True)
+        self.assertEqual(item.metadata["original_extracted_values"]["title"], "Extracted payment")
+        self.assertEqual(item.metadata["original_extracted_values"]["amount"], "400.00")
+        self.assertEqual(item.metadata["original_extracted_values"]["due_date"], "2026-08-01T00:00:00+00:00")
+        self.assertEqual(item.metadata["tracking_edit_history"][-1]["updated_fields"], ["title", "description", "due_date", "amount"])
+        self.assertEqual(LifecycleEvent.objects.filter(lifecycle_agreement=agreement).count(), before_events + 1)
         self.assertEqual(Notification.objects.count(), before_notifications)
-        self.assertEqual(response.data["payment_method"], "ACH transfer")
+        self.assertEqual(response.data["payment_method"], "bank transfer")
         self.assertEqual(response.data["amount"], "450.00")
         self.assertEqual(response.data["due_date"], "2026-08-15T00:00:00+00:00")
-        self.assertEqual(response.data["baseline_values"]["title"], "Extracted payment")
-        self.assertEqual(response.data["baseline_values"]["amount"], "400.00")
-        self.assertEqual(response.data["baseline_values"]["due_date"], "2026-08-01T00:00:00+00:00")
-        self.assertTrue(response.data["has_personal_overrides"])
+        self.assertEqual(response.data["baseline_values"]["title"], "Corrected payment installment 1")
+        self.assertEqual(response.data["manual_tracking_edit"], True)
+        self.assertEqual(response.data["due_date_source"], "manual_tracking_date")
+        self.assertEqual(response.data["material_tracking_change"], True)
+        self.assertFalse(response.data["has_personal_overrides"])
 
     def test_contract_derived_item_can_patch_status_and_preserve_original_source_values(self):
         agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)

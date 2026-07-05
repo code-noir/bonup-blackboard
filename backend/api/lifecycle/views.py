@@ -319,6 +319,11 @@ def _timeline_item_baseline_values(item):
 
 
 
+def _uses_shared_tracking_fields(item):
+    agreement = getattr(item, "lifecycle_agreement", None)
+    return bool(agreement and (agreement.metadata or {}).get("source") == "signed_contract")
+
+
 def _timeline_item_overlay_state(item, overlay):
     baseline = _timeline_item_baseline_values(item)
     if overlay is None:
@@ -326,6 +331,16 @@ def _timeline_item_overlay_state(item, overlay):
     shared_status = baseline["status"]
     personal_status = overlay.status_override if overlay.status_override is not None else shared_status
     status = shared_status if shared_status in {"completed", "confirmed", "cancelled", "rejected"} else personal_status
+    if _uses_shared_tracking_fields(item):
+        return {
+            "title": baseline["title"],
+            "description": baseline["description"],
+            "due_date": baseline["due_date"],
+            "amount": baseline["amount"],
+            "responsible_party": baseline["responsible_party"],
+            "payment_method": overlay.payment_method_override if overlay.payment_method_override is not None else baseline["payment_method"],
+            "status": status,
+        }
     return {
         "title": overlay.title_override if overlay.title_override is not None else baseline["title"],
         "description": overlay.description_override if overlay.description_override is not None else baseline["description"],
@@ -383,6 +398,12 @@ def _serialize_lifecycle_item(item, overlay=None, user=None):
         "reminder_at": _iso(overlay.reminder_at) if overlay is not None and overlay.reminder_at else None,
         "source_clause": item.source_clause,
         "metadata": metadata,
+        "manual_tracking_edit": metadata.get("manual_tracking_edit", False),
+        "due_date_source": metadata.get("due_date_source"),
+        "tracking_edited_by": metadata.get("tracking_edited_by"),
+        "tracking_edited_at": metadata.get("tracking_edited_at"),
+        "tracking_edit_reason": metadata.get("tracking_edit_reason"),
+        "material_tracking_change": metadata.get("material_tracking_change", False),
         "baseline_values": baseline_values,
         "has_personal_overrides": has_personal_overrides,
         "created_by": str(item.created_by_id) if getattr(item, "created_by_id", None) else None,
@@ -718,6 +739,10 @@ def performance_agreement_payload(agreement):
         "work_item_count": work_item_count,
         "due_date_count": due_date_count,
         "activity_count": len(events),
+        "items": grouped,
+        "counts": _item_counts(grouped),
+        "views": views,
+        "events": events,
     }
 
 
@@ -745,11 +770,27 @@ class LifecycleReadyForPerformanceAPIView(APIView):
         if agreement.signed_version.status != "signed":
             return Response({"detail": "Agreement Performance requires a signed agreement."}, status=status.HTTP_409_CONFLICT)
 
+        owner_id = agreement.owner_id or agreement.contract.initiator_id
+        if not agreement.performance_ready and request.user.id != owner_id and request.user.id != agreement.contract.initiator_id:
+            return Response({"detail": "Only the lifecycle agreement owner can mark Timeline Setup ready for Agreement Performance."}, status=status.HTTP_403_FORBIDDEN)
+
         if not agreement.performance_ready:
+            ready_at = timezone.now()
+            active_item_ids = [
+                str(item_id)
+                for item_id in agreement.items.exclude(status__in=[LifecycleItem.STATUS_CANCELLED, LifecycleItem.STATUS_REJECTED]).values_list("id", flat=True)
+            ]
+            metadata = dict(agreement.metadata or {})
+            metadata["performance_source"] = "timeline_setup_items"
+            metadata["performance_source_activated_at"] = ready_at.isoformat()
+            metadata["performance_source_activated_by"] = str(request.user.id)
+            metadata["performance_source_item_ids"] = active_item_ids
+            metadata["performance_source_excluded_statuses"] = [LifecycleItem.STATUS_CANCELLED, LifecycleItem.STATUS_REJECTED]
             agreement.performance_ready = True
-            agreement.performance_ready_at = timezone.now()
+            agreement.performance_ready_at = ready_at
             agreement.performance_ready_by = request.user
-            agreement.save(update_fields=["performance_ready", "performance_ready_at", "performance_ready_by", "updated_at"])
+            agreement.metadata = metadata
+            agreement.save(update_fields=["performance_ready", "performance_ready_at", "performance_ready_by", "metadata", "updated_at"])
 
         agreement = (
             LifecycleAgreement.objects
@@ -947,6 +988,8 @@ class LifecycleItemCreateAPIView(APIView):
 
         try:
             item = create_timeline_item(agreement, request.user, request.data)
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(_serialize_lifecycle_item(item, user=request.user), status=status.HTTP_201_CREATED)
@@ -960,6 +1003,8 @@ class LifecycleItemDetailAPIView(APIView):
 
         try:
             item = update_timeline_item(item, request.user, request.data)
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 

@@ -1077,6 +1077,166 @@ def can_user_respond_to_lifecycle_item_proof(item, user):
     return item.attachments.exists()
 
 
+TRACKING_EDIT_FIELDS = (
+    "title",
+    "item_type",
+    "description",
+    "due_date",
+    "amount",
+    "responsible_party",
+    "beneficiary_party",
+)
+MATERIAL_TRACKING_FIELDS = {"amount", "responsible_party", "beneficiary_party"}
+
+
+def _is_lifecycle_owner(agreement, user):
+    if not getattr(user, "is_authenticated", False):
+        return False
+    if agreement.owner_id and agreement.owner_id == user.id:
+        return True
+    return agreement.contract.initiator_id == user.id
+
+
+def _is_timeline_setup_editable(agreement):
+    return agreement.status == LifecycleAgreement.STATUS_SETUP
+
+
+def _ensure_timeline_setup_owner(agreement, user):
+    if not _is_timeline_setup_editable(agreement):
+        raise PermissionError("Timeline Setup can only be edited while the lifecycle agreement is in setup.")
+    if not _is_lifecycle_owner(agreement, user):
+        raise PermissionError("Only the lifecycle agreement owner can edit Timeline Setup items.")
+
+
+def _actor_tracking_metadata(user):
+    if not getattr(user, "is_authenticated", False):
+        return None
+    return {
+        "id": str(user.id),
+        "email": getattr(user, "email", "") or "",
+        "display_name": _actor_label(user),
+    }
+
+
+def _tracking_value(value):
+    if isinstance(value, Decimal):
+        return str(value)
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return value
+
+
+def _item_tracking_values(item):
+    return {
+        "title": item.title,
+        "item_type": item.item_type,
+        "description": item.description,
+        "due_date": _tracking_value(item.due_date),
+        "amount": _tracking_value(item.amount),
+        "responsible_party": item.responsible_party,
+        "beneficiary_party": item.beneficiary_party,
+    }
+
+
+def _parse_tracking_due_date(value):
+    if isinstance(value, str):
+        return parse_datetime(value) if value else None
+    return value
+
+
+def _parse_tracking_amount(value):
+    return Decimal(str(value)) if value not in (None, "") else None
+
+
+def _setup_tracking_value_from_data(field, value):
+    if field == "amount":
+        return _parse_tracking_amount(value)
+    if field == "due_date":
+        return _parse_tracking_due_date(value)
+    if field in {"title", "item_type", "description", "responsible_party", "beneficiary_party"}:
+        return (value or "").strip()
+    return value
+
+
+def _values_equal(left, right):
+    return _tracking_value(left) == _tracking_value(right)
+
+
+def _update_tracking_edit_metadata(item, user, changed_fields, previous_values, data, *, manual_item_created=False):
+    metadata = dict(item.metadata or {})
+    original = dict(metadata.get("original_extracted_values") or {})
+    for field in changed_fields:
+        if field not in original:
+            original[field] = previous_values.get(field)
+    now = timezone.now().isoformat()
+    metadata["manual_tracking_edit"] = True
+    metadata["tracking_edited_by"] = _actor_tracking_metadata(user)
+    metadata["tracking_edited_at"] = now
+    reason = data.get("tracking_edit_reason") or data.get("edit_reason") or data.get("reason") or data.get("note") or ""
+    if reason:
+        metadata["tracking_edit_reason"] = str(reason)
+    if original:
+        metadata["original_extracted_values"] = original
+    metadata["contract_value_preserved"] = True
+    if "due_date" in changed_fields and item.due_date is not None:
+        metadata["due_date_source"] = "manual_tracking_date"
+    material = manual_item_created
+    if MATERIAL_TRACKING_FIELDS.intersection(changed_fields):
+        material = True
+    if "due_date" in changed_fields and previous_values.get("due_date"):
+        material = True
+    if item.is_contract_derived and "status" in changed_fields and item.status in {LifecycleItem.STATUS_CANCELLED, LifecycleItem.STATUS_REJECTED}:
+        material = True
+    metadata["material_tracking_change"] = bool(material)
+    metadata.setdefault("tracking_edit_history", []).append({
+        "edited_at": now,
+        "edited_by": metadata["tracking_edited_by"],
+        "updated_fields": changed_fields,
+        "material_tracking_change": bool(material),
+        "reason": reason,
+    })
+    item.metadata = metadata
+    return metadata
+
+
+def _apply_setup_tracking_item_update(item, user, data):
+    previous_values = _item_tracking_values(item)
+    changed_fields = []
+    valid_types = {choice[0] for choice in LifecycleItem.ITEM_TYPE_CHOICES}
+    for field in TRACKING_EDIT_FIELDS:
+        if field not in data:
+            continue
+        value = _setup_tracking_value_from_data(field, data.get(field))
+        if field == "title" and not value:
+            raise ValueError("title is required.")
+        if field == "item_type" and value not in valid_types:
+            raise ValueError("Invalid timeline item type.")
+        current = getattr(item, field)
+        if _values_equal(current, value):
+            continue
+        setattr(item, field, value)
+        changed_fields.append(field)
+    if not changed_fields:
+        return item
+    _update_tracking_edit_metadata(item, user, changed_fields, previous_values, data)
+    update_fields = changed_fields + ["metadata", "updated_at"]
+    item.save(update_fields=update_fields)
+    create_timeline_event(
+        item.lifecycle_agreement,
+        event_type="timeline_setup_item_updated",
+        title="Timeline setup item updated",
+        description=item.title,
+        metadata={
+            "item_id": str(item.id),
+            "item_type": item.item_type,
+            "updated_fields": changed_fields,
+            "actor_id": str(user.id) if getattr(user, "is_authenticated", False) else None,
+            "manual_tracking_edit": True,
+            "material_tracking_change": item.metadata.get("material_tracking_change", False),
+        },
+    )
+    return item
+
 def _performance_target_url():
     return "/agreement-performance"
 
@@ -2210,10 +2370,9 @@ def maybe_start_agreement_performance(agreement, action, actor):
 
 
 def create_timeline_item(agreement, user, data):
-    from decimal import Decimal
-    from django.utils.dateparse import parse_datetime
     from backend.contracts.models import LifecycleItem
 
+    _ensure_timeline_setup_owner(agreement, user)
     item_type = data.get("item_type")
     valid_types = {choice[0] for choice in LifecycleItem.ITEM_TYPE_CHOICES}
     if item_type not in valid_types:
@@ -2232,6 +2391,18 @@ def create_timeline_item(agreement, user, data):
     source_exchange = data.get("source_exchange") or data.get("source_exchange_id") or None
     is_contract_derived = data.get("is_contract_derived")
     locked_fields = data.get("locked_fields")
+    metadata = dict(data.get("metadata") or {})
+    metadata["manual_tracking_edit"] = True
+    metadata["tracking_edited_by"] = _actor_tracking_metadata(user)
+    metadata["tracking_edited_at"] = timezone.now().isoformat()
+    reason = data.get("tracking_edit_reason") or data.get("edit_reason") or data.get("reason") or data.get("note") or ""
+    if reason:
+        metadata["tracking_edit_reason"] = str(reason)
+    metadata["contract_value_preserved"] = True
+    metadata["material_tracking_change"] = True
+    metadata["manual_tracking_item"] = True
+    if due_date is not None:
+        metadata["due_date_source"] = "manual_tracking_date"
     item = LifecycleItem.objects.create(
         lifecycle_agreement=agreement,
         item_type=item_type,
@@ -2240,18 +2411,18 @@ def create_timeline_item(agreement, user, data):
         responsible_party=data.get("responsible_party") or "",
         beneficiary_party=data.get("beneficiary_party") or "",
         due_date=due_date,
-        amount=Decimal(str(amount)) if amount not in (None, "") else None,
+        amount=_parse_tracking_amount(amount),
         recurrence=data.get("recurrence") or None,
         status=data.get("status") or (LifecycleItem.STATUS_PROPOSED if item_type in {LifecycleItem.TYPE_CHANGE_ORDER, LifecycleItem.TYPE_ADD_ON} else LifecycleItem.STATUS_PENDING),
-        source_type=source_type,
-        source_id=source_id,
-        source_label=source_label,
-        source_version_id=getattr(source_version, "pk", source_version),
-        source_exchange_id=getattr(source_exchange, "pk", source_exchange),
-        is_contract_derived=bool(is_contract_derived) if is_contract_derived is not None else False,
-        locked_fields=locked_fields if isinstance(locked_fields, list) else [],
-        source_clause=data.get("source_clause") or None,
-        metadata=data.get("metadata") or {},
+        source_type=LifecycleItem.SOURCE_MANUAL,
+        source_id=None,
+        source_label=None,
+        source_version_id=None,
+        source_exchange_id=None,
+        is_contract_derived=False,
+        locked_fields=[],
+        source_clause=None,
+        metadata=metadata,
         created_by=user if getattr(user, "is_authenticated", False) else None,
         visibility=data.get("visibility") or LifecycleItem.VISIBILITY_PARTIES,
     )
@@ -2298,6 +2469,12 @@ def update_timeline_item(item, user, data):
             requested_origin_fields.append(field)
     if requested_origin_fields:
         raise ValueError(f"Timeline item origin fields cannot be edited: {', '.join(requested_origin_fields)}.")
+
+    agreement = item.lifecycle_agreement
+    if _is_timeline_setup_editable(agreement):
+        _ensure_timeline_setup_owner(agreement, user)
+        if set(TRACKING_EDIT_FIELDS).intersection(data.keys()):
+            return _apply_setup_tracking_item_update(item, user, data)
 
     overlay = _timeline_item_user_state(item, user, create=True)
     baseline_values = _timeline_item_baseline_values(item)
@@ -2384,6 +2561,13 @@ def perform_timeline_item_action(item, user, action, data=None):
 
     agreement = LifecycleAgreement.objects.select_for_update(of=("self",)).select_related("contract", "contract__initiator").get(pk=item.lifecycle_agreement_id)
     item = LifecycleItem.objects.select_for_update(of=("self",)).select_related("lifecycle_agreement", "lifecycle_agreement__contract").get(pk=item.pk)
+
+    if action == "update_due_date" and _is_timeline_setup_editable(agreement):
+        _ensure_timeline_setup_owner(agreement, user)
+        due_date = data.get("due_date")
+        if not due_date:
+            raise ValueError("due_date is required.")
+        return _apply_setup_tracking_item_update(item, user, {"due_date": due_date, "tracking_edit_reason": data.get("tracking_edit_reason") or data.get("note") or ""})
 
     if action in PERFORMANCE_ACTIONS:
         if not _responsible_party_matches_user(agreement, item, user):

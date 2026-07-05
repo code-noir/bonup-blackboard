@@ -282,13 +282,6 @@ function fromDateInputValue(value: string) {
 function tabItems(items: TimelineItem[], tab: TimelineViewKey) {
   const records = timelineRecordItems(items)
   switch (tab) {
-    case 'upcoming':
-      return records
-        .filter((item) => item.due_date && isOpenTimelineStatus(item) && ['payment', 'service', 'service_work', 'responsibility', 'obligation', 'due_date', 'deadline'].includes(item.item_type || ''))
-        .sort((left, right) => String(left.due_date || '').localeCompare(String(right.due_date || '')))
-        .slice(0, 10)
-    case 'to_dos':
-      return records.filter((item) => ['responsibility', 'obligation'].includes(item.item_type || ''))
     case 'payments':
       return records.filter((item) => item.item_type === 'payment')
     case 'due_dates':
@@ -297,10 +290,6 @@ function tabItems(items: TimelineItem[], tab: TimelineViewKey) {
         .sort((left, right) => String(left.due_date || '').localeCompare(String(right.due_date || '')))
     case 'work_services':
       return records.filter((item) => ['service', 'service_work'].includes(item.item_type || ''))
-    case 'changes_add_ons':
-      return records.filter((item) => ['change_order', 'add_on'].includes(item.item_type || ''))
-    case 'documents':
-      return records.filter((item) => item.item_type === 'document')
     default:
       return records
   }
@@ -467,7 +456,7 @@ function ModalShell({
 
 
 type LifecycleItemGroup = 'obligations' | 'payments' | 'deadlines' | 'services' | 'notices' | 'documents' | 'risks' | 'changes' | 'notes'
-type TimelineViewKey = 'overview' | 'upcoming' | 'to_dos' | 'payments' | 'due_dates' | 'work_services' | 'changes_add_ons' | 'activity' | 'documents'
+type TimelineViewKey = 'overview' | 'payments' | 'due_dates' | 'work_services' | 'source_agreement'
 
 type TimelineItem = {
   id: string
@@ -547,7 +536,7 @@ type ContractScopedLifecycleResponse = {
   timeline?: LifecycleAgreementSummary
   parties?: { initiator?: { email?: string; name?: string } | null; counterparty?: { email?: string; name?: string } | null }
   items?: Partial<Record<LifecycleItemGroup, TimelineItem[]>>
-  views?: Record<TimelineViewKey, TimelineItem[] | TimelineEvent[]>
+  views?: Partial<Record<TimelineViewKey | 'upcoming' | 'to_dos' | 'changes_add_ons' | 'activity' | 'documents', TimelineItem[] | TimelineEvent[]>>
   counts?: Record<string, number>
   events?: TimelineEvent[]
 }
@@ -566,26 +555,18 @@ const EMPTY_LIFECYCLE_GROUPS: Record<LifecycleItemGroup, TimelineItem[]> = {
 
 const LIFECYCLE_TABS: Array<{ key: TimelineViewKey; label: string }> = [
   { key: 'overview', label: 'Overview' },
-  { key: 'upcoming', label: 'Upcoming' },
-  { key: 'to_dos', label: 'To-Dos' },
   { key: 'payments', label: 'Payments' },
   { key: 'due_dates', label: 'Due Dates' },
   { key: 'work_services', label: 'Work / Services' },
-  { key: 'changes_add_ons', label: 'Changes / Add-ons' },
-  { key: 'activity', label: 'Activity' },
-  { key: 'documents', label: 'Documents' },
+  { key: 'source_agreement', label: 'Source / Signed Agreement' },
 ]
 
 const EMPTY_COPY: Record<TimelineViewKey, string> = {
   overview: '',
-  upcoming: 'No upcoming timeline items yet.',
-  to_dos: 'No to-dos added yet.',
-  payments: 'No payment records added yet.',
-  due_dates: 'No due dates tracked yet.',
-  work_services: 'No work or service records added yet.',
-  changes_add_ons: 'No changes or add-ons proposed yet.',
-  activity: 'No timeline activity recorded yet.',
-  documents: 'No supporting documents added yet.',
+  payments: 'No payment obligations were extracted from this signed agreement.',
+  due_dates: 'No dated or scheduled obligations were extracted from this signed agreement.',
+  work_services: 'No work or service obligations were extracted from this signed agreement.',
+  source_agreement: 'No signed agreement source is available for this Timeline.',
 }
 
 const TIMELINE_ITEM_TYPES = [
@@ -612,11 +593,6 @@ const BUTTON = {
   cursor: 'pointer',
 }
 
-const DANGER_BUTTON = {
-  ...BUTTON,
-  border: '1px solid #FECACA',
-  color: '#B91C1C',
-}
 
 function ContractScopedLifecycle({ contractId }: { contractId: string }) {
   const navigate = useNavigate()
@@ -716,17 +692,6 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
     }
   }
 
-  const runItemAction = async (item: TimelineItem, action: string, payload: Record<string, string> = {}) => {
-    if (!item.id || item.source !== 'manual') return
-    try {
-      await api.post(`/lifecycle/items/${item.id}/actions/`, { action, ...payload })
-      await loadLifecycle()
-      setFeedback({ kind: 'success', message: 'Agreement Timeline updated.' })
-    } catch (error) {
-      setFeedback({ kind: 'error', message: getErrorMessage(error, 'Unable to update timeline item.') })
-    }
-  }
-
   const prepareAgreementPerformance = async () => {
     if (!data?.lifecycle_agreement?.id) return
     setPerformancePreparing(true)
@@ -756,7 +721,6 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
     Object.entries({ ...EMPTY_LIFECYCLE_GROUPS, ...(data.items || {}) })
       .map(([key, items]) => [key, timelineRecordItems(items || [])])
   ) as Record<LifecycleItemGroup, TimelineItem[]>
-  const events = data.events || []
   const agreement = data.lifecycle_agreement || data.timeline
   if (!data.contract || !data.signed_version || !agreement) {
     return (
@@ -767,32 +731,22 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
   }
 
   const allTimelineItems = Object.values(groupedItems).flat()
-  const fallbackViews: Record<TimelineViewKey, TimelineItem[] | TimelineEvent[]> = {
+  const fallbackViews: Record<TimelineViewKey, TimelineItem[]> = {
     overview: [],
-    upcoming: tabItems(allTimelineItems, 'upcoming'),
-    to_dos: tabItems(groupedItems.obligations, 'to_dos'),
     payments: tabItems(groupedItems.payments, 'payments'),
     due_dates: tabItems(allTimelineItems, 'due_dates'),
     work_services: tabItems(groupedItems.services, 'work_services'),
-    changes_add_ons: tabItems(groupedItems.changes, 'changes_add_ons'),
-    activity: events,
-    documents: tabItems(groupedItems.documents, 'documents'),
+    source_agreement: [],
   }
   const serverViews = data.views || {}
-  const views = {
+  const views: Record<TimelineViewKey, TimelineItem[]> = {
     ...fallbackViews,
-    activity: (serverViews.activity as TimelineEvent[] | undefined) || events,
-    upcoming: tabItems((serverViews.upcoming as TimelineItem[] | undefined) || (fallbackViews.upcoming as TimelineItem[]), 'upcoming'),
-    to_dos: tabItems((serverViews.to_dos as TimelineItem[] | undefined) || (fallbackViews.to_dos as TimelineItem[]), 'to_dos'),
-    payments: tabItems((serverViews.payments as TimelineItem[] | undefined) || (fallbackViews.payments as TimelineItem[]), 'payments'),
-    due_dates: tabItems((serverViews.due_dates as TimelineItem[] | undefined) || (fallbackViews.due_dates as TimelineItem[]), 'due_dates'),
-    work_services: tabItems((serverViews.work_services as TimelineItem[] | undefined) || (fallbackViews.work_services as TimelineItem[]), 'work_services'),
-    changes_add_ons: tabItems((serverViews.changes_add_ons as TimelineItem[] | undefined) || (fallbackViews.changes_add_ons as TimelineItem[]), 'changes_add_ons'),
-    documents: tabItems((serverViews.documents as TimelineItem[] | undefined) || (fallbackViews.documents as TimelineItem[]), 'documents'),
+    payments: tabItems((serverViews.payments as TimelineItem[] | undefined) || fallbackViews.payments, 'payments'),
+    due_dates: tabItems((serverViews.due_dates as TimelineItem[] | undefined) || fallbackViews.due_dates, 'due_dates'),
+    work_services: tabItems((serverViews.work_services as TimelineItem[] | undefined) || fallbackViews.work_services, 'work_services'),
   }
   const activeItems = (views[activeTab] || []) as TimelineItem[]
-  const nextDueItem = (views.upcoming as TimelineItem[])[0]
-  const recentEvent = events[0]
+  const nextDueItem = views.due_dates[0]
   const signedAgreementLabel = `Signed Agreement ${data.signed_version.label || ''}`.trim()
   const signedAgreementReadableText = signedAgreementText(data.signed_version.content_snapshot)
 
@@ -865,18 +819,18 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
           <StatCard label="Timeline Status" value={timelineStatusLabel(agreement.status)} sub={`Available since ${formatDate(agreement.started_at)}`} />
           <StatCard label="Counterparty" value={data.contract.counterparty_name || data.contract.counterparty_email || '—'} sub="Signed agreement party" />
-          <StatCard label="Tracked Items" value={data.counts?.total ?? Object.values(groupedItems).reduce((sum, items) => sum + items.length, 0)} sub="Actionable records" />
-          <StatCard label="Next Due" value={nextDueItem?.title || '—'} sub={nextDueItem?.due_date ? timelineDateLabel(nextDueItem.due_date) : 'No upcoming due item'} />
-          <StatCard label="Recent Activity" value={recentEvent?.title || '—'} sub={recentEvent?.occurred_at ? formatDate(recentEvent.occurred_at) : 'No activity yet'} />
+          <StatCard label="Extracted Items" value={data.counts?.total ?? Object.values(groupedItems).reduce((sum, items) => sum + items.length, 0)} sub="Setup records from the signed agreement" />
+          <StatCard label="Next Due Date" value={nextDueItem?.title || '—'} sub={nextDueItem?.due_date ? timelineDateLabel(nextDueItem.due_date) : 'No extracted dated item'} />
+          <StatCard label="Source" value={signedAgreementLabel} sub="Signed agreement source is attached" />
         </div>
       )}
 
-      {!['overview', 'activity', 'documents'].includes(activeTab) && (
+      {!['overview', 'source_agreement'].includes(activeTab) && (
         <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 8, padding: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
             <div>
               <h2 style={{ fontSize: 16, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{LIFECYCLE_TABS.find((tab) => tab.key === activeTab)?.label}</h2>
-              <p style={{ fontSize: 12, color: '#6B7280', margin: '4px 0 0' }}>Agreement Timeline records for this signed agreement.</p>
+              <p style={{ fontSize: 12, color: '#6B7280', margin: '4px 0 0' }}>Review extracted obligations before Agreement Performance. Source clauses remain attached to each item.</p>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <select value={draftType} onChange={(event) => setDraftType(event.target.value)} style={{ height: 34, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 8px', fontSize: 12 }}>
@@ -897,7 +851,6 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
                 const statusLabel = humanize(item.status || 'pending')
                 const dueLabel = item.due_date ? timelineDateLabel(item.due_date) : 'No due date'
                 const amountLabel = item.amount ? formatMoney(item.amount) : 'No amount set'
-                const canUseItemActions = item.source === 'manual'
                 return (
                   <div
                     key={`${item.source}-${item.id}`}
@@ -927,12 +880,6 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
                     </div>
                     {item.description && !looksLikeWholeContractText(item.description) && <p style={{ fontSize: 12, color: '#475569', margin: '8px 0 0' }}>{item.description}</p>}
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-                      {canUseItemActions && item.item_type === 'payment' && item.status !== 'completed' && <button type="button" style={BUTTON} onClick={(event) => { event.stopPropagation(); void runItemAction(item, 'mark_paid') }}>Mark Paid</button>}
-                      {canUseItemActions && ['service', 'service_work'].includes(item.item_type || '') && item.status !== 'completed' && <button type="button" style={BUTTON} onClick={(event) => { event.stopPropagation(); void runItemAction(item, 'mark_work_performed') }}>Mark Work Performed</button>}
-                      {canUseItemActions && ['responsibility', 'obligation'].includes(item.item_type || '') && item.status !== 'completed' && <button type="button" style={BUTTON} onClick={(event) => { event.stopPropagation(); void runItemAction(item, 'mark_completed') }}>Mark Completed</button>}
-                      {canUseItemActions && item.status === 'completed' && <button type="button" style={BUTTON} onClick={(event) => { event.stopPropagation(); void runItemAction(item, 'request_confirmation') }}>Request Confirmation</button>}
-                      {canUseItemActions && ['change_order', 'add_on'].includes(item.item_type || '') && item.status === 'proposed' && <button type="button" style={BUTTON} onClick={(event) => { event.stopPropagation(); void runItemAction(item, item.item_type === 'change_order' ? 'accept_change_order' : 'accept_add_on') }}>Accept</button>}
-                      {canUseItemActions && ['change_order', 'add_on'].includes(item.item_type || '') && item.status === 'proposed' && <button type="button" style={DANGER_BUTTON} onClick={(event) => { event.stopPropagation(); void runItemAction(item, item.item_type === 'change_order' ? 'reject_change_order' : 'reject_add_on') }}>Reject</button>}
                       <button type="button" style={BUTTON} onClick={(event) => { event.stopPropagation(); setShowSignedAgreement(true) }}>View Source</button>
                     </div>
                   </div>
@@ -943,35 +890,20 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
         </section>
       )}
 
-      {activeTab === 'activity' && (
+      {activeTab === 'source_agreement' && (
         <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 8, padding: 20 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 800, color: '#0F1F3D', margin: '0 0 12px' }}>Activity</h2>
-          {events.length === 0 ? <p style={{ fontSize: 13, color: '#64748B' }}>No timeline activity recorded yet.</p> : events.map((event) => (
-            <div key={event.id} style={{ borderBottom: '1px solid #E5E7EB', padding: '10px 0' }}>
-              <p style={{ fontSize: 13, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{event.title}</p>
-              <p style={{ fontSize: 12, color: '#64748B', margin: '4px 0 0' }}>{event.description || humanize(event.event_type)}</p>
-              <p style={{ fontSize: 11, color: '#94A3B8', margin: '4px 0 0' }}>{formatDate(event.occurred_at)}</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+            <div>
+              <h2 style={{ fontSize: 16, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>Source / Signed Agreement</h2>
+              <p style={{ fontSize: 12, color: '#6B7280', margin: '4px 0 0' }}>Signed agreement source used for this Timeline setup.</p>
             </div>
-          ))}
-        </section>
-      )}
-
-      {activeTab === 'documents' && (
-        <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 8, padding: 20 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>Documents</h2>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: '4px 0 14px' }}>Supporting documents and evidence attached to this Timeline.</p>
-          {activeItems.length === 0 ? (
-            <div style={{ border: '1px dashed #CBD5E1', borderRadius: 8, padding: 18, background: '#F8FAFC' }}>
-              <p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>{EMPTY_COPY.documents}</p>
-            </div>
+            <button type="button" onClick={() => setShowSignedAgreement(true)} style={BUTTON}>Open Source</button>
+          </div>
+          {signedAgreementReadableText ? (
+            <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 13, lineHeight: 1.6, color: '#334155', background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14, maxHeight: 520, overflow: 'auto', margin: 0 }}>{signedAgreementReadableText}</pre>
           ) : (
-            <div style={{ display: 'grid', gap: 10 }}>
-              {activeItems.map((item) => (
-                <div key={`${item.source}-${item.id}`} style={{ border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
-                  <p style={{ fontSize: 14, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{item.title}</p>
-                  {item.description && !looksLikeWholeContractText(item.description) && <p style={{ fontSize: 12, color: '#475569', margin: '8px 0 0' }}>{item.description}</p>}
-                </div>
-              ))}
+            <div style={{ border: '1px dashed #CBD5E1', borderRadius: 8, padding: 18, background: '#F8FAFC' }}>
+              <p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>{EMPTY_COPY.source_agreement}</p>
             </div>
           )}
         </section>

@@ -13,7 +13,7 @@ from backend.api.contracts.services.visibility_service import resolve_contract_d
 from backend.api.tests.helpers import authed_client, make_contract, make_user, make_version
 from backend.contracts.models import ContractExtractionCandidate, ContractExtractionRun, ContractObligation, ContractServiceObligation, LifecycleAgreement, LifecycleChangeProposal, LifecycleChangeProposalMessage, LifecycleEvent, LifecycleItem, LifecycleItemAttachment, LifecycleItemMessage, LifecycleItemResponse, LifecycleItemUserState
 from backend.notifications.models import Notification
-from backend.lifecycle.services import LifecycleNotReadyError, get_or_create_lifecycle_for_signed_contract, refresh_signed_lifecycle_items_from_contract
+from backend.lifecycle.services import LifecycleNotReadyError, get_or_create_lifecycle_for_signed_contract, lifecycle_item_due_state, refresh_signed_lifecycle_items_from_contract
 from backend.payments.models import Payment
 
 
@@ -277,6 +277,254 @@ class LifecycleFoundationTests(TestCase):
         self.assertEqual(after.data["results"][0]["status"], "Waiting for first performed obligation")
         self.assertEqual(stranger.status_code, 200)
         self.assertEqual(stranger.data["results"], [])
+
+    def test_counterparty_first_lifecycle_open_still_locks_shared_setup_to_initiator(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.counterparty)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            title="Shared setup payment",
+            responsible_party="Client / Jason Pete",
+            amount="100.00",
+            created_by=self.initiator,
+        )
+
+        agreement.refresh_from_db()
+        self.assertEqual(agreement.owner, self.initiator)
+
+        owner_response = self.initiator_client.patch(
+            f"/api/lifecycle/items/{item.id}/",
+            {"title": "Owner setup payment", "due_date": "2027-02-13T00:00:00Z", "amount": "125.00", "responsible_party": "Contractor / Linda Charles"},
+            format="json",
+        )
+        self.assertEqual(owner_response.status_code, 200)
+
+        for payload in (
+            {"title": "Counterparty title edit"},
+            {"due_date": "2027-02-14T00:00:00Z"},
+            {"amount": "150.00"},
+            {"responsible_party": "Client / Jason Pete"},
+        ):
+            response = self.counterparty_client.patch(f"/api/lifecycle/items/{item.id}/", payload, format="json")
+            self.assertEqual(response.status_code, 403)
+
+        create_response = self.counterparty_client.post(
+            f"/api/lifecycle/{agreement.id}/items/",
+            {"item_type": LifecycleItem.TYPE_NOTE, "title": "Counterparty setup item"},
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 403)
+
+        item.refresh_from_db()
+        self.assertEqual(item.title, "Owner setup payment")
+        self.assertEqual(str(item.amount), "125.00")
+        self.assertEqual(item.responsible_party, "Contractor / Linda Charles")
+
+    def test_weekly_cleaning_my_obligations_match_signed_roles_for_both_parties(self):
+        self.initiator.first_name = "Linda"
+        self.initiator.last_name = "Charles"
+        self.initiator.save(update_fields=["first_name", "last_name"])
+        self.counterparty.first_name = "Jason"
+        self.counterparty.last_name = "Pete"
+        self.counterparty.save(update_fields=["first_name", "last_name"])
+        weekly_contract = make_contract(self.initiator, counterparty_email=self.counterparty.email)
+        weekly_contract.title = "Weekly Cleaning and Setup Service Agreement"
+        weekly_contract.counterparty_name = "Jason Pete"
+        weekly_contract.status = "signed"
+        weekly_contract.save(update_fields=["title", "counterparty_name", "status"])
+        weekly_text = """
+Weekly Cleaning and Setup Service Agreement
+
+Client: Jason Pete
+Contractor: Linda Charles
+
+Contractor agrees to provide daily cleaning, setup, and closing support for Client's temporary office space.
+Contractor must complete the first cleaning and setup visit by 9:00 AM on July 6, 2026.
+Contractor must complete the second cleaning and setup visit by 9:00 AM on July 7, 2026.
+Contractor must upload at least one service photo inside the application within 1 hour after each cleaning visit is completed.
+Client agrees to pay Contractor $100 after the July 6, 2026 service visit is completed.
+Client agrees to pay Contractor $100 after the July 7, 2026 service visit is completed.
+Client must upload proof of each payment within 1 hour after each payment is made.
+Client must provide building access instructions, door code, parking instructions, restroom supply location, and trash disposal instructions to Contractor by 8:00 AM on July 6, 2026.
+Client must provide trash bags, paper towels, cleaning spray, restroom supplies, and replacement entrance mats by 8:00 AM on July 6, 2026.
+Client must review each uploaded service photo by 5:00 PM on the same service day.
+Contractor must correct any missed trash removal, incomplete restroom check, blocked entrance, or missing supply restock within 2 hours after receiving notice from Client.
+Contractor must return any key, access badge, parking pass, or written door code instruction to Client by 6:00 PM on July 13, 2026.
+"""
+        make_version(weekly_contract, self.initiator, content_snapshot=weekly_text, status="signed")
+
+        create_response = self.counterparty_client.get(f"/api/lifecycle/?contract={weekly_contract.id}")
+        self.assertEqual(create_response.status_code, 200)
+        agreement = LifecycleAgreement.objects.get(contract=weekly_contract)
+        ready_response = self.initiator_client.post(f"/api/lifecycle/{agreement.id}/ready-for-performance/", {}, format="json")
+        self.assertEqual(ready_response.status_code, 200)
+
+        generated_items = LifecycleItem.objects.filter(lifecycle_agreement=agreement)
+        self.assertTrue(generated_items.filter(responsible_party="Client / Jason Pete", source_clause__icontains="pay Contractor").exists())
+        self.assertTrue(generated_items.filter(responsible_party="Client / Jason Pete", source_clause__icontains="proof of each payment").exists())
+        self.assertTrue(generated_items.filter(responsible_party="Client / Jason Pete", source_clause__icontains="building access instructions").exists())
+        self.assertTrue(generated_items.filter(responsible_party="Client / Jason Pete", source_clause__icontains="review each uploaded service photo").exists())
+        self.assertTrue(generated_items.filter(responsible_party="Contractor / Linda Charles", source_clause__icontains="cleaning and setup visit").exists())
+        self.assertTrue(generated_items.filter(responsible_party="Contractor / Linda Charles", source_clause__icontains="service photo").exists())
+        self.assertTrue(generated_items.filter(responsible_party="Contractor / Linda Charles", source_clause__icontains="correct any missed").exists())
+        self.assertTrue(generated_items.filter(responsible_party="Contractor / Linda Charles", source_clause__icontains="return any key").exists())
+
+        jason_board = self.counterparty_client.get(f"/api/lifecycle/?contract={weekly_contract.id}")
+        linda_board = self.initiator_client.get(f"/api/lifecycle/?contract={weekly_contract.id}")
+        self.assertEqual(jason_board.status_code, 200)
+        self.assertEqual(linda_board.status_code, 200)
+        jason_obligations = jason_board.data["views"]["my_obligations"]
+        linda_obligations = linda_board.data["views"]["my_obligations"]
+
+        self.assertGreater(len(jason_obligations), 0)
+        self.assertGreater(len(linda_obligations), 0)
+        self.assertTrue(all(row["assigned_to_current_user"] for row in jason_obligations))
+        self.assertTrue(all(row["assigned_to_current_user"] for row in linda_obligations))
+        self.assertTrue(any("pay Contractor" in (row.get("source_clause") or "") for row in jason_obligations))
+        self.assertTrue(any("proof of each payment" in (row.get("source_clause") or "") for row in jason_obligations))
+        self.assertTrue(any("building access instructions" in (row.get("source_clause") or "") for row in jason_obligations))
+        self.assertTrue(any("review each uploaded service photo" in (row.get("source_clause") or "") for row in jason_obligations))
+        self.assertTrue(any("cleaning and setup visit" in (row.get("source_clause") or "") for row in linda_obligations))
+        self.assertTrue(any("service photo" in (row.get("source_clause") or "") for row in linda_obligations))
+        self.assertTrue(any("correct any missed" in (row.get("source_clause") or "") for row in linda_obligations))
+        self.assertTrue(any("return any key" in (row.get("source_clause") or "") for row in linda_obligations))
+
+        self.assertTrue(all(row["responsible_user_id"] == str(self.counterparty.id) for row in jason_obligations))
+        self.assertTrue(all(row["responsible_user_id"] == str(self.initiator.id) for row in linda_obligations))
+
+    def test_lifecycle_due_date_patch_preserves_date_only_across_payloads(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            title="Payment due July 14",
+            responsible_party="Borrower",
+            amount="100.00",
+            created_by=self.initiator,
+        )
+
+        response = self.initiator_client.patch(
+            f"/api/lifecycle/items/{item.id}/",
+            {"due_date": "2026-07-14", "title": item.title, "amount": "100.00", "responsible_party": "Borrower"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["due_date"], "2026-07-14")
+        item.refresh_from_db()
+        self.assertEqual(item.due_date.date().isoformat(), "2026-07-14")
+
+        timeline_response = self.initiator_client.get(f"/api/lifecycle/?contract={self.contract.id}")
+        self.assertEqual(timeline_response.status_code, 200)
+        timeline_payment = next(row for row in timeline_response.data["views"]["payments"] if row["id"] == str(item.id))
+        timeline_due_date = next(row for row in timeline_response.data["views"]["due_dates"] if row["id"] == str(item.id))
+        self.assertEqual(timeline_payment["due_date"], "2026-07-14")
+        self.assertEqual(timeline_due_date["due_date"], "2026-07-14")
+        self.assertEqual(timeline_payment["baseline_values"]["due_date"], "2026-07-14")
+
+        ready_response = self.initiator_client.post(f"/api/lifecycle/{agreement.id}/ready-for-performance/", {}, format="json")
+        self.assertEqual(ready_response.status_code, 200)
+        performance_response = self.initiator_client.get("/api/lifecycle/performance/")
+        performance_agreement = next(row for row in performance_response.data["results"] if row["id"] == str(agreement.id))
+        performance_payment = next(row for row in performance_agreement["views"]["payments"] if row["id"] == str(item.id))
+        performance_due_date = next(row for row in performance_agreement["views"]["due_dates"] if row["id"] == str(item.id))
+        self.assertEqual(performance_payment["due_date"], "2026-07-14")
+        self.assertEqual(performance_due_date["due_date"], "2026-07-14")
+
+    def test_lifecycle_due_state_helper_uses_localdate_rules(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            title="Due state payment",
+            due_date=datetime(2026, 7, 14, 0, 0, tzinfo=dt_timezone.utc),
+            status=LifecycleItem.STATUS_PENDING,
+        )
+
+        self.assertEqual(lifecycle_item_due_state(item, today=date(2026, 7, 15))["due_state"], "overdue")
+        self.assertEqual(lifecycle_item_due_state(item, today=date(2026, 7, 15))["days_overdue"], 1)
+        self.assertTrue(lifecycle_item_due_state(item, today=date(2026, 7, 15))["is_overdue"])
+        self.assertEqual(lifecycle_item_due_state(item, today=date(2026, 7, 14))["due_state"], "due_today")
+        self.assertEqual(lifecycle_item_due_state(item, today=date(2026, 7, 13))["due_state"], "upcoming")
+        self.assertEqual(lifecycle_item_due_state(item, today=date(2026, 7, 13))["days_until_due"], 1)
+        item.status = LifecycleItem.STATUS_COMPLETED
+        self.assertEqual(lifecycle_item_due_state(item, today=date(2026, 7, 15))["due_state"], "completed")
+        item.status = LifecycleItem.STATUS_PENDING
+        item.due_date = None
+        self.assertEqual(lifecycle_item_due_state(item, today=date(2026, 7, 15))["due_state"], "no_due_date")
+
+    def test_payments_are_agreement_wide_but_my_obligations_are_responsibility_filtered(self):
+        self.initiator.first_name = "Linda"
+        self.initiator.last_name = "Charles"
+        self.initiator.save(update_fields=["first_name", "last_name"])
+        self.counterparty.first_name = "Jason"
+        self.counterparty.last_name = "Pete"
+        self.counterparty.save(update_fields=["first_name", "last_name"])
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        payment = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            title="Jason payment due July 14",
+            responsible_party="Client / Jason Pete",
+            due_date=datetime(2026, 7, 14, 0, 0, tzinfo=dt_timezone.utc),
+            amount="100.00",
+            status=LifecycleItem.STATUS_PENDING,
+            created_by=self.initiator,
+        )
+        work = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_SERVICE_WORK,
+            title="Linda cleaning visit",
+            responsible_party="Contractor / Linda Charles",
+            due_date=datetime(2026, 7, 14, 0, 0, tzinfo=dt_timezone.utc),
+            status=LifecycleItem.STATUS_PENDING,
+            created_by=self.initiator,
+        )
+        self.initiator_client.post(f"/api/lifecycle/{agreement.id}/ready-for-performance/", {}, format="json")
+
+        linda_board = self.initiator_client.get(f"/api/lifecycle/?contract={self.contract.id}")
+        jason_board = self.counterparty_client.get(f"/api/lifecycle/?contract={self.contract.id}")
+        self.assertTrue(any(row["id"] == str(payment.id) for row in linda_board.data["views"]["payments"]))
+        self.assertTrue(any(row["id"] == str(payment.id) for row in jason_board.data["views"]["payments"]))
+        self.assertFalse(any(row["id"] == str(payment.id) for row in linda_board.data["views"]["my_obligations"]))
+        self.assertTrue(any(row["id"] == str(payment.id) for row in jason_board.data["views"]["my_obligations"]))
+        self.assertTrue(any(row["id"] == str(work.id) for row in linda_board.data["views"]["my_obligations"]))
+        self.assertFalse(any(row["id"] == str(work.id) for row in jason_board.data["views"]["my_obligations"]))
+
+    def test_payment_proof_state_is_shared_on_correct_lifecycle_item(self):
+        self.counterparty.first_name = "Jason"
+        self.counterparty.last_name = "Pete"
+        self.counterparty.save(update_fields=["first_name", "last_name"])
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        payment = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            title="Jason payment proof",
+            responsible_party="Client / Jason Pete",
+            due_date=datetime(2026, 7, 14, 0, 0, tzinfo=dt_timezone.utc),
+            amount="100.00",
+            status=LifecycleItem.STATUS_PENDING,
+            created_by=self.initiator,
+        )
+        upload = self.counterparty_client.post(
+            f"/api/lifecycle/items/{payment.id}/attachments/",
+            {"file": SimpleUploadedFile("receipt.pdf", b"receipt", content_type="application/pdf"), "note": "Paid by bank transfer."},
+            format="multipart",
+        )
+        self.assertEqual(upload.status_code, 201)
+        attachment = LifecycleItemAttachment.objects.get(pk=upload.data["id"])
+        self.assertEqual(attachment.lifecycle_item, payment)
+
+        linda_board = self.initiator_client.get(f"/api/lifecycle/?contract={self.contract.id}")
+        jason_board = self.counterparty_client.get(f"/api/lifecycle/?contract={self.contract.id}")
+        linda_payment = next(row for row in linda_board.data["views"]["payments"] if row["id"] == str(payment.id))
+        jason_payment = next(row for row in jason_board.data["views"]["payments"] if row["id"] == str(payment.id))
+        self.assertTrue(linda_payment["proof_submitted"])
+        self.assertTrue(jason_payment["proof_submitted"])
+        self.assertEqual(linda_payment["proof_attachment_count"], 1)
+        self.assertEqual(jason_payment["proof_attachment_count"], 1)
+        self.assertEqual(self.initiator_client.get(f"/api/lifecycle/items/{payment.id}/attachments/").data["results"][0]["id"], upload.data["id"])
+        self.assertEqual(self.counterparty_client.get(f"/api/lifecycle/items/{payment.id}/attachments/").data["results"][0]["id"], upload.data["id"])
 
     def test_due_personal_reminder_command_notifies_owner_only(self):
         agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
@@ -1343,8 +1591,8 @@ class LifecycleFoundationTests(TestCase):
         self.assertEqual(board.status_code, 200)
         payment = next(row for row in board.data["views"]["payments"] if row["id"] == str(item.id))
         deadline = next(row for row in board.data["views"]["due_dates"] if row["id"] == str(item.id))
-        self.assertIn("2026-08-06T00:00:00", payment["due_date"])
-        self.assertIn("2026-08-06T00:00:00", deadline["due_date"])
+        self.assertEqual(payment["due_date"], "2026-08-06")
+        self.assertEqual(deadline["due_date"], "2026-08-06")
         self.assertNotIn("2026-07-31", [row.get("due_date", "")[:10] for row in board.data["views"]["due_dates"] if row["id"] == str(item.id)])
 
     def test_non_proposer_can_accept_add_on_and_create_active_obligation_once(self):
@@ -1435,7 +1683,7 @@ class LifecycleFoundationTests(TestCase):
         deadline = next(row for row in initiator_board.data["views"]["due_dates"] if row["id"] == str(created_item.id))
         counterparty_obligation = next(row for row in counterparty_board.data["views"]["my_obligations"] if row["id"] == str(created_item.id))
         self.assertEqual(payment["amount"], "30.00")
-        self.assertIn("2026-09-15T00:00:00", payment["due_date"])
+        self.assertEqual(payment["due_date"], "2026-09-15")
         self.assertEqual(deadline["id"], str(created_item.id))
         self.assertTrue(counterparty_obligation["can_upload_proof"])
         self.assertFalse(any(row["id"] == str(created_item.id) for row in initiator_board.data["views"]["my_obligations"]))
@@ -1791,7 +2039,7 @@ class LifecycleFoundationTests(TestCase):
         self.assertEqual(timeline_response.status_code, 200)
         timeline_item = next(value for value in timeline_response.data["views"]["work_services"] if value["id"] == str(item.id))
         self.assertEqual(timeline_item["title"], "Edited performance work title")
-        self.assertEqual(timeline_item["due_date"], "2027-02-14T00:00:00+00:00")
+        self.assertEqual(timeline_item["due_date"], "2027-02-14")
         self.assertEqual(timeline_item["responsible_party"], "Contractor / Linda Charles")
         self.assertEqual(timeline_item["status"], LifecycleItem.STATUS_CONFIRMED)
         self.assertEqual(timeline_item["notes"], "Personal note stays private")
@@ -1802,7 +2050,7 @@ class LifecycleFoundationTests(TestCase):
         performance_agreement = next(value for value in performance_response.data["results"] if value["id"] == str(agreement.id))
         performance_item = next(value for value in performance_agreement["views"]["work_services"] if value["id"] == str(item.id))
         self.assertEqual(performance_item["title"], "Edited performance work title")
-        self.assertEqual(performance_item["due_date"], "2027-02-14T00:00:00+00:00")
+        self.assertEqual(performance_item["due_date"], "2027-02-14")
         self.assertEqual(performance_item["source_clause"], "Contractor must complete setup work by February 12, 2027.")
         self.assertEqual(performance_item["manual_tracking_edit"], True)
         self.assertTrue(LifecycleItemUserState.objects.filter(lifecycle_item=item, user=self.initiator).exists())
@@ -1932,7 +2180,7 @@ class LifecycleFoundationTests(TestCase):
         self.assertEqual(Notification.objects.count(), before_notifications)
         self.assertEqual(response.data["payment_method"], "bank transfer")
         self.assertEqual(response.data["amount"], "450.00")
-        self.assertEqual(response.data["due_date"], "2026-08-15T00:00:00+00:00")
+        self.assertEqual(response.data["due_date"], "2026-08-15")
         self.assertEqual(response.data["baseline_values"]["title"], "Corrected payment installment 1")
         self.assertEqual(response.data["manual_tracking_edit"], True)
         self.assertEqual(response.data["due_date_source"], "manual_tracking_date")
@@ -2045,9 +2293,9 @@ class LifecycleFoundationTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["due_date"], "2026-09-15T00:00:00+00:00")
+        self.assertEqual(response.data["due_date"], "2026-09-15")
         self.assertEqual(response.data["amount"], "450.00")
-        self.assertEqual(response.data["baseline_values"]["due_date"], "2026-09-01T00:00:00+00:00")
+        self.assertEqual(response.data["baseline_values"]["due_date"], "2026-09-01")
         self.assertEqual(response.data["baseline_values"]["amount"], "400.00")
 
         initiator_response = self.initiator_client.get(f"/api/lifecycle/?contract={self.contract.id}")
@@ -2056,16 +2304,16 @@ class LifecycleFoundationTests(TestCase):
         self.assertEqual(counterparty_response.status_code, 200)
         initiator_payment = next(entry for entry in initiator_response.data["items"]["payments"] if entry["id"] == str(item.id))
         counterparty_payment = next(entry for entry in counterparty_response.data["items"]["payments"] if entry["id"] == str(item.id))
-        self.assertEqual(initiator_payment["due_date"], "2026-09-15T00:00:00+00:00")
+        self.assertEqual(initiator_payment["due_date"], "2026-09-15")
         self.assertEqual(initiator_payment["amount"], "450.00")
         self.assertTrue(initiator_payment["has_personal_overrides"])
-        self.assertEqual(counterparty_payment["due_date"], "2026-09-01T00:00:00+00:00")
+        self.assertEqual(counterparty_payment["due_date"], "2026-09-01")
         self.assertEqual(counterparty_payment["amount"], "400.00")
         self.assertFalse(counterparty_payment["has_personal_overrides"])
 
         repeat_response = self.initiator_client.get(f"/api/lifecycle/?contract={self.contract.id}")
         repeat_payment = next(entry for entry in repeat_response.data["items"]["payments"] if entry["id"] == str(item.id))
-        self.assertEqual(repeat_payment["due_date"], "2026-09-15T00:00:00+00:00")
+        self.assertEqual(repeat_payment["due_date"], "2026-09-15")
         self.assertEqual(repeat_payment["amount"], "450.00")
         self.contract.refresh_from_db()
         agreement.refresh_from_db()
@@ -2132,7 +2380,7 @@ class LifecycleFoundationTests(TestCase):
         counterparty_get = self.counterparty_client.get(f"/api/lifecycle/?contract={self.contract.id}")
         self.assertEqual(counterparty_get.status_code, 200)
         counterparty_initial = next(entry for entry in counterparty_get.data["items"]["payments"] if entry["id"] == str(item.id))
-        self.assertEqual(counterparty_initial["due_date"], "2026-09-01T00:00:00+00:00")
+        self.assertEqual(counterparty_initial["due_date"], "2026-09-01")
         self.assertEqual(counterparty_initial["amount"], "400.00")
         self.assertFalse(counterparty_initial["has_personal_overrides"])
 
@@ -2143,7 +2391,7 @@ class LifecycleFoundationTests(TestCase):
             format="json",
         )
         self.assertEqual(counterparty_first.status_code, 200)
-        self.assertEqual(counterparty_first.data["due_date"], "2026-09-03T00:00:00+00:00")
+        self.assertEqual(counterparty_first.data["due_date"], "2026-09-03")
 
         counterparty_second_payload = dict(counterparty_first.data)
         counterparty_second_payload["amount"] = "425"
@@ -2161,7 +2409,7 @@ class LifecycleFoundationTests(TestCase):
         counterparty_payment = next(entry for entry in counterparty_get.data["items"]["payments"] if entry["id"] == str(item.id))
         self.assertEqual(initiator_payment["amount"], "450.00")
         self.assertEqual(initiator_payment["description"], "Initiator private description.")
-        self.assertEqual(counterparty_payment["due_date"], "2026-09-03T00:00:00+00:00")
+        self.assertEqual(counterparty_payment["due_date"], "2026-09-03")
         self.assertEqual(counterparty_payment["amount"], "425.00")
 
         item.refresh_from_db()
@@ -2326,7 +2574,7 @@ class LifecycleFoundationTests(TestCase):
         self.assertTrue(any(item["title"] == "Provide loan funds" for item in work_items))
         delivery_work = next(item for item in work_items if item["title"] == "Provide loan funds")
         self.assertEqual(delivery_work["amount"], "2400.00")
-        self.assertEqual(delivery_work["due_date"], "2026-07-05T00:00:00+00:00")
+        self.assertEqual(delivery_work["due_date"], "2026-07-05")
         self.assertEqual(delivery_work["responsible_party"], "Lender")
         self.assertTrue(delivery_work["is_contract_derived"])
         self.assertTrue(any("confirm receipt" in item["title"].lower() for item in first_response.data["views"]["to_dos"]))
@@ -2383,7 +2631,7 @@ class LifecycleFoundationTests(TestCase):
         self.assertEqual(len([item for item in work_items if item["title"] == "Provide loan funds"]), 1)
         delivery_work = next(item for item in work_items if item["title"] == "Provide loan funds")
         self.assertEqual(delivery_work["amount"], "1500.00")
-        self.assertEqual(delivery_work["due_date"], "2026-07-10T00:00:00+00:00")
+        self.assertEqual(delivery_work["due_date"], "2026-07-10")
         self.assertEqual(delivery_work["responsible_party"], "Lender")
         self.assertIn("wire transfer", delivery_work["description"])
         self.assertTrue(delivery_work["is_contract_derived"])

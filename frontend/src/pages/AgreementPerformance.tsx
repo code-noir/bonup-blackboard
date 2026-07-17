@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import api, { tokenStorage } from '@/api/client'
+import { dateOnlyInputValue, dateOnlySortKey, formatDateOnly } from '@/lib/dateOnly'
 
 type BoardTab = 'payments' | 'work' | 'due_dates' | 'my_obligations' | 'activity' | 'changes'
 
@@ -39,8 +40,16 @@ type TimelineItem = {
   title?: string
   description?: string | null
   responsible_party?: string | null
+  responsible_user_id?: string | null
+  assigned_to_current_user?: boolean
+  is_mine?: boolean
   beneficiary_party?: string | null
   due_date?: string | null
+  due_state?: string
+  is_overdue?: boolean
+  is_due_today?: boolean
+  days_overdue?: number
+  days_until_due?: number
   amount?: string | null
   currency?: string | null
   status?: string
@@ -54,6 +63,8 @@ type TimelineItem = {
   metadata?: Record<string, unknown>
   can_upload_proof?: boolean
   can_respond_to_proof?: boolean
+  proof_attachment_count?: number
+  proof_submitted?: boolean
   latest_response?: ProofResponse | null
 }
 
@@ -216,10 +227,7 @@ function formatDate(value?: string | null) {
 }
 
 function dueDateLabel(value?: string | null) {
-  if (!value) return 'No date set'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'No date set'
-  return date.toLocaleDateString()
+  return formatDateOnly(value, 'No date set')
 }
 
 function reminderLabel(value?: string | null) {
@@ -244,9 +252,11 @@ function fromDateTimeInput(value: string) {
 }
 
 function quickReminderValue(item: TimelineItem, daysBefore: number) {
-  if (!item.due_date) return ''
-  const date = new Date(item.due_date)
-  if (Number.isNaN(date.getTime())) return ''
+  const input = dateOnlyInputValue(item.due_date)
+  if (!input) return ''
+  const [year, month, day] = input.split('-').map(Number)
+  if (!year || !month || !day) return ''
+  const date = new Date(year, month - 1, day)
   date.setDate(date.getDate() - daysBefore)
   date.setHours(9, 0, 0, 0)
   return date.toISOString().slice(0, 16)
@@ -309,14 +319,7 @@ function partyOptionLabel(role: 'initiator' | 'counterparty', label?: string | n
 }
 
 function dateInputValue(value?: string | null) {
-  if (!value) return ''
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+  return dateOnlyInputValue(value)
 }
 
 function htmlToReadableText(value: string) {
@@ -528,7 +531,20 @@ function performanceStatusLabel(item: TimelineItem) {
     if (['service', 'service_work'].includes(item.item_type || '')) return 'Performed'
     return 'Performed'
   }
+  if (!["completed", "confirmed", "resolved", "cancelled", "rejected"].includes(normalized)) {
+    if (item.proof_submitted) return 'Proof Submitted'
+    if (item.due_state === 'overdue') return 'Overdue'
+    if (item.due_state === 'due_today') return 'Due Today'
+    if (item.due_state === 'upcoming') return 'Upcoming'
+    if (item.due_state === 'no_due_date') return 'No Due Date'
+  }
   return humanize(item.status || item.lifecycle_state)
+}
+
+function performanceStatusStyleKey(item: TimelineItem) {
+  const normalized = (item.status || item.lifecycle_state || '').toLowerCase()
+  if (!["completed", "confirmed", "resolved", "cancelled", "rejected"].includes(normalized) && item.due_state === 'overdue') return 'overdue'
+  return item.status || item.lifecycle_state
 }
 
 function isCompletedPerformanceItem(item: TimelineItem) {
@@ -591,18 +607,11 @@ function deadlineTypeStyle(label: string) {
 }
 
 function deadlineDateKey(value?: string | null) {
-  if (!value) return 'No date set'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'No date set'
-  return date.toISOString().slice(0, 10)
+  return dateOnlyInputValue(value) || 'No date set'
 }
 
 function sortByDeadline(items: TimelineItem[]) {
-  return [...items].sort((left, right) => {
-    const leftTime = left.due_date ? new Date(left.due_date).getTime() : Number.MAX_SAFE_INTEGER
-    const rightTime = right.due_date ? new Date(right.due_date).getTime() : Number.MAX_SAFE_INTEGER
-    return leftTime - rightTime
-  })
+  return [...items].sort((left, right) => dateOnlySortKey(left.due_date).localeCompare(dateOnlySortKey(right.due_date)))
 }
 
 export default function AgreementPerformance() {
@@ -1608,7 +1617,7 @@ function PerformanceCard({
           <p style={{ fontSize: 11, color: '#94A3B8', margin: '5px 0 0' }}>{sourceLabel(item)}</p>
           {showTypeLabel && <span style={{ display: 'inline-flex', marginTop: 7, borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 900, background: '#EFF6FF', color: '#1D4ED8' }}>{itemTypeLabel(item)}</span>}
         </div>
-        <span style={{ alignSelf: 'flex-start', borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 800, ...statusStyle(item.status || item.lifecycle_state) }}>{performanceStatusLabel(item)}</span>
+        <span style={{ alignSelf: 'flex-start', borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 800, ...statusStyle(performanceStatusStyleKey(item)) }}>{performanceStatusLabel(item)}</span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginTop: 12 }}>
         <SmallFact label="Amount" value={formatMoney(item.amount, item.currency || 'USD')} />
@@ -1684,7 +1693,7 @@ function DeadlinesPanel({ items, onOpen, onViewSource }: { items: TimelineItem[]
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 5 }}>
                   <span style={{ borderRadius: 999, padding: '3px 8px', fontSize: 10, fontWeight: 900, ...deadlineTypeStyle(type) }}>{type}</span>
-                  <span style={{ borderRadius: 999, padding: '3px 8px', fontSize: 10, fontWeight: 900, ...statusStyle(item.status || item.lifecycle_state) }}>{performanceStatusLabel(item)}</span>
+                  <span style={{ borderRadius: 999, padding: '3px 8px', fontSize: 10, fontWeight: 900, ...statusStyle(performanceStatusStyleKey(item)) }}>{performanceStatusLabel(item)}</span>
                 </div>
                 <p style={{ fontSize: 14, fontWeight: 900, color: '#0F1F3D', margin: 0 }}>{item.title || humanize(item.item_type)}</p>
                 <p style={{ fontSize: 12, color: '#64748B', margin: '5px 0 0' }}>Responsible: {item.responsible_party || 'Not set'}{amount ? ` · ${amount}` : ''}</p>
@@ -2364,7 +2373,7 @@ function PerformanceThread({
         <p style={{ fontSize: 13, color: '#64748B', margin: '7px 0 0' }}>{agreementTitle}</p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
           <span style={{ borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 900, background: '#EFF6FF', color: '#1D4ED8' }}>{itemTypeLabel(item)}</span>
-          <span style={{ borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 900, ...statusStyle(item.status || item.lifecycle_state) }}>{performanceStatusLabel(item)}</span>
+          <span style={{ borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 900, ...statusStyle(performanceStatusStyleKey(item)) }}>{performanceStatusLabel(item)}</span>
         </div>
       </div>
 

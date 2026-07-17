@@ -24,6 +24,10 @@ from backend.lifecycle.services import (
     LifecycleNotReadyError,
     can_user_respond_to_lifecycle_item_proof,
     can_user_upload_lifecycle_item_proof,
+    lifecycle_due_date_string,
+    lifecycle_item_assigned_to_user,
+    lifecycle_item_due_state,
+    lifecycle_item_responsible_user_id,
     create_lifecycle_change_proposal,
     create_lifecycle_change_proposal_message,
     decide_lifecycle_change_proposal,
@@ -57,6 +61,10 @@ _GROUPS = {
 
 def _iso(value):
     return value.isoformat() if value else None
+
+
+def _due_date(value):
+    return lifecycle_due_date_string(value)
 
 
 def _money(value):
@@ -145,7 +153,7 @@ def _proposal_affected_item_summary(item):
         "title": item.title,
         "item_type": item.item_type,
         "status": item.status,
-        "due_date": _iso(item.due_date),
+        "due_date": _due_date(item.due_date),
         "amount": _money(item.amount),
         "responsible_party": item.responsible_party,
     }
@@ -310,7 +318,7 @@ def _timeline_item_baseline_values(item):
     return {
         "title": item.title,
         "description": item.description,
-        "due_date": _iso(item.due_date),
+        "due_date": _due_date(item.due_date),
         "amount": _money(item.amount),
         "responsible_party": item.responsible_party,
         "payment_method": _payment_method_from_metadata(metadata),
@@ -344,7 +352,7 @@ def _timeline_item_overlay_state(item, overlay):
     return {
         "title": overlay.title_override if overlay.title_override is not None else baseline["title"],
         "description": overlay.description_override if overlay.description_override is not None else baseline["description"],
-        "due_date": _iso(overlay.due_date_override) if overlay.due_date_override else baseline["due_date"],
+        "due_date": _due_date(overlay.due_date_override) if overlay.due_date_override else baseline["due_date"],
         "amount": _money(overlay.amount_override) if overlay.amount_override is not None else baseline["amount"],
         "responsible_party": overlay.responsible_party_override if overlay.responsible_party_override is not None else baseline["responsible_party"],
         "payment_method": overlay.payment_method_override if overlay.payment_method_override is not None else baseline["payment_method"],
@@ -356,8 +364,11 @@ def _timeline_item_overlay_state(item, overlay):
 def _serialize_lifecycle_item(item, overlay=None, user=None):
     source_type = getattr(item, "source_type", "manual") or "manual"
     metadata = item.metadata or {}
+    assigned_to_current_user = lifecycle_item_assigned_to_user(item, user) if user is not None else False
     state = _timeline_item_overlay_state(item, overlay)
     baseline_values = _timeline_item_baseline_values(item)
+    due_state = lifecycle_item_due_state(item)
+    proof_attachment_count = item.attachments.count() if getattr(item, "pk", None) else 0
     overlay_metadata = getattr(overlay, "metadata", {}) or {}
     has_personal_overrides = bool(overlay and any(
         value not in (None, "", [])
@@ -388,9 +399,13 @@ def _serialize_lifecycle_item(item, overlay=None, user=None):
         "title": state["title"],
         "description": state["description"],
         "responsible_party": state["responsible_party"],
+        "responsible_user_id": lifecycle_item_responsible_user_id(item),
+        "assigned_to_current_user": assigned_to_current_user,
+        "is_mine": assigned_to_current_user,
         "beneficiary_party": item.beneficiary_party,
         "due_date": state["due_date"],
         "amount": state["amount"],
+        **due_state,
         "recurrence": item.recurrence,
         "status": state["status"],
         "payment_method": state["payment_method"],
@@ -410,6 +425,8 @@ def _serialize_lifecycle_item(item, overlay=None, user=None):
         "visibility": getattr(item, "visibility", "parties"),
         "can_upload_proof": can_user_upload_lifecycle_item_proof(item, user) if user is not None else False,
         "can_respond_to_proof": can_user_respond_to_lifecycle_item_proof(item, user) if user is not None else False,
+        "proof_attachment_count": proof_attachment_count,
+        "proof_submitted": proof_attachment_count > 0,
         "latest_response": _latest_response_summary(item),
     }
 
@@ -423,7 +440,7 @@ def _serialize_payment_obligation(obligation):
         "description": "",
         "responsible_party": str(obligation.obligor_id),
         "beneficiary_party": str(obligation.obligee_id),
-        "due_date": _iso(obligation.due_date),
+        "due_date": _due_date(obligation.due_date),
         "amount": _money(obligation.amount_due),
         "amount_paid": _money(obligation.amount_paid),
         "currency": obligation.currency,
@@ -444,7 +461,7 @@ def _serialize_service_obligation(obligation):
         "description": obligation.description,
         "responsible_party": str(obligation.obligor_id),
         "beneficiary_party": str(obligation.obligee_id),
-        "due_date": _iso(obligation.due_date),
+        "due_date": _due_date(obligation.due_date),
         "amount": None,
         "recurrence": None,
         "status": "completed" if obligation.state == "resolved" else "pending",
@@ -665,7 +682,7 @@ def _grouped_views(grouped, events):
         "payments": [item for item in payment_items if item.get("item_type") == "payment"],
         "due_dates": sorted(due_dated_action_items, key=lambda item: item.get("due_date") or ""),
         "work_services": [item for item in grouped["services"] if item.get("item_type") in {"service", "service_work"} and not _is_superseded_add_on_item(item)],
-        "my_obligations": _chronological_worklist_items([item for item in action_items if item.get("can_upload_proof")]),
+        "my_obligations": _chronological_worklist_items([item for item in action_items if item.get("assigned_to_current_user")]),
         "changes_add_ons": [item for item in grouped["changes"] if item.get("item_type") in {"change_order", "add_on"}],
         "activity": events,
         "documents": [item for item in grouped["documents"] if item.get("item_type") == "document"],
@@ -708,8 +725,8 @@ def lifecycle_payload(agreement, user=None):
     }
 
 
-def performance_agreement_payload(agreement):
-    grouped = _group_items(agreement)
+def performance_agreement_payload(agreement, user=None):
+    grouped = _group_items(agreement, user=user)
     events = [_serialize_event(event) for event in agreement.events.all()]
     views = _grouped_views(grouped, events)
     payment_count = len([item for item in views["payments"] if item.get("item_type") == "payment"])
@@ -756,7 +773,7 @@ class AgreementPerformanceListAPIView(APIView):
             .prefetch_related("items", "events")
             .order_by("-performance_ready_at", "-updated_at")
         )
-        return Response({"results": [performance_agreement_payload(agreement) for agreement in agreements]}, status=status.HTTP_200_OK)
+        return Response({"results": [performance_agreement_payload(agreement, request.user) for agreement in agreements]}, status=status.HTTP_200_OK)
 
 
 class LifecycleReadyForPerformanceAPIView(APIView):
@@ -770,8 +787,7 @@ class LifecycleReadyForPerformanceAPIView(APIView):
         if agreement.signed_version.status != "signed":
             return Response({"detail": "Agreement Performance requires a signed agreement."}, status=status.HTTP_409_CONFLICT)
 
-        owner_id = agreement.owner_id or agreement.contract.initiator_id
-        if not agreement.performance_ready and request.user.id != owner_id and request.user.id != agreement.contract.initiator_id:
+        if not agreement.performance_ready and request.user.id != agreement.contract.initiator_id:
             return Response({"detail": "Only the lifecycle agreement owner can mark Timeline Setup ready for Agreement Performance."}, status=status.HTTP_403_FORBIDDEN)
 
         if not agreement.performance_ready:

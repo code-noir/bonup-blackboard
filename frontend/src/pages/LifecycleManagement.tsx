@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import api from '@/api/client'
+import { dateOnlyInputValue, dateOnlyPayloadValue, formatDateOnly } from '@/lib/dateOnly'
 
 type SummaryCounts = Record<string, number>
 
@@ -137,15 +138,7 @@ function formatDate(value?: string | null) {
 }
 
 function timelineDateLabel(value?: string | null) {
-  if (!value) return '—'
-  const datePart = /^\d{4}-\d{2}-\d{2}/.exec(value)?.[0]?.slice(0, 10)
-  const source = datePart || /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : ''
-  if (!source) return '—'
-  const [year, month, day] = source.split('-').map(Number)
-  if (!year || !month || !day) return '—'
-  const date = new Date(Date.UTC(year, month - 1, day))
-  if (Number.isNaN(date.getTime())) return '—'
-  return new Intl.DateTimeFormat(undefined, { timeZone: 'UTC', dateStyle: 'short' }).format(date)
+  return formatDateOnly(value, '—')
 }
 
 function formatMoney(amount?: string, currency = 'USD') {
@@ -269,14 +262,11 @@ function sourceMetadataList(item: TimelineItem) {
 }
 
 function toDateInputValue(value?: string | null) {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  return date.toISOString().slice(0, 10)
+  return dateOnlyInputValue(value)
 }
 
 function fromDateInputValue(value: string) {
-  return value ? new Date(`${value}T00:00:00Z`).toISOString() : ''
+  return dateOnlyPayloadValue(value)
 }
 
 function tabItems(items: TimelineItem[], tab: TimelineViewKey) {

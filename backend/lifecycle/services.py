@@ -1,7 +1,7 @@
 import hashlib
 import json
 import re
-from datetime import datetime, time, timedelta
+from datetime import date as date_cls, datetime, time, timedelta, timezone as dt_timezone
 from decimal import Decimal
 from html import unescape
 
@@ -114,13 +114,73 @@ def _payment_method_from_metadata(metadata):
     return payment_method
 
 
+DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
+
+
+def lifecycle_due_date(value):
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date_cls):
+        return value
+    match = DATE_ONLY_RE.match(str(value))
+    if match:
+        return parse_date(match.group(0))
+    return None
+
+
+def lifecycle_due_date_string(value):
+    due_date = lifecycle_due_date(value)
+    return due_date.isoformat() if due_date else None
+
+
+def parse_lifecycle_due_date_datetime(value):
+    due_date = lifecycle_due_date(value)
+    if due_date is None:
+        return None
+    return datetime.combine(due_date, time.min, tzinfo=dt_timezone.utc)
+
+
+def lifecycle_item_due_state(item, *, today=None):
+    status = str(getattr(item, "status", "") or "").lower()
+    if status in {"completed", "confirmed", "resolved", "done", "paid"}:
+        due_state = "completed"
+    elif status in {"cancelled", "rejected"}:
+        due_state = "cancelled"
+    else:
+        due_date = lifecycle_due_date(getattr(item, "due_date", None))
+        if due_date is None:
+            due_state = "no_due_date"
+        else:
+            current_date = today or timezone.localdate()
+            if due_date > current_date:
+                due_state = "upcoming"
+            elif due_date == current_date:
+                due_state = "due_today"
+            else:
+                due_state = "overdue"
+
+    due_date = lifecycle_due_date(getattr(item, "due_date", None))
+    current_date = today or timezone.localdate()
+    days_overdue = (current_date - due_date).days if due_date and due_date < current_date and due_state == "overdue" else 0
+    days_until_due = (due_date - current_date).days if due_date and due_date > current_date and due_state == "upcoming" else 0
+    return {
+        "due_state": due_state,
+        "is_overdue": due_state == "overdue",
+        "is_due_today": due_state == "due_today",
+        "days_overdue": days_overdue,
+        "days_until_due": days_until_due,
+    }
+
+
 
 def _timeline_item_baseline_values(item):
     metadata = item.metadata or {}
     return {
         "title": item.title,
         "description": item.description,
-        "due_date": item.due_date.isoformat() if item.due_date else None,
+        "due_date": lifecycle_due_date_string(item.due_date),
         "amount": str(item.amount) if item.amount is not None else None,
         "responsible_party": item.responsible_party,
         "payment_method": _payment_method_from_metadata(metadata),
@@ -843,7 +903,7 @@ def get_or_create_lifecycle_for_signed_contract(contract, user):
         defaults={
             "signed_version": signed_version,
             "source_exchange": source_exchange,
-            "owner": user if getattr(user, "is_authenticated", False) else locked_contract.initiator,
+            "owner": locked_contract.initiator,
             "status": LifecycleAgreement.STATUS_SETUP,
             "metadata": {"source": "signed_contract"},
         },
@@ -1004,17 +1064,21 @@ def _is_agreement_participant(agreement, user):
 def _party_value_sets(agreement):
     contract = agreement.contract
     counterparty = _counterparty_user(contract)
+    initiator_name = _party_name(contract.initiator)
+    initiator_email = _normalise_party_token(getattr(contract.initiator, "email", ""))
+    counterparty_name = _normalise_party_token(contract.counterparty_name) or _party_name(counterparty)
+    counterparty_email = _normalise_party_token(contract.counterparty_email)
     initiator_values = {
         str(contract.initiator_id or ""),
-        _normalise_party_token(getattr(contract.initiator, "email", "")),
-        _party_name(contract.initiator),
+        initiator_email,
+        initiator_name,
         "initiator",
         "owner",
         "lender",
         "provider",
     }
     counterparty_values = {
-        _normalise_party_token(contract.counterparty_email),
+        counterparty_email,
         _normalise_party_token(contract.counterparty_name),
         str(getattr(counterparty, "id", "") or ""),
         _normalise_party_token(getattr(counterparty, "email", "")),
@@ -1023,14 +1087,56 @@ def _party_value_sets(agreement):
         "borrower",
         "client",
     }
+    role_mappings = parse_roles(_snapshot_to_plain_text(agreement.signed_version.content_snapshot), contract)
+    for role in role_mappings.values():
+        role_values = {
+            _normalise_party_token(role.get("key")),
+            _normalise_party_token(role.get("label")),
+            _normalise_party_token(role.get("name")),
+            _normalise_party_token(role.get("display")),
+        }
+        role_name = _normalise_party_token(role.get("name"))
+        if role_name and role_name in {initiator_name, initiator_email}:
+            initiator_values.update(role_values)
+        if role_name and role_name in {counterparty_name, counterparty_email, _party_name(counterparty), _normalise_party_token(getattr(counterparty, "email", ""))}:
+            counterparty_values.update(role_values)
     initiator_values.discard("")
     counterparty_values.discard("")
     return initiator_values, counterparty_values, counterparty
 
 
+def _party_token_matches_values(value, party_values):
+    responsible = _normalise_party_token(value)
+    if not responsible:
+        return False
+    if responsible in party_values:
+        return True
+    parts = [
+        _normalise_party_token(part)
+        for part in re.split(r"[/(),;|]+", responsible)
+        if _normalise_party_token(part)
+    ]
+    return any(part in party_values for part in parts)
+
+
+def _explicit_responsible_user_id(item):
+    user_id = getattr(item, "responsible_user_id", None)
+    if user_id:
+        return str(user_id)
+    metadata = item.metadata or {}
+    for key in ("responsible_user_id", "responsible_user"):
+        value = metadata.get(key)
+        if value:
+            return str(value)
+    return ""
+
+
 def _responsible_party_matches_user(agreement, item, user):
     if not getattr(user, "is_authenticated", False):
         return False
+    explicit_user_id = _explicit_responsible_user_id(item)
+    if explicit_user_id:
+        return explicit_user_id == str(user.id)
     responsible = _normalise_party_token(item.responsible_party)
     if not responsible:
         return False
@@ -1038,23 +1144,41 @@ def _responsible_party_matches_user(agreement, item, user):
     contract = agreement.contract
     initiator_values, counterparty_values, _counterparty = _party_value_sets(agreement)
 
-    if contract.initiator_id == user.id and responsible in initiator_values:
+    if contract.initiator_id == user.id and _party_token_matches_values(responsible, initiator_values):
         return True
-    if _normalise_party_token(getattr(user, "email", "")) == _normalise_party_token(contract.counterparty_email) and responsible in counterparty_values:
+    if _normalise_party_token(getattr(user, "email", "")) == _normalise_party_token(contract.counterparty_email) and _party_token_matches_values(responsible, counterparty_values):
         return True
     return False
 
 
 def _responsible_party_user(agreement, item):
+    explicit_user_id = _explicit_responsible_user_id(item)
+    if explicit_user_id:
+        if agreement.contract.initiator_id and explicit_user_id == str(agreement.contract.initiator_id):
+            return agreement.contract.initiator
+        counterparty = _counterparty_user(agreement.contract)
+        if counterparty and explicit_user_id == str(counterparty.id):
+            return counterparty
     responsible = _normalise_party_token(item.responsible_party)
     if not responsible:
         return None
     initiator_values, counterparty_values, counterparty = _party_value_sets(agreement)
-    if responsible in initiator_values:
+    if _party_token_matches_values(responsible, initiator_values):
         return agreement.contract.initiator
-    if responsible in counterparty_values:
+    if _party_token_matches_values(responsible, counterparty_values):
         return counterparty
     return None
+
+
+def lifecycle_item_responsible_user_id(item):
+    agreement = item.lifecycle_agreement
+    user = _responsible_party_user(agreement, item)
+    return str(user.id) if user else None
+
+
+def lifecycle_item_assigned_to_user(item, user):
+    agreement = item.lifecycle_agreement
+    return _responsible_party_matches_user(agreement, item, user)
 
 
 def can_user_upload_lifecycle_item_proof(item, user):
@@ -1092,8 +1216,6 @@ MATERIAL_TRACKING_FIELDS = {"amount", "responsible_party", "beneficiary_party"}
 def _is_lifecycle_owner(agreement, user):
     if not getattr(user, "is_authenticated", False):
         return False
-    if agreement.owner_id and agreement.owner_id == user.id:
-        return True
     return agreement.contract.initiator_id == user.id
 
 
@@ -1139,9 +1261,7 @@ def _item_tracking_values(item):
 
 
 def _parse_tracking_due_date(value):
-    if isinstance(value, str):
-        return parse_datetime(value) if value else None
-    return value
+    return parse_lifecycle_due_date_datetime(value)
 
 
 def _parse_tracking_amount(value):
@@ -1801,14 +1921,7 @@ def notify_agreement_performance_change_proposal_decision_proposer(agreement, pr
 
 
 def _date_to_item_datetime(value):
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value
-    combined = datetime.combine(value, time.min)
-    if timezone.is_naive(combined):
-        return timezone.make_aware(combined, timezone.get_current_timezone())
-    return combined
+    return parse_lifecycle_due_date_datetime(value)
 
 
 def _proposal_final_responsible_party_label(agreement, value):
@@ -2382,8 +2495,7 @@ def create_timeline_item(agreement, user, data):
         raise ValueError("title is required.")
     amount = data.get("amount")
     due_date = data.get("due_date") or None
-    if isinstance(due_date, str):
-        due_date = parse_datetime(due_date) if due_date else None
+    due_date = parse_lifecycle_due_date_datetime(due_date)
     source_type = data.get("source_type") or LifecycleItem.SOURCE_MANUAL
     source_id = data.get("source_id") or None
     source_label = data.get("source_label") or None
@@ -2471,10 +2583,9 @@ def update_timeline_item(item, user, data):
         raise ValueError(f"Timeline item origin fields cannot be edited: {', '.join(requested_origin_fields)}.")
 
     agreement = item.lifecycle_agreement
-    if _is_timeline_setup_editable(agreement):
+    if set(TRACKING_EDIT_FIELDS).intersection(data.keys()):
         _ensure_timeline_setup_owner(agreement, user)
-        if set(TRACKING_EDIT_FIELDS).intersection(data.keys()):
-            return _apply_setup_tracking_item_update(item, user, data)
+        return _apply_setup_tracking_item_update(item, user, data)
 
     overlay = _timeline_item_user_state(item, user, create=True)
     baseline_values = _timeline_item_baseline_values(item)
@@ -2498,9 +2609,7 @@ def update_timeline_item(item, user, data):
         if field == "amount":
             return Decimal(str(value)) if value not in (None, "") else None
         if field == "due_date":
-            if isinstance(value, str):
-                return parse_datetime(value) if value else None
-            return value
+            return parse_lifecycle_due_date_datetime(value)
         value = (value or "").strip()
         return value or None
 
@@ -2589,7 +2698,7 @@ def perform_timeline_item_action(item, user, action, data=None):
         due_date = data.get("due_date")
         if not due_date:
             raise ValueError("due_date is required.")
-        item.due_date = parse_datetime(due_date) if isinstance(due_date, str) else due_date
+        item.due_date = parse_lifecycle_due_date_datetime(due_date)
     if action in {"upload_or_attach_document"}:
         metadata.setdefault("documents", []).append({"title": data.get("document_title") or data.get("title") or "Document", "url": data.get("document_url") or ""})
     attachment = None

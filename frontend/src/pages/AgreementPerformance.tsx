@@ -1252,28 +1252,6 @@ export default function AgreementPerformance() {
         </section>
       )}
 
-      {selectedAgreement && (
-        <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 18, marginBottom: 18 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
-            <div style={{ minWidth: 0 }}>
-              <p style={{ fontSize: 11, fontWeight: 800, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 6px' }}>Selected Agreement</p>
-              <h2 style={{ fontSize: 18, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{agreementNavigatorTitle(selectedAgreement)}</h2>
-              <p style={{ fontSize: 13, color: '#64748B', margin: '7px 0 0' }}>{agreementNavigatorCounterparty(selectedAgreement)}</p>
-            </div>
-            <button type="button" onClick={() => void openBoard(selectedAgreement)} style={{ height: 34, border: '1px solid #0F1F3D', borderRadius: 8, background: '#0F1F3D', color: '#FFFFFF', padding: '0 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
-              Refresh Performance
-            </button>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginTop: 16 }}>
-            <SummaryCell label="Status" value={selectedAgreement.status} />
-            <SummaryCell label="Payments" value={`${selectedAgreement.payment_count || 0} payment item(s)`} />
-            <SummaryCell label="Work" value={`${selectedAgreement.work_count ?? selectedAgreement.work_item_count ?? 0} work item(s)`} />
-            <SummaryCell label="Deadlines" value={`${selectedAgreement.due_date_count || 0} deadline(s)`} />
-            <SummaryCell label="Activity" value={`${selectedAgreement.activity_count || 0} event(s)`} />
-            <SummaryCell label="Ready Since" value={formatDate(selectedAgreement.lifecycle_agreement?.performance_ready_at)} />
-          </div>
-        </section>
-      )}
 
       <section style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 8, padding: 18, minHeight: 260 }}>
         {!selectedAgreement ? (
@@ -1287,13 +1265,27 @@ export default function AgreementPerformance() {
           <p style={{ fontSize: 13, color: '#B91C1C', margin: 0 }}>{boardError}</p>
         ) : boardData ? (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-              <div>
-                <p style={{ fontSize: 11, fontWeight: 800, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 5px' }}>Performance board</p>
-                <h2 style={{ fontSize: 20, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{boardData.contract?.title || selectedAgreement.contract.title || 'Untitled contract'}</h2>
-                <p style={{ fontSize: 12, color: '#64748B', margin: '6px 0 0' }}>Status: {agreementPerformanceStatusLabel(boardData.lifecycle_agreement?.status)}</p>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                <div>
+                  <p style={{ fontSize: 11, fontWeight: 800, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 5px' }}>Performance board</p>
+                  <h2 style={{ fontSize: 26, fontWeight: 900, color: '#0F1F3D', margin: 0 }}>{boardData.contract?.title || selectedAgreement.contract.title || selectedAgreement.title || 'Untitled contract'}</h2>
+                  <p style={{ fontSize: 12, color: '#64748B', margin: '6px 0 0' }}>{agreementNavigatorCounterparty(selectedAgreement)}</p>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {selectedItem && <button type="button" onClick={() => setSelectedItem(null)} style={secondaryButtonStyle}>Back to Performance Board</button>}
+                  <button type="button" onClick={() => setShowSource(true)} style={secondaryButtonStyle}>View Signed Source</button>
+                  <button type="button" onClick={() => void openBoard(selectedAgreement)} style={{ height: 34, border: '1px solid #0F1F3D', borderRadius: 8, background: '#0F1F3D', color: '#FFFFFF', padding: '0 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>Refresh Performance</button>
+                </div>
               </div>
-              <button type="button" onClick={() => setShowSource(true)} style={secondaryButtonStyle}>View Signed Source</button>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginTop: 12 }}>
+                <SummaryCell label="Status" value={selectedAgreement.status} />
+                <SummaryCell label="Payments" value={`${selectedAgreement.payment_count || 0} payment item(s)`} />
+                <SummaryCell label="Work" value={`${selectedAgreement.work_count ?? selectedAgreement.work_item_count ?? 0} work item(s)`} />
+                <SummaryCell label="Deadlines" value={`${selectedAgreement.due_date_count || 0} deadline(s)`} />
+                <SummaryCell label="Activity" value={`${selectedAgreement.activity_count || 0} event(s)`} />
+                <SummaryCell label="Ready Since" value={formatDate(selectedAgreement.lifecycle_agreement?.performance_ready_at)} />
+              </div>
             </div>
 
             {feedback && <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: 8, padding: 12, marginBottom: 12 }}><p style={{ fontSize: 13, color: '#334155', margin: 0, fontWeight: 800 }}>{feedback}</p></div>}
@@ -1310,7 +1302,6 @@ export default function AgreementPerformance() {
 
             {selectedItem ? (
               <PerformanceThread
-                agreementTitle={boardData.contract?.title || selectedAgreement.contract.title || selectedAgreement.title || 'Untitled contract'}
                 item={selectedItem}
                 events={selectedItemEvents}
                 attachments={selectedItemAttachments}
@@ -1323,7 +1314,6 @@ export default function AgreementPerformance() {
                 messageError={messageError}
                 responseBusy={responseBusy}
                 busy={actionBusy}
-                onBack={() => setSelectedItem(null)}
                 onViewSource={() => setShowSource(true)}
                 onAction={(action) => void runAction(selectedItem, action)}
                 onUploadProof={(file, note) => uploadProof(selectedItem, file, note)}
@@ -1766,9 +1756,9 @@ const textareaStyle = {
   fontFamily: 'inherit',
 }
 
-function SummaryCell({ label, value }: { label: string; value: string }) {
+function SummaryCell({ label, value, surface = '#F8FAFC' }: { label: string; value: string; surface?: string }) {
   return (
-    <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 8, padding: 12 }}>
+    <div style={{ background: surface, border: '1px solid #E5E7EB', borderRadius: 8, padding: 12 }}>
       <p style={{ fontSize: 11, color: '#94A3B8', margin: 0, fontWeight: 800, textTransform: 'uppercase' }}>{label}</p>
       <p style={{ fontSize: 13, color: '#0F1F3D', margin: '5px 0 0', fontWeight: 800 }}>{value}</p>
     </div>
@@ -2524,7 +2514,6 @@ function PlaceholderPanel({ title }: { title: string }) {
 }
 
 function PerformanceThread({
-  agreementTitle,
   item,
   events,
   attachments,
@@ -2544,7 +2533,6 @@ function PerformanceThread({
   onSendMessage,
   onRespond,
 }: {
-  agreementTitle: string
   item: TimelineItem
   events: TimelineEvent[]
   attachments: LifecycleAttachment[]
@@ -2557,40 +2545,50 @@ function PerformanceThread({
   messageError: string
   responseBusy: string
   busy: string
-  onBack: () => void
   onViewSource: () => void
   onAction: (action: string) => void
   onUploadProof: (file: File, note: string) => Promise<void>
   onSendMessage: (body: string) => void
   onRespond: (response: string, note: string) => void
 }) {
-  const action = itemAction(item)
+  const isPaymentDetail = item.item_type === 'payment'
+  const action = isPaymentDetail ? null : itemAction(item)
   const actionBusy = action ? busy === `${item.id}:${action.action}` : false
+  const obligationRecordSurface = isPaymentDetail ? '#E8EEF5' : '#FFFFFF'
+  const summaryCellSurface = isPaymentDetail ? '#FFFFFF' : undefined
+  const detailSectionGridStyle = isPaymentDetail ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 } : undefined
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 16 }}>
-        <button type="button" onClick={onBack} style={{ ...secondaryButtonStyle, marginBottom: 12 }}>Back to Performance Board</button>
-        <h3 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: '#0F1F3D' }}>{item.title || humanize(item.item_type)}</h3>
-        <p style={{ fontSize: 13, color: '#64748B', margin: '7px 0 0' }}>{agreementTitle}</p>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-          <span style={{ borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 900, background: '#EFF6FF', color: '#1D4ED8' }}>{itemTypeLabel(item)}</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#0F1F3D' }}>{obligationDisplayTitle(item)}</h3>
           <span style={{ borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 900, ...statusStyle(performanceStatusStyleKey(item)) }}>{performanceStatusLabel(item)}</span>
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>{sourceLabel(item)}</p>
+          <p style={{ fontSize: 13, color: '#334155', lineHeight: 1.55, margin: '7px 0 0' }}>{item.description || 'No additional detail recorded for this performance item.'}</p>
+          {isPaymentDetail && (
+            <div style={{ marginTop: 12 }}>
+              <button type="button" onClick={onViewSource} style={secondaryButtonStyle}>View Source</button>
+            </div>
+          )}
         </div>
       </div>
 
-      <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 16 }}>
-        <div style={{ display: 'grid', gap: 14 }}>
+      <section style={{ background: obligationRecordSurface, border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden' }}>
+        <div style={{ background: `linear-gradient(90deg, #243447 0, #243447 168px, #3B4A5C 194px, ${obligationRecordSurface} 220px, ${obligationRecordSurface} 100%)`, padding: '10px 16px' }}>
+          <p style={{ fontSize: 12, color: '#FFFFFF', margin: 0, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Obligation record</p>
+        </div>
+        <div style={{ display: 'grid', gap: 14, padding: 16 }}>
           <section style={{ borderBottom: '1px solid #E5E7EB', paddingBottom: 14 }}>
-            <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Obligation record</p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginTop: 10 }}>
-              <SummaryCell label="Responsible" value={item.responsible_party || 'Not set'} />
-              <SummaryCell label="Amount" value={formatMoney(item.amount, item.currency || 'USD')} />
-              <SummaryCell label="Due / Delivery" value={dueDateLabel(item.due_date)} />
-              <SummaryCell label={completionDateTitle(item)} value={completionDateLabel(events, item)} />
-              <SummaryCell label="Current Status" value={performanceStatusLabel(item)} />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+              <SummaryCell label="Responsible" value={item.responsible_party || 'Not set'} surface={summaryCellSurface} />
+              <SummaryCell label="Amount" value={formatMoney(item.amount, item.currency || 'USD')} surface={summaryCellSurface} />
+              <SummaryCell label="Due / Delivery" value={dueDateLabel(item.due_date)} surface={summaryCellSurface} />
+              <SummaryCell label={completionDateTitle(item)} value={completionDateLabel(events, item)} surface={summaryCellSurface} />
+              <SummaryCell label="Current Status" value={performanceStatusLabel(item)} surface={summaryCellSurface} />
             </div>
-            <p style={{ fontSize: 13, color: '#334155', lineHeight: 1.55, margin: '12px 0 0' }}>{item.description || sourceLabel(item) || 'No additional detail recorded for this performance item.'}</p>
           </section>
 
           {action && (
@@ -2603,16 +2601,37 @@ function PerformanceThread({
             />
           )}
 
-          <ProofReceiptsSection attachments={attachments} loading={attachmentsLoading} loadError={attachmentError} busy={attachmentBusy} canUpload={Boolean(item.can_upload_proof)} onUpload={onUploadProof} />
-          <MessagesPanel messages={messages} loading={messagesLoading} sending={messageSending} error={messageError} onSend={onSendMessage} />
-          <CounterpartyReviewSection item={item} busy={responseBusy} onRespond={onRespond} />
+          {isPaymentDetail ? (
+            <>
+              <div style={detailSectionGridStyle}>
+                <ProofReceiptsSection attachments={attachments} loading={attachmentsLoading} loadError={attachmentError} busy={attachmentBusy} canUpload={false} onUpload={onUploadProof} />
+                <CounterpartyReviewSection item={item} busy={responseBusy} onRespond={onRespond} />
+              </div>
 
-          <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
-            <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Item History</p>
-            <div style={{ marginTop: 10 }}>
-              <ItemHistoryPanel events={events} item={item} />
-            </div>
-          </section>
+              <div style={detailSectionGridStyle}>
+                <MessagesPanel messages={messages} loading={messagesLoading} sending={messageSending} error={messageError} onSend={onSendMessage} />
+                <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
+                  <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Item History</p>
+                  <div style={{ marginTop: 10 }}>
+                    <ItemHistoryPanel events={events} item={item} />
+                  </div>
+                </section>
+              </div>
+            </>
+          ) : (
+            <>
+              <ProofReceiptsSection attachments={attachments} loading={attachmentsLoading} loadError={attachmentError} busy={attachmentBusy} canUpload={Boolean(item.can_upload_proof)} onUpload={onUploadProof} />
+              <MessagesPanel messages={messages} loading={messagesLoading} sending={messageSending} error={messageError} onSend={onSendMessage} />
+              <CounterpartyReviewSection item={item} busy={responseBusy} onRespond={onRespond} />
+
+              <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
+                <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Item History</p>
+                <div style={{ marginTop: 10 }}>
+                  <ItemHistoryPanel events={events} item={item} />
+                </div>
+              </section>
+            </>
+          )}
         </div>
       </section>
     </div>

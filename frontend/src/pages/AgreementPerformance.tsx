@@ -6,6 +6,8 @@ type BoardTab = 'payments' | 'work' | 'due_dates' | 'my_obligations' | 'activity
 
 type BoardViewOptions = { resetView?: boolean }
 
+const LAST_PERFORMANCE_AGREEMENT_KEY = 'agreementPerformance:lastAgreementId'
+
 type PerformanceAgreement = {
   id: string
   contract_id?: string
@@ -614,9 +616,29 @@ function sortByDeadline(items: TimelineItem[]) {
   return [...items].sort((left, right) => dateOnlySortKey(left.due_date).localeCompare(dateOnlySortKey(right.due_date)))
 }
 
+function agreementNavigatorTitle(agreement: PerformanceAgreement) {
+  return agreement.title || agreement.contract.title || 'Untitled contract'
+}
+
+function agreementNavigatorCounterparty(agreement: PerformanceAgreement) {
+  return agreement.counterparty?.name || agreement.counterparty?.email || agreement.contract.counterparty_name || agreement.contract.counterparty_email || 'Counterparty not set'
+}
+
+function agreementNavigatorMatchText(agreement: PerformanceAgreement, query: string) {
+  const title = agreementNavigatorTitle(agreement)
+  const counterparty = agreementNavigatorCounterparty(agreement)
+  if (title.toLowerCase().includes(query)) return title
+  return counterparty
+}
+
 export default function AgreementPerformance() {
   const [agreements, setAgreements] = useState<PerformanceAgreement[]>([])
   const [selectedAgreement, setSelectedAgreement] = useState<PerformanceAgreement | null>(null)
+  const [navigatorOpen, setNavigatorOpen] = useState(false)
+  const [navigatorSearch, setNavigatorSearch] = useState('')
+  const [navigatorHighlightIndex, setNavigatorHighlightIndex] = useState(0)
+  const navigatorRef = useRef<HTMLElement | null>(null)
+  const navigatorSearchRef = useRef<HTMLInputElement | null>(null)
   const [boardData, setBoardData] = useState<LifecycleBoardResponse | null>(null)
   const [activeTab, setActiveTab] = useState<BoardTab>('payments')
   const [selectedItem, setSelectedItem] = useState<TimelineItem | null>(null)
@@ -667,6 +689,10 @@ export default function AgreementPerformance() {
   async function openBoard(agreement: PerformanceAgreement, options: BoardViewOptions = {}) {
     const contractId = agreement.contract_id || agreement.contract.id
     setSelectedAgreement(agreement)
+    setNavigatorOpen(false)
+    setNavigatorSearch('')
+    setNavigatorHighlightIndex(0)
+    window.localStorage.setItem(LAST_PERFORMANCE_AGREEMENT_KEY, agreement.id)
     setBoardLoading(true)
     setBoardError('')
     setFeedback('')
@@ -963,6 +989,44 @@ export default function AgreementPerformance() {
   }, [])
 
   useEffect(() => {
+    if (isLoading || selectedAgreement || agreements.length === 0) return
+    const savedAgreementId = window.localStorage.getItem(LAST_PERFORMANCE_AGREEMENT_KEY)
+    if (!savedAgreementId) return
+    const savedAgreement = agreements.find((agreement) => agreement.id === savedAgreementId)
+    if (savedAgreement) void openBoard(savedAgreement)
+  }, [agreements, isLoading, selectedAgreement])
+
+  useEffect(() => {
+    if (!navigatorOpen) return undefined
+    setNavigatorSearch('')
+    setNavigatorHighlightIndex(0)
+    window.requestAnimationFrame(() => navigatorSearchRef.current?.focus())
+
+    function handleKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setNavigatorOpen(false)
+        setNavigatorSearch('')
+        setNavigatorHighlightIndex(0)
+      }
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target
+      if (target instanceof Node && navigatorRef.current?.contains(target)) return
+      setNavigatorOpen(false)
+      setNavigatorSearch('')
+      setNavigatorHighlightIndex(0)
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('mousedown', handlePointerDown)
+    }
+  }, [navigatorOpen])
+
+  useEffect(() => {
     if (!feedback) return undefined
     const timer = window.setTimeout(() => setFeedback(''), 4000)
     return () => window.clearTimeout(timer)
@@ -1017,6 +1081,67 @@ export default function AgreementPerformance() {
       { value: 'counterparty', label: partyOptionLabel('counterparty', counterparty?.name || counterparty?.counterparty_name || counterparty?.email || counterparty?.counterparty_email), email: counterparty?.email || counterparty?.counterparty_email || null },
     ]
   }, [boardData, proposalPartyOptions, selectedAgreement])
+  const filteredNavigatorAgreements = useMemo(() => {
+    const query = navigatorSearch.trim().toLowerCase()
+    if (!query) return agreements
+    return agreements
+      .filter((agreement) => {
+        const title = agreementNavigatorTitle(agreement).toLowerCase()
+        const counterparty = agreementNavigatorCounterparty(agreement).toLowerCase()
+        return title.includes(query) || counterparty.includes(query)
+      })
+      .sort((left, right) => {
+        const leftMatch = agreementNavigatorMatchText(left, query)
+        const rightMatch = agreementNavigatorMatchText(right, query)
+        return leftMatch.localeCompare(rightMatch, undefined, { sensitivity: 'base' })
+          || agreementNavigatorTitle(left).localeCompare(agreementNavigatorTitle(right), undefined, { sensitivity: 'base' })
+          || agreementNavigatorCounterparty(left).localeCompare(agreementNavigatorCounterparty(right), undefined, { sensitivity: 'base' })
+      })
+  }, [agreements, navigatorSearch])
+
+  useEffect(() => {
+    if (navigatorHighlightIndex >= filteredNavigatorAgreements.length) setNavigatorHighlightIndex(Math.max(filteredNavigatorAgreements.length - 1, 0))
+  }, [filteredNavigatorAgreements.length, navigatorHighlightIndex])
+
+  function handleNavigatorSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setNavigatorHighlightIndex((index) => Math.min(index + 1, Math.max(filteredNavigatorAgreements.length - 1, 0)))
+      return
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setNavigatorHighlightIndex((index) => Math.max(index - 1, 0))
+      return
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      const agreement = filteredNavigatorAgreements[navigatorHighlightIndex]
+      if (agreement) void openBoard(agreement)
+      return
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      setNavigatorOpen(false)
+      setNavigatorSearch('')
+      setNavigatorHighlightIndex(0)
+    }
+  }
+
+  function updateNavigatorSearch(value: string) {
+    setNavigatorSearch(value)
+    setNavigatorHighlightIndex(0)
+  }
+
+  function toggleNavigator() {
+    setNavigatorOpen((open) => {
+      if (open) {
+        setNavigatorSearch('')
+        setNavigatorHighlightIndex(0)
+      }
+      return !open
+    })
+  }
 
   const selectedItemEvents = selectedItem ? itemHistoryEvents(events, selectedItem) : []
   const selectedItemAttachments = selectedItem ? attachmentsByItemId[selectedItem.id] || [] : []
@@ -1039,6 +1164,8 @@ export default function AgreementPerformance() {
         </p>
       </section>
 
+      {navigatorOpen && <div aria-hidden="true" style={{ position: 'fixed', inset: 0, background: 'rgba(15, 31, 61, 0.16)', zIndex: 20 }} />}
+
       {error && <section style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 16, marginBottom: 18 }}><p style={{ fontSize: 13, color: '#B91C1C', margin: 0 }}>{error}</p></section>}
 
       {isLoading ? (
@@ -1053,34 +1180,85 @@ export default function AgreementPerformance() {
           </p>
         </section>
       ) : (
-        <div style={{ display: 'grid', gap: 14, marginBottom: 18 }}>
-          {agreements.map((agreement) => {
-            const counterparty = agreement.counterparty?.name || agreement.counterparty?.email || agreement.contract.counterparty_name || agreement.contract.counterparty_email || 'Counterparty not set'
-            const selected = selectedAgreement?.id === agreement.id
-            return (
-              <section key={agreement.id} style={{ background: selected ? '#FFF7ED' : 'white', border: `1px solid ${selected ? '#FED7AA' : '#E5E7EB'}`, borderRadius: 8, padding: 18 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
-                  <div style={{ minWidth: 0 }}>
-                    <p style={{ fontSize: 11, fontWeight: 800, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 6px' }}>Ready for tracking</p>
-                    <h2 style={{ fontSize: 18, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{agreement.title || agreement.contract.title || 'Untitled contract'}</h2>
-                    <p style={{ fontSize: 13, color: '#64748B', margin: '7px 0 0' }}>{counterparty}</p>
-                  </div>
-                  <button type="button" onClick={() => void openBoard(agreement)} style={{ height: 34, border: '1px solid #0F1F3D', borderRadius: 8, background: '#0F1F3D', color: '#FFFFFF', padding: '0 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
-                    {selected ? 'Refresh Performance' : 'Open Performance'}
-                  </button>
+        <section ref={navigatorRef} style={{ position: 'relative', zIndex: navigatorOpen ? 30 : 1, background: '#FFFFFF', border: `1px solid ${navigatorOpen ? '#CBD5E1' : '#E5E7EB'}`, borderRadius: 8, padding: 14, marginBottom: 18, boxShadow: navigatorOpen ? '0 18px 44px rgba(15, 23, 42, 0.14)' : 'none' }}>
+          <div style={{ display: 'grid', gap: 10, marginBottom: navigatorOpen ? 12 : 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
+              <p style={{ flex: '0 0 240px', fontSize: 11, fontWeight: 800, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>Agreement Navigator</p>
+              <span aria-hidden="true" style={{ flex: '0 1 110px' }} />
+              {navigatorOpen && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 9, flex: '0 1 520px', minWidth: 340 }}>
+                  <span style={{ flex: '0 0 auto', fontSize: 11, fontWeight: 900, color: '#334155', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Search</span>
+                  <input
+                    ref={navigatorSearchRef}
+                    type="search"
+                    value={navigatorSearch}
+                    onChange={(event) => updateNavigatorSearch(event.target.value)}
+                    onKeyDown={handleNavigatorSearchKeyDown}
+                    placeholder="Search agreements or counterparty..."
+                    aria-label="Search agreements or counterparty"
+                    style={{ width: '100%', minHeight: 40, border: '1px solid #CBD5E1', borderRadius: 7, padding: '9px 10px', fontSize: 13, color: '#0F172A', outlineColor: '#94A3B8', background: '#FFFFFF' }}
+                  />
+                </label>
+              )}
+              <span aria-hidden="true" style={{ flex: '1 1 180px' }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button type="button" onClick={toggleNavigator} aria-expanded={navigatorOpen} aria-haspopup="listbox" style={{ display: 'flex', alignItems: 'center', gap: 8, maxWidth: '100%', border: '1px solid #CBD5E1', borderRadius: 8, background: '#FFFFFF', color: '#0F1F3D', padding: '8px 10px', fontSize: 14, fontWeight: 900, cursor: 'pointer', boxShadow: navigatorOpen ? '0 1px 2px rgba(15, 23, 42, 0.08)' : 'none' }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedAgreement ? agreementNavigatorTitle(selectedAgreement) : 'Select Agreement'}</span>
+                <span style={{ color: '#64748B', fontSize: 12 }}>{navigatorOpen ? '▲' : '▼'}</span>
+              </button>
+              <span style={{ fontSize: 12, color: '#64748B', fontWeight: 800 }}>{agreements.length} ready</span>
+            </div>
+          </div>
+          {navigatorOpen && (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {filteredNavigatorAgreements.length === 0 ? (
+                <div style={{ border: '1px dashed #CBD5E1', borderRadius: 8, background: '#F8FAFC', padding: 18 }}>
+                  <p style={{ fontSize: 14, fontWeight: 900, color: '#0F1F3D', margin: 0 }}>No agreements found.</p>
+                  <p style={{ fontSize: 12, color: '#64748B', margin: '5px 0 0' }}>Try another agreement name or counterparty.</p>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginTop: 16 }}>
-                  <SummaryCell label="Status" value={agreement.status} />
-                  <SummaryCell label="Payments" value={`${agreement.payment_count || 0} payment item(s)`} />
-                  <SummaryCell label="Work" value={`${agreement.work_count ?? agreement.work_item_count ?? 0} work item(s)`} />
-                  <SummaryCell label="Deadlines" value={`${agreement.due_date_count || 0} deadline(s)`} />
-                  <SummaryCell label="Activity" value={`${agreement.activity_count || 0} event(s)`} />
-                  <SummaryCell label="Ready Since" value={formatDate(agreement.lifecycle_agreement?.performance_ready_at)} />
+              ) : (
+                <div role="listbox" aria-label="Agreement Navigator" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 8 }}>
+                  {filteredNavigatorAgreements.map((agreement, index) => {
+                    const counterparty = agreementNavigatorCounterparty(agreement)
+                    const selected = selectedAgreement?.id === agreement.id
+                    const highlighted = index === navigatorHighlightIndex
+                    return (
+                      <button key={agreement.id} role="option" aria-selected={selected || highlighted} type="button" onMouseEnter={() => setNavigatorHighlightIndex(index)} onClick={() => void openBoard(agreement)} style={{ display: 'grid', gap: 4, textAlign: 'left', border: `1px solid ${highlighted ? '#94A3B8' : selected ? '#CBD5E1' : '#E5E7EB'}`, borderRadius: 8, background: highlighted ? '#F8FAFC' : selected ? '#F1F5F9' : '#FFFFFF', padding: '10px 12px', cursor: 'pointer', boxShadow: highlighted ? '0 2px 8px rgba(15, 23, 42, 0.08)' : 'none' }}>
+                        <span style={{ fontSize: 13, fontWeight: 900, color: '#0F1F3D', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agreementNavigatorTitle(agreement)}</span>
+                        <span style={{ fontSize: 11, color: '#64748B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{counterparty}</span>
+                        <span style={{ justifySelf: 'start', borderRadius: 999, padding: '3px 7px', fontSize: 10, fontWeight: 900, background: selected ? '#E2E8F0' : '#F8FAFC', color: selected ? '#334155' : '#475569' }}>{selected ? 'Active' : agreement.status}</span>
+                      </button>
+                    )
+                  })}
                 </div>
-              </section>
-            )
-          })}
-        </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {selectedAgreement && (
+        <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 18, marginBottom: 18 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ fontSize: 11, fontWeight: 800, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 6px' }}>Selected Agreement</p>
+              <h2 style={{ fontSize: 18, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{agreementNavigatorTitle(selectedAgreement)}</h2>
+              <p style={{ fontSize: 13, color: '#64748B', margin: '7px 0 0' }}>{agreementNavigatorCounterparty(selectedAgreement)}</p>
+            </div>
+            <button type="button" onClick={() => void openBoard(selectedAgreement)} style={{ height: 34, border: '1px solid #0F1F3D', borderRadius: 8, background: '#0F1F3D', color: '#FFFFFF', padding: '0 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+              Refresh Performance
+            </button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginTop: 16 }}>
+            <SummaryCell label="Status" value={selectedAgreement.status} />
+            <SummaryCell label="Payments" value={`${selectedAgreement.payment_count || 0} payment item(s)`} />
+            <SummaryCell label="Work" value={`${selectedAgreement.work_count ?? selectedAgreement.work_item_count ?? 0} work item(s)`} />
+            <SummaryCell label="Deadlines" value={`${selectedAgreement.due_date_count || 0} deadline(s)`} />
+            <SummaryCell label="Activity" value={`${selectedAgreement.activity_count || 0} event(s)`} />
+            <SummaryCell label="Ready Since" value={formatDate(selectedAgreement.lifecycle_agreement?.performance_ready_at)} />
+          </div>
+        </section>
       )}
 
       <section style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 8, padding: 18, minHeight: 260 }}>

@@ -105,3 +105,69 @@ body {
     padding-right: 12px;
   }
 }
+
+@media (min-width: 641px) and (max-width: 1100px), (min-width: 641px) and (max-width: 1366px) and (pointer: coarse) {
+  .agreement-performance-reminder-row {
+    grid-template-columns: auto minmax(32px, 1fr) auto !important;
+  }
+
+  .agreement-performance-reminder-input-wrap {
+    position: relative;
+    display: inline-block;
+    grid-column: 1 / 2;
+    width: 286px;
+    min-width: 286px;
+    height: 34px;
+  }
+
+  .agreement-performance-reminder-actions {
+    grid-column: 3 / 4 !important;
+    justify-self: end !important;
+    transform: none !important;
+  }
+
+  .agreement-performance-reminder-input::-webkit-calendar-picker-indicator {
+    display: block;
+    opacity: 1;
+  }
+
+  .agreement-performance-reminder-input::-webkit-datetime-edit {
+    opacity: 1;
+  }
+
+  .agreement-performance-reminder-empty {
+    position: absolute;
+    inset: 1px;
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 10px;
+    border-radius: 7px;
+    background: #FFFFFF;
+    color: #0F1F3D;
+    font-size: 12px;
+    pointer-events: none;
+  }
+
+  .agreement-performance-reminder-input-wrap[data-empty="true"] .agreement-performance-reminder-empty {
+    display: flex;
+  }
+
+  .agreement-performance-reminder-calendar {
+    position: relative;
+    width: 14px;
+    height: 14px;
+    border: 1px solid #64748B;
+    border-radius: 3px;
+    flex: 0 0 auto;
+  }
+
+  .agreement-performance-reminder-calendar::before {
+    content: "";
+    position: absolute;
+    left: -1px;
+    right: -1px;
+    top: 3px;
+    border-top: 1px solid #64748B;
+  }
+}

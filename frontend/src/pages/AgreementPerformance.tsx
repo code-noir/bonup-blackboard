@@ -566,6 +566,20 @@ function itemTypeLabel(item: TimelineItem) {
   return humanize(item.item_type)
 }
 
+function obligationIdentityTypeLabel(item: TimelineItem) {
+  if (item.item_type === 'payment') return 'Payment Obligation'
+  if (['service', 'service_work'].includes(item.item_type || '')) return item.title || 'Work / Service Obligation'
+  return item.title || humanize(item.item_type)
+}
+
+function obligationDisplayTitle(item: TimelineItem) {
+  if (!item.due_date) return item.title || humanize(item.item_type)
+  const parts = [dueDateLabel(item.due_date), obligationIdentityTypeLabel(item)]
+  const amount = formatMoney(item.amount, item.currency || 'USD')
+  if (amount !== 'Not set') parts.push(amount)
+  return parts.join(' • ')
+}
+
 function itemAction(item: TimelineItem): { action: string; label: string } | null {
   const source = item.source || item.source_type
   if (source === 'contract_payment_obligation' || source === 'payment_record') return null
@@ -1348,7 +1362,7 @@ export default function AgreementPerformance() {
                 <p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>No records found for this panel.</p>
               </div>
             ) : (
-              <div style={{ display: 'grid', gap: 10 }}>
+              <div style={{ display: 'grid', gap: 12, background: '#E5E7EB', padding: 12, borderRadius: 8 }}>
                 {activeItems.map((item) => (
                   <PerformanceCard
                     key={`${item.source || item.source_type}-${item.id}`}
@@ -1790,7 +1804,7 @@ function PerformanceCard({
     <div style={{ background: isChild ? '#FBFDFF' : '#FFFFFF', border: isChild ? '1px solid #D7E0E8' : '1px solid #E5E7EB', borderRadius: 8, padding: isChild ? 12 : 14, marginLeft: isChild ? 12 : 0, boxShadow: isChild ? 'inset 3px 0 0 #94A3B8' : 'none' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
-          <p style={{ fontSize: isChild ? 14 : 15, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{item.title || humanize(item.item_type)}</p>
+          <p style={{ fontSize: isChild ? 14 : 15, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{obligationDisplayTitle(item)}</p>
           {contextLabel && <p style={{ fontSize: 11, color: '#64748B', margin: '5px 0 0', fontStyle: 'italic' }}>{contextLabel}</p>}
           <p style={{ fontSize: 11, color: '#94A3B8', margin: '5px 0 0' }}>{sourceLabel(item)}</p>
           {showTypeLabel && <span style={{ display: 'inline-flex', marginTop: 7, borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 900, background: '#EFF6FF', color: '#1D4ED8' }}>{itemTypeLabel(item)}</span>}
@@ -1807,19 +1821,29 @@ function PerformanceCard({
         <section style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 8, padding: 10, marginTop: 12 }}>
           <p style={{ fontSize: 10, color: '#64748B', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Private reminder</p>
           <p style={{ fontSize: 12, color: '#334155', margin: '4px 0 8px', fontWeight: 800 }}>{reminderLabel(item.reminder_at)}</p>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <input
-              type="datetime-local"
-              value={reminderDraft}
-              onChange={(event) => setReminderDraft(event.target.value)}
-              style={{ height: 34, minWidth: 190, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 10px', fontSize: 12, color: '#0F1F3D', background: '#FFFFFF' }}
-            />
-            <button type="button" onClick={() => onReminder(fromDateTimeInput(reminderDraft))} disabled={reminderBusy || !reminderDraft} style={{ ...amberButtonStyle, opacity: reminderBusy || !reminderDraft ? 0.65 : 1, cursor: reminderBusy || !reminderDraft ? 'default' : 'pointer' }}>
-              {reminderBusy ? 'Saving...' : item.reminder_at ? 'Update Reminder' : 'Set Reminder'}
-            </button>
-            <button type="button" onClick={() => { setReminderDraft(''); onReminder(null) }} disabled={reminderBusy || !item.reminder_at} style={{ ...secondaryButtonStyle, opacity: reminderBusy || !item.reminder_at ? 0.55 : 1, cursor: reminderBusy || !item.reminder_at ? 'default' : 'pointer' }}>
-              Clear
-            </button>
+          <div className="agreement-performance-reminder-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, alignItems: 'center' }}>
+            <span className="agreement-performance-reminder-input-wrap" data-empty={reminderDraft ? 'false' : 'true'}>
+              <input
+                className="agreement-performance-reminder-input"
+                type="datetime-local"
+                value={reminderDraft}
+                onChange={(event) => setReminderDraft(event.target.value)}
+                placeholder="mm/dd/yyyy, --:-- --"
+                style={{ height: 34, width: 286, minWidth: 286, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 10px', fontSize: 12, color: '#0F1F3D', background: '#FFFFFF' }}
+              />
+              <span className="agreement-performance-reminder-empty" aria-hidden="true">
+                <span>mm/dd/yyyy, --:-- --</span>
+                <span className="agreement-performance-reminder-calendar" />
+              </span>
+            </span>
+            <div className="agreement-performance-reminder-actions" style={{ gridColumn: '2 / 3', justifySelf: 'end', transform: 'translateX(-50%)', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button type="button" onClick={() => onReminder(fromDateTimeInput(reminderDraft))} disabled={reminderBusy || !reminderDraft} style={{ ...amberButtonStyle, opacity: reminderBusy || !reminderDraft ? 0.65 : 1, cursor: reminderBusy || !reminderDraft ? 'default' : 'pointer' }}>
+                {reminderBusy ? 'Saving...' : item.reminder_at ? 'Update Reminder' : 'Set Reminder'}
+              </button>
+              <button type="button" onClick={() => { setReminderDraft(''); onReminder(null) }} disabled={reminderBusy || !item.reminder_at} style={{ ...secondaryButtonStyle, opacity: reminderBusy || !item.reminder_at ? 0.55 : 1, cursor: reminderBusy || !item.reminder_at ? 'default' : 'pointer' }}>
+                Clear
+              </button>
+            </div>
           </div>
         </section>
       )}
@@ -1849,7 +1873,7 @@ function DeadlinesPanel({ items, onOpen, onViewSource }: { items: TimelineItem[]
 
   let currentDate = ''
   return (
-    <div style={{ display: 'grid', gap: 10 }}>
+    <div style={{ display: 'grid', gap: 12, background: '#E5E7EB', padding: 12, borderRadius: 8 }}>
       {sorted.map((item) => {
         const key = deadlineDateKey(item.due_date)
         const showDateHeader = key !== currentDate
@@ -1873,7 +1897,7 @@ function DeadlinesPanel({ items, onOpen, onViewSource }: { items: TimelineItem[]
                   <span style={{ borderRadius: 999, padding: '3px 8px', fontSize: 10, fontWeight: 900, ...deadlineTypeStyle(type) }}>{type}</span>
                   <span style={{ borderRadius: 999, padding: '3px 8px', fontSize: 10, fontWeight: 900, ...statusStyle(performanceStatusStyleKey(item)) }}>{performanceStatusLabel(item)}</span>
                 </div>
-                <p style={{ fontSize: 14, fontWeight: 900, color: '#0F1F3D', margin: 0 }}>{item.title || humanize(item.item_type)}</p>
+                <p style={{ fontSize: 14, fontWeight: 900, color: '#0F1F3D', margin: 0 }}>{obligationDisplayTitle(item)}</p>
                 <p style={{ fontSize: 12, color: '#64748B', margin: '5px 0 0' }}>Responsible: {item.responsible_party || 'Not set'}{amount ? ` · ${amount}` : ''}</p>
                 {item.reminder_at && !isCompletedPerformanceItem(item) && <p style={{ fontSize: 11, color: '#475569', fontWeight: 900, margin: '5px 0 0' }}>Private reminder: {reminderLabel(item.reminder_at)}</p>}
               </div>

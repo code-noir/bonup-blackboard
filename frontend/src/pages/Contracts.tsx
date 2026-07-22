@@ -6,7 +6,7 @@ import type { BusinessEntity } from '@/types/entities'
 import { useAuth } from '@/context/AuthContext'
 
 const STATUS_STYLES: Record<string, { background: string; color: string }> = {
-  ACTIVE:    { background: '#0F1F3D', color: '#FFFFFF' },
+  ACTIVE:    { background: '#243447', color: '#FFFFFF' },
   PENDING:   { background: '#F59E0B', color: '#1F2937' },
   OVERDUE:   { background: '#EF4444', color: '#FFFFFF' },
   COMPLETED: { background: '#9CA3AF', color: '#FFFFFF' },
@@ -206,7 +206,7 @@ function ContractContextBar({
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: 5,
                     fontSize: 13, fontWeight: active ? 600 : 400,
-                    color: active ? '#0F1F3D' : '#6B7280',
+                    color: active ? '#243447' : '#6B7280',
                     cursor: 'pointer', userSelect: 'none',
                     fontFamily: "'Outfit', sans-serif",
                     transition: 'color 0.15s',
@@ -473,7 +473,7 @@ export default function Contracts() {
                 padding: '18px 24px',
                 fontSize: 15,
                 fontWeight: 600,
-                color: activeTab === i ? '#0F1F3D' : '#9CA3AF',
+                color: activeTab === i ? '#243447' : '#9CA3AF',
                 borderBottom: activeTab === i ? '2px solid #F5A623' : '2px solid transparent',
                 cursor: 'pointer',
                 transition: 'all 0.2s',
@@ -535,7 +535,7 @@ export default function Contracts() {
                     style={{
                       width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
                       borderRadius: 5, border: '1px solid #D1D5DB', cursor: 'pointer',
-                      background: viewMode === 'list' ? '#0F1F3D' : 'transparent',
+                      background: viewMode === 'list' ? '#243447' : 'transparent',
                       color: viewMode === 'list' ? '#fff' : '#6B7280',
                       transition: 'all 0.15s',
                     }}
@@ -552,7 +552,7 @@ export default function Contracts() {
                     style={{
                       width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
                       borderRadius: 5, border: '1px solid #D1D5DB', cursor: 'pointer',
-                      background: viewMode === 'card' ? '#0F1F3D' : 'transparent',
+                      background: viewMode === 'card' ? '#243447' : 'transparent',
                       color: viewMode === 'card' ? '#fff' : '#6B7280',
                       transition: 'all 0.15s',
                     }}
@@ -729,7 +729,7 @@ export default function Contracts() {
               {/* Player */}
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '20px 24px', overflowY: 'auto' }}>
                 <p style={{ fontSize: 14, fontWeight: 600, color: '#0F1F3D', margin: '0 0 12px' }}>{tutorialVideos[selectedVideo]}</p>
-                <div style={{ width: '100%', aspectRatio: '16 / 9', background: '#1C2B3A', borderRadius: 8, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                <div style={{ width: '100%', aspectRatio: '16 / 9', background: '#243447', borderRadius: 8, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
                   <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <span style={{ color: '#fff', fontSize: 20, marginLeft: 4 }}>▶</span>
                   </div>
@@ -739,7 +739,7 @@ export default function Contracts() {
             </div>
             {/* Footer */}
             <div style={{ padding: '14px 24px', borderTop: '1px solid #E5E7EB', display: 'flex', justifyContent: 'flex-end', flexShrink: 0 }}>
-              <button onClick={() => { setShowHelp(false); navigate('/contracts/new') }} style={{ background: '#F5A623', color: '#0F1F3D', fontSize: 13, fontWeight: 600, height: 34, padding: '0 20px', borderRadius: 7, border: 'none', cursor: 'pointer' }}
+              <button onClick={() => { setShowHelp(false); navigate('/contracts/new') }} style={{ background: '#F5A623', color: '#243447', fontSize: 13, fontWeight: 600, height: 34, padding: '0 20px', borderRadius: 7, border: 'none', cursor: 'pointer' }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = '#D4900A')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = '#F5A623')}>
                 Create a Contract
@@ -803,7 +803,7 @@ export default function Contracts() {
                     </div>
                   ) : (
                     <div key={i} style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                      <span style={{ background: '#0F1F3D', color: '#fff', borderRadius: 8, padding: '9px 13px', fontSize: 13, maxWidth: '85%', lineHeight: 1.5 }}>{msg.text}</span>
+                      <span style={{ background: '#243447', color: '#fff', borderRadius: 8, padding: '9px 13px', fontSize: 13, maxWidth: '85%', lineHeight: 1.5 }}>{msg.text}</span>
                     </div>
                   )
                 )}
@@ -816,7 +816,7 @@ export default function Contracts() {
                   placeholder="Ask a question…"
                   style={{ flex: 1, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 7, fontSize: 13, padding: '7px 11px', outline: 'none', color: '#374151' }}
                 />
-                <button onClick={sendMessage} style={{ background: '#0F1F3D', color: '#fff', border: 'none', borderRadius: 7, padding: '0 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}>Send</button>
+                <button onClick={sendMessage} style={{ background: '#243447', color: '#fff', border: 'none', borderRadius: 7, padding: '0 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}>Send</button>
               </div>
             </>
           )}

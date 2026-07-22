@@ -149,7 +149,7 @@ export default function TopBar() {
       style={{
         top: 0,
         left: 'var(--sidebar-w, 216px)',
-        background: '#1C2B3A',
+        background: '#243447',
         borderBottom: '1px solid rgba(255,255,255,0.07)',
       }}
     >

@@ -30,7 +30,7 @@ const FIELD: React.CSSProperties = {
 }
 
 function onFF(e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) {
-  e.currentTarget.style.borderColor = '#0F1F3D'
+  e.currentTarget.style.borderColor = '#243447'
   e.currentTarget.style.boxShadow = '0 0 0 2px rgba(15,31,61,0.08)'
 }
 function onFB(e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) {
@@ -171,7 +171,7 @@ export default function Entities() {
           disabled={!tierAllows || atLimit}
           style={{
             height: 36, padding: '0 18px',
-            background: tierAllows && !atLimit ? '#0F1F3D' : '#9CA3AF',
+            background: tierAllows && !atLimit ? '#243447' : '#9CA3AF',
             color: 'white', border: 'none', borderRadius: 8,
             fontSize: 13, fontWeight: 600,
             cursor: tierAllows && !atLimit ? 'pointer' : 'default',
@@ -201,7 +201,7 @@ export default function Entities() {
         </div>
         <div style={{ height: 4, background: '#E5E7EB', borderRadius: 2 }}>
           <div style={{
-            height: '100%', background: '#0F1F3D', borderRadius: 2,
+            height: '100%', background: '#243447', borderRadius: 2,
             width: `${pct}%`, transition: 'width 0.3s ease',
           }} />
         </div>
@@ -220,7 +220,7 @@ export default function Entities() {
       }}>
         <div style={{
           width: 48, height: 48, borderRadius: '50%',
-          background: '#0F1F3D', color: 'white',
+          background: '#243447', color: 'white',
           fontSize: 18, fontWeight: 600,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           flexShrink: 0,
@@ -324,7 +324,7 @@ export default function Entities() {
             cursor: 'pointer', color: '#6B7280', fontSize: 13,
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = '#0F1F3D'
+            e.currentTarget.style.borderColor = '#243447'
             e.currentTarget.style.color = '#0F1F3D'
           }}
           onMouseLeave={(e) => {
@@ -515,7 +515,7 @@ export default function Entities() {
                 disabled={saving || !formName.trim() || !formType}
                 style={{
                   width: '100%', height: 40,
-                  background: saving || !formName.trim() || !formType ? '#9CA3AF' : '#0F1F3D',
+                  background: saving || !formName.trim() || !formType ? '#9CA3AF' : '#243447',
                   color: 'white', border: 'none', borderRadius: 8,
                   fontSize: 14, fontWeight: 600,
                   cursor: saving || !formName.trim() || !formType ? 'default' : 'pointer',

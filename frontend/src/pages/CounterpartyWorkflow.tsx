@@ -131,7 +131,7 @@ export default function CounterpartyWorkflow() {
             style={{ width: '100%', minHeight: 110, border: '1px solid #E5E7EB', borderRadius: 8, padding: 12, fontSize: 13, color: '#374151', lineHeight: 1.6, resize: 'vertical', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 12 }}
           />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-            <button onClick={() => submitAction('request-changes', { requested_changes: requestedChanges }, 'Changes requested.')} disabled={isSubmitting || !requestedChanges.trim()} style={{ height: 36, padding: '0 14px', border: 'none', borderRadius: 8, background: isSubmitting || !requestedChanges.trim() ? '#9CA3AF' : '#0F1F3D', color: 'white', fontSize: 13, fontWeight: 600, cursor: isSubmitting || !requestedChanges.trim() ? 'default' : 'pointer' }}>Request Changes</button>
+            <button onClick={() => submitAction('request-changes', { requested_changes: requestedChanges }, 'Changes requested.')} disabled={isSubmitting || !requestedChanges.trim()} style={{ height: 36, padding: '0 14px', border: 'none', borderRadius: 8, background: isSubmitting || !requestedChanges.trim() ? '#9CA3AF' : '#243447', color: 'white', fontSize: 13, fontWeight: 600, cursor: isSubmitting || !requestedChanges.trim() ? 'default' : 'pointer' }}>Request Changes</button>
             <button onClick={() => submitAction('accept', {}, 'Agreement accepted.')} disabled={isSubmitting} style={{ height: 36, padding: '0 14px', border: 'none', borderRadius: 8, background: isSubmitting ? '#9CA3AF' : '#065F46', color: 'white', fontSize: 13, fontWeight: 600, cursor: isSubmitting ? 'default' : 'pointer' }}>Accept</button>
             <button onClick={() => submitAction('reject', {}, 'Agreement rejected.')} disabled={isSubmitting} style={{ height: 36, padding: '0 14px', border: '1px solid #FECACA', borderRadius: 8, background: 'white', color: '#B91C1C', fontSize: 13, fontWeight: 600, cursor: isSubmitting ? 'default' : 'pointer' }}>Reject</button>
           </div>
@@ -140,7 +140,7 @@ export default function CounterpartyWorkflow() {
 
       {canSign && (
         <div style={{ background: 'white', borderRadius: 8, border: '1px solid rgba(0,0,0,0.08)', padding: 18, marginTop: 16 }}>
-          <button onClick={() => submitAction('sign', {}, 'Agreement signed.')} disabled={isSubmitting} style={{ height: 38, padding: '0 16px', border: 'none', borderRadius: 8, background: isSubmitting ? '#9CA3AF' : '#0F1F3D', color: 'white', fontSize: 13, fontWeight: 600, cursor: isSubmitting ? 'default' : 'pointer' }}>Sign Agreement</button>
+          <button onClick={() => submitAction('sign', {}, 'Agreement signed.')} disabled={isSubmitting} style={{ height: 38, padding: '0 16px', border: 'none', borderRadius: 8, background: isSubmitting ? '#9CA3AF' : '#243447', color: 'white', fontSize: 13, fontWeight: 600, cursor: isSubmitting ? 'default' : 'pointer' }}>Sign Agreement</button>
         </div>
       )}
     </div>

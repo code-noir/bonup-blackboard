@@ -356,7 +356,7 @@ function PartySearchBlock({
   }
 
   function siFocus(e: React.FocusEvent<HTMLInputElement>) {
-    e.currentTarget.style.borderColor = '#0F1F3D'
+    e.currentTarget.style.borderColor = '#243447'
     e.currentTarget.style.boxShadow = '0 0 0 2px rgba(15,31,61,0.08)'
   }
   function siBlur(e: React.FocusEvent<HTMLInputElement>) {
@@ -366,7 +366,7 @@ function PartySearchBlock({
 
   const AVATAR_S: React.CSSProperties = {
     width: 36, height: 36, borderRadius: '50%',
-    background: '#0F1F3D', color: 'white', fontSize: 13, fontWeight: 600,
+    background: '#243447', color: 'white', fontSize: 13, fontWeight: 600,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     flexShrink: 0,
   }
@@ -397,12 +397,12 @@ function PartySearchBlock({
         <button
           onClick={doSearch}
           style={{
-            background: '#0F1F3D', color: 'white', border: 'none',
+            background: '#243447', color: 'white', border: 'none',
             borderRadius: 6, padding: '8px 12px', fontSize: 12,
             cursor: 'pointer', flexShrink: 0,
           }}
           onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = '#243447')}
         >
           Search
         </button>
@@ -649,7 +649,7 @@ export default function CreateContract() {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function onFieldFocus(e: React.FocusEvent<any>) {
-    e.currentTarget.style.borderColor = '#0F1F3D'
+    e.currentTarget.style.borderColor = '#243447'
     e.currentTarget.style.boxShadow = '0 0 0 2px rgba(15,31,61,0.08)'
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1808,7 +1808,7 @@ export default function CreateContract() {
             <button
               onClick={() => navigate('/settings')}
               style={{
-                background: '#0F1F3D', color: 'white',
+                background: '#243447', color: 'white',
                 width: '100%', height: 40,
                 borderRadius: 8, fontSize: 14, fontWeight: 600, border: 'none',
                 cursor: 'pointer',
@@ -1860,7 +1860,7 @@ export default function CreateContract() {
               <button
                 onClick={() => setPaygConfirmDismissed(true)}
                 style={{
-                  flex: 1, height: 38, background: '#0F1F3D', color: 'white',
+                  flex: 1, height: 38, background: '#243447', color: 'white',
                   border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
                 }}
               >
@@ -2092,7 +2092,7 @@ export default function CreateContract() {
                 <div
                   style={{
                     position: 'absolute', top: '100%', left: 0, marginTop: 4,
-                    background: '#0F1F3D', border: '1px solid rgba(245,166,35,0.3)',
+                    background: '#243447', border: '1px solid rgba(245,166,35,0.3)',
                     borderRadius: 6, overflow: 'hidden', zIndex: 200, minWidth: 180,
                   }}
                 >
@@ -2276,7 +2276,7 @@ export default function CreateContract() {
           {/* TOOL ICON STRIP */}
           <div style={{
             width: 52, flexShrink: 0,
-            background: '#1C2B3A',
+            background: '#243447',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center', paddingTop: 8,
@@ -2320,7 +2320,7 @@ export default function CreateContract() {
                     display: 'none',
                     position: 'absolute',
                     left: 48, top: '50%', transform: 'translateY(-50%)',
-                    background: '#1C2B3A', color: 'white',
+                    background: '#243447', color: 'white',
                     fontSize: 11, padding: '4px 10px',
                     borderRadius: 6, whiteSpace: 'nowrap',
                     zIndex: 500, pointerEvents: 'none',
@@ -2388,12 +2388,12 @@ export default function CreateContract() {
                     style={{
                       position: 'absolute', right: 0, top: 0, bottom: 0,
                       width: 6, cursor: 'col-resize',
-                      background: '#1C2B3A',
+                      background: '#243447',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       zIndex: 5,
                     }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = '#263d52')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = '#1C2B3A')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = '#243447')}
                   >
                     <div style={{
                       width: 3, height: 40,
@@ -2412,7 +2412,7 @@ export default function CreateContract() {
                       <>
                         {/* Display screen */}
                         <div style={{
-                          background: '#0F1F3D', borderRadius: 10,
+                          background: '#243447', borderRadius: 10,
                           padding: 16, marginBottom: 14, minHeight: 80,
                           display: 'flex', flexDirection: 'column',
                           justifyContent: 'flex-end', alignItems: 'flex-end',
@@ -2447,7 +2447,7 @@ export default function CreateContract() {
                           ] as { l: string; t: string }[]).map(({ l, t }) => {
                             let bg = '#ffffff'; let color = '#0F1F3D'
                             if (t === 'op')               { bg = 'rgba(245,166,35,0.15)'; color = '#92650A' }
-                            if (t === 'eq')               { bg = '#0F1F3D';               color = '#ffffff'  }
+                            if (t === 'eq')               { bg = '#243447';               color = '#ffffff'  }
                             if (t === 'clear')            { bg = 'rgba(239,68,68,0.1)';   color = '#DC2626'  }
                             if (t === 'sign' || t === 'pct') { bg = 'rgba(15,31,61,0.08)'; color = '#0F1F3D' }
                             return (
@@ -2563,14 +2563,14 @@ export default function CreateContract() {
                           disabled={isAnalyzing}
                           style={{
                             width: '100%', height: 36,
-                            background: isAnalyzing ? '#6B7280' : '#0F1F3D',
+                            background: isAnalyzing ? '#6B7280' : '#243447',
                             color: 'white', border: 'none',
                             borderRadius: 8, fontSize: 13, fontWeight: 600,
                             cursor: isAnalyzing ? 'default' : 'pointer',
                             marginBottom: 12,
                           }}
                           onMouseEnter={(e) => { if (!isAnalyzing) e.currentTarget.style.background = '#1a3460' }}
-                          onMouseLeave={(e) => { if (!isAnalyzing) e.currentTarget.style.background = '#0F1F3D' }}
+                          onMouseLeave={(e) => { if (!isAnalyzing) e.currentTarget.style.background = '#243447' }}
                         >
                           {isAnalyzing ? 'Analyzing…' : 'Analyze Contract'}
                         </button>
@@ -2646,13 +2646,13 @@ export default function CreateContract() {
                               disabled={isSubmittingCounter}
                               style={{
                                 width: '100%', height: 36,
-                                background: isSubmittingCounter ? '#6B7280' : '#0F1F3D',
+                                background: isSubmittingCounter ? '#6B7280' : '#243447',
                                 color: 'white', border: 'none',
                                 borderRadius: 8, fontSize: 13, fontWeight: 600,
                                 cursor: isSubmittingCounter ? 'default' : 'pointer',
                               }}
                               onMouseEnter={(e) => { if (!isSubmittingCounter) e.currentTarget.style.background = '#1a3460' }}
-                              onMouseLeave={(e) => { if (!isSubmittingCounter) e.currentTarget.style.background = '#0F1F3D' }}
+                              onMouseLeave={(e) => { if (!isSubmittingCounter) e.currentTarget.style.background = '#243447' }}
                             >
                               {isSubmittingCounter ? 'Submitting…' : 'Submit Counter'}
                             </button>
@@ -2674,7 +2674,7 @@ export default function CreateContract() {
                       }
                       const AVATAR: React.CSSProperties = {
                         width: 36, height: 36, borderRadius: '50%',
-                        background: '#0F1F3D', color: 'white', fontSize: 13,
+                        background: '#243447', color: 'white', fontSize: 13,
                         fontWeight: 600, display: 'flex', alignItems: 'center',
                         justifyContent: 'center', flexShrink: 0,
                       }
@@ -2784,7 +2784,7 @@ export default function CreateContract() {
                                   >
                                     <div style={{
                                       width: 30, height: 30, borderRadius: '50%',
-                                      background: '#0F1F3D', color: 'white',
+                                      background: '#243447', color: 'white',
                                       fontSize: 11, fontWeight: 700,
                                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                                       flexShrink: 0,
@@ -2817,12 +2817,12 @@ export default function CreateContract() {
                                       }}
                                       style={{
                                         height: 22, padding: '0 8px', fontSize: 10, fontWeight: 500,
-                                        borderRadius: 4, border: '1px solid #0F1F3D',
-                                        background: '#0F1F3D', color: 'white', cursor: 'pointer',
+                                        borderRadius: 4, border: '1px solid #243447',
+                                        background: '#243447', color: 'white', cursor: 'pointer',
                                         flexShrink: 0,
                                       }}
                                       onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
-                                      onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+                                      onMouseLeave={(e) => (e.currentTarget.style.background = '#243447')}
                                     >
                                       Select
                                     </button>
@@ -2888,7 +2888,7 @@ export default function CreateContract() {
                                 marginBottom: 12,
                               }}
                               onMouseEnter={(e) => {
-                                e.currentTarget.style.borderColor = '#0F1F3D'
+                                e.currentTarget.style.borderColor = '#243447'
                                 e.currentTarget.style.color = '#0F1F3D'
                               }}
                               onMouseLeave={(e) => {
@@ -2939,7 +2939,7 @@ export default function CreateContract() {
                       }
                       const CARD_SELECTED: React.CSSProperties = {
                         ...CARD_BASE,
-                        borderColor: '#0F1F3D', background: '#F0F4F8',
+                        borderColor: '#243447', background: '#F0F4F8',
                         boxShadow: '0 0 0 2px rgba(15,31,61,0.1)',
                       }
 
@@ -2960,7 +2960,7 @@ export default function CreateContract() {
                           >
                             <div style={{
                               width: 32, height: 32, borderRadius: '50%',
-                              background: '#0F1F3D', color: 'white',
+                              background: '#243447', color: 'white',
                               fontSize: 12, fontWeight: 600,
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
                               flexShrink: 0,
@@ -3020,7 +3020,7 @@ export default function CreateContract() {
                                 color: '#6B7280', fontSize: 13,
                               }}
                               onMouseEnter={(e) => {
-                                e.currentTarget.style.borderColor = '#0F1F3D'
+                                e.currentTarget.style.borderColor = '#243447'
                                 e.currentTarget.style.color = '#0F1F3D'
                               }}
                               onMouseLeave={(e) => {
@@ -3285,14 +3285,14 @@ export default function CreateContract() {
                             }}
                             style={{
                               width: '100%', height: 36,
-                              background: '#0F1F3D',
+                              background: '#243447',
                               color: 'white', border: 'none', borderRadius: 8,
                               fontSize: 13, fontWeight: 600,
                               cursor: detailsSaving ? 'wait' : 'pointer', marginTop: 4,
                               opacity: detailsSaving ? 0.7 : 1,
                             }}
                             onMouseEnter={(e) => { if (!detailsSaving) e.currentTarget.style.background = '#1a3460' }}
-                            onMouseLeave={(e) => { e.currentTarget.style.background = '#0F1F3D' }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = '#243447' }}
                           >
                             {detailsSaving ? 'Saving...' : (!createdContractId && !contractIdParam) ? 'Open Contract Intake' : 'Save Details'}
                           </button>
@@ -3377,7 +3377,7 @@ export default function CreateContract() {
                         <div style={{ margin: -16, minHeight: 'calc(100% + 32px)', display: 'flex', flexDirection: 'column' }}>
                           {/* Dark navy header */}
                           <div style={{
-                            background: '#1C2B3A', padding: '14px 16px',
+                            background: '#243447', padding: '14px 16px',
                             display: 'flex', alignItems: 'center', flexShrink: 0,
                           }}>
                             <span style={{
@@ -3437,7 +3437,7 @@ export default function CreateContract() {
                                     borderRadius: 8,
                                     padding: '10px 14px',
                                     marginBottom: 6,
-                                    border: isDragTarget ? '1px dashed #0F1F3D' : '1px solid #E5E7EB',
+                                    border: isDragTarget ? '1px dashed #243447' : '1px solid #E5E7EB',
                                     borderLeft: isActive ? '3px solid #F5A623' : isDragTarget ? '3px solid #9CA3AF' : 'none',
                                     display: 'flex', alignItems: 'center', gap: 10,
                                     cursor: isEditing ? 'default' : 'pointer',
@@ -3447,7 +3447,7 @@ export default function CreateContract() {
                                       ? '0 2px 8px rgba(0,0,0,0.1)'
                                       : '0 1px 3px rgba(0,0,0,0.06)',
                                     transform: isHovered && !isEditing ? 'translateY(-1px)' : 'none',
-                                    ...(isHovered && !isEditing && { borderColor: '#0F1F3D' }),
+                                    ...(isHovered && !isEditing && { borderColor: '#243447' }),
                                   }}
                                 >
                                   {/* Drag handle */}
@@ -3473,7 +3473,7 @@ export default function CreateContract() {
                                       onBlur={commitRename}
                                       style={{
                                         flex: 1, fontSize: 13, border: 'none', outline: 'none',
-                                        background: 'transparent', color: '#0F1F3D',
+                                        background: 'transparent', color: '#243447',
                                         fontFamily: 'inherit',
                                       }}
                                       onClick={(e) => e.stopPropagation()}
@@ -3528,8 +3528,8 @@ export default function CreateContract() {
                               <div style={{
                                 background: 'white', borderRadius: 8, padding: '10px 14px',
                                 marginBottom: 6,
-                                border: '1px dashed #0F1F3D',
-                                borderLeft: '3px solid #0F1F3D',
+                                border: '1px dashed #243447',
+                                borderLeft: '3px solid #243447',
                                 display: 'flex', alignItems: 'center', gap: 10,
                                 boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
                               }}>
@@ -3549,7 +3549,7 @@ export default function CreateContract() {
                                   placeholder="Section name..."
                                   style={{
                                     flex: 1, fontSize: 13, border: 'none', outline: 'none',
-                                    background: 'transparent', color: '#0F1F3D',
+                                    background: 'transparent', color: '#243447',
                                     fontFamily: 'inherit',
                                   }}
                                 />
@@ -3704,7 +3704,7 @@ export default function CreateContract() {
                                   <div style={{ height: 4, background: '#E5E7EB', borderRadius: 2 }}>
                                     <div style={{
                                       height: '100%', borderRadius: 2,
-                                      background: '#0F1F3D',
+                                      background: '#243447',
                                       width: `${file.progress ?? 0}%`,
                                       transition: 'width 0.14s linear',
                                     }} />
@@ -3857,7 +3857,7 @@ export default function CreateContract() {
                                     border: '1px solid #E5E7EB',
                                   }}
                                   onMouseEnter={(e) => {
-                                    e.currentTarget.style.borderColor = '#0F1F3D'
+                                    e.currentTarget.style.borderColor = '#243447'
                                     e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)'
                                   }}
                                   onMouseLeave={(e) => {
@@ -3891,7 +3891,7 @@ export default function CreateContract() {
                                         borderRadius: 4, border: '1px solid #D1D5DB',
                                         background: 'transparent', color: '#6B7280', cursor: 'pointer',
                                       }}
-                                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#0F1F3D'; e.currentTarget.style.color = '#0F1F3D' }}
+                                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#243447'; e.currentTarget.style.color = '#0F1F3D' }}
                                       onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#D1D5DB'; e.currentTarget.style.color = '#6B7280' }}
                                     >
                                       Preview
@@ -3900,11 +3900,11 @@ export default function CreateContract() {
                                       onClick={() => loadTemplate(tmpl)}
                                       style={{
                                         height: 22, padding: '0 8px', fontSize: 10, fontWeight: 500,
-                                        borderRadius: 4, border: '1px solid #0F1F3D',
-                                        background: '#0F1F3D', color: 'white', cursor: 'pointer',
+                                        borderRadius: 4, border: '1px solid #243447',
+                                        background: '#243447', color: 'white', cursor: 'pointer',
                                       }}
                                       onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
-                                      onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+                                      onMouseLeave={(e) => (e.currentTarget.style.background = '#243447')}
                                     >
                                       Use
                                     </button>
@@ -3922,7 +3922,7 @@ export default function CreateContract() {
                       }
                       return (
                         <div style={{ margin: -16, minHeight: 'calc(100% + 32px)', display: 'flex', flexDirection: 'column' }}>
-                          <div style={{ background: '#1C2B3A', padding: '14px 16px' }}>
+                          <div style={{ background: '#243447', padding: '14px 16px' }}>
                             <span style={{ fontSize: 12, fontWeight: 600, color: 'white', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                               Obligation Templates
                             </span>
@@ -3971,7 +3971,7 @@ export default function CreateContract() {
                                           borderRadius: 4, border: '1px solid #D1D5DB',
                                           background: 'transparent', color: '#6B7280', cursor: 'pointer',
                                         }}
-                                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#0F1F3D'; e.currentTarget.style.color = '#0F1F3D' }}
+                                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#243447'; e.currentTarget.style.color = '#0F1F3D' }}
                                         onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#D1D5DB'; e.currentTarget.style.color = '#6B7280' }}
                                       >
                                         Preview
@@ -3980,11 +3980,11 @@ export default function CreateContract() {
                                         onClick={(e) => { e.stopPropagation(); insertObligation(tmpl) }}
                                         style={{
                                           height: 22, padding: '0 8px', fontSize: 10, fontWeight: 500,
-                                          borderRadius: 4, border: '1px solid #0F1F3D',
-                                          background: '#0F1F3D', color: 'white', cursor: 'pointer',
+                                          borderRadius: 4, border: '1px solid #243447',
+                                          background: '#243447', color: 'white', cursor: 'pointer',
                                         }}
                                         onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
-                                        onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+                                        onMouseLeave={(e) => (e.currentTarget.style.background = '#243447')}
                                       >
                                         Use
                                       </button>
@@ -4015,7 +4015,7 @@ export default function CreateContract() {
                       }
                       return (
                         <div style={{ margin: -16, minHeight: 'calc(100% + 32px)', display: 'flex', flexDirection: 'column' }}>
-                          <div style={{ background: '#1C2B3A', padding: '14px 16px' }}>
+                          <div style={{ background: '#243447', padding: '14px 16px' }}>
                             <span style={{ fontSize: 12, fontWeight: 600, color: 'white', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                               Payment Templates
                             </span>
@@ -4070,7 +4070,7 @@ export default function CreateContract() {
                                           borderRadius: 4, border: '1px solid #D1D5DB',
                                           background: 'transparent', color: '#6B7280', cursor: 'pointer',
                                         }}
-                                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#0F1F3D'; e.currentTarget.style.color = '#0F1F3D' }}
+                                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#243447'; e.currentTarget.style.color = '#0F1F3D' }}
                                         onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#D1D5DB'; e.currentTarget.style.color = '#6B7280' }}
                                       >
                                         Preview
@@ -4079,11 +4079,11 @@ export default function CreateContract() {
                                         onClick={(e) => { e.stopPropagation(); insertPayment(tmpl) }}
                                         style={{
                                           height: 22, padding: '0 8px', fontSize: 10, fontWeight: 500,
-                                          borderRadius: 4, border: '1px solid #0F1F3D',
-                                          background: '#0F1F3D', color: 'white', cursor: 'pointer',
+                                          borderRadius: 4, border: '1px solid #243447',
+                                          background: '#243447', color: 'white', cursor: 'pointer',
                                         }}
                                         onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
-                                        onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+                                        onMouseLeave={(e) => (e.currentTarget.style.background = '#243447')}
                                       >
                                         Use
                                       </button>
@@ -4168,7 +4168,7 @@ export default function CreateContract() {
                     style={{
                       padding: '6px 10px',
                       fontSize: 11,
-                      color: isActive ? '#0F1F3D' : '#6B7280',
+                      color: isActive ? '#243447' : '#6B7280',
                       fontWeight: isActive ? 500 : 400,
                       cursor: 'pointer',
                       display: 'flex',
@@ -4491,7 +4491,7 @@ export default function CreateContract() {
                       justifyContent: msg.role === 'ai' ? 'flex-start' : 'flex-end',
                     }}>
                       <span style={{
-                        background: msg.role === 'ai' ? '#EFF6FF' : '#0F1F3D',
+                        background: msg.role === 'ai' ? '#EFF6FF' : '#243447',
                         color: msg.role === 'ai' ? '#1E40AF' : '#fff',
                         borderRadius: 8, padding: '8px 12px',
                         fontSize: 13, maxWidth: '80%', lineHeight: 1.5,
@@ -4671,7 +4671,7 @@ export default function CreateContract() {
             position: 'fixed', right: 24, bottom: 48, zIndex: 220,
             height: 40, padding: '0 18px', borderRadius: 9,
             border: '1px solid rgba(15,31,61,0.18)',
-            background: isPreparingContract ? '#94A3B8' : '#0F1F3D',
+            background: isPreparingContract ? '#94A3B8' : '#243447',
             color: 'white', fontSize: 13, fontWeight: 700,
             cursor: isPreparingContract ? 'default' : 'pointer',
             boxShadow: '0 10px 24px rgba(15,31,61,0.22)',
@@ -4685,7 +4685,7 @@ export default function CreateContract() {
       {/* ── STATUS BAR ── */}
       <div style={{
         position: 'fixed', bottom: 0, left: 0, right: 0, height: 32,
-        background: '#1C2B3A', zIndex: 100,
+        background: '#243447', zIndex: 100,
         display: 'flex', alignItems: 'center', padding: '0 16px', gap: 16,
       }}>
         <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', flex: 1 }}>
@@ -4779,13 +4779,13 @@ export default function CreateContract() {
               onClick={() => loadTemplate(previewTemplate)}
               style={{
                 width: '100%', height: 40,
-                background: '#0F1F3D', color: 'white',
+                background: '#243447', color: 'white',
                 border: 'none', borderRadius: 8,
                 fontSize: 14, fontWeight: 600, cursor: 'pointer',
                 flexShrink: 0,
               }}
               onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = '#243447')}
             >
               Use This Template
             </button>
@@ -4860,13 +4860,13 @@ export default function CreateContract() {
               }}
               style={{
                 width: '100%', height: 40,
-                background: '#0F1F3D', color: 'white',
+                background: '#243447', color: 'white',
                 border: 'none', borderRadius: 8,
                 fontSize: 14, fontWeight: 600, cursor: 'pointer',
                 flexShrink: 0,
               }}
               onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = '#243447')}
             >
               Use This Template
             </button>
@@ -4946,13 +4946,13 @@ export default function CreateContract() {
               }}
               style={{
                 width: '100%', height: 40,
-                background: '#0F1F3D', color: 'white',
+                background: '#243447', color: 'white',
                 border: 'none', borderRadius: 8,
                 fontSize: 14, fontWeight: 600, cursor: 'pointer',
                 flexShrink: 0,
               }}
               onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = '#243447')}
             >
               Use This Template
             </button>

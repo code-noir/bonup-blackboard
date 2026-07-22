@@ -76,7 +76,7 @@ export default function Analysis() {
         disabled={isAnalyzing || !contractText.trim()}
         style={{
           height: 40, padding: '0 24px',
-          background: isAnalyzing || !contractText.trim() ? '#9CA3AF' : '#0F1F3D',
+          background: isAnalyzing || !contractText.trim() ? '#9CA3AF' : '#243447',
           color: 'white', border: 'none', borderRadius: 8,
           fontSize: 14, fontWeight: 600,
           cursor: isAnalyzing || !contractText.trim() ? 'default' : 'pointer',
@@ -86,7 +86,7 @@ export default function Analysis() {
           if (!isAnalyzing && contractText.trim()) e.currentTarget.style.background = '#1a3460'
         }}
         onMouseLeave={(e) => {
-          if (!isAnalyzing && contractText.trim()) e.currentTarget.style.background = '#0F1F3D'
+          if (!isAnalyzing && contractText.trim()) e.currentTarget.style.background = '#243447'
         }}
       >
         {isAnalyzing ? 'Analyzing…' : 'Analyze Contract'}

@@ -137,7 +137,7 @@ function MyContractsBtn() {
       {open && (
         <div style={{
           position: 'absolute', top: 'calc(100% + 4px)', left: 0,
-          background: '#1C2B3A', borderRadius: 8,
+          background: '#243447', borderRadius: 8,
           border: '1px solid rgba(255,255,255,0.1)',
           boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
           minWidth: 280, zIndex: 9999, padding: '8px 0',
@@ -257,7 +257,7 @@ function MyEntitiesBtn() {
       {open && (
         <div style={{
           position: 'absolute', top: 'calc(100% + 4px)', left: 0,
-          background: '#1C2B3A', borderRadius: 8,
+          background: '#243447', borderRadius: 8,
           border: '1px solid rgba(255,255,255,0.1)',
           boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
           minWidth: 220, zIndex: 200, padding: '8px 0',
@@ -289,7 +289,7 @@ function MyEntitiesBtn() {
           >
             <div style={{
               width: 28, height: 28, borderRadius: '50%',
-              background: '#0F1F3D', color: 'white',
+              background: '#243447', color: 'white',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 11, fontWeight: 600, flexShrink: 0,
             }}>

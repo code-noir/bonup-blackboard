@@ -159,7 +159,7 @@ const actionButtonStyle = (variant: 'primary' | 'secondary' | 'disabled'): CSSPr
   padding: '0 11px',
   borderRadius: 7,
   border: variant === 'secondary' ? '1px solid #CBD5E1' : 'none',
-  background: variant === 'primary' ? '#0F1F3D' : variant === 'secondary' ? 'white' : '#E5E7EB',
+  background: variant === 'primary' ? '#243447' : variant === 'secondary' ? 'white' : '#E5E7EB',
   color: variant === 'primary' ? 'white' : variant === 'secondary' ? '#334155' : '#64748B',
   fontSize: 11,
   fontWeight: 700,
@@ -275,7 +275,7 @@ export default function Dashboard() {
         const pct = Math.min(100, ((30 - days) / 30) * 100)
         return (
           <div style={{
-            background: 'linear-gradient(to right, #0F1F3D, #1a3460)',
+            background: 'linear-gradient(to right, #243447, #1a3460)',
             borderRadius: 11, padding: '20px 24px',
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           }}>
@@ -334,7 +334,7 @@ export default function Dashboard() {
           <button
             onClick={() => navigate('/settings')}
             style={{
-              background: '#0F1F3D', color: 'white',
+              background: '#243447', color: 'white',
               border: 'none', borderRadius: 8,
               padding: '8px 16px', fontSize: 12,
               fontWeight: 600, cursor: 'pointer',
@@ -542,7 +542,7 @@ export default function Dashboard() {
                 disabled={!tool.available}
                 style={{
                   display: 'block', height: 32, padding: '0 16px',
-                  background: tool.available ? '#0F1F3D' : '#E5E7EB',
+                  background: tool.available ? '#243447' : '#E5E7EB',
                   color: tool.available ? 'white' : '#64748B',
                   border: 'none', borderRadius: 8,
                   fontSize: 12, fontWeight: 600,

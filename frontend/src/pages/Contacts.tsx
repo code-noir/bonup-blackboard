@@ -23,7 +23,7 @@ const FIELD: React.CSSProperties = {
 }
 
 function onFF(e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) {
-  e.currentTarget.style.borderColor = '#0F1F3D'
+  e.currentTarget.style.borderColor = '#243447'
   e.currentTarget.style.boxShadow = '0 0 0 2px rgba(15,31,61,0.08)'
 }
 function onFB(e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) {
@@ -116,12 +116,12 @@ export default function Contacts() {
           onClick={openModal}
           style={{
             height: 36, padding: '0 18px',
-            background: '#0F1F3D', color: 'white',
+            background: '#243447', color: 'white',
             border: 'none', borderRadius: 8,
             fontSize: 13, fontWeight: 600, cursor: 'pointer',
           }}
           onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = '#243447')}
         >
           + Add Contact
         </button>
@@ -186,7 +186,7 @@ export default function Contacts() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
                 <div style={{
                   width: 44, height: 44, borderRadius: '50%',
-                  background: '#0F1F3D', color: 'white',
+                  background: '#243447', color: 'white',
                   fontSize: 15, fontWeight: 700,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   flexShrink: 0,
@@ -229,11 +229,11 @@ export default function Contacts() {
                 <button
                   style={{
                     flex: 1, height: 30, fontSize: 11, fontWeight: 500,
-                    border: '1px solid #0F1F3D', borderRadius: 6,
-                    background: '#0F1F3D', color: 'white', cursor: 'pointer',
+                    border: '1px solid #243447', borderRadius: 6,
+                    background: '#243447', color: 'white', cursor: 'pointer',
                   }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = '#243447')}
                 >
                   Add to Contract
                 </button>
@@ -344,7 +344,7 @@ export default function Contacts() {
                   border: '1px solid #D1D5DB', borderRadius: 8,
                   background: 'transparent', color: '#6B7280', cursor: 'pointer',
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#0F1F3D')}
+                onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#243447')}
                 onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#D1D5DB')}
               >
                 Cancel
@@ -355,10 +355,10 @@ export default function Contacts() {
                 style={{
                   flex: 2, height: 38, fontSize: 13, fontWeight: 600,
                   border: 'none', borderRadius: 8,
-                  background: '#0F1F3D', color: 'white', cursor: 'pointer',
+                  background: '#243447', color: 'white', cursor: 'pointer',
                 }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = '#1a3460')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = '#0F1F3D')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = '#243447')}
               >
                 Save Contact
               </button>

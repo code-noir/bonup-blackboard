@@ -171,7 +171,7 @@ function NavItem({
             style={{
               position: 'fixed', left: tooltipPos.left, top: tooltipPos.top,
               transform: 'translateY(-50%)',
-              background: '#1C2B3A', color: 'white', fontSize: 11,
+              background: '#243447', color: 'white', fontSize: 11,
               padding: '4px 10px', borderRadius: 6, whiteSpace: 'nowrap',
               zIndex: 500, pointerEvents: 'none',
               border: '1px solid rgba(255,255,255,0.1)',

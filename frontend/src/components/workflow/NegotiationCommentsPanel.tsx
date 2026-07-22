@@ -115,7 +115,7 @@ export default function NegotiationCommentsPanel({ workflowId, compact = false }
           <input value={clauseReference} onChange={(event) => setClauseReference(event.target.value)} placeholder="Clause reference" style={{ height: 34, border: '1px solid #E5E7EB', borderRadius: 8, padding: '0 10px', fontSize: 12, color: '#374151', outline: 'none' }} />
         </div>
         <textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="Add a structured negotiation note..." style={{ minHeight: 90, border: '1px solid #E5E7EB', borderRadius: 8, padding: 10, fontSize: 13, color: '#374151', lineHeight: 1.5, resize: 'vertical', outline: 'none', fontFamily: 'inherit' }} />
-        <button onClick={submitComment} disabled={isSubmitting || !body.trim()} style={{ justifySelf: 'start', height: 34, padding: '0 13px', border: 'none', borderRadius: 8, background: isSubmitting || !body.trim() ? '#9CA3AF' : '#0F1F3D', color: 'white', fontSize: 12, fontWeight: 700, cursor: isSubmitting || !body.trim() ? 'default' : 'pointer' }}>
+        <button onClick={submitComment} disabled={isSubmitting || !body.trim()} style={{ justifySelf: 'start', height: 34, padding: '0 13px', border: 'none', borderRadius: 8, background: isSubmitting || !body.trim() ? '#9CA3AF' : '#243447', color: 'white', fontSize: 12, fontWeight: 700, cursor: isSubmitting || !body.trim() ? 'default' : 'pointer' }}>
           {isSubmitting ? 'Adding...' : 'Add Comment'}
         </button>
       </div>

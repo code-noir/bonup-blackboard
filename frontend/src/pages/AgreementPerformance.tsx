@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 import api, { tokenStorage } from '@/api/client'
 import { dateOnlyInputValue, dateOnlySortKey, formatDateOnly } from '@/lib/dateOnly'
 
@@ -190,6 +190,28 @@ const BOARD_TABS: Array<{ key: BoardTab; label: string }> = [
   { key: 'activity', label: 'Activity' },
   { key: 'changes', label: 'Changes / Add-ons' },
 ]
+
+const MODULE_TAB_BACKGROUNDS: Partial<Record<BoardTab, string>> = {
+  payments: '#E8EEF5',
+  work: '#F5FBFF',
+  my_obligations: '#F6FEF9',
+}
+
+function obligationDetailBackground(item: TimelineItem | null, activeTab: BoardTab) {
+  if (!item) return '#F8FAFC'
+  if (activeTab === 'my_obligations') return '#F6FEF9'
+  if (isPaymentItem(item)) return '#E8EEF5'
+  if (isWorkServiceItem(item)) return '#F5FBFF'
+  return '#F8FAFC'
+}
+
+function boardTabButtonStyle(tab: BoardTab, isActive: boolean): CSSProperties {
+  const moduleBackground = MODULE_TAB_BACKGROUNDS[tab]
+  if (moduleBackground && !isActive) {
+    return { border: '1px solid #CBD5E1', borderRadius: 8, background: moduleBackground, color: '#334155', padding: '8px 11px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }
+  }
+  return { border: '1px solid #CBD5E1', borderRadius: 8, background: isActive ? '#243447' : '#FFFFFF', color: isActive ? '#FFFFFF' : '#334155', padding: '8px 11px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }
+}
 
 const DOCUMENT_IMAGE_MAX_SIZE = 25 * 1024 * 1024
 const VIDEO_MAX_SIZE = 100 * 1024 * 1024
@@ -560,27 +582,36 @@ function agreementPerformanceStatusLabel(status?: string) {
   return 'Waiting for first performed obligation'
 }
 
+function isPaymentItem(item: TimelineItem) {
+  const source = item.source || item.source_type
+  return item.item_type === 'payment' || source === 'contract_payment_obligation' || source === 'payment_record'
+}
+
+function isWorkServiceItem(item: TimelineItem) {
+  return ['service', 'service_work'].includes(item.item_type || '')
+}
+
 function itemTypeLabel(item: TimelineItem) {
   if (item.item_type === 'payment') return 'Payment'
-  if (['service', 'service_work'].includes(item.item_type || '')) return 'Work / Service'
+  if (isWorkServiceItem(item)) return 'Work / Service'
   return humanize(item.item_type)
 }
 
 function obligationIdentityTypeLabel(item: TimelineItem) {
   if (item.item_type === 'payment') return 'Payment Obligation'
-  if (['service', 'service_work'].includes(item.item_type || '')) return item.title || 'Work / Service Obligation'
+  if (isWorkServiceItem(item)) return item.title || 'Work / Service Obligation'
   return item.title || humanize(item.item_type)
 }
 
 function obligationDisplayTitle(item: TimelineItem) {
   if (!item.due_date) return item.title || humanize(item.item_type)
   const parts = [dueDateLabel(item.due_date), obligationIdentityTypeLabel(item)]
-  const amount = formatMoney(item.amount, item.currency || 'USD')
-  if (amount !== 'Not set') parts.push(amount)
+  if (!isWorkServiceItem(item) && item.amount) parts.push(formatMoney(item.amount, item.currency || 'USD'))
   return parts.join(' • ')
 }
 
 function itemAction(item: TimelineItem): { action: string; label: string } | null {
+  if (!item.can_upload_proof) return null
   const source = item.source || item.source_type
   if (source === 'contract_payment_obligation' || source === 'payment_record') return null
   if ((item.status || '').toLowerCase() === 'completed') return null
@@ -607,7 +638,7 @@ function sourceLabel(item: TimelineItem) {
 }
 
 function deadlineTypeLabel(item: TimelineItem) {
-  if (item.item_type === 'payment' || item.source === 'contract_payment_obligation' || item.source === 'payment_record') return 'Payment'
+  if (isPaymentItem(item)) return 'Payment'
   if (['service', 'service_work'].includes(item.item_type || '')) {
     const text = `${item.title || ''} ${item.description || ''}`.toLowerCase()
     return text.includes('loan') || text.includes('fund') || text.includes('deliver') ? 'Delivery' : 'Work'
@@ -1217,7 +1248,7 @@ export default function AgreementPerformance() {
               <span aria-hidden="true" style={{ flex: '1 1 180px' }} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-              <button type="button" onClick={toggleNavigator} aria-expanded={navigatorOpen} aria-haspopup="listbox" style={{ display: 'flex', alignItems: 'center', gap: 8, maxWidth: '100%', border: '1px solid #CBD5E1', borderRadius: 8, background: '#FFFFFF', color: '#0F1F3D', padding: '8px 10px', fontSize: 14, fontWeight: 900, cursor: 'pointer', boxShadow: navigatorOpen ? '0 1px 2px rgba(15, 23, 42, 0.08)' : 'none' }}>
+              <button type="button" onClick={toggleNavigator} aria-expanded={navigatorOpen} aria-haspopup="listbox" style={{ display: 'flex', alignItems: 'center', gap: 8, maxWidth: '100%', border: '1px solid #CBD5E1', borderRadius: 8, background: '#FFFFFF', color: '#243447', padding: '8px 10px', fontSize: 14, fontWeight: 900, cursor: 'pointer', boxShadow: navigatorOpen ? '0 1px 2px rgba(15, 23, 42, 0.08)' : 'none' }}>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedAgreement ? agreementNavigatorTitle(selectedAgreement) : 'Select Agreement'}</span>
                 <span style={{ color: '#64748B', fontSize: 12 }}>{navigatorOpen ? '▲' : '▼'}</span>
               </button>
@@ -1253,7 +1284,7 @@ export default function AgreementPerformance() {
       )}
 
 
-      <section style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 8, padding: 18, minHeight: 260 }}>
+      <section style={{ background: obligationDetailBackground(selectedItem, activeTab), border: '1px solid #E5E7EB', borderRadius: 8, padding: 18, minHeight: 260 }}>
         {!selectedAgreement ? (
           <div style={{ border: '1px dashed #CBD5E1', borderRadius: 8, padding: 18, background: '#FFFFFF' }}>
             <p style={{ fontSize: 14, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>Select a signed agreement to view performance records.</p>
@@ -1275,7 +1306,7 @@ export default function AgreementPerformance() {
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   {selectedItem && <button type="button" onClick={() => setSelectedItem(null)} style={secondaryButtonStyle}>Back to Performance Board</button>}
                   <button type="button" onClick={() => setShowSource(true)} style={secondaryButtonStyle}>View Signed Source</button>
-                  <button type="button" onClick={() => void openBoard(selectedAgreement)} style={{ height: 34, border: '1px solid #0F1F3D', borderRadius: 8, background: '#0F1F3D', color: '#FFFFFF', padding: '0 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>Refresh Performance</button>
+                  <button type="button" onClick={() => void openBoard(selectedAgreement)} style={{ height: 34, border: '1px solid #243447', borderRadius: 8, background: '#243447', color: '#FFFFFF', padding: '0 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>Refresh Performance</button>
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginTop: 12 }}>
@@ -1293,7 +1324,7 @@ export default function AgreementPerformance() {
             {!selectedItem && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
                 {BOARD_TABS.map((tab) => (
-                  <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} style={{ border: '1px solid #CBD5E1', borderRadius: 8, background: activeTab === tab.key ? '#0F1F3D' : '#FFFFFF', color: activeTab === tab.key ? '#FFFFFF' : '#334155', padding: '8px 11px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                  <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} style={boardTabButtonStyle(tab.key, activeTab === tab.key)}>
                     {tab.label}
                   </button>
                 ))}
@@ -1303,6 +1334,8 @@ export default function AgreementPerformance() {
             {selectedItem ? (
               <PerformanceThread
                 item={selectedItem}
+                isMyObligationsView={activeTab === 'my_obligations'}
+                isWorkServicesView={activeTab === 'work'}
                 events={selectedItemEvents}
                 attachments={selectedItemAttachments}
                 attachmentsLoading={attachmentLoading === selectedItem.id}
@@ -1790,6 +1823,7 @@ function PerformanceCard({
     setReminderDraft(toDateTimeInput(item.reminder_at))
   }, [item.id, item.reminder_at])
   const isChild = variant === 'child'
+  const isWorkService = isWorkServiceItem(item)
   return (
     <div style={{ background: isChild ? '#FBFDFF' : '#FFFFFF', border: isChild ? '1px solid #D7E0E8' : '1px solid #E5E7EB', borderRadius: 8, padding: isChild ? 12 : 14, marginLeft: isChild ? 12 : 0, boxShadow: isChild ? 'inset 3px 0 0 #94A3B8' : 'none' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
@@ -1802,7 +1836,7 @@ function PerformanceCard({
         <span style={{ alignSelf: 'flex-start', borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 800, ...statusStyle(performanceStatusStyleKey(item)) }}>{performanceStatusLabel(item)}</span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginTop: 12 }}>
-        <SmallFact label="Amount" value={formatMoney(item.amount, item.currency || 'USD')} />
+        {!isWorkService && <SmallFact label="Amount" value={formatMoney(item.amount, item.currency || 'USD')} />}
         <SmallFact label="Due / Delivery" value={dueDateLabel(item.due_date)} />
         <SmallFact label="Responsible" value={item.responsible_party || 'Not set'} />
       </div>
@@ -1819,7 +1853,7 @@ function PerformanceCard({
                 value={reminderDraft}
                 onChange={(event) => setReminderDraft(event.target.value)}
                 placeholder="mm/dd/yyyy, --:-- --"
-                style={{ height: 34, width: 286, minWidth: 286, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 10px', fontSize: 12, color: '#0F1F3D', background: '#FFFFFF' }}
+                style={{ height: 34, width: 286, minWidth: 286, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 10px', fontSize: 12, color: '#243447', background: '#FFFFFF' }}
               />
               <span className="agreement-performance-reminder-empty" aria-hidden="true">
                 <span>mm/dd/yyyy, --:-- --</span>
@@ -1892,7 +1926,7 @@ function DeadlinesPanel({ items, onOpen, onViewSource }: { items: TimelineItem[]
                 {item.reminder_at && !isCompletedPerformanceItem(item) && <p style={{ fontSize: 11, color: '#475569', fontWeight: 900, margin: '5px 0 0' }}>Private reminder: {reminderLabel(item.reminder_at)}</p>}
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => onOpen(item)} style={secondaryButtonStyle}>Open Detail</button>
+                <button type="button" onClick={() => onOpen(item)} style={secondaryButtonStyle}>View Obligation</button>
                 <button type="button" onClick={onViewSource} style={secondaryButtonStyle}>View Source</button>
               </div>
             </div>
@@ -1992,7 +2026,7 @@ function PerformanceActionSection({
   onAction: (action: string) => void
 }) {
   return (
-    <section style={{ borderBottom: '1px solid #E5E7EB', paddingBottom: 14 }}>
+    <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14, boxSizing: 'border-box' }}>
       <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Performance Action</p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10, alignItems: 'center' }}>
         <button type="button" onClick={onViewSource} style={secondaryButtonStyle}>View Source</button>
@@ -2005,7 +2039,7 @@ function PerformanceActionSection({
         )}
       </div>
       {action && (
-        <p style={{ fontSize: 12, color: '#64748B', margin: '8px 0 0', lineHeight: 1.5 }}>Upload proof or receipt below before marking this obligation performed.</p>
+        <p style={{ fontSize: 12, color: '#64748B', margin: '8px 0 0', lineHeight: 1.5 }}>Upload proof or receipt before marking this obligation performed.</p>
       )}
     </section>
   )
@@ -2061,9 +2095,9 @@ function ProofReceiptsSection({
   }
 
   return (
-    <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
+    <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14, height: '100%', minWidth: 0, boxSizing: 'border-box' }}>
       <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Proof / Receipt</p>
-      <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+      <div style={{ display: 'grid', gap: 8, marginTop: 10, minWidth: 0 }}>
         {loadError && (
           <div style={{ border: '1px solid #FECACA', borderRadius: 8, padding: 12, background: '#FEF2F2' }}>
             <p style={{ fontSize: 13, color: '#B91C1C', margin: 0 }}>{loadError}</p>
@@ -2096,20 +2130,20 @@ function ProofReceiptsSection({
       </div>
 
       {canUpload && (
-        <div style={{ display: 'grid', gap: 10, background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 8, padding: 12, marginTop: 14 }}>
+        <div style={{ display: 'grid', gap: 10, background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 8, padding: 12, marginTop: 14, minWidth: 0 }}>
           <p style={{ fontSize: 12, color: '#9A3412', margin: 0, fontWeight: 900 }}>Add another proof / receipt</p>
           <input
             key={inputKey}
             type="file"
             onChange={(event) => handleFileChange(event.target.files?.[0] || null)}
-            style={{ border: '1px solid #CBD5E1', borderRadius: 8, padding: 10, background: '#FFFFFF', color: '#0F1F3D', fontSize: 12 }}
+            style={{ width: '100%', maxWidth: '100%', minWidth: 0, border: '1px solid #CBD5E1', borderRadius: 8, padding: 10, background: '#FFFFFF', color: '#243447', fontSize: 12 }}
           />
           <textarea
             value={note}
             onChange={(event) => setNote(event.target.value)}
             placeholder="Optional note"
             rows={3}
-            style={{ border: '1px solid #CBD5E1', borderRadius: 8, padding: 10, background: '#FFFFFF', color: '#0F1F3D', fontSize: 12, resize: 'vertical', fontFamily: 'inherit' }}
+            style={{ width: '100%', maxWidth: '100%', minWidth: 0, border: '1px solid #CBD5E1', borderRadius: 8, padding: 10, background: '#FFFFFF', color: '#243447', fontSize: 12, resize: 'vertical', fontFamily: 'inherit' }}
           />
           {error && <p style={{ fontSize: 12, color: '#B91C1C', margin: 0, fontWeight: 800 }}>{error}</p>}
           <div>
@@ -2149,7 +2183,7 @@ function CounterpartyReviewSection({
   ]
 
   return (
-    <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
+    <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14, height: '100%', minHeight: 0, overflowY: 'auto', boxSizing: 'border-box' }}>
       <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Counterparty Review</p>
       {latest ? (
         <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 8, padding: 12, marginTop: 10 }}>
@@ -2179,7 +2213,7 @@ function CounterpartyReviewSection({
             onChange={(event) => setNote(event.target.value)}
             placeholder="Optional note"
             rows={3}
-            style={{ border: '1px solid #CBD5E1', borderRadius: 8, padding: 10, background: '#FFFFFF', color: '#0F1F3D', fontSize: 12, resize: 'vertical', fontFamily: 'inherit' }}
+            style={{ border: '1px solid #CBD5E1', borderRadius: 8, padding: 10, background: '#FFFFFF', color: '#243447', fontSize: 12, resize: 'vertical', fontFamily: 'inherit' }}
           />
         </div>
       )}
@@ -2239,7 +2273,7 @@ function MessagesPanel({
           const body = typeof message.body === 'string' ? message.body : ''
           return (
             <div key={message.id || `${createdAt}-${index}`} style={{ display: 'grid', justifyItems: mine ? 'end' : 'start' }}>
-              <div style={{ maxWidth: '78%', background: mine ? '#0F1F3D' : '#FFFFFF', color: mine ? '#FFFFFF' : '#0F1F3D', border: mine ? '1px solid #0F1F3D' : '1px solid #E5E7EB', borderRadius: 8, padding: 10 }}>
+              <div style={{ maxWidth: '78%', background: mine ? '#243447' : '#FFFFFF', color: mine ? '#FFFFFF' : '#243447', border: mine ? '1px solid #243447' : '1px solid #E5E7EB', borderRadius: 8, padding: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 11, fontWeight: 900, color: mine ? '#DBEAFE' : '#334155' }}>{mine ? 'You' : sender}</span>
                   <span style={{ fontSize: 10, fontWeight: 800, color: mine ? '#BFDBFE' : '#94A3B8' }}>{eventTimeLabel(createdAt)}</span>
@@ -2259,7 +2293,7 @@ function MessagesPanel({
           placeholder="Write a message"
           maxLength={2000}
           rows={3}
-          style={{ border: '1px solid #CBD5E1', borderRadius: 8, padding: 10, background: '#FFFFFF', color: '#0F1F3D', fontSize: 13, resize: 'vertical', fontFamily: 'inherit' }}
+          style={{ border: '1px solid #CBD5E1', borderRadius: 8, padding: 10, background: '#FFFFFF', color: '#243447', fontSize: 13, resize: 'vertical', fontFamily: 'inherit' }}
         />
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11, color: '#94A3B8' }}>Press Enter to send. Shift+Enter adds a line.</span>
@@ -2325,7 +2359,7 @@ function ProposalMessagesPanel({
           const body = typeof message.body === 'string' ? message.body : ''
           return (
             <div key={message.id || `${createdAt}-${index}`} style={{ display: 'grid', justifyItems: mine ? 'end' : 'start' }}>
-              <div style={{ maxWidth: '78%', background: mine ? '#0F1F3D' : '#FFFFFF', color: mine ? '#FFFFFF' : '#0F1F3D', border: mine ? '1px solid #0F1F3D' : '1px solid #E5E7EB', borderRadius: 8, padding: 10 }}>
+              <div style={{ maxWidth: '78%', background: mine ? '#243447' : '#FFFFFF', color: mine ? '#FFFFFF' : '#243447', border: mine ? '1px solid #243447' : '1px solid #E5E7EB', borderRadius: 8, padding: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 11, fontWeight: 900, color: mine ? '#DBEAFE' : '#334155' }}>{mine ? 'You' : sender}</span>
                   <span style={{ fontSize: 10, fontWeight: 800, color: mine ? '#BFDBFE' : '#94A3B8' }}>{eventTimeLabel(createdAt)}</span>
@@ -2345,7 +2379,7 @@ function ProposalMessagesPanel({
           placeholder="Write a proposal message"
           maxLength={2000}
           rows={3}
-          style={{ border: '1px solid #CBD5E1', borderRadius: 8, padding: 10, background: '#FFFFFF', color: '#0F1F3D', fontSize: 13, resize: 'vertical', fontFamily: 'inherit' }}
+          style={{ border: '1px solid #CBD5E1', borderRadius: 8, padding: 10, background: '#FFFFFF', color: '#243447', fontSize: 13, resize: 'vertical', fontFamily: 'inherit' }}
         />
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11, color: '#94A3B8' }}>Press Enter to send. Shift+Enter adds a line.</span>
@@ -2450,7 +2484,7 @@ function ProposalDecisionPanel({
             onChange={(event) => setNote(event.target.value)}
             placeholder="Decision note"
             rows={3}
-            style={{ border: '1px solid #CBD5E1', borderRadius: 8, padding: 10, background: '#FFFFFF', color: '#0F1F3D', fontSize: 13, resize: 'vertical', fontFamily: 'inherit' }}
+            style={{ border: '1px solid #CBD5E1', borderRadius: 8, padding: 10, background: '#FFFFFF', color: '#243447', fontSize: 13, resize: 'vertical', fontFamily: 'inherit' }}
           />
           {error && <p style={{ fontSize: 12, color: '#B91C1C', margin: 0, fontWeight: 800 }}>{error}</p>}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -2515,6 +2549,8 @@ function PlaceholderPanel({ title }: { title: string }) {
 
 function PerformanceThread({
   item,
+  isMyObligationsView,
+  isWorkServicesView,
   events,
   attachments,
   attachmentsLoading,
@@ -2534,6 +2570,8 @@ function PerformanceThread({
   onRespond,
 }: {
   item: TimelineItem
+  isMyObligationsView?: boolean
+  isWorkServicesView?: boolean
   events: TimelineEvent[]
   attachments: LifecycleAttachment[]
   attachmentsLoading: boolean
@@ -2551,28 +2589,30 @@ function PerformanceThread({
   onSendMessage: (body: string) => void
   onRespond: (response: string, note: string) => void
 }) {
-  const isPaymentDetail = item.item_type === 'payment'
-  const action = isPaymentDetail ? null : itemAction(item)
+  const isPaymentDetail = isPaymentItem(item)
+  const isServiceDetail = isWorkServiceItem(item)
+  const action = itemAction(item)
   const actionBusy = action ? busy === `${item.id}:${action.action}` : false
-  const obligationRecordSurface = isPaymentDetail ? '#E8EEF5' : '#FFFFFF'
-  const summaryCellSurface = isPaymentDetail ? '#FFFFFF' : undefined
-  const detailSectionGridStyle = isPaymentDetail ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 } : undefined
+  const obligationRecordSurface = isMyObligationsView ? '#F6FEF9' : isPaymentDetail ? '#E8EEF5' : isServiceDetail || isWorkServicesView ? '#F5FBFF' : '#FFFFFF'
+  const summaryCellSurface = '#FFFFFF'
+  const obligationDetailColumnTemplate = 'minmax(360px, 1.35fr) minmax(494px, 1.5fr)'
+  const executionGridStyle = { display: 'grid', gridTemplateColumns: obligationDetailColumnTemplate, gap: 14, alignItems: 'stretch' }
+  const executionSideColumnStyle = { display: 'grid', gridTemplateRows: 'minmax(0, 1fr) auto', gap: 14, alignItems: 'stretch', height: '100%', minHeight: 0 }
+  const finalRowGridStyle = { display: 'grid', gridTemplateColumns: obligationDetailColumnTemplate, gap: 14, alignItems: 'start' }
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#0F1F3D' }}>{obligationDisplayTitle(item)}</h3>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', minWidth: 0 }}>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#0F1F3D' }}>{obligationDisplayTitle(item)}</h3>
+            <span style={{ borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 900, background: isServiceDetail ? '#F0FDF4' : isPaymentDetail ? '#EFF6FF' : '#F8FAFC', color: isServiceDetail ? '#15803D' : isPaymentDetail ? '#1D4ED8' : '#475569' }}>{isServiceDetail ? 'Service Obligation' : isPaymentDetail ? 'Payment Obligation' : itemTypeLabel(item)}</span>
+          </div>
           <span style={{ borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 900, ...statusStyle(performanceStatusStyleKey(item)) }}>{performanceStatusLabel(item)}</span>
         </div>
         <div style={{ marginTop: 10 }}>
           <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>{sourceLabel(item)}</p>
           <p style={{ fontSize: 13, color: '#334155', lineHeight: 1.55, margin: '7px 0 0' }}>{item.description || 'No additional detail recorded for this performance item.'}</p>
-          {isPaymentDetail && (
-            <div style={{ marginTop: 12 }}>
-              <button type="button" onClick={onViewSource} style={secondaryButtonStyle}>View Source</button>
-            </div>
-          )}
         </div>
       </div>
 
@@ -2584,54 +2624,36 @@ function PerformanceThread({
           <section style={{ borderBottom: '1px solid #E5E7EB', paddingBottom: 14 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
               <SummaryCell label="Responsible" value={item.responsible_party || 'Not set'} surface={summaryCellSurface} />
-              <SummaryCell label="Amount" value={formatMoney(item.amount, item.currency || 'USD')} surface={summaryCellSurface} />
+              {!isServiceDetail && <SummaryCell label="Amount" value={formatMoney(item.amount, item.currency || 'USD')} surface={summaryCellSurface} />}
               <SummaryCell label="Due / Delivery" value={dueDateLabel(item.due_date)} surface={summaryCellSurface} />
               <SummaryCell label={completionDateTitle(item)} value={completionDateLabel(events, item)} surface={summaryCellSurface} />
               <SummaryCell label="Current Status" value={performanceStatusLabel(item)} surface={summaryCellSurface} />
             </div>
           </section>
 
-          {action && (
-            <PerformanceActionSection
-              item={item}
-              action={action}
-              actionBusy={actionBusy}
-              onViewSource={onViewSource}
-              onAction={onAction}
-            />
-          )}
-
-          {isPaymentDetail ? (
-            <>
-              <div style={detailSectionGridStyle}>
-                <ProofReceiptsSection attachments={attachments} loading={attachmentsLoading} loadError={attachmentError} busy={attachmentBusy} canUpload={false} onUpload={onUploadProof} />
-                <CounterpartyReviewSection item={item} busy={responseBusy} onRespond={onRespond} />
-              </div>
-
-              <div style={detailSectionGridStyle}>
-                <MessagesPanel messages={messages} loading={messagesLoading} sending={messageSending} error={messageError} onSend={onSendMessage} />
-                <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
-                  <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Item History</p>
-                  <div style={{ marginTop: 10 }}>
-                    <ItemHistoryPanel events={events} item={item} />
-                  </div>
-                </section>
-              </div>
-            </>
-          ) : (
-            <>
-              <ProofReceiptsSection attachments={attachments} loading={attachmentsLoading} loadError={attachmentError} busy={attachmentBusy} canUpload={Boolean(item.can_upload_proof)} onUpload={onUploadProof} />
-              <MessagesPanel messages={messages} loading={messagesLoading} sending={messageSending} error={messageError} onSend={onSendMessage} />
+          <div className="agreement-performance-detail-top-grid" style={executionGridStyle}>
+            <ProofReceiptsSection attachments={attachments} loading={attachmentsLoading} loadError={attachmentError} busy={attachmentBusy} canUpload={Boolean(item.can_upload_proof)} onUpload={onUploadProof} />
+            <div className="agreement-performance-detail-side-column" style={executionSideColumnStyle}>
               <CounterpartyReviewSection item={item} busy={responseBusy} onRespond={onRespond} />
+              <PerformanceActionSection
+                item={item}
+                action={action}
+                actionBusy={actionBusy}
+                onViewSource={onViewSource}
+                onAction={onAction}
+              />
+            </div>
+          </div>
 
-              <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
-                <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Item History</p>
-                <div style={{ marginTop: 10 }}>
-                  <ItemHistoryPanel events={events} item={item} />
-                </div>
-              </section>
-            </>
-          )}
+          <div className="agreement-performance-detail-bottom-grid" style={finalRowGridStyle}>
+            <MessagesPanel messages={messages} loading={messagesLoading} sending={messageSending} error={messageError} onSend={onSendMessage} />
+            <section style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 14 }}>
+              <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, fontWeight: 900, textTransform: 'uppercase' }}>Item History</p>
+              <div style={{ marginTop: 10 }}>
+                <ItemHistoryPanel events={events} item={item} />
+              </div>
+            </section>
+          </div>
         </div>
       </section>
     </div>
@@ -2653,9 +2675,9 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 const primaryButtonStyle = {
-  border: '1px solid #0F1F3D',
+  border: '1px solid #243447',
   borderRadius: 8,
-  background: '#0F1F3D',
+  background: '#243447',
   color: '#FFFFFF',
   padding: '8px 12px',
   fontSize: 12,

@@ -48,7 +48,7 @@ export default function WorkflowSharePanel({ workflowId, defaultCounterpartyEmai
       {success && <div style={{ background: '#ECFDF5', border: '1px solid #6EE7B7', borderRadius: 8, padding: '8px 10px', fontSize: 12, color: '#065F46', marginBottom: 10 }}>{success}</div>}
       <div style={{ display: 'grid', gridTemplateColumns: compact ? '1fr' : 'minmax(0, 1fr) auto', gap: 9 }}>
         <input value={counterpartyEmail} onChange={(event) => setCounterpartyEmail(event.target.value)} placeholder="Counterparty email" style={{ height: 34, border: '1px solid #E5E7EB', borderRadius: 8, padding: '0 10px', fontSize: 12, color: '#374151', outline: 'none' }} />
-        <button onClick={createLink} disabled={isCreating || !counterpartyEmail.trim()} style={{ height: 34, padding: '0 13px', border: 'none', borderRadius: 8, background: isCreating || !counterpartyEmail.trim() ? '#9CA3AF' : '#0F1F3D', color: 'white', fontSize: 12, fontWeight: 700, cursor: isCreating || !counterpartyEmail.trim() ? 'default' : 'pointer' }}>
+        <button onClick={createLink} disabled={isCreating || !counterpartyEmail.trim()} style={{ height: 34, padding: '0 13px', border: 'none', borderRadius: 8, background: isCreating || !counterpartyEmail.trim() ? '#9CA3AF' : '#243447', color: 'white', fontSize: 12, fontWeight: 700, cursor: isCreating || !counterpartyEmail.trim() ? 'default' : 'pointer' }}>
           {isCreating ? 'Sending...' : 'Send Invite Email'}
         </button>
       </div>

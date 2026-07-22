@@ -617,7 +617,7 @@ export default function WorkflowWorkspace({ workflow }: WorkflowWorkspaceProps) 
                           key={section.id}
                           type="button"
                           onClick={() => scrollToContractSection(section.id)}
-                          style={{ width: '100%', textAlign: 'left', border: `1px solid ${isActive ? '#F5A623' : '#E5E7EB'}`, borderRadius: 8, background: isActive ? '#FFFBF0' : '#FFFFFF', color: isActive ? '#0F1F3D' : '#475569', padding: '8px 9px', fontSize: 12, fontWeight: isActive ? 800 : 600, cursor: 'pointer', lineHeight: 1.35 }}
+                          style={{ width: '100%', textAlign: 'left', border: `1px solid ${isActive ? '#F5A623' : '#E5E7EB'}`, borderRadius: 8, background: isActive ? '#FFFBF0' : '#FFFFFF', color: isActive ? '#243447' : '#475569', padding: '8px 9px', fontSize: 12, fontWeight: isActive ? 800 : 600, cursor: 'pointer', lineHeight: 1.35 }}
                         >
                           <span style={{ color: '#94A3B8', marginRight: 6 }}>{section.number}.</span>{section.name}
                         </button>
@@ -674,7 +674,7 @@ export default function WorkflowWorkspace({ workflow }: WorkflowWorkspaceProps) 
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 16 }}>
               <DisabledExchangeButton>Sign Contract</DisabledExchangeButton>
-              <button type="button" onClick={() => setShowRequestBuilder((value) => !value)} style={{ height: 34, padding: '0 12px', borderRadius: 8, border: '1px solid #0F1F3D', background: showRequestBuilder ? '#0F1F3D' : 'white', color: showRequestBuilder ? 'white' : '#0F1F3D', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+              <button type="button" onClick={() => setShowRequestBuilder((value) => !value)} style={{ height: 34, padding: '0 12px', borderRadius: 8, border: '1px solid #243447', background: showRequestBuilder ? '#243447' : 'white', color: showRequestBuilder ? 'white' : '#243447', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                 Request Change
               </button>
               <DisabledExchangeButton>Reject</DisabledExchangeButton>

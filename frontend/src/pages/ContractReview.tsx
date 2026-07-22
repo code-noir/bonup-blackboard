@@ -398,7 +398,7 @@ export default function ContractReview() {
                     textAlign: 'left',
                     padding: 14,
                     borderRadius: 8,
-                    border: reviewType === value ? '1px solid #0F1F3D' : '1px solid #E5E7EB',
+                    border: reviewType === value ? '1px solid #243447' : '1px solid #E5E7EB',
                     background: reviewType === value ? '#F8FAFC' : 'white',
                     cursor: 'pointer',
                   }}
@@ -436,7 +436,7 @@ export default function ContractReview() {
             <button
               onClick={handleAnalyze}
               disabled={isAnalyzing || !hasSource}
-              style={{ height: 40, padding: '0 18px', background: isAnalyzing || !hasSource ? '#9CA3AF' : '#0F1F3D', color: 'white', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: isAnalyzing || !hasSource ? 'default' : 'pointer' }}
+              style={{ height: 40, padding: '0 18px', background: isAnalyzing || !hasSource ? '#9CA3AF' : '#243447', color: 'white', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: isAnalyzing || !hasSource ? 'default' : 'pointer' }}
             >
               {isAnalyzing ? 'Analyzing...' : 'Analyze Contract'}
             </button>
@@ -457,7 +457,7 @@ export default function ContractReview() {
               <button
                 onClick={handleGenerateCounter}
                 disabled={isCountering || !counterTerms.trim()}
-                style={{ height: 38, padding: '0 16px', background: isCountering || !counterTerms.trim() ? '#9CA3AF' : '#0F1F3D', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: isCountering || !counterTerms.trim() ? 'default' : 'pointer' }}
+                style={{ height: 38, padding: '0 16px', background: isCountering || !counterTerms.trim() ? '#9CA3AF' : '#243447', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: isCountering || !counterTerms.trim() ? 'default' : 'pointer' }}
               >
                 {isCountering ? 'Generating...' : 'Generate Counter'}
               </button>
@@ -477,7 +477,7 @@ export default function ContractReview() {
                 <button
                   onClick={handleSaveReview}
                   disabled={!canSaveReview}
-                  style={{ height: 36, padding: '0 14px', background: canSaveReview ? '#0F1F3D' : '#9CA3AF', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: canSaveReview ? 'pointer' : 'default' }}
+                  style={{ height: 36, padding: '0 14px', background: canSaveReview ? '#243447' : '#9CA3AF', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: canSaveReview ? 'pointer' : 'default' }}
                 >
                   Save Review Draft
                 </button>
@@ -532,7 +532,7 @@ export default function ContractReview() {
                   {openReview.workflow_state && (
                     <button
                       onClick={() => navigate(`/workflows/${openReview.id}`)}
-                      style={{ height: 30, border: '1px solid #0F1F3D', background: 'white', color: '#0F1F3D', borderRadius: 8, padding: '0 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                      style={{ height: 30, border: '1px solid #243447', background: 'white', color: '#243447', borderRadius: 8, padding: '0 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
                     >
                       Open workspace
                     </button>
@@ -567,7 +567,7 @@ export default function ContractReview() {
                   <button
                     onClick={() => handleApproveCounterDraft(openReview)}
                     disabled={approvingWorkflowId === openReview.id}
-                    style={{ height: 32, border: 'none', background: approvingWorkflowId === openReview.id ? '#9CA3AF' : '#0F1F3D', color: 'white', borderRadius: 8, padding: '0 12px', fontSize: 12, fontWeight: 600, cursor: approvingWorkflowId === openReview.id ? 'default' : 'pointer' }}
+                    style={{ height: 32, border: 'none', background: approvingWorkflowId === openReview.id ? '#9CA3AF' : '#243447', color: 'white', borderRadius: 8, padding: '0 12px', fontSize: 12, fontWeight: 600, cursor: approvingWorkflowId === openReview.id ? 'default' : 'pointer' }}
                   >
                     {approvingWorkflowId === openReview.id ? 'Approving...' : 'Approve Draft'}
                   </button>
@@ -584,7 +584,7 @@ export default function ContractReview() {
                   <button
                     onClick={() => handleSendWorkflow(openReview)}
                     disabled={sendingWorkflowId === openReview.id}
-                    style={{ height: 32, border: 'none', background: sendingWorkflowId === openReview.id ? '#9CA3AF' : '#0F1F3D', color: 'white', borderRadius: 8, padding: '0 12px', fontSize: 12, fontWeight: 600, cursor: sendingWorkflowId === openReview.id ? 'default' : 'pointer' }}
+                    style={{ height: 32, border: 'none', background: sendingWorkflowId === openReview.id ? '#9CA3AF' : '#243447', color: 'white', borderRadius: 8, padding: '0 12px', fontSize: 12, fontWeight: 600, cursor: sendingWorkflowId === openReview.id ? 'default' : 'pointer' }}
                   >
                     {sendingWorkflowId === openReview.id ? 'Sending...' : 'Send to Counterparty'}
                   </button>

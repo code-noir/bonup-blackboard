@@ -8,7 +8,7 @@
 
 @theme {
   /* bonUP brand palette */
-  --color-navy:        #1C2B3A;
+  --color-navy:        #243447;
   --color-gold:        #F5A623;
   --color-bg:          #ECEEF2;
   --color-btn:         #000000;
@@ -106,7 +106,27 @@ body {
   }
 }
 
+.agreement-performance-reminder-empty {
+  display: none;
+}
+
 @media (min-width: 641px) and (max-width: 1100px), (min-width: 641px) and (max-width: 1366px) and (pointer: coarse) {
+  .agreement-performance-detail-top-grid,
+  .agreement-performance-detail-bottom-grid {
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1.5fr) !important;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: visible;
+  }
+
+  .agreement-performance-detail-top-grid > *,
+  .agreement-performance-detail-bottom-grid > *,
+  .agreement-performance-detail-side-column {
+    min-width: 0;
+    max-width: 100%;
+  }
+
   .agreement-performance-reminder-row {
     grid-template-columns: auto minmax(32px, 1fr) auto !important;
   }

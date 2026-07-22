@@ -37,7 +37,7 @@ interface ContractData {
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 
-const NAVY = '#1C2B3A'
+const NAVY = '#243447'
 const AMBER = '#F5A623'
 const BG = '#ECEEF2'
 

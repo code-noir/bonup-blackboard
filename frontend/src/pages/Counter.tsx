@@ -57,7 +57,7 @@ export default function Counter() {
             onClick={() => { setSubmitted(false); setContractText(''); setCounterTerms('') }}
             style={{
               marginTop: 16, height: 36, padding: '0 20px',
-              background: '#0F1F3D', color: 'white',
+              background: '#243447', color: 'white',
               border: 'none', borderRadius: 8,
               fontSize: 13, fontWeight: 500, cursor: 'pointer',
             }}
@@ -121,7 +121,7 @@ export default function Counter() {
             style={{
               height: 40, padding: '0 24px',
               background: isSubmitting || !contractText.trim() || !counterTerms.trim()
-                ? '#9CA3AF' : '#0F1F3D',
+                ? '#9CA3AF' : '#243447',
               color: 'white', border: 'none', borderRadius: 8,
               fontSize: 14, fontWeight: 600,
               cursor: isSubmitting || !contractText.trim() || !counterTerms.trim()
@@ -133,7 +133,7 @@ export default function Counter() {
             }}
             onMouseLeave={(e) => {
               if (!isSubmitting && contractText.trim() && counterTerms.trim())
-                e.currentTarget.style.background = '#0F1F3D'
+                e.currentTarget.style.background = '#243447'
             }}
           >
             {isSubmitting ? 'Submitting…' : 'Submit Counter'}

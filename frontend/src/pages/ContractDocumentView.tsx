@@ -322,7 +322,7 @@ export default function ContractDocumentView() {
                 <p style={{ margin: '0 0 8px', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#64748B', fontWeight: 800 }}>Sections</p>
                 <div style={{ display: 'grid', gap: 6 }}>
                   {sections.map((section) => (
-                    <button key={section.id} type="button" onClick={() => scrollToSection(section)} style={{ minHeight: 30, border: '1px solid #CBD5E1', borderRadius: 7, background: '#FFFFFF', color: '#0F1F3D', padding: '6px 8px', fontSize: 11, fontWeight: 750, cursor: 'pointer', textAlign: 'left', lineHeight: 1.3 }}>
+                    <button key={section.id} type="button" onClick={() => scrollToSection(section)} style={{ minHeight: 30, border: '1px solid #CBD5E1', borderRadius: 7, background: '#FFFFFF', color: '#243447', padding: '6px 8px', fontSize: 11, fontWeight: 750, cursor: 'pointer', textAlign: 'left', lineHeight: 1.3 }}>
                       <span style={{ color: '#64748B', marginRight: 5 }}>{section.number}.</span>{section.name || section.title}
                     </button>
                   ))}

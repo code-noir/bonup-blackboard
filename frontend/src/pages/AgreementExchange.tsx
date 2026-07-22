@@ -105,8 +105,8 @@ const FRAME: React.CSSProperties = {
 }
 const CARD: React.CSSProperties = { background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 10, padding: 14, boxShadow: '0 16px 36px rgba(15, 31, 61, 0.12)' }
 const LABEL: React.CSSProperties = { fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#94A3B8', fontWeight: 800, margin: '0 0 8px' }
-const BUTTON: React.CSSProperties = { height: 36, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 13px', background: '#FFFFFF', color: '#0F1F3D', fontSize: 12, fontWeight: 800, cursor: 'pointer' }
-const PRIMARY_BUTTON: React.CSSProperties = { ...BUTTON, border: 'none', background: '#0F1F3D', color: '#FFFFFF' }
+const BUTTON: React.CSSProperties = { height: 36, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 13px', background: '#FFFFFF', color: '#243447', fontSize: 12, fontWeight: 800, cursor: 'pointer' }
+const PRIMARY_BUTTON: React.CSSProperties = { ...BUTTON, border: 'none', background: '#243447', color: '#FFFFFF' }
 const DANGER_BUTTON: React.CSSProperties = { ...BUTTON, border: '1px solid #FCA5A5', color: '#991B1B' }
 const TEXTAREA: React.CSSProperties = { width: '100%', minHeight: 96, border: '1px solid #CBD5E1', borderRadius: 8, padding: 10, fontSize: 13, lineHeight: 1.5, fontFamily: 'inherit', boxSizing: 'border-box', resize: 'vertical' }
 
@@ -373,7 +373,7 @@ function ContractViewer({ contract }: { contract: CurrentContract }) {
             <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#64748B', fontWeight: 800, margin: '0 0 8px' }}>Sections</p>
             <div style={{ display: 'grid', gap: 6 }}>
               {contract.sections.map((section) => (
-                <button key={section.id} type="button" onClick={() => scrollToSection(section)} style={{ minHeight: 30, border: '1px solid #CBD5E1', borderRadius: 7, background: '#FFFFFF', color: '#0F1F3D', padding: '6px 8px', fontSize: 11, fontWeight: 750, cursor: 'pointer', textAlign: 'left', lineHeight: 1.3 }}>
+                <button key={section.id} type="button" onClick={() => scrollToSection(section)} style={{ minHeight: 30, border: '1px solid #CBD5E1', borderRadius: 7, background: '#FFFFFF', color: '#243447', padding: '6px 8px', fontSize: 11, fontWeight: 750, cursor: 'pointer', textAlign: 'left', lineHeight: 1.3 }}>
                   <span style={{ color: '#64748B', marginRight: 5 }}>{section.number}.</span>{section.name || section.title}
                 </button>
               ))}

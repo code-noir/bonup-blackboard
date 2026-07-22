@@ -139,7 +139,7 @@ export default function AgreementExchangeRequestBuilder({ exchangeId, sections, 
       <div>
         <p style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#64748B', fontWeight: 800, margin: '0 0 6px' }}>Contract section</p>
         {sections.length ? (
-          <select value={selectedSectionId} onChange={(event) => setSelectedSectionId(event.target.value)} style={{ width: '100%', height: 34, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 9px', fontSize: 12, color: '#0F1F3D', background: 'white' }}>
+          <select value={selectedSectionId} onChange={(event) => setSelectedSectionId(event.target.value)} style={{ width: '100%', height: 34, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 9px', fontSize: 12, color: '#243447', background: 'white' }}>
             {sections.map((section) => <option key={section.id} value={section.id}>{section.number}. {section.name}</option>)}
           </select>
         ) : (
@@ -150,13 +150,13 @@ export default function AgreementExchangeRequestBuilder({ exchangeId, sections, 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
         <div>
           <p style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#64748B', fontWeight: 800, margin: '0 0 6px' }}>Category</p>
-          <select value={category} onChange={(event) => setCategory(event.target.value)} style={{ width: '100%', height: 34, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 9px', fontSize: 12, color: '#0F1F3D', background: 'white' }}>
+          <select value={category} onChange={(event) => setCategory(event.target.value)} style={{ width: '100%', height: 34, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 9px', fontSize: 12, color: '#243447', background: 'white' }}>
             {Object.entries(CATEGORY_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
           </select>
         </div>
         <div>
           <p style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#64748B', fontWeight: 800, margin: '0 0 6px' }}>Proposed Text Template</p>
-          <select value={templateKey} onChange={(event) => setTemplateKey(event.target.value)} disabled={isLoadingTemplates || !categoryTemplates.length} style={{ width: '100%', height: 34, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 9px', fontSize: 12, color: '#0F1F3D', background: 'white' }}>
+          <select value={templateKey} onChange={(event) => setTemplateKey(event.target.value)} disabled={isLoadingTemplates || !categoryTemplates.length} style={{ width: '100%', height: 34, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 9px', fontSize: 12, color: '#243447', background: 'white' }}>
             {categoryTemplates.map((template) => <option key={template.key} value={template.key}>{template.label}</option>)}
           </select>
         </div>
@@ -164,7 +164,7 @@ export default function AgreementExchangeRequestBuilder({ exchangeId, sections, 
 
       <div>
         <p style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#64748B', fontWeight: 800, margin: '0 0 6px' }}>Action type</p>
-        <select value={actionType} onChange={(event) => setActionType(event.target.value)} style={{ width: '100%', height: 34, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 9px', fontSize: 12, color: '#0F1F3D', background: 'white' }}>
+        <select value={actionType} onChange={(event) => setActionType(event.target.value)} style={{ width: '100%', height: 34, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 9px', fontSize: 12, color: '#243447', background: 'white' }}>
           {ACTION_OPTIONS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
         </select>
       </div>
@@ -181,7 +181,7 @@ export default function AgreementExchangeRequestBuilder({ exchangeId, sections, 
 
       {error && <p style={{ fontSize: 12, color: '#B91C1C', margin: 0 }}>{error}</p>}
       {success && <p style={{ fontSize: 12, color: '#047857', margin: 0 }}>{success}</p>}
-      <button type="button" onClick={submitRequest} disabled={isSubmitting || !proposedText.trim()} style={{ justifySelf: 'start', height: 34, padding: '0 12px', border: 'none', borderRadius: 8, background: isSubmitting || !proposedText.trim() ? '#94A3B8' : '#0F1F3D', color: 'white', fontSize: 12, fontWeight: 800, cursor: isSubmitting || !proposedText.trim() ? 'default' : 'pointer' }}>
+      <button type="button" onClick={submitRequest} disabled={isSubmitting || !proposedText.trim()} style={{ justifySelf: 'start', height: 34, padding: '0 12px', border: 'none', borderRadius: 8, background: isSubmitting || !proposedText.trim() ? '#94A3B8' : '#243447', color: 'white', fontSize: 12, fontWeight: 800, cursor: isSubmitting || !proposedText.trim() ? 'default' : 'pointer' }}>
         {isSubmitting ? 'Submitting...' : 'Submit Request'}
       </button>
     </div>

@@ -73,7 +73,7 @@ export default function AdminSearch() {
           disabled={loading || !input.trim()}
           style={{
             padding: '8px 20px', fontSize: 13, fontWeight: 600,
-            background: '#0F1F3D', color: '#fff', border: 'none',
+            background: '#243447', color: '#fff', border: 'none',
             borderRadius: 7, cursor: loading ? 'default' : 'pointer',
             opacity: loading || !input.trim() ? 0.5 : 1,
           }}

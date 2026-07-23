@@ -224,7 +224,7 @@ function WorkflowCard({ workflow, onOpen }: { workflow: WorkflowRecord; onOpen: 
             {workflow.counterparty_email || workflow.sent_to_counterparty_email || 'Counterparty not attached'}
           </p>
         </div>
-        <span style={{ borderRadius: 999, background: '#0F1F3D', color: 'white', fontSize: 11, fontWeight: 700, padding: '5px 10px', whiteSpace: 'nowrap' }}>
+        <span style={{ borderRadius: 999, background: '#243447', color: 'white', fontSize: 11, fontWeight: 700, padding: '5px 10px', whiteSpace: 'nowrap' }}>
           {humanize(workflow.current_state)}
         </span>
       </div>
@@ -279,9 +279,9 @@ function RailButton({ label, active = false, disabled = false, onClick }: { labe
       title={disabled ? 'Coming soon' : undefined}
       onClick={onClick}
       style={{
-        width: '100%', height: 32, textAlign: 'left', border: active ? '1px solid #0F1F3D' : disabled ? '1px solid #E5E7EB' : '1px solid #CBD5E1',
-        borderRadius: 8, background: active ? '#0F1F3D' : disabled ? '#F8FAFC' : 'white', padding: '0 10px', cursor: disabled ? 'default' : 'pointer',
-        color: active ? 'white' : disabled ? '#94A3B8' : '#0F1F3D', fontSize: 12, fontWeight: 800,
+        width: '100%', height: 32, textAlign: 'left', border: active ? '1px solid #243447' : disabled ? '1px solid #E5E7EB' : '1px solid #CBD5E1',
+        borderRadius: 8, background: active ? '#243447' : disabled ? '#F8FAFC' : 'white', padding: '0 10px', cursor: disabled ? 'default' : 'pointer',
+        color: active ? 'white' : disabled ? '#94A3B8' : '#243447', fontSize: 12, fontWeight: 800,
       }}
     >
       {label}
@@ -311,7 +311,7 @@ function TopActionTab({ label, disabled = false, onClick }: { label: string; dis
         border: disabled ? '1px solid #E5E7EB' : '1px solid #CBD5E1',
         borderRadius: 999,
         background: disabled ? '#F8FAFC' : 'white',
-        color: disabled ? '#94A3B8' : '#0F1F3D',
+        color: disabled ? '#94A3B8' : '#243447',
         fontSize: 12,
         fontWeight: 800,
         cursor: disabled ? 'default' : 'pointer',
@@ -328,7 +328,7 @@ function PanelQuickAction({ label, tone, disabled = false, onClick }: { label: s
     green: { background: '#10B981', border: '1px solid #10B981', color: 'white' },
     neutral: { background: 'rgba(226,232,240,0.12)', border: '1px solid rgba(226,232,240,0.28)', color: '#E2E8F0' },
     warm: { background: 'rgba(245,166,35,0.92)', border: '1px solid rgba(245,166,35,0.92)', color: '#111827' },
-    light: { background: 'rgba(255,255,255,0.9)', border: '1px solid rgba(255,255,255,0.9)', color: '#0F1F3D' },
+    light: { background: 'rgba(255,255,255,0.9)', border: '1px solid rgba(255,255,255,0.9)', color: '#243447' },
   }
 
   return (
@@ -369,7 +369,7 @@ function EditorToolButton({ label, onClick, disabled = false, minWidth }: { labe
         border: disabled ? '1px solid #E5E7EB' : '1px solid #CBD5E1',
         borderRadius: 8,
         background: disabled ? '#F8FAFC' : 'white',
-        color: disabled ? '#94A3B8' : '#0F1F3D',
+        color: disabled ? '#94A3B8' : '#243447',
         fontSize: 12,
         fontWeight: 850,
         cursor: disabled ? 'default' : 'pointer',
@@ -648,7 +648,7 @@ function AskAIContractPanel() {
             <p style={{ margin: 0, color: '#334155', fontSize: 12, fontWeight: 850 }}>Include clauses</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {AI_CLAUSE_OPTIONS.map((clause) => (
-                <label key={clause} style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #CBD5E1', borderRadius: 999, background: selectedClauses.includes(clause) ? '#ECFDF5' : 'white', color: '#0F1F3D', padding: '7px 9px', fontSize: 12, fontWeight: 750 }}>
+                <label key={clause} style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #CBD5E1', borderRadius: 999, background: selectedClauses.includes(clause) ? '#ECFDF5' : 'white', color: '#243447', padding: '7px 9px', fontSize: 12, fontWeight: 750 }}>
                   <input type="checkbox" checked={selectedClauses.includes(clause)} onChange={() => toggleClause(clause)} />
                   {clause}
                 </label>
@@ -678,7 +678,7 @@ function AskAIContractPanel() {
               )}
             </div>
             <footer style={{ display: 'flex', flexWrap: 'wrap', gap: 8, borderTop: '1px solid #E5E7EB', padding: 11, background: '#F8FAFC' }}>
-              <button type="button" disabled={!generatedDraft} onClick={copyDraft} style={{ height: 32, padding: '0 11px', border: '1px solid #CBD5E1', borderRadius: 8, background: generatedDraft ? 'white' : '#F1F5F9', color: generatedDraft ? '#0F1F3D' : '#94A3B8', fontSize: 12, fontWeight: 850, cursor: generatedDraft ? 'pointer' : 'default' }}>Copy</button>
+              <button type="button" disabled={!generatedDraft} onClick={copyDraft} style={{ height: 32, padding: '0 11px', border: '1px solid #CBD5E1', borderRadius: 8, background: generatedDraft ? 'white' : '#F1F5F9', color: generatedDraft ? '#243447' : '#94A3B8', fontSize: 12, fontWeight: 850, cursor: generatedDraft ? 'pointer' : 'default' }}>Copy</button>
               <button type="button" disabled={!generatedDraft || isCreatingContract} onClick={createContractFromDraft} style={{ height: 32, padding: '0 11px', border: generatedDraft ? '1px solid #10B981' : '1px solid #E5E7EB', borderRadius: 8, background: generatedDraft ? '#10B981' : '#F1F5F9', color: generatedDraft ? 'white' : '#94A3B8', fontSize: 12, fontWeight: 850, cursor: generatedDraft && !isCreatingContract ? 'pointer' : 'default' }}>{isCreatingContract ? 'Creating...' : 'Create Contract from Draft'}</button>
             </footer>
             {(generationWarnings.length > 0 || missingFields.length > 0 || createError) && (
@@ -709,7 +709,7 @@ function MyObligationsPanel() {
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, borderBottom: '1px solid #E5E7EB', padding: '10px 16px', background: 'white' }}>
         {OBLIGATION_FILTERS.map((filter, index) => (
-          <button key={filter} type="button" style={{ height: 30, padding: '0 11px', border: index === 0 ? '1px solid #0F1F3D' : '1px solid #CBD5E1', borderRadius: 999, background: index === 0 ? '#0F1F3D' : 'white', color: index === 0 ? 'white' : '#0F1F3D', fontSize: 12, fontWeight: 850, cursor: 'default' }}>
+          <button key={filter} type="button" style={{ height: 30, padding: '0 11px', border: index === 0 ? '1px solid #243447' : '1px solid #CBD5E1', borderRadius: 999, background: index === 0 ? '#243447' : 'white', color: index === 0 ? 'white' : '#243447', fontSize: 12, fontWeight: 850, cursor: 'default' }}>
             {filter}
           </button>
         ))}
@@ -1132,7 +1132,7 @@ export default function WorkflowDashboard() {
 
         <aside style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end' }}>
           <section style={{ width: '100%', maxWidth: 340, background: 'white', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 16, padding: 14, boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
-            <div style={{ borderRadius: 12, background: '#0F1F3D', height: 112, padding: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', marginBottom: 14 }}>
+            <div style={{ borderRadius: 12, background: '#243447', height: 112, padding: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', marginBottom: 14 }}>
               <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, rgba(16,185,129,0.24), rgba(15,31,61,0) 52%)' }} />
               <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
                 <span style={{ marginLeft: 3, width: 0, height: 0, borderTop: '7px solid transparent', borderBottom: '7px solid transparent', borderLeft: '11px solid white' }} />

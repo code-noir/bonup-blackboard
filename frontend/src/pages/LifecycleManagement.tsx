@@ -752,11 +752,11 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-            <button type="button" onClick={() => setShowSignedAgreement(true)} style={{ border: '1px solid #0F1F3D', borderRadius: 8, background: '#0F1F3D', color: '#FFFFFF', padding: '7px 11px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+            <button type="button" onClick={() => setShowSignedAgreement(true)} style={{ border: '1px solid #243447', borderRadius: 8, background: '#243447', color: '#FFFFFF', padding: '7px 11px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
               View Signed Agreement
             </button>
             {agreement.performance_ready ? (
-              <button type="button" onClick={() => navigate('/agreement-performance')} style={{ border: '1px solid #0F1F3D', borderRadius: 8, background: '#0F1F3D', color: '#FFFFFF', padding: '7px 11px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+              <button type="button" onClick={() => navigate('/agreement-performance')} style={{ border: '1px solid #243447', borderRadius: 8, background: '#243447', color: '#FFFFFF', padding: '7px 11px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                 Open Agreement Performance
               </button>
             ) : (
@@ -799,7 +799,7 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {LIFECYCLE_TABS.map((tab) => (
-          <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} style={{ border: '1px solid #CBD5E1', borderRadius: 8, background: activeTab === tab.key ? '#0F1F3D' : '#FFFFFF', color: activeTab === tab.key ? '#FFFFFF' : '#334155', padding: '8px 11px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+          <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} style={{ border: '1px solid #CBD5E1', borderRadius: 8, background: activeTab === tab.key ? '#243447' : '#FFFFFF', color: activeTab === tab.key ? '#FFFFFF' : '#334155', padding: '8px 11px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
             {tab.label}
           </button>
         ))}
@@ -827,7 +827,7 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
                 {TIMELINE_ITEM_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
               </select>
               <input value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} placeholder="Add item" style={{ height: 34, border: '1px solid #CBD5E1', borderRadius: 8, padding: '0 10px', fontSize: 12 }} />
-              <button type="button" onClick={() => void addItem()} disabled={!draftTitle.trim()} style={{ height: 34, border: 'none', borderRadius: 8, background: draftTitle.trim() ? '#0F1F3D' : '#E5E7EB', color: draftTitle.trim() ? '#FFFFFF' : '#64748B', padding: '0 12px', fontSize: 12, fontWeight: 700, cursor: draftTitle.trim() ? 'pointer' : 'default' }}>Add Item</button>
+              <button type="button" onClick={() => void addItem()} disabled={!draftTitle.trim()} style={{ height: 34, border: 'none', borderRadius: 8, background: draftTitle.trim() ? '#243447' : '#E5E7EB', color: draftTitle.trim() ? '#FFFFFF' : '#64748B', padding: '0 12px', fontSize: 12, fontWeight: 700, cursor: draftTitle.trim() ? 'pointer' : 'default' }}>Add Item</button>
             </div>
           </div>
           {activeItems.length === 0 ? (
@@ -907,7 +907,7 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
           eyebrow={itemSourceText(selectedTimelineItem)}
         >
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-            <button type="button" onClick={() => setShowSignedAgreement(true)} style={{ border: '1px solid #0F1F3D', borderRadius: 8, background: '#0F1F3D', color: '#FFFFFF', padding: '7px 11px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+            <button type="button" onClick={() => setShowSignedAgreement(true)} style={{ border: '1px solid #243447', borderRadius: 8, background: '#243447', color: '#FFFFFF', padding: '7px 11px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
               View Source / View Signed Agreement
             </button>
             <button type="button" onClick={() => setTimelineItemEditMode((current) => !current)} style={{ border: '1px solid #CBD5E1', borderRadius: 8, background: '#FFFFFF', color: '#334155', padding: '7px 11px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
@@ -1047,7 +1047,7 @@ function ContractScopedLifecycle({ contractId }: { contractId: string }) {
                 <textarea rows={4} value={timelineItemDraft.description} onChange={(event) => setTimelineItemDraft((current) => ({ ...current, description: event.target.value }))} style={{ border: '1px solid #CBD5E1', borderRadius: 8, padding: '10px 12px', fontSize: 13, resize: 'vertical' }} />
               </label>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
-                <button type="button" onClick={() => void saveTimelineItemDetail()} disabled={timelineItemSaving} style={{ border: 'none', borderRadius: 8, background: timelineItemSaving ? '#94A3B8' : '#0F1F3D', color: '#FFFFFF', padding: '8px 12px', fontSize: 12, fontWeight: 800, cursor: timelineItemSaving ? 'default' : 'pointer' }}>
+                <button type="button" onClick={() => void saveTimelineItemDetail()} disabled={timelineItemSaving} style={{ border: 'none', borderRadius: 8, background: timelineItemSaving ? '#94A3B8' : '#243447', color: '#FFFFFF', padding: '8px 12px', fontSize: 12, fontWeight: 800, cursor: timelineItemSaving ? 'default' : 'pointer' }}>
                   {timelineItemSaving ? 'Saving...' : 'Save Changes'}
                 </button>
                 <button type="button" onClick={() => { if (selectedTimelineItem) openTimelineItemDetail(selectedTimelineItem) }} style={{ border: '1px solid #CBD5E1', borderRadius: 8, background: '#FFFFFF', color: '#334155', padding: '8px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
@@ -1710,9 +1710,9 @@ function tableButtonStyle(kind: 'ghost' | 'primary' | 'secondary' | 'danger', di
     case 'primary':
       return {
         ...base,
-        background: '#0F1F3D',
+        background: '#243447',
         color: '#FFFFFF',
-        borderColor: '#0F1F3D',
+        borderColor: '#243447',
       }
     case 'secondary':
       return {

@@ -78,7 +78,7 @@ export default function AdminUsers() {
           type="submit"
           style={{
             padding: '7px 18px', fontSize: 13, fontWeight: 500,
-            background: '#0F1F3D', color: '#fff', border: 'none',
+            background: '#243447', color: '#fff', border: 'none',
             borderRadius: 7, cursor: 'pointer',
           }}
         >

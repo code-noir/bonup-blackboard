@@ -73,13 +73,13 @@ export default function WorkflowInvite() {
         </div>
       )}
       {isAuthenticated ? (
-        <button onClick={acceptInvite} disabled={isAccepting} style={{ height: 38, padding: '0 16px', background: isAccepting ? '#9CA3AF' : '#0F1F3D', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: isAccepting ? 'default' : 'pointer' }}>
+        <button onClick={acceptInvite} disabled={isAccepting} style={{ height: 38, padding: '0 16px', background: isAccepting ? '#9CA3AF' : '#243447', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: isAccepting ? 'default' : 'pointer' }}>
           {isAccepting ? 'Opening...' : user?.email === invite?.counterparty_email || !invite?.counterparty_email ? 'Open Agreement' : 'Accept Invite'}
         </button>
       ) : (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-          <button onClick={() => navigate('/login')} style={{ height: 38, padding: '0 16px', background: '#0F1F3D', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Log in</button>
-          <button onClick={() => navigate('/register')} style={{ height: 38, padding: '0 16px', background: 'white', color: '#0F1F3D', border: '1px solid #E5E7EB', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Create account</button>
+          <button onClick={() => navigate('/login')} style={{ height: 38, padding: '0 16px', background: '#243447', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Log in</button>
+          <button onClick={() => navigate('/register')} style={{ height: 38, padding: '0 16px', background: 'white', color: '#243447', border: '1px solid #E5E7EB', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Create account</button>
         </div>
       )}
     </div>

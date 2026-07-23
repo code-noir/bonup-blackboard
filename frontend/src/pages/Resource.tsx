@@ -158,7 +158,7 @@ export default function Resource() {
                   border: 'none',
                   borderLeft: isActive ? '3px solid #D4900A' : '3px solid transparent',
                   background: isActive ? 'rgba(245,166,35,0.12)' : 'transparent',
-                  color: isActive ? '#0F1F3D' : '#475569',
+                  color: isActive ? '#243447' : '#475569',
                   fontSize: 13,
                   fontWeight: isActive ? 800 : 600,
                   cursor: 'pointer',
@@ -197,7 +197,7 @@ export default function Resource() {
               boxShadow: '0 1px 2px rgba(15,23,42,0.04)',
             }}
             onFocus={(e) => {
-              e.currentTarget.style.borderColor = '#0F1F3D'
+              e.currentTarget.style.borderColor = '#243447'
               e.currentTarget.style.boxShadow = '0 0 0 2px rgba(15,31,61,0.08)'
             }}
             onBlur={(e) => {
@@ -229,7 +229,7 @@ export default function Resource() {
                     minHeight: 112,
                     background: 'white',
                     borderRadius: 8,
-                    border: isSelected ? '1px solid #0F1F3D' : '1px solid #E5E7EB',
+                    border: isSelected ? '1px solid #243447' : '1px solid #E5E7EB',
                     padding: '14px 14px 12px',
                     boxShadow: isSelected ? '0 8px 18px rgba(15,31,61,0.10)' : '0 1px 3px rgba(15,23,42,0.05)',
                     cursor: 'pointer',
@@ -241,7 +241,7 @@ export default function Resource() {
                     e.currentTarget.style.transform = 'translateY(-1px)'
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = isSelected ? '#0F1F3D' : '#E5E7EB'
+                    e.currentTarget.style.borderColor = isSelected ? '#243447' : '#E5E7EB'
                     e.currentTarget.style.boxShadow = isSelected ? '0 8px 18px rgba(15,31,61,0.10)' : '0 1px 3px rgba(15,23,42,0.05)'
                     e.currentTarget.style.transform = 'translateY(0)'
                   }}

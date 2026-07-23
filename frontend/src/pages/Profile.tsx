@@ -20,7 +20,7 @@ const FIELD_RO: React.CSSProperties = {
 }
 
 function ff(e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) {
-  e.currentTarget.style.borderColor = '#0F1F3D'
+  e.currentTarget.style.borderColor = '#243447'
   e.currentTarget.style.boxShadow = '0 0 0 2px rgba(15,31,61,0.08)'
 }
 function fb(e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) {
@@ -127,7 +127,7 @@ export default function Profile() {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 28 }}>
           <div style={{
             width: 80, height: 80, borderRadius: '50%',
-            background: '#0F1F3D', color: 'white',
+            background: '#243447', color: 'white',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 28, fontWeight: 600,
           }}>
@@ -256,7 +256,7 @@ export default function Profile() {
             disabled={saving}
             style={{
               width: '100%', height: 40,
-              background: saving ? '#9CA3AF' : '#0F1F3D',
+              background: saving ? '#9CA3AF' : '#243447',
               color: 'white', border: 'none', borderRadius: 8,
               fontSize: 14, fontWeight: 600,
               cursor: saving ? 'default' : 'pointer',

@@ -123,7 +123,7 @@ export default function AdminUserDetail() {
       <div style={{ maxWidth: 580 }}>
         {/* bonID header card */}
         <div style={{
-          background: '#0F1F3D',
+          background: '#243447',
           borderRadius: '11px 11px 0 0',
           padding: '24px 28px',
         }}>

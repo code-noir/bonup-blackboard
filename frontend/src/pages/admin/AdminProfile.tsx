@@ -64,7 +64,7 @@ export default function AdminProfile() {
         overflow: 'hidden',
       }}>
         {/* Header */}
-        <div style={{ background: '#0F1F3D', padding: '20px 24px', display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{ background: '#243447', padding: '20px 24px', display: 'flex', alignItems: 'center', gap: 14 }}>
           <div style={{
             width: 44, height: 44, borderRadius: '50%',
             background: '#F5A623',

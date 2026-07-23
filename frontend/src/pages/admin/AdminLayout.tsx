@@ -38,7 +38,7 @@ export default function AdminLayout() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        background: '#0F1F3D',
+        background: '#243447',
         borderRadius: 10,
         padding: '10px 18px',
         marginBottom: 20,

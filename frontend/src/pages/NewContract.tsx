@@ -76,7 +76,7 @@ const DISPUTE_OPTIONS = [
 // ── Design tokens ──────────────────────────────────────────────────────────────
 
 const PAGE_BG = '#ECEEF2'
-const NAVY = '#1C2B3A'
+const NAVY = '#243447'
 const ACCENT = '#F5A623'
 
 const CARD: React.CSSProperties = {

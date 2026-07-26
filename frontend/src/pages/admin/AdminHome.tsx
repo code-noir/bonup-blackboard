@@ -106,12 +106,12 @@ export default function AdminHome() {
 
       {/* Blackboard */}
       <div>
-        <SectionLabel label="Blackboard" />
+        <SectionLabel label="Blackbòd" />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
           <MetricCard
             value={summary?.subscriptions}
             label="Subscriptions"
-            description="Active Blackboard subscriptions"
+            description="Active Blackbòd subscriptions"
             to="/admin/subscriptions"
             icon="💳"
           />

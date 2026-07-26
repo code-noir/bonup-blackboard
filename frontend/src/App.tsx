@@ -69,7 +69,7 @@ function PaygLock({ name }: { name: string }) {
         This feature requires a monthly plan.
       </p>
       <p className="mt-1 text-sm text-slate-500 max-w-sm">
-        Upgrade to Blackboard Basic — $19/month
+        Upgrade to Blackbòd Basic — $19/month
       </p>
       <a
         href="/settings"
@@ -87,7 +87,7 @@ function PaygLock({ name }: { name: string }) {
           textAlign: 'center',
         }}
       >
-        Upgrade to Blackboard Basic
+        Upgrade to Blackbòd Basic
       </a>
     </div>
   )

@@ -207,7 +207,7 @@ export default function Entities() {
         </div>
         {!tierAllows && (
           <p style={{ fontSize: 11, color: '#D97706', marginTop: 8 }}>
-            Business entities are available on Blackboard Pro ($149/month) and above.
+            Business entities are available on Blackbòd Pro ($149/month) and above.
           </p>
         )}
       </div>
@@ -353,7 +353,7 @@ export default function Entities() {
           color: '#9CA3AF', fontSize: 12,
         }}>
           <span style={{ fontSize: 20 }}>🔒</span>
-          Business entities available on Blackboard Pro ($149/month) and above.
+          Business entities available on Blackbòd Pro ($149/month) and above.
         </div>
       )}
 

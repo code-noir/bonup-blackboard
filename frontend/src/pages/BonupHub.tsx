@@ -62,10 +62,10 @@ export default function BonupHub() {
           </div>
           <h2 className="mb-2 text-xl font-bold text-slate-900">
             bon<span className="text-[#F5A623]">UP</span>{' '}
-            <span className="text-slate-700">Blackboard</span>
+            <span className="text-slate-700">Blackbòd</span>
           </h2>
           <p className="mb-6 text-sm text-slate-600">
-            Blackboard is bonUP's contract lifecycle platform.
+            Blackbòd is bonUP's contract lifecycle platform.
             Create, negotiate, and track contracts — all tied to your bonID.
           </p>
 
@@ -74,12 +74,12 @@ export default function BonupHub() {
               onClick={() => navigate('/dashboard')}
               className="rounded-lg bg-black px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#1a1a1a] focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 transition-colors"
             >
-              Enter Blackboard
+              Enter Blackbòd
             </button>
           ) : (
             <div className="space-y-3">
               <p className="text-sm text-slate-500">
-                You don't have a Blackboard subscription yet.
+                You don't have a Blackbòd subscription yet.
                 Complete your profile to get started.
               </p>
               <div className="flex gap-3">
@@ -94,7 +94,7 @@ export default function BonupHub() {
                   title="Subscription access coming soon"
                   className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-400 cursor-not-allowed"
                 >
-                  Access Blackboard
+                  Access Blackbòd
                 </button>
               </div>
             </div>

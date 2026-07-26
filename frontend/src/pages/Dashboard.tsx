@@ -284,7 +284,7 @@ export default function Dashboard() {
                 🎉 Your free trial
               </p>
               <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 4 }}>
-                {days} days remaining — Full Blackboard Pro access included
+                {days} days remaining — Full Blackbòd Pro access included
               </p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -490,7 +490,7 @@ export default function Dashboard() {
               title: 'Counter a Contract',
               description: 'Respond to any contract with a professional AI-powered counter.',
               action: USER_TIER === 'starter' || USER_TIER === 'sol_member'
-                ? 'Upgrade to Blackboard Pro — $149/month'
+                ? 'Upgrade to Blackbòd Pro — $149/month'
                 : 'Counter a Contract',
               onClick: () => navigate('/counter'),
               available: true,

@@ -46,7 +46,7 @@ const PLANS: PlanCard[] = [
   {
     id: 'starter',
     label: 'Starter',
-    name: 'Blackboard Starter',
+    name: 'Blackbòd Starter',
     price: '$19',
     priceSuffix: '/month',
     description: 'Personal identity only. Full contract lifecycle and AI assistant included.',
@@ -56,7 +56,7 @@ const PLANS: PlanCard[] = [
   {
     id: 'pro',
     label: 'Pro',
-    name: 'Blackboard Pro',
+    name: 'Blackbòd Pro',
     price: '$149',
     priceSuffix: '/month',
     description: 'Personal + 1 business. Contract Analysis included.',
@@ -66,7 +66,7 @@ const PLANS: PlanCard[] = [
   {
     id: 'business',
     label: 'Business',
-    name: 'Blackboard Business',
+    name: 'Blackbòd Business',
     price: '$399',
     priceSuffix: '/month',
     description: 'Personal + up to 4 businesses. Counter unlocked.',
@@ -77,7 +77,7 @@ const PLANS: PlanCard[] = [
     id: 'enterprise',
     label: 'Current plan',
     labelColor: '#F5A623',
-    name: 'Blackboard Enterprise',
+    name: 'Blackbòd Enterprise',
     price: '$999',
     priceSuffix: '/month',
     description: 'Personal + up to 35 businesses. Counter, Import, and Analysis — all unlocked.',
@@ -143,7 +143,7 @@ export default function Billing() {
               ACTIVE
             </span>
             <div style={{ fontSize: 36, fontWeight: 700, color: '#D1D5DB', lineHeight: 1.15 }}>
-              Blackboard<br />Enterprise
+              Blackbòd<br />Enterprise
             </div>
             <p style={{ fontSize: 13, color: '#9CA3AF', marginTop: 8 }}>
               Personal identity · Up to 35 businesses · All features unlocked

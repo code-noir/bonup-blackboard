@@ -172,7 +172,7 @@ export default function TopBar() {
           <span style={{ color: '#F5A623' }}>UP</span>
         </span>
         <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 14 }}>·</span>
-        <span style={{ fontSize: 18, fontWeight: 800, color: '#ffffff' }}>Blackboard</span>
+        <span style={{ fontSize: 18, fontWeight: 800, color: '#ffffff' }}>Blackbòd</span>
         {/* Teal dot */}
         {!isCompact && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#2DD4BF', flexShrink: 0, margin: '0 10px' }} />}
         {!isCompact && <span

@@ -1803,7 +1803,7 @@ export default function CreateContract() {
               Your trial has ended
             </p>
             <p style={{ fontSize: 13, color: '#6B7280', marginBottom: 24 }}>
-              Subscribe to Blackboard Basic or higher to create new contracts.
+              Subscribe to Blackbòd Basic or higher to create new contracts.
             </p>
             <button
               onClick={() => navigate('/settings')}
@@ -2588,7 +2588,7 @@ export default function CreateContract() {
                           <div style={{ textAlign: 'center' }}>
                             <div style={{ fontSize: 32, marginBottom: 12 }}>🔒</div>
                             <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', marginBottom: 16 }}>
-                              Contract Counter is available on Blackboard Pro and above.
+                              Contract Counter is available on Blackbòd Pro and above.
                             </p>
                             <button
                               style={{
@@ -2600,7 +2600,7 @@ export default function CreateContract() {
                               onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
                               onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
                             >
-                              Upgrade to Blackboard Pro — $149/month
+                              Upgrade to Blackbòd Pro — $149/month
                             </button>
                           </div>
                         ) : (
@@ -3051,7 +3051,7 @@ export default function CreateContract() {
                               onClick={() => navigate('/settings')}
                             >
                               <span style={{ fontSize: 16 }}>🔒</span>
-                              Business entities available on Blackboard Pro ($149/month)
+                              Business entities available on Blackbòd Pro ($149/month)
                             </div>
                           )}
 

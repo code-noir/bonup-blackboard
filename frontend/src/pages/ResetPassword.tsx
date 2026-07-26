@@ -104,7 +104,7 @@ export default function ResetPassword() {
             <p className="text-3xl font-bold tracking-tight text-[#1E3A6E]">
               bon<span className="text-[#F5A623]">UP</span>
             </p>
-            <p className="mt-1 text-sm text-[#1E3A6E] uppercase tracking-widest">Blackboard</p>
+            <p className="mt-1 text-sm text-[#1E3A6E] uppercase tracking-widest">Blackbòd</p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm text-center">
             <p className="text-2xl mb-3">🔗</p>
@@ -163,7 +163,7 @@ export default function ResetPassword() {
             bon<span className="text-[#F5A623]">UP</span>
           </p>
           <p className="mt-1 text-sm text-[#1E3A6E] uppercase tracking-widest">
-            Blackboard
+            Blackbòd
           </p>
         </div>
 

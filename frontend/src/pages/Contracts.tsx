@@ -361,7 +361,7 @@ export default function Contracts() {
     'How to negotiate a contract',
     'Signing and rejecting versions',
     'Using contract templates',
-    'Managing payments in Blackboard',
+    'Managing payments in Blackbòd',
     'How Live Sessions work',
     'What is a PBVD?',
     'Sol groups explained',

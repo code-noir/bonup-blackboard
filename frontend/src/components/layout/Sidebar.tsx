@@ -58,7 +58,7 @@ const operatorNav: NavDef[] = [
   { type: 'section', label: 'bonUP' },
   { to: '/admin/users', label: 'Users', Icon: emojiIcon('👤') },
 
-  { type: 'section', label: 'Blackboard' },
+  { type: 'section', label: 'Blackbòd' },
   { to: '/admin/subscriptions', label: 'Subscriptions', Icon: CreditCardIcon },
   { to: '/admin/plans',         label: 'Plans',          Icon: RectangleStackIcon },
   { to: '/admin/contracts',     label: 'Contracts',      Icon: ClipboardDocumentListIcon },
@@ -318,7 +318,7 @@ export default function Sidebar() {
             <span style={{ color: '#F5A623' }}>UP</span>
           </div>
           <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', color: '#ffffff', lineHeight: 1 }}>
-            Blackboard
+            Blackbòd
           </div>
           {isOperator && (
             <div style={{

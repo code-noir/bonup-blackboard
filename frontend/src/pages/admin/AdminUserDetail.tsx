@@ -198,7 +198,7 @@ export default function AdminUserDetail() {
               : 'No'
           } />
 
-          <SectionHead label="Blackboard" />
+          <SectionHead label="Blackbòd" />
           <Row label="Tier" value={tierLabel} />
           <Row label="Billing status" value={
             <span style={{

@@ -102,7 +102,7 @@ export default function AdminProfile() {
           <Row label="Email" value={me.email} />
           <Row label="Email verified" value={me.email_verified ? 'Yes' : 'No'} />
           <Row label="Location" value={[me.city, me.state_region, me.country].filter(Boolean).join(', ') || undefined} />
-          <Row label="Blackboard tier" value={planDisplay(me.subscription_tier)} />
+          <Row label="Blackbòd tier" value={planDisplay(me.subscription_tier)} />
           <Row label="Business entities" value={me.business_count} />
           <Row label="Joined" value={new Date(me.date_joined).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} />
           <Row label="Staff access" value={me.is_staff ? 'Yes — Operator Console' : 'No'} />

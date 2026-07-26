@@ -55,7 +55,7 @@ export default function ForgotPassword() {
             bon<span className="text-[#F5A623]">UP</span>
           </p>
           <p className="mt-1 text-sm text-[#1E3A6E] uppercase tracking-widest">
-            Blackboard
+            Blackbòd
           </p>
         </div>
 

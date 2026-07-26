@@ -111,7 +111,7 @@ export default function Profile() {
       <div>
         <h1 style={{ fontSize: 20, fontWeight: 700, color: '#0F1F3D', margin: 0 }}>My Profile</h1>
         <p style={{ fontSize: 13, color: '#6B7280', margin: '4px 0 0' }}>
-          Your personal identity on bonUP Blackboard
+          Your personal identity on bonUP Blackbòd
         </p>
       </div>
 

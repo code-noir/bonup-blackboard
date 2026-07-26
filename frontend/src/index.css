@@ -34,6 +34,16 @@ body {
   --sidebar-w: 216px;
 }
 
+.workspace-nav-row:not(:disabled):hover {
+  background: #F8FAFC !important;
+  color: #0F1F3D !important;
+}
+
+.workspace-nav-row[data-active="true"]:not(:disabled):hover {
+  background: #DED0BD !important;
+  color: #1B1510 !important;
+}
+
 .app-shell-main {
   margin-left: var(--sidebar-w);
   padding-top: 114px;

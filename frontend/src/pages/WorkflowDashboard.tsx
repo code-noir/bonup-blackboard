@@ -2,6 +2,7 @@ import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from
 import { useNavigate } from 'react-router-dom'
 import api from '@/api/client'
 import { WorkflowRecord } from '@/components/workflow/WorkflowWorkspace'
+import WorkspaceHero, { PanelQuickAction } from '@/components/workflow/WorkspaceHero'
 
 const DASHBOARD_STATES = [
   'uploaded',
@@ -69,7 +70,7 @@ const CONTRACT_STUFF_ITEMS = [
 
 const GET_STARTED_VIDEOS = [
   'How to create a contract',
-  'Begin negotiating in Blackboard',
+  'Begin negotiating in Blackbòd',
   'Lifecycle management',
   'Understand contracting',
 ]
@@ -219,12 +220,12 @@ function WorkflowCard({ workflow, onOpen }: { workflow: WorkflowRecord; onOpen: 
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: 10 }}>
         <div style={{ minWidth: 0 }}>
-          <p style={{ fontSize: 14, fontWeight: 800, color: '#0F1F3D', margin: 0, lineHeight: 1.3 }}>{workflow.source_label || 'Agreement activity'}</p>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: '4px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <p style={{ fontSize: 15, fontWeight: 600, letterSpacing: '0.005em', color: '#0F1F3D', margin: 0, lineHeight: 1.3 }}>{workflow.source_label || 'Agreement activity'}</p>
+          <p style={{ fontSize: 13, color: '#6B7280', margin: '5px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.4 }}>
             {workflow.counterparty_email || workflow.sent_to_counterparty_email || 'Counterparty not attached'}
           </p>
         </div>
-        <span style={{ borderRadius: 999, background: '#243447', color: 'white', fontSize: 11, fontWeight: 700, padding: '5px 10px', whiteSpace: 'nowrap' }}>
+        <span style={{ borderRadius: 999, background: '#243447', color: 'white', fontSize: 12, fontWeight: 500, letterSpacing: '0.01em', lineHeight: 1.25, padding: '5px 10px', whiteSpace: 'nowrap' }}>
           {humanize(workflow.current_state)}
         </span>
       </div>
@@ -232,22 +233,22 @@ function WorkflowCard({ workflow, onOpen }: { workflow: WorkflowRecord; onOpen: 
         <ProgressStrip workflow={workflow} />
       </div>
       <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12, color: '#374151' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13, color: '#374151', lineHeight: 1.45 }}>
           <span>Pending action</span>
-          <strong style={{ fontWeight: 700 }}>{getNextAction(workflow.current_state)}</strong>
+          <strong style={{ fontWeight: 500 }}>{getNextAction(workflow.current_state)}</strong>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12, color: '#374151' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13, color: '#374151', lineHeight: 1.45 }}>
           <span>Last activity</span>
-          <strong style={{ fontWeight: 700, textAlign: 'right' }}>{workflow.last_activity?.description || 'No activity yet'}</strong>
+          <strong style={{ fontWeight: 500, textAlign: 'right' }}>{workflow.last_activity?.description || 'No activity yet'}</strong>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12, color: '#374151' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13, color: '#374151', lineHeight: 1.45 }}>
           <span>Active version</span>
-          <strong style={{ fontWeight: 700 }}>{versionStatus}</strong>
+          <strong style={{ fontWeight: 500 }}>{versionStatus}</strong>
         </div>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-        <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>{formatDate(workflow.last_activity?.created_at || workflow.updated_at)}</p>
-        <span style={{ fontSize: 12, fontWeight: 700, color: '#0F1F3D' }}>Open workspace</span>
+        <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0, lineHeight: 1.35 }}>{formatDate(workflow.last_activity?.created_at || workflow.updated_at)}</p>
+        <span style={{ fontSize: 13, fontWeight: 500, letterSpacing: '0.01em', color: '#0F1F3D', lineHeight: 1.35 }}>Open workspace</span>
       </div>
     </button>
   )
@@ -257,8 +258,8 @@ function Section({ title, description, empty, workflows, onOpen }: SectionConfig
   return (
     <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12, padding: 18 }}>
       <div style={{ marginBottom: 14 }}>
-        <h3 style={{ fontSize: 15, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>{title}</h3>
-        <p style={{ fontSize: 12, color: '#6B7280', margin: '4px 0 0', lineHeight: 1.5 }}>{description}</p>
+        <h3 style={{ fontSize: 16, fontWeight: 600, letterSpacing: '0.005em', color: '#0F1F3D', margin: 0, lineHeight: 1.25 }}>{title}</h3>
+        <p style={{ fontSize: 13, color: '#6B7280', margin: '5px 0 0', lineHeight: 1.6 }}>{description}</p>
       </div>
       {workflows.length ? (
         <div style={{ display: 'grid', gap: 12 }}>
@@ -275,13 +276,27 @@ function RailButton({ label, active = false, disabled = false, onClick }: { labe
   return (
     <button
       type="button"
+      className="workspace-nav-row"
+      data-active={active ? 'true' : undefined}
       disabled={disabled}
       title={disabled ? 'Coming soon' : undefined}
       onClick={onClick}
       style={{
-        width: '100%', height: 32, textAlign: 'left', border: active ? '1px solid #243447' : disabled ? '1px solid #E5E7EB' : '1px solid #CBD5E1',
-        borderRadius: 8, background: active ? '#243447' : disabled ? '#F8FAFC' : 'white', padding: '0 10px', cursor: disabled ? 'default' : 'pointer',
-        color: active ? 'white' : disabled ? '#94A3B8' : '#243447', fontSize: 12, fontWeight: 800,
+        width: '100%',
+        minHeight: 30,
+        textAlign: 'left',
+        border: 'none',
+        borderRadius: 8,
+        background: active ? '#E4D6C4' : 'transparent',
+        padding: '0 8px',
+        boxShadow: active ? 'inset 3px 0 0 rgba(196,154,95,0.78)' : 'none',
+        cursor: disabled ? 'default' : 'pointer',
+        fontFamily: "'Outfit', ui-sans-serif, system-ui, sans-serif",
+        color: active ? '#1B1510' : '#1F2937',
+        fontSize: 15,
+        fontWeight: active ? 700 : 500,
+        letterSpacing: '0.015em',
+        lineHeight: 1.35,
       }}
     >
       {label}
@@ -291,68 +306,13 @@ function RailButton({ label, active = false, disabled = false, onClick }: { labe
 
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10, padding: 10, boxShadow: '0 1px 2px rgba(15,23,42,0.03)' }}>
-      <p style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#9CA3AF', fontWeight: 800, margin: '0 0 7px' }}>{title}</p>
-      <div style={{ display: 'grid', gap: 6 }}>{children}</div>
+    <section style={{ background: 'rgba(255,255,255,0.50)', border: '1px solid rgba(15,31,61,0.06)', borderRadius: 4, padding: '9px 10px', boxShadow: 'none' }}>
+      <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.16em', color: '#9CA3AF', fontWeight: 500, margin: '0 0 5px', lineHeight: 1.3 }}>{title}</p>
+      <div style={{ display: 'grid', gap: 2 }}>{children}</div>
     </section>
   )
 }
 
-function TopActionTab({ label, disabled = false, onClick }: { label: string; disabled?: boolean; onClick?: () => void }) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      title={disabled ? 'Coming soon' : undefined}
-      onClick={onClick}
-      style={{
-        height: 32,
-        padding: '0 12px',
-        border: disabled ? '1px solid #E5E7EB' : '1px solid #CBD5E1',
-        borderRadius: 999,
-        background: disabled ? '#F8FAFC' : 'white',
-        color: disabled ? '#94A3B8' : '#243447',
-        fontSize: 12,
-        fontWeight: 800,
-        cursor: disabled ? 'default' : 'pointer',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {label}
-    </button>
-  )
-}
-
-function PanelQuickAction({ label, tone, disabled = false, onClick }: { label: string; tone: 'green' | 'neutral' | 'warm' | 'light'; disabled?: boolean; onClick?: () => void }) {
-  const styles: Record<typeof tone, CSSProperties> = {
-    green: { background: '#10B981', border: '1px solid #10B981', color: 'white' },
-    neutral: { background: 'rgba(226,232,240,0.12)', border: '1px solid rgba(226,232,240,0.28)', color: '#E2E8F0' },
-    warm: { background: 'rgba(245,166,35,0.92)', border: '1px solid rgba(245,166,35,0.92)', color: '#111827' },
-    light: { background: 'rgba(255,255,255,0.9)', border: '1px solid rgba(255,255,255,0.9)', color: '#243447' },
-  }
-
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      title={disabled ? 'Coming soon' : undefined}
-      onClick={onClick}
-      style={{
-        ...styles[tone],
-        minHeight: 36,
-        borderRadius: 10,
-        padding: '0 12px',
-        fontSize: 12,
-        fontWeight: 850,
-        cursor: disabled ? 'default' : 'pointer',
-        opacity: disabled ? 0.72 : 1,
-        boxShadow: tone === 'green' ? '0 10px 22px rgba(16,185,129,0.18)' : 'none',
-      }}
-    >
-      {label}
-    </button>
-  )
-}
 
 function EditorToolButton({ label, onClick, disabled = false, minWidth }: { label: string; onClick?: () => void; disabled?: boolean; minWidth?: number }) {
   return (
@@ -464,7 +424,7 @@ function WorkspaceEditorPanel({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        <aside style={{ display: 'grid', gap: 10, alignContent: 'start' }}>
+        <aside style={{ display: 'grid', gap: 8, alignContent: 'start' }}>
           <UtilityCard title="Outline" detail="Headings from this workspace draft will appear here." />
           <UtilityCard title="Notes" detail="Keep side notes for planning and follow-up." />
           <UtilityCard title="Attachments" detail="Attach supporting workspace files later." />
@@ -720,12 +680,12 @@ function MyObligationsPanel() {
           <section style={{ minHeight: 250, border: '1px dashed #CBD5E1', borderRadius: 14, background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
             <div style={{ textAlign: 'center', maxWidth: 360 }}>
               <p style={{ margin: 0, color: '#0F1F3D', fontSize: 15, fontWeight: 850 }}>No obligations loaded yet.</p>
-              <p style={{ margin: '8px 0 0', color: '#64748B', fontSize: 12, lineHeight: 1.5 }}>Signed-contract obligations will appear here when lifecycle data is available in Workspace.</p>
+              <p style={{ margin: '10px 0 0', color: '#475569', fontSize: 12, lineHeight: 1.5 }}>Signed-contract obligations will appear here when lifecycle data is available in Workspace.</p>
             </div>
           </section>
         </main>
 
-        <aside style={{ display: 'grid', gap: 10, alignContent: 'start' }}>
+        <aside style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
           {OBLIGATION_SUMMARY_ITEMS.map(([label, value]) => (
             <div key={label} style={{ border: '1px solid #E5E7EB', borderRadius: 12, background: 'white', padding: 12 }}>
               <p style={{ margin: 0, color: '#64748B', fontSize: 11, fontWeight: 800 }}>{label}</p>
@@ -913,250 +873,204 @@ export default function WorkflowDashboard() {
     })
   }
 
-  const stats = [
-    { label: 'Active Activity', value: sections.active.length },
-    { label: 'Awaiting Response', value: sections.awaiting.length },
-    { label: 'Needs Your Review', value: sections.needsReview.length },
-    { label: 'Sent To Counterparty', value: sections.sent.length },
-    { label: 'Signed Agreements', value: sections.signed.length },
-    { label: 'Recent Activity', value: sections.recent.length },
+  const activityStats = [
+    { label: 'Active Activity', heroLabel: 'Active Agreements', value: sections.active.length, showInHero: true },
+    { label: 'Awaiting Response', heroLabel: 'Awaiting Response', value: sections.awaiting.length, showInHero: true },
+    { label: 'Needs Your Review', heroLabel: 'Needs Review', value: sections.needsReview.length, showInHero: true },
+    { label: 'Sent To Counterparty', heroLabel: 'Sent to Counterparty', value: sections.sent.length, showInHero: true },
+    { label: 'Signed Agreements', heroLabel: 'Signed Agreements', value: sections.signed.length, showInHero: true },
+    { label: 'Recent Activity', heroLabel: 'Recent Activity', value: sections.recent.length, showInHero: true },
   ]
 
+  const heroSummaryItems = isLoading
+    ? []
+    : activityStats
+      .filter((stat) => stat.showInHero)
+      .map((stat) => ({ label: stat.heroLabel || stat.label, value: stat.value }))
+
   return (
-    <div className="space-y-6">
+    <div style={{ display: 'grid', gap: 18 }}>
       <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12, padding: 20 }}>
-        <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.16em', color: '#9CA3AF', fontWeight: 700, margin: '0 0 6px' }}>
-          Blackboard operating center
+        <p style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.18em', color: '#9CA3AF', fontWeight: 500, margin: '0 0 7px', lineHeight: 1.35 }}>
+          Blackbòd operating center
         </p>
-        <h1 style={{ fontSize: 28, fontWeight: 800, color: '#0F1F3D', margin: 0, lineHeight: 1.15 }}>Workspace</h1>
-        <p style={{ fontSize: 13, color: '#6B7280', margin: '10px 0 0', maxWidth: 760, lineHeight: 1.6 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+          <h1 style={{ fontSize: 30, fontWeight: 600, letterSpacing: '0.01em', color: '#0F1F3D', margin: 0, lineHeight: 1.15, flex: '0 0 auto' }}>Workspace</h1>
+          <p style={{ flex: '1 1 auto', minWidth: 0, textAlign: 'center', fontSize: 14, fontWeight: 500, letterSpacing: '0.005em', color: '#475569', margin: 0, lineHeight: 1.45, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Built for peer-to-peer structured agreements.</p>
+          <div style={{ width: 220, maxWidth: '100%', minWidth: 0, flex: '0 1 220px' }}>
+            <PanelQuickAction label="Start New Agreement" tone="green" onClick={() => navigate('/contracts/new')} />
+          </div>
+        </div>
+        <p style={{ fontSize: 14, color: '#6B7280', margin: '10px 0 0', maxWidth: 760, lineHeight: 1.65 }}>
           Activity across agreements, pending actions, counterparties, and negotiation continuity is tracked here.
         </p>
       </section>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(190px,220px)_minmax(0,1fr)_minmax(280px,340px)]" style={{ alignItems: 'start' }}>
-        <aside style={{ display: 'grid', gap: 10, alignContent: 'start' }}>
-          <Group title="Create">
-            <RailButton label="Workspace Editor" active={showWorkspaceEditor} onClick={toggleWorkspaceEditor} />
-          </Group>
-          <Group title="Agreement Records">
-            <RailButton label="Activity" active={showActivity} onClick={toggleActivity} />
-            <RailButton label="Contract" active={showContracts} onClick={toggleContracts} />
-          </Group>
-          <Group title="Post-Signature">
-            <RailButton label="My Obligations" active={showMyObligations} onClick={toggleMyObligations} />
-            <RailButton label="Lifecycle" onClick={() => navigate('/lifecycle')} />
-            <RailButton label="Change Orders" disabled />
-            <RailButton label="Resolution" disabled />
-            <RailButton label="Contract Stuff" active={showContractStuff} onClick={toggleContractStuff} />
-          </Group>
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(240px,280px)_minmax(0,1fr)]" style={{ alignItems: 'start' }}>
+        <aside style={{ display: 'grid', gap: 6, alignContent: 'start', alignSelf: 'stretch', background: '#E2E8F0', border: '1px solid rgba(15,31,61,0.08)', borderRadius: 6, padding: 10 }}>
+          <section style={{ display: 'grid', gap: 6 }}>
+            <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.16em', color: '#9CA3AF', fontWeight: 500, margin: 0, lineHeight: 1.3 }}>Workspace Navigation</p>
+            <Group title="Create">
+              <RailButton label="Workspace Editor" active={showWorkspaceEditor} onClick={toggleWorkspaceEditor} />
+              <RailButton label="Ask AI" active={showAskAI} onClick={toggleAskAI} />
+              <RailButton label="Calendar" disabled />
+              <RailButton label="Chat / Messages" disabled />
+            </Group>
+            <Group title="Agreement Records">
+              <RailButton label="Activity" active={showActivity} onClick={toggleActivity} />
+              <RailButton label="Contract" active={showContracts} onClick={toggleContracts} />
+            </Group>
+            <Group title="Post-Signature">
+              <RailButton label="My Obligations" active={showMyObligations} onClick={toggleMyObligations} />
+              <RailButton label="Lifecycle" onClick={() => navigate('/lifecycle')} />
+              <RailButton label="Change Orders" disabled />
+              <RailButton label="Resolution" disabled />
+              <RailButton label="Contract Stuff" active={showContractStuff} onClick={toggleContractStuff} />
+            </Group>
+          </section>
         </aside>
 
-        <main style={{ minHeight: 360, maxHeight: 'calc(100vh - 220px)', overflowY: 'auto', paddingRight: 4 }}>
-          <div style={{ display: 'grid', gap: 14 }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-              <TopActionTab label="Workspace Editor" onClick={toggleWorkspaceEditor} />
-              <TopActionTab label="Analyze Contract" onClick={() => navigate('/analysis')} />
-              <TopActionTab label="Contract Counter" onClick={() => navigate('/counter')} />
-              <TopActionTab label="Calendar" disabled />
-              <TopActionTab label="Ask AI" onClick={toggleAskAI} />
-              <TopActionTab label="Messages" disabled />
-              <TopActionTab label="Live Messages" disabled />
-              <TopActionTab label="Notes" disabled />
+        <main style={{ display: 'grid', gap: 18, minWidth: 0 }}>
+          {!showWorkspaceEditor && !showActivity && !showContracts && !showContractStuff && !showMyObligations && !showAskAI && (
+            <WorkspaceHero
+              summaryItems={heroSummaryItems}
+              onAnalyzeContract={() => navigate('/analysis')}
+              onOpenContractCounter={() => navigate('/counter')}
+            />
+          )}
+
+      <div style={{ display: 'grid', gap: 12 }}>
+        {showWorkspaceEditor && !showActivity && !showContracts && !showContractStuff && !showMyObligations && !showAskAI && <WorkspaceEditorPanel onClose={() => setShowWorkspaceEditor(false)} />}
+
+        {showAskAI && !showWorkspaceEditor && !showActivity && !showContracts && !showContractStuff && !showMyObligations && <AskAIContractPanel />}
+
+        {showMyObligations && !showWorkspaceEditor && !showActivity && !showContracts && !showContractStuff && !showAskAI && <MyObligationsPanel />}
+
+        {showContractStuff && !showWorkspaceEditor && !showActivity && !showContracts && !showMyObligations && !showAskAI && <ContractStuffPanel />}
+
+        {showContracts && (
+          <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12, padding: 18 }}>
+            <div style={{ marginBottom: 14 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 600, letterSpacing: '0.005em', color: '#0F1F3D', margin: 0, lineHeight: 1.25 }}>Contract</h3>
+              <p style={{ fontSize: 13, color: '#6B7280', margin: '5px 0 0', lineHeight: 1.6 }}>Your current contract records from Blackbòd.</p>
             </div>
-
-            {showWorkspaceEditor && !showActivity && !showContracts && !showContractStuff && !showMyObligations && !showAskAI && <WorkspaceEditorPanel onClose={() => setShowWorkspaceEditor(false)} />}
-
-            {showAskAI && !showWorkspaceEditor && !showActivity && !showContracts && !showContractStuff && !showMyObligations && <AskAIContractPanel />}
-
-            {showMyObligations && !showWorkspaceEditor && !showActivity && !showContracts && !showContractStuff && !showAskAI && <MyObligationsPanel />}
-
-            {showContractStuff && !showWorkspaceEditor && !showActivity && !showContracts && !showMyObligations && !showAskAI && <ContractStuffPanel />}
-
-            {!showWorkspaceEditor && !showActivity && !showContracts && !showContractStuff && !showMyObligations && !showAskAI && (
-              <section
-                aria-label="Workspace empty state"
-                style={{
-                  minHeight: 320,
-                  border: '1px solid rgba(148,163,184,0.18)',
-                  borderRadius: 16,
-                  backgroundColor: '#020617',
-                  backgroundImage: [
-                    'radial-gradient(circle at 18% 22%, rgba(16,185,129,0.22) 0, rgba(16,185,129,0.08) 9%, transparent 24%)',
-                    'radial-gradient(circle at 78% 18%, rgba(96,165,250,0.18) 0, rgba(96,165,250,0.06) 12%, transparent 28%)',
-                    'radial-gradient(circle at 64% 72%, rgba(255,255,255,0.11) 0, transparent 22%)',
-                    'radial-gradient(circle, rgba(255,255,255,0.86) 0 1px, transparent 1.8px)',
-                    'radial-gradient(circle, rgba(125,211,252,0.75) 0 1px, transparent 1.6px)',
-                    'linear-gradient(135deg, #020617 0%, #07111F 48%, #020617 100%)',
-                  ].join(', '),
-                  backgroundSize: '100% 100%, 100% 100%, 100% 100%, 68px 68px, 118px 118px, 100% 100%',
-                  backgroundPosition: 'center, center, center, 8px 10px, 28px 32px, center',
-                  boxShadow: 'inset 0 0 70px rgba(15,23,42,0.72), 0 12px 32px rgba(15,23,42,0.08)',
-                  overflow: 'hidden',
-                  position: 'relative',
-                }}
-              >
-                <div
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    background: 'linear-gradient(180deg, rgba(255,255,255,0.05), transparent 28%, rgba(2,6,23,0.32))',
-                    pointerEvents: 'none',
-                  }}
-                />
-                <div
-                  style={{
-                    position: 'absolute',
-                    left: '50%',
-                    top: '50%',
-                    width: 180,
-                    height: 180,
-                    transform: 'translate(-50%, -50%)',
-                    borderRadius: '50%',
-                    background: 'radial-gradient(circle, rgba(16,185,129,0.12), transparent 64%)',
-                    filter: 'blur(6px)',
-                    pointerEvents: 'none',
-                  }}
-                />
-                <div
-                  aria-hidden="true"
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    pointerEvents: 'none',
-                    userSelect: 'none',
-                  }}
-                >
-                  <div style={{ textAlign: 'center', transform: 'translateY(-12%)' }}>
-                    <p style={{ margin: 0, color: 'rgba(255,255,255,0.085)', fontSize: 'clamp(48px, 8vw, 104px)', fontWeight: 900, lineHeight: 0.95, letterSpacing: 0 }}>
-                      Blackboard
-                    </p>
-                    <p style={{ margin: '14px 0 0', color: 'rgba(209,250,229,0.34)', fontSize: 13, fontWeight: 800, letterSpacing: '0.16em', textTransform: 'uppercase' }}>
-                      Agreement operations start here
-                    </p>
-                  </div>
-                </div>
-                <div style={{ position: 'absolute', left: 24, right: 24, bottom: 24, display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center', zIndex: 1 }}>
-                  <PanelQuickAction label="Start New Contract" tone="green" onClick={() => navigate('/contracts/new')} />
-                  <PanelQuickAction label="Analyze Contract" tone="neutral" onClick={() => navigate('/analysis')} />
-                  <PanelQuickAction label="Contract Counter" tone="warm" onClick={() => navigate('/counter')} />
-                  <PanelQuickAction label="Invite a Friend" tone="light" disabled />
-                </div>
-              </section>
-            )}
-
-            {showContracts && (
-              <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12, padding: 18 }}>
-                <div style={{ marginBottom: 14 }}>
-                  <h3 style={{ fontSize: 15, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>Contract</h3>
-                  <p style={{ fontSize: 12, color: '#6B7280', margin: '4px 0 0', lineHeight: 1.5 }}>Your current contract records from Blackboard.</p>
-                </div>
-                {contractsLoading ? (
-                  <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Loading contracts...</p>
-                ) : contractsError ? (
-                  <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#B91C1C' }}>{contractsError}</div>
-                ) : contracts.length === 0 ? (
-                  <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>No contract records yet.</p>
-                ) : (
-                  <div style={{ display: 'grid', gap: 10 }}>
-                    {contracts.map((contract) => {
-                      const label = contractStatusLabel(contract)
-                      return (
-                        <article key={contract.id} style={{ border: '1px solid #E5E7EB', background: '#F8FAFC', borderRadius: 10, padding: 12 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
-                            <div style={{ minWidth: 0 }}>
-                              <p style={{ fontSize: 13, fontWeight: 800, color: '#0F1F3D', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contract.title || 'Untitled Contract'}</p>
-                              <p style={{ fontSize: 12, color: '#64748B', margin: '5px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {contract.contract_type || 'Contract'} - {contractPartyLabel(contract)} - Created {formatContractDate(contract.created_at)}
-                              </p>
-                            </div>
-                            <span style={{ flexShrink: 0, borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 700, ...contractStatusStyle(label) }}>{label}</span>
-                          </div>
-                          <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
-                            <button type="button" onClick={() => navigate(`/contracts/${contract.id}`)} style={{ height: 30, padding: '0 11px', borderRadius: 7, border: '1px solid #CBD5E1', background: 'white', color: '#334155', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Open Contract</button>
-                          </div>
-                        </article>
-                      )
-                    })}
-                  </div>
-                )}
-              </section>
-            )}
-
-            {showActivity && (
-              <>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {stats.map((stat) => (
-                    <div key={stat.label} style={{ background: 'white', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12, padding: 18 }}>
-                      <p style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#9CA3AF', fontWeight: 700, margin: 0 }}>{stat.label}</p>
-                      <p style={{ fontSize: 28, fontWeight: 800, color: '#0F1F3D', margin: '8px 0 0' }}>{isLoading ? '-' : stat.value}</p>
-                    </div>
-                  ))}
-                </div>
-                {error && <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 12, padding: '12px 14px', fontSize: 13, color: '#B91C1C' }}>{error}</div>}
-                <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-                  <Section title="Active Activity" description="Open agreements that still require movement or a decision." empty="No active activity items are in motion right now." workflows={sections.active} onOpen={(id) => navigate(`/workflows/${id}`)} />
-                  <Section title="Needs Your Review" description="Review, counter, or approve the next operational step." empty="Nothing is waiting for your review." workflows={sections.needsReview} onOpen={(id) => navigate(`/workflows/${id}`)} />
-                  <Section title="Awaiting Response" description="Agreements that are with the counterparty or waiting on a reply." empty="No activity item is awaiting a counterparty response." workflows={sections.awaiting} onOpen={(id) => navigate(`/workflows/${id}`)} />
-                  <Section title="Sent To Counterparty" description="Agreements that have left the initiator-side workspace." empty="No agreements have been sent yet." workflows={sections.sent} onOpen={(id) => navigate(`/workflows/${id}`)} />
-                  <Section title="Signed Agreements" description="Completed agreements that are now canonical records." empty="No agreements are signed yet." workflows={sections.signed} onOpen={(id) => navigate(`/workflows/${id}`)} />
-                  <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12, padding: 18 }}>
-                    <div style={{ marginBottom: 14 }}>
-                      <h3 style={{ fontSize: 15, fontWeight: 800, color: '#0F1F3D', margin: 0 }}>Recent Negotiation Activity</h3>
-                      <p style={{ fontSize: 12, color: '#6B7280', margin: '4px 0 0', lineHeight: 1.5 }}>Most recent operational events across your agreements.</p>
-                    </div>
-                    {sections.recent.length ? (
-                      <div style={{ display: 'grid', gap: 10 }}>
-                        {sections.recent.map((workflow) => (
-                          <button key={workflow.id} onClick={() => navigate(`/workflows/${workflow.id}`)} style={{ textAlign: 'left', border: '1px solid #E5E7EB', background: '#F8FAFC', borderRadius: 10, padding: 12, cursor: 'pointer' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
-                              <p style={{ fontSize: 13, fontWeight: 700, color: '#0F1F3D', margin: 0 }}>{workflow.source_label || 'Agreement activity'}</p>
-                              <span style={{ fontSize: 11, color: '#9CA3AF' }}>{formatDate(workflow.last_activity?.created_at)}</span>
-                            </div>
-                            <p style={{ fontSize: 12, color: '#374151', margin: 0, lineHeight: 1.5 }}>{workflow.last_activity?.description || 'No activity recorded.'}</p>
-                          </button>
-                        ))}
+          {contractsLoading ? (
+              <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Loading contracts...</p>
+            ) : contractsError ? (
+              <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#B91C1C' }}>{contractsError}</div>
+            ) : contracts.length === 0 ? (
+              <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>No contract records yet.</p>
+            ) : (
+              <div style={{ display: 'grid', gap: 10 }}>
+              {contracts.map((contract) => {
+                  const label = contractStatusLabel(contract)
+                  return (
+                    <article key={contract.id} style={{ border: '1px solid #E5E7EB', background: '#F8FAFC', borderRadius: 10, padding: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ fontSize: 14, fontWeight: 600, letterSpacing: '0.005em', color: '#0F1F3D', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3 }}>{contract.title || 'Untitled Contract'}</p>
+                          <p style={{ fontSize: 12, color: '#64748B', margin: '5px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {contract.contract_type || 'Contract'} - {contractPartyLabel(contract)} - Created {formatContractDate(contract.created_at)}
+                          </p>
+                        </div>
+                        <span style={{ flexShrink: 0, borderRadius: 999, padding: '4px 9px', fontSize: 12, fontWeight: 500, letterSpacing: '0.01em', lineHeight: 1.25, ...contractStatusStyle(label) }}>{label}</span>
                       </div>
-                    ) : (
-                      <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>No negotiation activity has been recorded yet.</p>
-                    )}
-                  </section>
-                </div>
-              </>
+                      <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+                        <button type="button" onClick={() => navigate(`/contracts/${contract.id}`)} style={{ height: 30, padding: '0 11px', borderRadius: 7, border: '1px solid #CBD5E1', background: 'white', color: '#334155', fontSize: 12, fontWeight: 500, letterSpacing: '0.01em', cursor: 'pointer' }}>Open Contract</button>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
             )}
-          </div>
-        </main>
+          </section>
+        )}
 
-        <aside style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end' }}>
-          <section style={{ width: '100%', maxWidth: 340, background: 'white', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 16, padding: 14, boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
-            <div style={{ borderRadius: 12, background: '#243447', height: 112, padding: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', marginBottom: 14 }}>
-              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, rgba(16,185,129,0.24), rgba(15,31,61,0) 52%)' }} />
-              <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-                <span style={{ marginLeft: 3, width: 0, height: 0, borderTop: '7px solid transparent', borderBottom: '7px solid transparent', borderLeft: '11px solid white' }} />
-              </div>
-              <div style={{ position: 'absolute', left: 14, right: 14, bottom: 12, height: 4, borderRadius: 999, background: 'rgba(255,255,255,0.18)' }}>
-                <div style={{ width: '34%', height: '100%', borderRadius: 999, background: '#10B981' }} />
-              </div>
-            </div>
-            <div style={{ display: 'grid', gap: 7, marginBottom: 14 }}>
-              {GET_STARTED_VIDEOS.map((title) => (
-                <div key={title} style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid #E5E7EB', borderRadius: 9, background: '#F8FAFC', padding: '8px 9px' }}>
-                  <span style={{ width: 6, height: 6, borderRadius: 999, background: '#10B981', flexShrink: 0 }} />
-                  <span style={{ fontSize: 12, fontWeight: 700, color: '#334155', lineHeight: 1.35 }}>{title}</span>
+        {showActivity && (
+          <>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {activityStats.map((stat) => (
+                <div key={stat.label} style={{ background: 'white', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12, padding: 18 }}>
+                  <p style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.16em', color: '#9CA3AF', fontWeight: 500, margin: 0, lineHeight: 1.3 }}>{stat.label}</p>
+                  <p style={{ fontSize: 28, fontWeight: 800, color: '#0F1F3D', margin: '8px 0 0' }}>{isLoading ? '-' : stat.value}</p>
                 </div>
               ))}
             </div>
-            <div style={{ display: 'grid', gap: 12 }}>
-              <div>
-                <h2 style={{ fontSize: 18, fontWeight: 850, color: '#0F1F3D', margin: 0 }}>Get Started</h2>
-                <p style={{ fontSize: 12, color: '#64748B', margin: '7px 0 0', lineHeight: 1.5 }}>Create, review, negotiate, and track agreements from one workspace.</p>
+          {error && <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 12, padding: '12px 14px', fontSize: 13, color: '#B91C1C' }}>{error}</div>}
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+              <Section title="Active Activity" description="Open agreements that still require movement or a decision." empty="No active activity items are in motion right now." workflows={sections.active} onOpen={(id) => navigate(`/workflows/${id}`)} />
+              <Section title="Needs Your Review" description="Review, counter, or approve the next operational step." empty="Nothing is waiting for your review." workflows={sections.needsReview} onOpen={(id) => navigate(`/workflows/${id}`)} />
+              <Section title="Awaiting Response" description="Agreements that are with the counterparty or waiting on a reply." empty="No activity item is awaiting a counterparty response." workflows={sections.awaiting} onOpen={(id) => navigate(`/workflows/${id}`)} />
+              <Section title="Sent To Counterparty" description="Agreements that have left the initiator-side workspace." empty="No agreements have been sent yet." workflows={sections.sent} onOpen={(id) => navigate(`/workflows/${id}`)} />
+              <Section title="Signed Agreements" description="Completed agreements that are now canonical records." empty="No agreements are signed yet." workflows={sections.signed} onOpen={(id) => navigate(`/workflows/${id}`)} />
+              <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12, padding: 18 }}>
+                <div style={{ marginBottom: 14 }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 600, letterSpacing: '0.005em', color: '#0F1F3D', margin: 0, lineHeight: 1.25 }}>Recent Negotiation Activity</h3>
+                  <p style={{ fontSize: 13, color: '#6B7280', margin: '5px 0 0', lineHeight: 1.6 }}>Most recent operational events across your agreements.</p>
+                </div>
+              {sections.recent.length ? (
+                  <div style={{ display: 'grid', gap: 10 }}>
+                  {sections.recent.map((workflow) => (
+                      <button key={workflow.id} onClick={() => navigate(`/workflows/${workflow.id}`)} style={{ textAlign: 'left', border: '1px solid #E5E7EB', background: '#F8FAFC', borderRadius: 10, padding: 12, cursor: 'pointer' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
+                          <p style={{ fontSize: 14, fontWeight: 600, letterSpacing: '0.005em', color: '#0F1F3D', margin: 0, lineHeight: 1.3 }}>{workflow.source_label || 'Agreement activity'}</p>
+                          <span style={{ fontSize: 11, color: '#9CA3AF' }}>{formatDate(workflow.last_activity?.created_at)}</span>
+                        </div>
+                        <p style={{ fontSize: 12, color: '#374151', margin: 0, lineHeight: 1.5 }}>{workflow.last_activity?.description || 'No activity recorded.'}</p>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>No negotiation activity has been recorded yet.</p>
+                )}
+              </section>
+            </div>
+          </>
+        )}
+
+      </div>
+
+          <section style={{ width: '100%', background: 'white', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 16, padding: 14, boxShadow: '0 12px 28px rgba(15,23,42,0.06)', marginTop: 20 }}>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" style={{ alignItems: 'stretch' }}>
+              <div style={{ display: 'grid', gap: 12, alignContent: 'start', minWidth: 0 }}>
+                <div>
+                  <h2 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '0.01em', color: '#0F1F3D', margin: 0, lineHeight: 1.2 }}>Get Started</h2>
+                  <p style={{ fontSize: 13, color: '#64748B', margin: '8px 0 0', lineHeight: 1.6 }}>Create, review, negotiate, and track agreements from one workspace.</p>
+                </div>
+                <div style={{ display: 'grid', gap: 9 }}>
+                  {GET_STARTED_VIDEOS.map((title, index) => (
+                    <div key={title} style={{ display: 'grid', gridTemplateColumns: '74px minmax(0,1fr)', alignItems: 'center', gap: 10, border: '1px solid #E5E7EB', borderRadius: 9, background: '#F8FAFC', padding: 9 }}>
+                      <div style={{ height: 46, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#CBD5E1', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <span style={{ marginLeft: 2, width: 0, height: 0, borderTop: '6px solid transparent', borderBottom: '6px solid transparent', borderLeft: '9px solid white' }} />
+                        </div>
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: 500, letterSpacing: '0.005em', color: '#334155', lineHeight: 1.45, margin: 0 }}>{title}</p>
+                        <p style={{ fontSize: 11, fontWeight: 500, color: '#64748B', lineHeight: 1.4, margin: '3px 0 0' }}>Lesson {index + 1}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={{ minWidth: 0, display: 'flex' }}>
+                <div style={{ width: '100%', minHeight: 300, borderRadius: 12, background: '#CBD5E1', border: '1px solid #94A3B8', boxShadow: '0 8px 20px rgba(15,23,42,0.04)', padding: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
+                  <div style={{ position: 'absolute', inset: 16, display: 'grid', alignContent: 'center', justifyItems: 'center', textAlign: 'center', pointerEvents: 'none' }}>
+                    <p style={{ margin: 0, color: 'rgba(255,255,255,0.34)', fontSize: 'clamp(38px, 5vw, 72px)', fontWeight: 900, lineHeight: 0.95, letterSpacing: 0 }}>Blackbòd</p>
+                    <p style={{ margin: '96px 0 0', color: '#1F2937', fontSize: 15, fontWeight: 600, letterSpacing: '0.01em', lineHeight: 1.3 }}>Blackbòd Learning Center</p>
+                    <p style={{ margin: '8px 0 0', color: '#64748B', fontSize: 12, fontWeight: 500, lineHeight: 1.4 }}>Select a lesson to begin.</p>
+                  </div>
+                  <div style={{ width: 58, height: 58, borderRadius: '50%', background: '#CBD5E1', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                    <span style={{ marginLeft: 4, width: 0, height: 0, borderTop: '9px solid transparent', borderBottom: '9px solid transparent', borderLeft: '14px solid white' }} />
+                  </div>
+                  <div style={{ position: 'absolute', left: 16, right: 16, bottom: 16, height: 4, borderRadius: 999, background: 'rgba(255,255,255,0.18)' }}>
+                    <div style={{ width: '34%', height: '100%', borderRadius: 999, background: '#10B981' }} />
+                  </div>
+                </div>
               </div>
             </div>
           </section>
-        </aside>
+        </main>
       </div>
     </div>
   )

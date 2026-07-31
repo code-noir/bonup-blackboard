@@ -1,8 +1,11 @@
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from 'react'
+import { type CSSProperties, type ReactNode, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '@/api/client'
 import { WorkflowRecord } from '@/components/workflow/WorkflowWorkspace'
 import WorkspaceHero, { PanelQuickAction } from '@/components/workflow/WorkspaceHero'
+import BoardOverlay, { type BoardOverlayItem } from '@/components/board/BoardOverlay'
+import { buildBoardEntries, type BoardEntryConfig } from '@/components/board/boardConfig'
+import { useBoardData, type BoardActivityRecord, type BoardContractRecord, type BoardNotificationRecord, type BoardObligationRecord } from '@/hooks/useBoardData'
 
 const DASHBOARD_STATES = [
   'uploaded',
@@ -17,21 +20,6 @@ const DASHBOARD_STATES = [
   'rejected',
   'signed',
 ] as const
-
-type WorkflowListResponse = { results: WorkflowRecord[] }
-
-type ContractRecord = {
-  id: string
-  title?: string
-  contract_type?: string
-  counterparty_name?: string
-  counterparty_email?: string
-  status?: string
-  state?: string
-  created_at?: string
-}
-
-type ContractListResponse = ContractRecord[] | { results: ContractRecord[] }
 
 const AI_CLAUSE_OPTIONS = [
   'Payment',
@@ -96,7 +84,8 @@ function formatContractDate(value?: string) {
   return date.toLocaleDateString()
 }
 
-function contractStatusLabel(contract: ContractRecord) {
+function contractStatusLabel(contract: BoardContractRecord) {
+  if (contract.display_status_label) return contract.display_status_label
   if (contract.state === 'created') return 'Created'
   if (contract.state === 'prepared') return 'Prepared'
   if (contract.state === 'ready_to_send') return 'Ready to Send'
@@ -117,8 +106,99 @@ function contractStatusStyle(label: string): CSSProperties {
   return { background: '#F8FAFC', color: '#475569' }
 }
 
-function contractPartyLabel(contract: ContractRecord) {
+function contractPartyLabel(contract: BoardContractRecord) {
   return contract.counterparty_name || contract.counterparty_email || 'Counterparty not attached'
+}
+
+function contractDisplayTitle(contract?: BoardContractRecord) {
+  return contract?.title || contract?.contract_type || 'Untitled Agreement'
+}
+
+function obligationLabel(obligation: BoardObligationRecord) {
+  if (obligation.description) return obligation.description
+  if (obligation.type === 'payment') return obligation.installment_number ? 'Payment installment ' + obligation.installment_number : 'Payment obligation'
+  return 'Service obligation'
+}
+
+function groupObligationsByContract(obligations: BoardObligationRecord[], contracts: BoardContractRecord[]) {
+  const groups = new Map<string, BoardObligationRecord[]>()
+  obligations
+    .filter((obligation) => obligation.contract_id && obligation.state !== 'resolved')
+    .forEach((obligation) => {
+      const contractId = obligation.contract_id || ''
+      groups.set(contractId, [...(groups.get(contractId) || []), obligation])
+    })
+
+  return Array.from(groups.entries()).map(([contractId, records]) => {
+    const contract = contracts.find((item) => item.id === contractId)
+    return {
+      id: contractId,
+      title: contractDisplayTitle(contract),
+      detail: records.slice(0, 2).map(obligationLabel).join(' • '),
+      meta: records.length + (records.length === 1 ? ' obligation' : ' obligations'),
+    }
+  })
+}
+
+type BoardOverlaySources = {
+  contracts: BoardContractRecord[]
+  notifications: BoardNotificationRecord[]
+  activity: BoardActivityRecord[]
+  obligations: BoardObligationRecord[]
+  workflows: WorkflowRecord[]
+}
+
+function getBoardOverlayItems(entry: BoardEntryConfig, sources: BoardOverlaySources): BoardOverlayItem[] {
+  if (entry.destination.type === 'contract-status') {
+    const status = entry.destination.status
+    return sources.contracts
+      .filter((contract) => contract.display_status === status)
+      .map((contract) => ({
+        id: contract.id,
+        title: contractDisplayTitle(contract),
+        detail: [contract.contract_type || 'Agreement', contractPartyLabel(contract)].join(' - '),
+        meta: contract.display_status_label || entry.label,
+      }))
+  }
+
+  if (entry.destination.type === 'obligations') {
+    return groupObligationsByContract(sources.obligations, sources.contracts)
+  }
+
+  if (entry.destination.type === 'notifications') {
+    return sources.notifications.map((notification) => ({
+      id: notification.id,
+      title: notification.title || 'Notification',
+      detail: notification.message || notification.notification_type || 'Unread notification',
+      meta: formatDate(notification.created_at),
+    }))
+  }
+
+  if (entry.destination.type === 'activity') {
+    return sources.activity.map((record) => {
+      const contract = sources.contracts.find((item) => item.id === record.contract_id)
+      return {
+        id: record.id,
+        title: contractDisplayTitle(contract),
+        detail: record.description || record.activity_type || 'Agreement activity',
+        meta: formatDate(record.created_at),
+      }
+    })
+  }
+
+  if (entry.destination.type === 'workflow-state') {
+    const state = entry.destination.state
+    return sources.workflows
+      .filter((workflow) => workflow.current_state === state)
+      .map((workflow) => ({
+        id: workflow.id,
+        title: workflow.source_label || 'Agreement workflow',
+        detail: workflow.last_activity?.description || getNextAction(workflow.current_state),
+        meta: formatDate(workflow.updated_at),
+      }))
+  }
+
+  return []
 }
 
 function humanize(value: string) {
@@ -730,51 +810,27 @@ export default function WorkflowDashboard() {
   const [showContractStuff, setShowContractStuff] = useState(false)
   const [showMyObligations, setShowMyObligations] = useState(false)
   const [showAskAI, setShowAskAI] = useState(false)
-  const [workflows, setWorkflows] = useState<WorkflowRecord[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [contracts, setContracts] = useState<ContractRecord[]>([])
-  const [contractsLoading, setContractsLoading] = useState(true)
-  const [contractsError, setContractsError] = useState('')
-
-  useEffect(() => {
-    let cancelled = false
-    setIsLoading(true)
-    api.get<WorkflowListResponse>('/ai/workflows/')
-      .then(({ data }) => {
-        if (!cancelled) setWorkflows(data.results || [])
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err?.response?.data?.error || 'Activity could not be loaded.')
-          setWorkflows([])
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false)
-      })
-    return () => { cancelled = true }
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-    setContractsLoading(true)
-    api.get<ContractListResponse>('/contracts/')
-      .then(({ data }) => {
-        if (cancelled) return
-        setContracts(Array.isArray(data) ? data : data.results || [])
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setContractsError(err?.response?.data?.error || 'Contracts could not be loaded.')
-          setContracts([])
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setContractsLoading(false)
-      })
-    return () => { cancelled = true }
-  }, [])
+  const [contractStatusFilter, setContractStatusFilter] = useState<string | null>(null)
+  const [selectedBoardEntry, setSelectedBoardEntry] = useState<BoardEntryConfig | null>(null)
+  const {
+    contracts,
+    contractsLoading,
+    contractsError,
+    workflows,
+    workflowsLoading,
+    workflowsError,
+    unreadNotifications,
+    notifications,
+    notificationsLoading,
+    recentActivityCount,
+    activity,
+    activityLoading,
+    obligations,
+    obligationsLoading,
+    obligationsError,
+  } = useBoardData()
+  const isLoading = workflowsLoading
+  const error = workflowsError
 
   const sections = useMemo(() => {
     const active = workflows.filter((workflow) => !['signed', 'rejected'].includes(workflow.current_state))
@@ -821,6 +877,7 @@ export default function WorkflowDashboard() {
     setShowContracts((value) => {
       const nextValue = !value
       if (nextValue) {
+        setContractStatusFilter(null)
         setShowWorkspaceEditor(false)
         setShowActivity(false)
         setShowContractStuff(false)
@@ -882,11 +939,105 @@ export default function WorkflowDashboard() {
     { label: 'Recent Activity', heroLabel: 'Recent Activity', value: sections.recent.length, showInHero: true },
   ]
 
-  const heroSummaryItems = isLoading
-    ? []
-    : activityStats
-      .filter((stat) => stat.showInHero)
-      .map((stat) => ({ label: stat.heroLabel || stat.label, value: stat.value }))
+  const boardEntries = useMemo(() => buildBoardEntries({
+    contracts,
+    contractsLoading,
+    obligations,
+    obligationsLoading,
+    unreadNotifications,
+    notificationsLoading,
+    recentActivityCount,
+    activityLoading,
+    workflows,
+    workflowsLoading,
+    includeAiEntries: !workflowsError,
+    includeObligationsEntry: !obligationsError,
+  }), [
+    contracts,
+    contractsLoading,
+    obligations,
+    obligationsLoading,
+    obligationsError,
+    unreadNotifications,
+    notificationsLoading,
+    recentActivityCount,
+    activityLoading,
+    workflows,
+    workflowsLoading,
+    workflowsError,
+  ])
+
+  const heroSummaryItems = boardEntries.map((entry) => ({
+    id: entry.id,
+    label: entry.label,
+    value: entry.count,
+    loading: entry.loading,
+    enabled: entry.enabled,
+    onClick: () => setSelectedBoardEntry(entry),
+  }))
+
+  const filteredContracts = useMemo(() => (
+    contractStatusFilter
+      ? contracts.filter((contract) => contract.display_status === contractStatusFilter)
+      : contracts
+  ), [contracts, contractStatusFilter])
+
+  const contractFilterTitle = contractStatusFilter
+    ? boardEntries.find((entry) => entry.destination.type === 'contract-status' && entry.destination.status === contractStatusFilter)?.label || ''
+    : ''
+
+  const boardOverlayItems = useMemo(() => selectedBoardEntry
+    ? getBoardOverlayItems(selectedBoardEntry, { contracts, notifications, activity, obligations, workflows })
+    : [], [selectedBoardEntry, contracts, notifications, activity, obligations, workflows])
+
+  const boardOverlayLoading = Boolean(selectedBoardEntry && (
+    (selectedBoardEntry.overlaySource === 'contracts' && contractsLoading)
+    || (selectedBoardEntry.overlaySource === 'notifications' && notificationsLoading)
+    || (selectedBoardEntry.overlaySource === 'activity' && activityLoading)
+    || (selectedBoardEntry.overlaySource === 'obligations' && obligationsLoading)
+    || (selectedBoardEntry.overlaySource === 'workflows' && workflowsLoading)
+  ))
+
+  const boardOverlaySubtitle = selectedBoardEntry ? selectedBoardEntry.backendSource : ''
+
+  const handleBoardOverlaySelect = (item: BoardOverlayItem) => {
+    if (!selectedBoardEntry) return
+    setSelectedBoardEntry(null)
+    if (selectedBoardEntry.destination.type === 'contract-status') {
+      if (selectedBoardEntry.id === 'agreements-signed') {
+        navigate('/lifecycle?contract=' + item.id)
+        return
+      }
+      navigate('/contracts/' + item.id)
+      return
+    }
+    if (selectedBoardEntry.destination.type === 'obligations') {
+      navigate('/agreement-performance?contract=' + item.id)
+      return
+    }
+    if (selectedBoardEntry.destination.type === 'notifications') {
+      const notification = notifications.find((record) => record.id === item.id)
+      const target = notification?.target_url || notification?.redirect_url
+      if (target?.startsWith('/')) {
+        navigate(target)
+        return
+      }
+      if (notification?.related_contract_id) {
+        navigate('/contracts/' + notification.related_contract_id)
+        return
+      }
+      navigate('/notifications')
+      return
+    }
+    if (selectedBoardEntry.destination.type === 'activity') {
+      const record = activity.find((activityItem) => activityItem.id === item.id)
+      navigate(record?.contract_id ? '/contracts/' + record.contract_id : '/workspace')
+      return
+    }
+    if (selectedBoardEntry.destination.type === 'workflow-state') {
+      navigate('/workflows/' + item.id)
+    }
+  }
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
@@ -952,17 +1103,17 @@ export default function WorkflowDashboard() {
           <section style={{ background: 'white', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12, padding: 18 }}>
             <div style={{ marginBottom: 14 }}>
               <h3 style={{ fontSize: 16, fontWeight: 600, letterSpacing: '0.005em', color: '#0F1F3D', margin: 0, lineHeight: 1.25 }}>Contract</h3>
-              <p style={{ fontSize: 13, color: '#6B7280', margin: '5px 0 0', lineHeight: 1.6 }}>Your current contract records from Blackbòd.</p>
+              <p style={{ fontSize: 13, color: '#6B7280', margin: '5px 0 0', lineHeight: 1.6 }}>{contractStatusFilter ? 'Showing ' + contractFilterTitle + '.' : 'Your current contract records from Blackbòd.'}</p>
             </div>
           {contractsLoading ? (
               <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Loading contracts...</p>
             ) : contractsError ? (
               <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#B91C1C' }}>{contractsError}</div>
-            ) : contracts.length === 0 ? (
-              <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>No contract records yet.</p>
+            ) : filteredContracts.length === 0 ? (
+              <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>{contractStatusFilter ? 'No ' + contractFilterTitle.toLowerCase() + ' found.' : 'No contract records yet.'}</p>
             ) : (
               <div style={{ display: 'grid', gap: 10 }}>
-              {contracts.map((contract) => {
+              {filteredContracts.map((contract) => {
                   const label = contractStatusLabel(contract)
                   return (
                     <article key={contract.id} style={{ border: '1px solid #E5E7EB', background: '#F8FAFC', borderRadius: 10, padding: 12 }}>
@@ -1072,6 +1223,17 @@ export default function WorkflowDashboard() {
           </section>
         </main>
       </div>
+      {selectedBoardEntry && (
+        <BoardOverlay
+          title={selectedBoardEntry.label + ' (' + selectedBoardEntry.count + ')'}
+          subtitle={boardOverlaySubtitle}
+          items={boardOverlayItems}
+          loading={boardOverlayLoading}
+          empty={selectedBoardEntry.empty}
+          onClose={() => setSelectedBoardEntry(null)}
+          onSelect={handleBoardOverlaySelect}
+        />
+      )}
     </div>
   )
 }

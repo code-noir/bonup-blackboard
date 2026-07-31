@@ -1,10 +1,18 @@
-import { type CSSProperties, type ReactNode } from 'react'
+import { type CSSProperties } from 'react'
+
+type WorkspaceHeroSummaryItem = {
+  id: string
+  label: string
+  value: number
+  loading?: boolean
+  enabled?: boolean
+  onClick?: () => void
+}
 
 type WorkspaceHeroProps = {
-  summaryItems: { label: string; value: number }[]
+  summaryItems: WorkspaceHeroSummaryItem[]
   onAnalyzeContract: () => void
   onOpenContractCounter: () => void
-  children?: ReactNode
 }
 
 export function PanelQuickAction({ label, tone, disabled = false, onClick }: { label: string; tone: 'green' | 'blue' | 'neutral' | 'warm' | 'light'; disabled?: boolean; onClick?: () => void }) {
@@ -45,17 +53,10 @@ export function PanelQuickAction({ label, tone, disabled = false, onClick }: { l
   )
 }
 
-export default function WorkspaceHero({ summaryItems, onAnalyzeContract, onOpenContractCounter, children }: WorkspaceHeroProps) {
-  const placeholderMetrics = [
-    { label: 'Draft Agreements', value: 12 },
-    { label: 'Pending Approval', value: 5 },
-    { label: 'Archived Agreements', value: 31 },
-  ]
-  const metricColumns = [
-    summaryItems.slice(0, 3),
-    summaryItems.slice(3, 6),
-    placeholderMetrics,
-  ]
+export default function WorkspaceHero({ summaryItems, onAnalyzeContract, onOpenContractCounter }: WorkspaceHeroProps) {
+  const metricColumns = Array.from({ length: 3 }, (_, columnIndex) =>
+    summaryItems.filter((_, itemIndex) => itemIndex % 3 === columnIndex),
+  )
 
   return (
     <div style={{ display: 'grid', gap: 56, paddingBottom: 4 }}>
@@ -117,7 +118,6 @@ export default function WorkspaceHero({ summaryItems, onAnalyzeContract, onOpenC
           }}
         />
         <div
-          aria-hidden="true"
           style={{
             position: 'absolute',
             inset: 0,
@@ -136,14 +136,14 @@ export default function WorkspaceHero({ summaryItems, onAnalyzeContract, onOpenC
               AGREEMENT OPERATIONS CENTER
             </p>
             {summaryItems.length > 0 && (
-              <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', columnGap: 72, margin: '38px auto 0', width: '100%', maxWidth: 1280, padding: '0 56px', boxSizing: 'border-box', color: 'rgba(226,232,240,0.78)' }}>
+              <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', columnGap: 72, margin: '38px auto 0', width: '100%', maxWidth: 1280, padding: '0 56px', boxSizing: 'border-box', color: 'rgba(226,232,240,0.78)', maxHeight: 152, overflowY: 'auto', pointerEvents: 'auto' }}>
                 {metricColumns.map((column, columnIndex) => (
                   <div key={columnIndex} style={{ display: 'grid', gap: 14, minWidth: 0 }}>
-                    {column.filter((item): item is { label: string; value: number } => Boolean(item)).map((item) => (
-                      <div key={item.label} style={{ display: 'flex', alignItems: 'baseline', gap: 12, minWidth: 0 }}>
-                        <dd style={{ margin: 0, color: 'rgba(248,250,252,0.9)', fontSize: 16, fontWeight: 600, fontVariantNumeric: 'tabular-nums', lineHeight: 1, textAlign: 'right', flex: '0 0 28px' }}>{item.value}</dd>
-                        <dt style={{ margin: 0, color: 'rgba(196,154,95,0.78)', fontSize: 15, fontWeight: 400, letterSpacing: '0.01em', lineHeight: 1.35, textAlign: 'left', whiteSpace: 'nowrap' }}>{item.label}</dt>
-                      </div>
+                    {column.filter((item): item is WorkspaceHeroSummaryItem => Boolean(item)).map((item) => (
+                      <button key={item.id} type="button" disabled={item.enabled === false} onClick={item.onClick} style={{ display: 'flex', alignItems: 'baseline', gap: 12, minWidth: 0, border: 'none', background: 'transparent', padding: 0, textAlign: 'left', cursor: item.enabled === false ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                        <dd style={{ margin: 0, color: item.enabled === false ? 'rgba(248,250,252,0.48)' : 'rgba(248,250,252,0.9)', fontSize: 16, fontWeight: 600, fontVariantNumeric: 'tabular-nums', lineHeight: 1, textAlign: 'right', flex: '0 0 28px' }}>{item.loading ? '-' : item.value}</dd>
+                        <dt style={{ margin: 0, color: item.enabled === false ? 'rgba(196,154,95,0.42)' : 'rgba(196,154,95,0.78)', fontSize: 15, fontWeight: 400, letterSpacing: '0.01em', lineHeight: 1.35, textAlign: 'left', whiteSpace: 'nowrap' }}>{item.label}</dt>
+                      </button>
                     ))}
                   </div>
                 ))}
@@ -152,7 +152,6 @@ export default function WorkspaceHero({ summaryItems, onAnalyzeContract, onOpenC
           </div>
         </div>
       </section>
-      {children}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 18, width: '100%', maxWidth: 1010, margin: '0 auto', padding: '0 clamp(0px, 8vw, 90px)', boxSizing: 'border-box', zIndex: 1 }}>
         <PanelQuickAction label="Analyze Agreement" tone="blue" onClick={onAnalyzeContract} />
         <PanelQuickAction label="Agreement Counter" tone="warm" onClick={onOpenContractCounter} />

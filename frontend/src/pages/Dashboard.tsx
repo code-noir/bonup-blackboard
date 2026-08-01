@@ -505,15 +505,6 @@ export default function Dashboard() {
               available: true,
               badge: '',
             },
-            {
-              icon: '📈',
-              title: 'Agreement Timeline',
-              description: 'Review signed agreement activity, to-dos, due dates, services, and payments.',
-              action: 'Agreement Timeline',
-              onClick: () => navigate('/lifecycle'),
-              available: true,
-              badge: '',
-            },
           ].map((tool) => (
             <div
               key={tool.title}

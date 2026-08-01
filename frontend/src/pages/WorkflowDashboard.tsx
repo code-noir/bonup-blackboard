@@ -1073,7 +1073,6 @@ export default function WorkflowDashboard() {
             </Group>
             <Group title="Post-Signature">
               <RailButton label="My Obligations" active={showMyObligations} onClick={toggleMyObligations} />
-              <RailButton label="Lifecycle" onClick={() => navigate('/lifecycle')} />
               <RailButton label="Change Orders" disabled />
               <RailButton label="Resolution" disabled />
               <RailButton label="Contract Stuff" active={showContractStuff} onClick={toggleContractStuff} />

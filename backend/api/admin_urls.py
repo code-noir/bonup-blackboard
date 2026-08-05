@@ -6,6 +6,7 @@ from .admin_views import (
     AdminActivityListView,
     AdminContractListView,
     AdminEntityListView,
+    AdminObligationListView,
     AdminSolListView,
     AdminSubscriptionListView,
     AdminSummaryView,
@@ -21,5 +22,6 @@ urlpatterns = [
     path("sol/",                AdminSolListView.as_view(),            name="admin-sol"),
     path("entities/",           AdminEntityListView.as_view(),         name="admin-entities"),
     path("contracts/",          AdminContractListView.as_view(),       name="admin-contracts"),
+    path("obligations/",        AdminObligationListView.as_view(),     name="admin-obligations"),
     path("activity/",           AdminActivityListView.as_view(),       name="admin-activity"),
 ]

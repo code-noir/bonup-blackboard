@@ -40,6 +40,7 @@ import AdminSubscriptions from '@/pages/admin/AdminSubscriptions'
 import AdminSol from '@/pages/admin/AdminSol'
 import AdminEntities from '@/pages/admin/AdminEntities'
 import AdminContracts from '@/pages/admin/AdminContracts'
+import AdminObligations from '@/pages/admin/AdminObligations'
 import AdminActivity from '@/pages/admin/AdminActivity'
 import AdminPlaceholder from '@/pages/admin/AdminPlaceholder'
 import AdminBilling from '@/pages/admin/AdminBilling'
@@ -187,6 +188,7 @@ export default function App() {
               <Route path="subscriptions" element={<AdminSubscriptions />} />
               <Route path="plans" element={<AdminPlans />} />
               <Route path="contracts" element={<AdminContracts />} />
+              <Route path="obligations" element={<AdminObligations />} />
               <Route path="entities" element={<AdminEntities />} />
               <Route path="sol" element={<AdminSol />} />
               <Route path="activity" element={<AdminActivity />} />

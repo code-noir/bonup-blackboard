@@ -13,6 +13,7 @@ interface Summary {
   sol_groups: number
   entities: number
   contracts: number
+  obligations: number
   activity_events: number
 }
 
@@ -131,10 +132,17 @@ export default function AdminHome() {
           />
           <MetricCard
             value={summary?.contracts}
-            label="Contracts"
-            description="Total contracts in system"
+            label="Agreements"
+            description="Total agreements in system"
             to="/admin/contracts"
             icon="📄"
+          />
+          <MetricCard
+            value={summary?.obligations}
+            label="Obligations"
+            description="Payment and service obligations"
+            to="/admin/obligations"
+            icon="✓"
           />
           <MetricCard
             value={summary?.sol_groups}

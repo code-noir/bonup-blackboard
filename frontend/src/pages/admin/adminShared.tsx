@@ -38,6 +38,26 @@ export function planDisplay(slug: string | null | undefined): string {
   return PLAN_DISPLAY_MAP[slug] || slug
 }
 
+export function formatDate(value: string | null | undefined): string {
+  if (!value) return '—'
+  return new Date(value).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+export function formatDateTime(value: string | null | undefined): string {
+  if (!value) return '—'
+  return new Date(value).toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
 // ---------------------------------------------------------------------------
 // useAdminFetch
 // ---------------------------------------------------------------------------
@@ -158,6 +178,38 @@ export function AdminBadge({
     }}>
       {label}
     </span>
+  )
+}
+
+
+// ---------------------------------------------------------------------------
+// AdminMetricCard
+// ---------------------------------------------------------------------------
+
+export function AdminMetricCard({
+  label,
+  value,
+  tone = 'default',
+}: {
+  label: string
+  value: number | undefined
+  tone?: 'default' | 'blue' | 'green' | 'yellow' | 'red'
+}) {
+  const colors = {
+    default: { bg: '#FFFFFF', border: '#E5E7EB', value: '#0F1F3D' },
+    blue: { bg: '#F0F9FF', border: '#BAE6FD', value: '#0369A1' },
+    green: { bg: '#ECFDF5', border: '#BBF7D0', value: '#065F46' },
+    yellow: { bg: '#FEFCE8', border: '#FEF08A', value: '#854D0E' },
+    red: { bg: '#FEF2F2', border: '#FECACA', value: '#B91C1C' },
+  }[tone]
+
+  return (
+    <div style={{ background: colors.bg, border: `1px solid ${colors.border}`, borderRadius: 12, padding: 14 }}>
+      <p style={{ margin: 0, color: '#64748B', fontSize: 11, fontWeight: 800 }}>{label}</p>
+      <p style={{ margin: '7px 0 0', color: colors.value, fontSize: 24, fontWeight: 900 }}>
+        {value !== undefined ? value.toLocaleString() : '—'}
+      </p>
+    </div>
   )
 }
 

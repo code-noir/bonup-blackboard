@@ -14,7 +14,7 @@ export type BoardEntryId =
   | 'ai-counter-drafts-ready'
 
 export type BoardEntryCategory = 'agreement' | 'obligation' | 'notification' | 'activity' | 'ai'
-export type BoardEntryBackendSource = '/api/contracts/' | '/api/obligations/' | '/api/notifications/' | '/api/notifications/unread-count/' | '/api/activity/' | '/api/ai/workflows/'
+export type BoardEntryBackendSource = '/api/contracts/' | '/api/lifecycle/operational-obligations/' | '/api/notifications/' | '/api/notifications/unread-count/' | '/api/activity/' | '/api/ai/workflows/'
 export type BoardEntryOverlaySource = 'contracts' | 'obligations' | 'notifications' | 'activity' | 'workflows'
 
 export type BoardEntryDestination =
@@ -98,7 +98,7 @@ const OPERATIONAL_ENTRIES: BoardEntryDefinition[] = [
     id: 'obligations-upcoming',
     label: 'Upcoming Obligations',
     category: 'obligation',
-    backendSource: '/api/obligations/',
+    backendSource: '/api/lifecycle/operational-obligations/',
     overlaySource: 'obligations',
     empty: 'No upcoming obligations.',
     enabled: true,
@@ -155,7 +155,7 @@ function countWorkflowsByState(workflows: WorkflowRecord[], state: string) {
 }
 
 function countOpenObligations(obligations: BoardObligationRecord[]) {
-  return obligations.filter((obligation) => obligation.state !== 'resolved').length
+  return obligations.length
 }
 
 export function buildBoardEntries({

@@ -491,6 +491,132 @@ Contractor must return any key, access badge, parking pass, or written door code
         self.assertTrue(any(row["id"] == str(work.id) for row in linda_board.data["views"]["my_obligations"]))
         self.assertFalse(any(row["id"] == str(work.id) for row in jason_board.data["views"]["my_obligations"]))
 
+    def test_operational_obligations_endpoint_returns_assigned_open_lifecycle_items_only(self):
+        self.initiator.first_name = "Linda"
+        self.initiator.last_name = "Charles"
+        self.initiator.save(update_fields=["first_name", "last_name"])
+        self.counterparty.first_name = "Jason"
+        self.counterparty.last_name = "Pete"
+        self.counterparty.save(update_fields=["first_name", "last_name"])
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        agreement.performance_ready = True
+        agreement.save(update_fields=["performance_ready", "updated_at"])
+        lender_item = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_SERVICE_WORK,
+            title="Provide loan funds",
+            responsible_party="Lender",
+            due_date=datetime(2026, 7, 5, 0, 0, tzinfo=dt_timezone.utc),
+            status=LifecycleItem.STATUS_PENDING,
+            created_by=self.initiator,
+        )
+        LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_PAYMENT,
+            title="Payment installment 1",
+            responsible_party="Borrower",
+            due_date=datetime(2026, 8, 1, 0, 0, tzinfo=dt_timezone.utc),
+            status=LifecycleItem.STATUS_PENDING,
+            created_by=self.initiator,
+        )
+        LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_SERVICE_WORK,
+            title="Cancelled lender work",
+            responsible_party="Lender",
+            due_date=datetime(2026, 7, 6, 0, 0, tzinfo=dt_timezone.utc),
+            status=LifecycleItem.STATUS_CANCELLED,
+            created_by=self.initiator,
+        )
+        LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_SERVICE_WORK,
+            title="Completed lender work",
+            responsible_party="Lender",
+            due_date=datetime(2026, 7, 7, 0, 0, tzinfo=dt_timezone.utc),
+            status=LifecycleItem.STATUS_COMPLETED,
+            created_by=self.initiator,
+        )
+
+        response = self.initiator_client.get("/api/lifecycle/operational-obligations/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(len(response.data["results"]), 1)
+        row = response.data["results"][0]
+        self.assertEqual(row["id"], str(lender_item.id))
+        self.assertEqual(row["lifecycle_item_id"], str(lender_item.id))
+        self.assertEqual(row["contract_id"], str(self.contract.id))
+        self.assertEqual(row["agreement_title"], self.contract.title)
+        self.assertEqual(row["title"], "Provide loan funds")
+        self.assertEqual(row["item_type"], LifecycleItem.TYPE_SERVICE_WORK)
+        self.assertEqual(row["status"], LifecycleItem.STATUS_PENDING)
+        self.assertEqual(row["state"], LifecycleItem.STATUS_PENDING)
+        self.assertEqual(row["due_date"], "2026-07-05")
+        self.assertTrue(row["assigned_to_current_user"])
+        self.assertNotIn("description", row)
+        self.assertNotIn("amount", row)
+        self.assertNotIn("source_clause", row)
+        self.assertNotIn("metadata", row)
+
+    def test_operational_obligations_endpoint_matches_repayment_assignment_by_party(self):
+        agreement = get_or_create_lifecycle_for_signed_contract(self.contract, self.initiator)
+        agreement.performance_ready = True
+        agreement.save(update_fields=["performance_ready", "updated_at"])
+        lender_deadline = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_DUE_DATE,
+            title="Loan funds delivery deadline",
+            responsible_party="Lender",
+            due_date=datetime(2026, 7, 5, 0, 0, tzinfo=dt_timezone.utc),
+            status=LifecycleItem.STATUS_PENDING,
+            created_by=self.initiator,
+        )
+        lender_work = LifecycleItem.objects.create(
+            lifecycle_agreement=agreement,
+            item_type=LifecycleItem.TYPE_SERVICE_WORK,
+            title="Provide loan funds",
+            responsible_party="Lender",
+            due_date=datetime(2026, 7, 5, 0, 0, tzinfo=dt_timezone.utc),
+            status=LifecycleItem.STATUS_PENDING,
+            created_by=self.initiator,
+        )
+        borrower_payments = []
+        payment_due_dates = [
+            datetime(2026, 8, 1, 0, 0, tzinfo=dt_timezone.utc),
+            datetime(2026, 9, 1, 0, 0, tzinfo=dt_timezone.utc),
+            datetime(2026, 10, 1, 0, 0, tzinfo=dt_timezone.utc),
+            datetime(2026, 11, 1, 0, 0, tzinfo=dt_timezone.utc),
+            datetime(2026, 12, 1, 0, 0, tzinfo=dt_timezone.utc),
+            datetime(2027, 1, 1, 0, 0, tzinfo=dt_timezone.utc),
+        ]
+        for number, due_date in enumerate(payment_due_dates, start=1):
+            borrower_payments.append(LifecycleItem.objects.create(
+                lifecycle_agreement=agreement,
+                item_type=LifecycleItem.TYPE_PAYMENT,
+                title=f"Payment installment {number}",
+                responsible_party="Borrower",
+                due_date=due_date,
+                status=LifecycleItem.STATUS_PENDING,
+                created_by=self.initiator,
+            ))
+
+        lender_response = self.initiator_client.get("/api/lifecycle/operational-obligations/")
+        borrower_response = self.counterparty_client.get("/api/lifecycle/operational-obligations/")
+
+        self.assertEqual(lender_response.status_code, 200)
+        self.assertEqual(borrower_response.status_code, 200)
+        lender_ids = {row["lifecycle_item_id"] for row in lender_response.data["results"]}
+        borrower_ids = {row["lifecycle_item_id"] for row in borrower_response.data["results"]}
+        self.assertIn(str(lender_deadline.id), lender_ids)
+        self.assertIn(str(lender_work.id), lender_ids)
+        self.assertFalse(any(str(item.id) in lender_ids for item in borrower_payments))
+        self.assertTrue(all(str(item.id) in borrower_ids for item in borrower_payments))
+        self.assertNotIn(str(lender_deadline.id), borrower_ids)
+        self.assertNotIn(str(lender_work.id), borrower_ids)
+        self.assertEqual(lender_response.data["count"], len(lender_response.data["results"]))
+        self.assertEqual(borrower_response.data["count"], len(borrower_response.data["results"]))
+
     def test_payment_proof_state_is_shared_on_correct_lifecycle_item(self):
         self.counterparty.first_name = "Jason"
         self.counterparty.last_name = "Pete"

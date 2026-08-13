@@ -115,29 +115,35 @@ function contractDisplayTitle(contract?: BoardContractRecord) {
 }
 
 function obligationLabel(obligation: BoardObligationRecord) {
-  if (obligation.description) return obligation.description
-  if (obligation.type === 'payment') return obligation.installment_number ? 'Payment installment ' + obligation.installment_number : 'Payment obligation'
-  return 'Service obligation'
+  return obligation.title || 'Untitled obligation'
 }
 
-function groupObligationsByContract(obligations: BoardObligationRecord[], contracts: BoardContractRecord[]) {
-  const groups = new Map<string, BoardObligationRecord[]>()
-  obligations
-    .filter((obligation) => obligation.contract_id && obligation.state !== 'resolved')
-    .forEach((obligation) => {
-      const contractId = obligation.contract_id || ''
-      groups.set(contractId, [...(groups.get(contractId) || []), obligation])
-    })
+function obligationTypeLabel(obligation: BoardObligationRecord) {
+  return humanize(obligation.item_type || obligation.type || 'obligation')
+}
 
-  return Array.from(groups.entries()).map(([contractId, records]) => {
-    const contract = contracts.find((item) => item.id === contractId)
-    return {
-      id: contractId,
-      title: contractDisplayTitle(contract),
-      detail: records.slice(0, 2).map(obligationLabel).join(' • '),
-      meta: records.length + (records.length === 1 ? ' obligation' : ' obligations'),
-    }
-  })
+function obligationStatusLabel(obligation: BoardObligationRecord) {
+  return humanize(obligation.status || obligation.state || 'open')
+}
+
+function obligationMeta(obligation: BoardObligationRecord) {
+  return [obligationTypeLabel(obligation), obligationStatusLabel(obligation), formatDate(obligation.due_date)].filter(Boolean).join(' - ')
+}
+
+function obligationOverlayItems(obligations: BoardObligationRecord[], contracts: BoardContractRecord[]) {
+  return obligations
+    .filter((obligation) => obligation.contract_id)
+    .map((obligation) => {
+      const contract = contracts.find((item) => item.id === obligation.contract_id)
+      return {
+        id: obligation.id,
+        title: obligationLabel(obligation),
+        detail: obligation.agreement_title || contractDisplayTitle(contract),
+        meta: obligationMeta(obligation),
+        contractId: obligation.contract_id,
+        lifecycleItemId: obligation.lifecycle_item_id,
+      }
+    })
 }
 
 type BoardOverlaySources = {
@@ -162,7 +168,7 @@ function getBoardOverlayItems(entry: BoardEntryConfig, sources: BoardOverlaySour
   }
 
   if (entry.destination.type === 'obligations') {
-    return groupObligationsByContract(sources.obligations, sources.contracts)
+    return obligationOverlayItems(sources.obligations, sources.contracts)
   }
 
   if (entry.destination.type === 'notifications') {
@@ -1012,7 +1018,11 @@ export default function WorkflowDashboard() {
       return
     }
     if (selectedBoardEntry.destination.type === 'obligations') {
-      navigate('/agreement-performance?contract=' + item.id)
+      if (item.contractId && item.lifecycleItemId) {
+        navigate('/agreement-performance?contract=' + item.contractId + '&lifecycle_item=' + item.lifecycleItemId)
+        return
+      }
+      navigate(item.contractId ? '/agreement-performance?contract=' + item.contractId : '/agreement-performance')
       return
     }
     if (selectedBoardEntry.destination.type === 'notifications') {

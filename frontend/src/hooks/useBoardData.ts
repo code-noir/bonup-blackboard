@@ -37,13 +37,17 @@ export type BoardActivityRecord = {
 
 export type BoardObligationRecord = {
   id: string
-  type?: 'payment' | 'service'
+  lifecycle_item_id?: string | null
   contract_id?: string
+  agreement_id?: string
+  agreement_title?: string
+  title?: string
+  item_type?: string
+  type?: string
+  status?: string
   state?: string
   due_date?: string | null
-  description?: string
-  amount_due?: string
-  installment_number?: number
+  assigned_to_current_user?: boolean
 }
 
 type ContractListResponse = BoardContractRecord[] | { results: BoardContractRecord[] }
@@ -165,7 +169,7 @@ export function useBoardData() {
   useEffect(() => {
     let cancelled = false
     setObligationsLoading(true)
-    api.get<ObligationListResponse>('/obligations/?page_size=100')
+    api.get<ObligationListResponse>('/lifecycle/operational-obligations/?page_size=100')
       .then(({ data }) => {
         if (!cancelled) setObligations(data.results || [])
       })

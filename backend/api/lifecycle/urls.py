@@ -1,10 +1,11 @@
 from django.urls import path
 
-from .views import AgreementPerformanceListAPIView, LifecycleAgreementAPIView, LifecycleChangeProposalAPIView, LifecycleChangeProposalDecisionAPIView, LifecycleChangeProposalDetailAPIView, LifecycleChangeProposalMessageAPIView, LifecycleItemActionAPIView, LifecycleItemAttachmentAPIView, LifecycleItemCreateAPIView, LifecycleItemDetailAPIView, LifecycleItemMessageAPIView, LifecycleItemResponseAPIView, LifecycleReadyForPerformanceAPIView
+from .views import AgreementPerformanceListAPIView, LifecycleAgreementAPIView, LifecycleChangeProposalAPIView, LifecycleChangeProposalDecisionAPIView, LifecycleChangeProposalDetailAPIView, LifecycleChangeProposalMessageAPIView, LifecycleItemActionAPIView, LifecycleItemAttachmentAPIView, LifecycleItemCreateAPIView, LifecycleItemDetailAPIView, LifecycleItemMessageAPIView, LifecycleItemResponseAPIView, LifecycleOperationalObligationListAPIView, LifecycleReadyForPerformanceAPIView
 
 urlpatterns = [
     path("", LifecycleAgreementAPIView.as_view(), name="lifecycle-agreement"),
     path("performance/", AgreementPerformanceListAPIView.as_view(), name="agreement-performance-list"),
+    path("operational-obligations/", LifecycleOperationalObligationListAPIView.as_view(), name="lifecycle-operational-obligations"),
     path("<uuid:lifecycle_id>/ready-for-performance/", LifecycleReadyForPerformanceAPIView.as_view(), name="lifecycle-ready-for-performance"),
     path("agreements/<uuid:lifecycle_id>/proposals/", LifecycleChangeProposalAPIView.as_view(), name="lifecycle-change-proposals"),
     path("proposals/<uuid:proposal_id>/", LifecycleChangeProposalDetailAPIView.as_view(), name="lifecycle-change-proposal-detail"),

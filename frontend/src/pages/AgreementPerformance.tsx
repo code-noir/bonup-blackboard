@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import api, { tokenStorage } from '@/api/client'
 import { dateOnlyInputValue, dateOnlySortKey, formatDateOnly } from '@/lib/dateOnly'
 
 type BoardTab = 'payments' | 'work' | 'due_dates' | 'my_obligations' | 'activity' | 'changes'
 
-type BoardViewOptions = { resetView?: boolean }
+type BoardViewOptions = { resetView?: boolean; selectedItemId?: string | null }
 
 const LAST_PERFORMANCE_AGREEMENT_KEY = 'agreementPerformance:lastAgreementId'
 
@@ -57,6 +58,8 @@ type TimelineItem = {
   status?: string
   source?: string
   source_type?: string
+  source_id?: string | null
+  lifecycle_item_id?: string | null
   source_label?: string | null
   source_clause?: string | null
   payment_method?: string | null
@@ -676,7 +679,48 @@ function agreementNavigatorMatchText(agreement: PerformanceAgreement, query: str
   return counterparty
 }
 
+function performanceAgreementFromBoardData(data: LifecycleBoardResponse, contractId: string): PerformanceAgreement {
+  const views = data.views || {}
+  const payments = ((views.payments || []) as TimelineItem[]).filter((item) => item.item_type === 'payment')
+  const workItems = ((views.work_services || []) as TimelineItem[]).filter((item) => ['service', 'service_work'].includes(item.item_type || ''))
+  const dueDates = ((views.due_dates || []) as TimelineItem[]).filter(isDisplayableItem)
+  const events = ((views.activity || data.events || []) as TimelineEvent[])
+  const lifecycleAgreement = data.lifecycle_agreement
+  const contract = data.contract
+  return {
+    id: lifecycleAgreement?.id || contractId,
+    contract_id: contract?.id || contractId,
+    lifecycle_id: lifecycleAgreement?.id,
+    title: contract?.title,
+    contract: {
+      id: contract?.id || contractId,
+      title: contract?.title,
+      counterparty_name: contract?.counterparty_name,
+      counterparty_email: contract?.counterparty_email,
+    },
+    counterparty: data.parties?.counterparty || {
+      name: contract?.counterparty_name,
+      email: contract?.counterparty_email,
+    },
+    status: agreementPerformanceStatusLabel(lifecycleAgreement?.status),
+    performance_ready: lifecycleAgreement?.performance_ready,
+    payment_count: payments.length,
+    work_count: workItems.length,
+    work_item_count: workItems.length,
+    due_date_count: dueDates.length,
+    activity_count: events.length,
+    lifecycle_agreement: lifecycleAgreement,
+  }
+}
+
+function itemMatchesLifecycleDeepLink(item: TimelineItem, lifecycleItemId: string) {
+  return (item.lifecycle_item_id || item.id) === lifecycleItemId
+}
+
 export default function AgreementPerformance() {
+  const [searchParams] = useSearchParams()
+  const deepLinkContractId = searchParams.get('contract')
+  const deepLinkLifecycleItemId = searchParams.get('lifecycle_item')
   const [agreements, setAgreements] = useState<PerformanceAgreement[]>([])
   const [selectedAgreement, setSelectedAgreement] = useState<PerformanceAgreement | null>(null)
   const [navigatorOpen, setNavigatorOpen] = useState(false)
@@ -715,6 +759,8 @@ export default function AgreementPerformance() {
   const [decisionBusy, setDecisionBusy] = useState('')
   const [decisionError, setDecisionError] = useState('')
   const [error, setError] = useState('')
+  const [deepLinkOpenedContractId, setDeepLinkOpenedContractId] = useState('')
+  const [deepLinkSelectedItemId, setDeepLinkSelectedItemId] = useState('')
   const [boardError, setBoardError] = useState('')
   const [feedback, setFeedback] = useState('')
 
@@ -754,7 +800,52 @@ export default function AgreementPerformance() {
     setProposalError('')
     try {
       const response = await api.get<LifecycleBoardResponse>('/lifecycle/', { params: { contract: contractId } })
-      setBoardData(response.data)
+      const nextBoardData = response.data
+      setBoardData(nextBoardData)
+      if (options.selectedItemId) {
+        const requestedItem = findBoardItem(nextBoardData, options.selectedItemId)
+        if (requestedItem) {
+          setActiveTab('my_obligations')
+          openPerformanceItem(requestedItem)
+        }
+      }
+    } catch (err) {
+      setBoardError(getErrorMessage(err, 'Unable to open Agreement Performance board.'))
+      setBoardData(null)
+    } finally {
+      setBoardLoading(false)
+    }
+  }
+
+  async function openBoardByContractId(contractId: string) {
+    setSelectedAgreement({
+      id: contractId,
+      contract_id: contractId,
+      contract: { id: contractId },
+      status: agreementPerformanceStatusLabel(),
+    })
+    setNavigatorOpen(false)
+    setNavigatorSearch('')
+    setNavigatorHighlightIndex(0)
+    setBoardLoading(true)
+    setBoardError('')
+    setFeedback('')
+    setActiveTab('payments')
+    setSelectedItem(null)
+    setSelectedProposal(null)
+    setProposalMode(null)
+    setProposalMessageError('')
+    setDecisionError('')
+    setProposals([])
+    setProposalPartyOptions([])
+    setProposalError('')
+    try {
+      const response = await api.get<LifecycleBoardResponse>('/lifecycle/', { params: { contract: contractId } })
+      const nextBoardData = response.data
+      const agreement = performanceAgreementFromBoardData(nextBoardData, contractId)
+      setSelectedAgreement(agreement)
+      window.localStorage.setItem(LAST_PERFORMANCE_AGREEMENT_KEY, agreement.id)
+      setBoardData(nextBoardData)
     } catch (err) {
       setBoardError(getErrorMessage(err, 'Unable to open Agreement Performance board.'))
       setBoardData(null)
@@ -765,12 +856,16 @@ export default function AgreementPerformance() {
 
   function findBoardItem(data: LifecycleBoardResponse | null, itemId: string) {
     const items = [
+      ...((data?.views?.my_obligations || []) as TimelineItem[]),
       ...((data?.views?.payments || []) as TimelineItem[]),
       ...((data?.views?.work_services || []) as TimelineItem[]),
       ...((data?.views?.due_dates || []) as TimelineItem[]),
-      ...((data?.views?.my_obligations || []) as TimelineItem[]),
     ]
     return items.find((item) => item.id === itemId) || null
+  }
+
+  function openPerformanceItem(item: TimelineItem) {
+    setSelectedItem(item)
   }
 
   async function refreshBoard(options: BoardViewOptions = {}) {
@@ -1034,12 +1129,23 @@ export default function AgreementPerformance() {
   }, [])
 
   useEffect(() => {
-    if (isLoading || selectedAgreement || agreements.length === 0) return
+    if (isLoading || selectedAgreement || agreements.length === 0 || deepLinkContractId) return
     const savedAgreementId = window.localStorage.getItem(LAST_PERFORMANCE_AGREEMENT_KEY)
     if (!savedAgreementId) return
     const savedAgreement = agreements.find((agreement) => agreement.id === savedAgreementId)
     if (savedAgreement) void openBoard(savedAgreement)
-  }, [agreements, isLoading, selectedAgreement])
+  }, [agreements, deepLinkContractId, isLoading, selectedAgreement])
+
+  useEffect(() => {
+    if (isLoading || !deepLinkContractId || selectedAgreement || deepLinkOpenedContractId === deepLinkContractId) return
+    const agreement = agreements.find((item) => (item.contract_id || item.contract.id) === deepLinkContractId)
+    setDeepLinkOpenedContractId(deepLinkContractId)
+    if (agreement) {
+      void openBoard(agreement)
+      return
+    }
+    void openBoardByContractId(deepLinkContractId)
+  }, [agreements, deepLinkContractId, deepLinkOpenedContractId, isLoading, selectedAgreement])
 
   useEffect(() => {
     if (!navigatorOpen) return undefined
@@ -1115,6 +1221,19 @@ export default function AgreementPerformance() {
   const workItems = useMemo(() => ((boardData?.views?.work_services || []) as TimelineItem[]).filter(isDisplayableItem), [boardData])
   const dueDates = useMemo(() => ((boardData?.views?.due_dates || []) as TimelineItem[]).filter(isDisplayableItem), [boardData])
   const myObligations = useMemo(() => sortByDeadline(((boardData?.views?.my_obligations || []) as TimelineItem[]).filter(isDisplayableItem)), [boardData])
+
+  useEffect(() => {
+    if (!deepLinkContractId || !deepLinkLifecycleItemId || !selectedAgreement || !boardData || boardLoading) return
+    const selectedContractId = selectedAgreement.contract_id || selectedAgreement.contract.id
+    if (selectedContractId !== deepLinkContractId) return
+    if (deepLinkSelectedItemId === deepLinkLifecycleItemId || (selectedItem && itemMatchesLifecycleDeepLink(selectedItem, deepLinkLifecycleItemId))) return
+    const requestedItem = myObligations.find((item) => itemMatchesLifecycleDeepLink(item, deepLinkLifecycleItemId)) || findBoardItem(boardData, deepLinkLifecycleItemId)
+    if (!requestedItem) return
+    setDeepLinkSelectedItemId(deepLinkLifecycleItemId)
+    setActiveTab('my_obligations')
+    openPerformanceItem(requestedItem)
+  }, [boardData, boardLoading, deepLinkContractId, deepLinkLifecycleItemId, deepLinkSelectedItemId, myObligations, selectedAgreement, selectedItem?.id])
+
   const events = useMemo(() => ((boardData?.views?.activity || boardData?.events || []) as TimelineEvent[]), [boardData])
   const proposalAffectedItems = useMemo(() => rawBoardItems.filter(isLifecycleTimelineItem), [rawBoardItems])
   const availablePartyOptions = useMemo(() => {
@@ -1390,7 +1509,7 @@ export default function AgreementPerformance() {
                   <PerformanceCard
                     key={`${item.source || item.source_type}-${item.id}`}
                     item={item}
-                    onOpen={() => setSelectedItem(item)}
+                    onOpen={() => openPerformanceItem(item)}
                     onViewSource={() => setShowSource(true)}
                     reminderBusy={reminderBusy === item.id}
                     onReminder={(reminderAt) => void saveReminder(item, reminderAt)}

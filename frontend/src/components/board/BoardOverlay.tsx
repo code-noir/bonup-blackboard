@@ -3,6 +3,8 @@ export type BoardOverlayItem = {
   title: string
   detail?: string
   meta?: string
+  contractId?: string
+  lifecycleItemId?: string | null
 }
 
 type BoardOverlayProps = {

@@ -763,6 +763,56 @@ def performance_agreement_payload(agreement, user=None):
     }
 
 
+_BOARD_OPERATIONAL_ITEM_TYPES = {"payment", "service", "service_work", "responsibility", "obligation", "due_date", "deadline"}
+_BOARD_OPERATIONAL_DEFAULT_PAGE_SIZE = 100
+_BOARD_OPERATIONAL_MAX_PAGE_SIZE = 100
+
+
+def _board_operational_page_params(request):
+    try:
+        page = max(1, int(request.query_params.get("page", 1)))
+    except (ValueError, TypeError):
+        page = 1
+    try:
+        page_size = min(
+            _BOARD_OPERATIONAL_MAX_PAGE_SIZE,
+            max(1, int(request.query_params.get("page_size", _BOARD_OPERATIONAL_DEFAULT_PAGE_SIZE))),
+        )
+    except (ValueError, TypeError):
+        page_size = _BOARD_OPERATIONAL_DEFAULT_PAGE_SIZE
+    return page, page_size
+
+
+def _board_operational_obligation_row(agreement, item):
+    title = item.get("title") or "Untitled obligation"
+    return {
+        "id": item.get("id"),
+        "lifecycle_item_id": item.get("id"),
+        "contract_id": str(agreement.contract_id),
+        "agreement_id": str(agreement.id),
+        "agreement_title": agreement.contract.title or "Untitled contract",
+        "title": title,
+        "item_type": item.get("item_type"),
+        "type": item.get("item_type"),
+        "status": item.get("status"),
+        "state": item.get("status"),
+        "due_date": item.get("due_date"),
+        "assigned_to_current_user": bool(item.get("assigned_to_current_user")),
+    }
+
+
+def _board_operational_obligation_rows(agreement, user):
+    payload = lifecycle_payload(agreement, user)
+    rows = []
+    for item in payload["views"]["my_obligations"]:
+        if item.get("item_type") not in _BOARD_OPERATIONAL_ITEM_TYPES:
+            continue
+        if not _is_open_timeline_status(item):
+            continue
+        rows.append(_board_operational_obligation_row(agreement, item))
+    return rows
+
+
 class AgreementPerformanceListAPIView(APIView):
     def get(self, request):
         agreements = (
@@ -774,6 +824,32 @@ class AgreementPerformanceListAPIView(APIView):
             .order_by("-performance_ready_at", "-updated_at")
         )
         return Response({"results": [performance_agreement_payload(agreement, request.user) for agreement in agreements]}, status=status.HTTP_200_OK)
+
+
+class LifecycleOperationalObligationListAPIView(APIView):
+    def get(self, request):
+        agreements = (
+            LifecycleAgreement.objects
+            .filter(performance_ready=True)
+            .filter(Q(contract__initiator=request.user) | Q(contract__counterparty_email__iexact=request.user.email))
+            .select_related("contract", "contract__initiator", "signed_version", "source_exchange", "owner")
+            .prefetch_related("items", "events")
+            .order_by("-performance_ready_at", "-updated_at")
+        )
+
+        results = []
+        for agreement in agreements:
+            results.extend(_board_operational_obligation_rows(agreement, request.user))
+
+        results.sort(key=lambda item: (item.get("due_date") is None, item.get("due_date") or "", item.get("title") or "", item.get("lifecycle_item_id") or ""))
+        page, page_size = _board_operational_page_params(request)
+        offset = (page - 1) * page_size
+        return Response({
+            "count": len(results),
+            "page": page,
+            "page_size": page_size,
+            "results": results[offset: offset + page_size],
+        }, status=status.HTTP_200_OK)
 
 
 class LifecycleReadyForPerformanceAPIView(APIView):

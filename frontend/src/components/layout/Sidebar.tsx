@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { useAuth } from '@/context/AuthContext'
 import {
   HomeIcon,
   ClipboardDocumentListIcon,
@@ -12,7 +11,6 @@ import {
   Cog6ToothIcon,
   BuildingOffice2Icon,
   BoltIcon,
-  ComputerDesktopIcon,
 } from '@heroicons/react/24/outline'
 
 function emojiIcon(emoji: string): React.ElementType {
@@ -44,36 +42,41 @@ const userBottomNav = [
 ]
 
 // ---------------------------------------------------------------------------
-// Operator Console nav — aligned with bonUP/Blackboard product hierarchy
-// Section headers break the nav into: bonUP | Blackboard | System
+// Operator Console nav — aligned with the bonUP platform hierarchy
 // ---------------------------------------------------------------------------
 
 type NavDef =
-  | { type?: undefined; to: string; label: string; Icon: React.ElementType; goldIcon?: boolean }
+  | { type?: undefined; to: string; label: string; Icon: React.ElementType; goldIcon?: boolean; indent?: boolean }
   | { type: 'section'; label: string }
+  | { type: 'disabled'; label: string; Icon: React.ElementType; indent?: boolean }
 
 const operatorNav: NavDef[] = [
-  { to: '/admin', label: 'Dashboard', Icon: HomeIcon },
+  { to: '/operator', label: 'Home', Icon: HomeIcon },
 
-  { type: 'section', label: 'bonUP' },
-  { to: '/admin/users', label: 'Users', Icon: emojiIcon('👤') },
+  { type: 'section', label: 'Identity' },
+  { to: '/operator/identity/users', label: 'Users', Icon: emojiIcon('👤') },
+  { to: '/operator/identity/entities', label: 'Entities', Icon: BuildingOffice2Icon },
+  { type: 'disabled', label: 'Administrators', Icon: emojiIcon('🛡') },
 
-  { type: 'section', label: 'Blackbòd' },
-  { to: '/admin/subscriptions', label: 'Subscriptions', Icon: CreditCardIcon },
-  { to: '/admin/plans',         label: 'Plans',          Icon: RectangleStackIcon },
-  { to: '/admin/contracts',     label: 'Agreements',     Icon: ClipboardDocumentListIcon },
-  { to: '/admin/obligations',   label: 'Obligations',   Icon: ClipboardDocumentListIcon },
-  { to: '/admin/entities',      label: 'Entities',       Icon: BuildingOffice2Icon },
-  { to: '/admin/sol',           label: 'Sol Groups',     Icon: UserGroupIcon },
-  { to: '/admin/activity',      label: 'Activity',       Icon: BoltIcon },
+  { type: 'section', label: 'Applications' },
+  { to: '/operator/apps/blackbod', label: 'Blackbòd Overview', Icon: ClipboardDocumentListIcon },
+  { to: '/operator/apps/blackbod/agreements', label: 'Agreements', Icon: ClipboardDocumentListIcon, indent: true },
+  { to: '/operator/apps/blackbod/obligations', label: 'Obligations', Icon: ClipboardDocumentListIcon, indent: true },
+  { to: '/operator/apps/blackbod/activity', label: 'Activity', Icon: BoltIcon, indent: true },
+  { to: '/operator/apps/sol/groups', label: 'Sol Groups', Icon: UserGroupIcon },
+  { type: 'disabled', label: 'Unfair', Icon: SparklesIcon },
 
-  { type: 'section', label: 'System' },
-  { to: '/admin/live-sessions', label: 'Live Sessions', Icon: VideoCameraIcon },
+  { type: 'section', label: 'Billing' },
+  { to: '/operator/billing/subscriptions', label: 'Subscriptions', Icon: CreditCardIcon },
+  { to: '/operator/billing/plans', label: 'Plans', Icon: RectangleStackIcon },
+
+  { type: 'section', label: 'Operations' },
+  { to: '/operator/operations/live-sessions', label: 'Live Sessions', Icon: VideoCameraIcon },
 ]
 
 const operatorBottomNav: NavDef[] = [
-  { to: '/admin/profile',  label: 'My Profile', Icon: emojiIcon('🧑'), goldIcon: false },
-  { to: '/admin/settings', label: 'Settings',    Icon: Cog6ToothIcon,   goldIcon: false },
+  { to: '/operator/profile', label: 'My Profile', Icon: emojiIcon('🧑'), goldIcon: false },
+  { to: '/operator/settings', label: 'Settings', Icon: Cog6ToothIcon, goldIcon: false },
 ]
 
 // ---------------------------------------------------------------------------
@@ -114,6 +117,7 @@ function NavItem({
   Icon,
   goldIcon = false,
   iconOnly = false,
+  indent = false,
   activeColor = '#F5A623',
   activeBg = 'rgba(245,166,35,0.12)',
 }: {
@@ -122,6 +126,7 @@ function NavItem({
   Icon: React.ElementType
   goldIcon?: boolean
   iconOnly?: boolean
+  indent?: boolean
   activeColor?: string
   activeBg?: string
 }) {
@@ -133,7 +138,7 @@ function NavItem({
     return (
       <div
         ref={wrapperRef}
-        style={{ position: 'relative', marginBottom: 2 }}
+        style={{ position: 'relative', marginBottom: 2, marginLeft: indent ? 10 : 0 }}
         onMouseEnter={() => {
           const rect = wrapperRef.current?.getBoundingClientRect()
           if (rect) {
@@ -193,7 +198,7 @@ function NavItem({
         isActive
           ? {
               display: 'flex', alignItems: 'center', gap: 11,
-              padding: '10px 10px', borderRadius: 8, marginBottom: 2,
+              padding: indent ? '10px 10px 10px 24px' : '10px 10px', borderRadius: 8, marginBottom: 2,
               fontSize: 14, fontWeight: 500, color: '#ffffff',
               background: activeBg,
               borderLeft: `2px solid ${activeColor}`,
@@ -201,7 +206,7 @@ function NavItem({
             }
           : {
               display: 'flex', alignItems: 'center', gap: 11,
-              padding: '10px 12px', borderRadius: 8, marginBottom: 2,
+              padding: indent ? '10px 12px 10px 26px' : '10px 12px', borderRadius: 8, marginBottom: 2,
               fontSize: 14, fontWeight: 400,
               color: 'rgba(255,255,255,0.62)', textDecoration: 'none',
             }
@@ -228,6 +233,23 @@ function NavItem({
   )
 }
 
+function DisabledNavItem({ label, Icon, iconOnly = false, indent = false }: { label: string; Icon: React.ElementType; iconOnly?: boolean; indent?: boolean }) {
+  if (iconOnly) {
+    return (
+      <div style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 2, opacity: 0.32 }} title={`${label} (future)`}>
+        <Icon className="h-[18px] w-[18px] shrink-0" />
+      </div>
+    )
+  }
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: indent ? '10px 12px 10px 26px' : '10px 12px', borderRadius: 8, marginBottom: 2, fontSize: 14, fontWeight: 400, color: 'rgba(255,255,255,0.32)' }}>
+      <Icon className="h-[18px] w-[18px] shrink-0" />
+      <span>{label}</span>
+      <span style={{ marginLeft: 'auto', fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Future</span>
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Sidebar
 // ---------------------------------------------------------------------------
@@ -235,11 +257,10 @@ function NavItem({
 export default function Sidebar() {
   const [iconOnly, setIconOnly] = useState(false)
   const [forceIconOnly, setForceIconOnly] = useState(false)
-  const { user } = useAuth()
   const location = useLocation()
 
   // Operator mode is route-based: follows URL, not user identity.
-  const isOperator = location.pathname.startsWith('/admin')
+  const isOperator = location.pathname.startsWith('/operator') || location.pathname.startsWith('/admin')
 
   useEffect(() => {
     const query = window.matchMedia('(max-width: 1100px)')
@@ -265,17 +286,16 @@ export default function Sidebar() {
   const activeColor = isOperator ? '#38BDF8' : '#F5A623'
   const activeBg    = isOperator ? 'rgba(56,189,248,0.12)' : 'rgba(245,166,35,0.12)'
 
-  // In user mode, staff users get an "Operator Console" entry in bottom nav.
-  const baseUserBottom: NavDef[] = userBottomNav
-  const footerNav: NavDef[] = (!isOperator && user?.is_staff)
-    ? [...baseUserBottom, { to: '/admin', label: 'Operator Console', Icon: ComputerDesktopIcon, goldIcon: false }]
-    : (isOperator ? operatorBottomNav : baseUserBottom)
+  const footerNav: NavDef[] = isOperator ? operatorBottomNav : userBottomNav
 
   const mainNav: NavDef[] = isOperator ? operatorNav : userNav
 
   function renderNavItem(item: NavDef, idx: number) {
     if (item.type === 'section') {
       return <SectionHeader key={`section-${item.label}-${idx}`} label={item.label} iconOnly={effectiveIconOnly} />
+    }
+    if (item.type === 'disabled') {
+      return <DisabledNavItem key={`disabled-${item.label}-${idx}`} label={item.label} Icon={item.Icon} iconOnly={effectiveIconOnly} indent={item.indent} />
     }
     return (
       <NavItem
@@ -285,6 +305,7 @@ export default function Sidebar() {
         Icon={item.Icon}
         goldIcon={item.goldIcon}
         iconOnly={effectiveIconOnly}
+        indent={item.indent}
         activeColor={activeColor}
         activeBg={activeBg}
       />
@@ -319,7 +340,7 @@ export default function Sidebar() {
             <span style={{ color: '#F5A623' }}>UP</span>
           </div>
           <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', color: '#ffffff', lineHeight: 1 }}>
-            Blackbòd
+            {isOperator ? 'Operator' : 'Blackbòd'}
           </div>
           {isOperator && (
             <div style={{

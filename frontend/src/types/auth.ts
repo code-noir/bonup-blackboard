@@ -31,3 +31,20 @@ export interface AuthState {
   isAuthenticated: boolean
   isLoading: boolean
 }
+
+export interface OperatorUser {
+  id: number
+  email: string
+  first_name: string
+  last_name: string
+  is_active: boolean
+  is_super_admin: boolean
+  is_super_operator: boolean
+  is_legacy_placeholder: boolean
+  user_id?: number | null
+  bon_id?: string | null
+  permissions: string[]
+  can_view_as_user: boolean
+  last_login_at?: string | null
+  created_at?: string
+}

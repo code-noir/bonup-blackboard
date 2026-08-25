@@ -1,22 +1,25 @@
 // frontend/src/pages/admin/AdminProfile.tsx
-// Real data: GET /api/users/me/ — shows the operator's own account details.
+// Real data: GET /api/operator/me/ — shows the AdministratorAccount details.
 
-import { useAdminFetch, planDisplay } from './adminShared'
+import { useAdminFetch } from './adminShared'
 
-interface Me {
+interface AdminMeResponse {
+  operator: AdministratorMe
+}
+
+interface AdministratorMe {
   id: number
   email: string
   first_name: string
   last_name: string
-  bon_id?: string
-  is_staff: boolean
-  date_joined: string
-  subscription_tier?: string
-  business_count?: number
-  city?: string
-  state_region?: string
-  country?: string
-  email_verified?: boolean
+  is_active: boolean
+  is_super_admin: boolean
+  can_view_as_user: boolean
+  is_legacy_placeholder: boolean
+  user_id?: number | null
+  bon_id?: string | null
+  last_login_at?: string | null
+  created_at?: string
 }
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
@@ -35,7 +38,8 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export default function AdminProfile() {
-  const { data: me, loading, error } = useAdminFetch<Me>('/users/me/')
+  const { data, loading, error } = useAdminFetch<AdminMeResponse>('/operator/me/')
+  const me = data?.operator
 
   if (loading) {
     return (
@@ -55,6 +59,13 @@ export default function AdminProfile() {
 
   if (!me) return null
 
+  const createdAt = me.created_at
+    ? new Date(me.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    : undefined
+  const lastLoginAt = me.last_login_at
+    ? new Date(me.last_login_at).toLocaleString('en-US')
+    : undefined
+
   return (
     <div style={{ maxWidth: 560 }}>
       <div style={{
@@ -63,7 +74,6 @@ export default function AdminProfile() {
         border: '1px solid rgba(0,0,0,0.07)',
         overflow: 'hidden',
       }}>
-        {/* Header */}
         <div style={{ background: '#243447', padding: '20px 24px', display: 'flex', alignItems: 'center', gap: 14 }}>
           <div style={{
             width: 44, height: 44, borderRadius: '50%',
@@ -79,33 +89,34 @@ export default function AdminProfile() {
               {[me.first_name, me.last_name].filter(Boolean).join(' ') || me.email}
             </p>
             <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-              {me.is_staff && (
+              <span style={{
+                fontSize: 10, fontWeight: 700,
+                background: '#F5A623', color: '#0F1F3D',
+                padding: '2px 7px', borderRadius: 4, letterSpacing: '0.08em',
+              }}>
+                ADMINISTRATOR
+              </span>
+              {me.is_super_admin && (
                 <span style={{
                   fontSize: 10, fontWeight: 700,
-                  background: '#F5A623', color: '#0F1F3D',
+                  background: '#E0F2FE', color: '#075985',
                   padding: '2px 7px', borderRadius: 4, letterSpacing: '0.08em',
                 }}>
-                  OPERATOR
+                  SUPER ADMIN
                 </span>
               )}
             </div>
           </div>
         </div>
 
-        {/* Fields */}
         <div style={{ padding: '4px 24px 16px' }}>
-          <Row label="bonID" value={
-            me.bon_id
-              ? <span style={{ fontFamily: 'monospace', fontWeight: 700, letterSpacing: '0.06em' }}>{me.bon_id}</span>
-              : undefined
-          } />
-          <Row label="Email" value={me.email} />
-          <Row label="Email verified" value={me.email_verified ? 'Yes' : 'No'} />
-          <Row label="Location" value={[me.city, me.state_region, me.country].filter(Boolean).join(', ') || undefined} />
-          <Row label="Blackbòd tier" value={planDisplay(me.subscription_tier)} />
-          <Row label="Business entities" value={me.business_count} />
-          <Row label="Joined" value={new Date(me.date_joined).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} />
-          <Row label="Staff access" value={me.is_staff ? 'Yes — Operator Console' : 'No'} />
+          <Row label="bonID" value={me.bon_id || '—'} />
+          <Row label="Administrator email" value={me.email} />
+          <Row label="Status" value={me.is_active ? 'Active' : 'Inactive'} />
+          <Row label="Super administrator" value={me.is_super_admin ? 'Yes' : 'No'} />
+          <Row label="View-As access" value={me.can_view_as_user ? 'Yes' : 'No'} />
+          <Row label="Last login" value={lastLoginAt} />
+          <Row label="Created" value={createdAt} />
         </div>
       </div>
     </div>

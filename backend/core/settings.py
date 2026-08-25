@@ -69,6 +69,7 @@ INSTALLED_APPS = [
     'backend.agreement_exchange',
     'backend.lifecycle',
     'backend.bonup',
+    'backend.operator',
     'storages',
     'django_extensions',
 ]
@@ -267,7 +268,7 @@ REST_FRAMEWORK = {
         "rest_framework.renderers.JSONRenderer",
     ],
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "backend.api.operator.authentication.BlackboardJWTAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",

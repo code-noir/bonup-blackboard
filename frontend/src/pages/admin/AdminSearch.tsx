@@ -112,7 +112,7 @@ export default function AdminSearch() {
                   </td>
                   <td className="px-4 py-3 text-sm text-center text-slate-500">{u.business_count}</td>
                   <td className="px-4 py-3 text-center text-xs text-slate-400">
-                    {u.is_staff ? <span style={{ color: '#D97706', fontWeight: 600 }}>staff</span> : ''}
+                    {u.is_staff ? <span style={{ color: '#D97706', fontWeight: 600 }}>Django staff</span> : ''}
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-400">
                     {new Date(u.date_joined).toLocaleDateString()}

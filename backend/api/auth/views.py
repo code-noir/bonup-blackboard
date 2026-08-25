@@ -2,8 +2,11 @@
 
 from django.contrib.auth import get_user_model
 from rest_framework.exceptions import AuthenticationFailed
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.exceptions import InvalidToken
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+
+from backend.operator.services import OPERATOR_CONTEXT
 
 User = get_user_model()
 
@@ -49,3 +52,48 @@ class EmailOrUsernameTokenSerializer(TokenObtainPairSerializer):
 
 class EmailOrUsernameTokenView(TokenObtainPairView):
     serializer_class = EmailOrUsernameTokenSerializer
+
+
+class ContextTokenRefreshSerializer(TokenRefreshSerializer):
+    required_auth_context = None
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        token = self.token_class(attrs["refresh"])
+        auth_context = token.get("auth_context")
+        if self.required_auth_context is None and auth_context is not None:
+            raise InvalidToken("Refresh token is not valid for this endpoint.")
+        if self.required_auth_context is not None and auth_context != self.required_auth_context:
+            raise InvalidToken("Refresh token is not valid for this endpoint.")
+        return data
+
+
+class NormalTokenRefreshSerializer(ContextTokenRefreshSerializer):
+    required_auth_context = None
+
+
+class OperatorTokenRefreshSerializer(ContextTokenRefreshSerializer):
+    required_auth_context = OPERATOR_CONTEXT
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        token = self.token_class(attrs["refresh"])
+        administrator_id = token.get("administrator_id")
+        if not administrator_id:
+            raise InvalidToken("Refresh token is not valid for this endpoint.")
+        from backend.operator.models import AdministratorAccount
+        try:
+            administrator = AdministratorAccount.objects.get(pk=administrator_id)
+        except AdministratorAccount.DoesNotExist as exc:
+            raise InvalidToken("Administrator account no longer exists.") from exc
+        if not administrator.is_active:
+            raise InvalidToken("Administrator account is inactive.")
+        return data
+
+
+class NormalTokenRefreshView(TokenRefreshView):
+    serializer_class = NormalTokenRefreshSerializer
+
+
+class OperatorTokenRefreshView(TokenRefreshView):
+    serializer_class = OperatorTokenRefreshSerializer

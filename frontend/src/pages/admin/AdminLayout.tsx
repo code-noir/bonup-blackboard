@@ -1,36 +1,37 @@
 // frontend/src/pages/admin/AdminLayout.tsx
 //
-// Shared wrapper for all /admin/* pages.
-// Navigation is handled entirely by the sidebar (operator mode sidebar).
+// Shared wrapper for bonUP Operator Console pages.
+// Navigation is handled entirely by the operator mode sidebar.
 // This layout provides the operator mode indicator bar at the top + the outlet.
 
 import { Outlet, Link, useLocation } from 'react-router-dom'
 
 const SECTION_LABELS: Record<string, string> = {
-  '/admin':               'Dashboard',
-  '/admin/users':         'Users',
-  '/admin/subscriptions': 'Subscriptions',
-  '/admin/plans':         'Plans',
-  '/admin/contracts':     'Agreements',
-  '/admin/obligations':   'Obligations',
-  '/admin/entities':      'Entities',
-  '/admin/sol':           'Sol Groups',
-  '/admin/activity':      'Activity',
-  '/admin/live-sessions': 'Live Sessions',
-  '/admin/profile':       'My Profile',
-  '/admin/settings':      'Settings',
-  '/admin/billing':       'Billing Overview',
+  '/operator': 'Home',
+  '/operator/identity/users': 'Users',
+  '/operator/identity/entities': 'Entities',
+  '/operator/apps/blackbod': 'Blackbòd Overview',
+  '/operator/apps/blackbod/agreements': 'Agreements',
+  '/operator/apps/blackbod/obligations': 'Obligations',
+  '/operator/apps/blackbod/activity': 'Activity',
+  '/operator/apps/sol/groups': 'Sol Groups',
+  '/operator/billing': 'Billing Overview',
+  '/operator/billing/subscriptions': 'Subscriptions',
+  '/operator/billing/plans': 'Plans',
+  '/operator/operations/live-sessions': 'Live Sessions',
+  '/operator/profile': 'My Administrator Profile',
+  '/operator/settings': 'Settings',
 }
 
 export default function AdminLayout() {
   const location = useLocation()
 
-  // Match user detail routes like /admin/users/123
-  const userDetailMatch = location.pathname.match(/^\/admin\/users\/(\d+)$/)
+  // Match user detail routes like /operator/identity/users/123
+  const userDetailMatch = location.pathname.match(/^\/operator\/identity\/users\/(\d+)$/)
 
   const sectionLabel = userDetailMatch
     ? 'User Identity'
-    : (SECTION_LABELS[location.pathname] ?? 'Operator Console')
+    : (SECTION_LABELS[location.pathname] ?? 'bonUP Operator Console')
 
   return (
     <div>
@@ -58,7 +59,7 @@ export default function AdminLayout() {
             padding: '3px 9px',
             borderRadius: 4,
           }}>
-            Operator Console
+            bonUP Operator Console
           </span>
           <span style={{ fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,0.9)' }}>
             {sectionLabel}

@@ -110,7 +110,7 @@ export default function AdminUsers() {
           return (
             <tr
               key={u.id}
-              onClick={() => navigate(`/admin/users/${u.id}`)}
+              onClick={() => navigate(`/operator/identity/users/${u.id}`)}
               style={{ cursor: 'pointer' }}
               className="hover:bg-slate-50"
             >

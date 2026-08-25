@@ -1,13 +1,13 @@
 // frontend/src/components/admin/RequireAdmin.tsx
 //
-// Guards admin routes. Requires is_staff=true on the authenticated user.
-// Structure: add role check here when a formal admin-role system is introduced.
+// Guards admin routes. Requires an operator-scoped session, not a normal staff login.
 
-import { Navigate } from 'react-router-dom'
-import { useAuth } from '@/context/AuthContext'
+import { Navigate, useLocation } from 'react-router-dom'
+import { useOperator } from '@/context/OperatorContext'
 
 export default function RequireAdmin({ children }: { children: React.ReactNode }) {
-  const { user, isLoading } = useAuth()
+  const { isOperatorAuthenticated, isLoading } = useOperator()
+  const location = useLocation()
 
   if (isLoading) {
     return (
@@ -17,8 +17,8 @@ export default function RequireAdmin({ children }: { children: React.ReactNode }
     )
   }
 
-  if (!user?.is_staff) {
-    return <Navigate to="/dashboard" replace />
+  if (!isOperatorAuthenticated) {
+    return <Navigate to="/operator/login" state={{ from: location }} replace />
   }
 
   return <>{children}</>

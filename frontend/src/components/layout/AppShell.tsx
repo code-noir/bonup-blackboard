@@ -3,6 +3,7 @@ import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 import Header from './Header'
 import ActionBar from './ActionBar'
+import ViewAsBanner from './ViewAsBanner'
 
 // Sidebar: full-height, left: 0, width: 216px
 // Content-side bars (left: 216px):
@@ -22,6 +23,7 @@ export default function AppShell() {
 
   return (
     <div className="app-shell min-h-screen bg-[#ECEEF2]">
+      <ViewAsBanner />
       <Sidebar />
       <TopBar />
       <Header />

@@ -79,7 +79,7 @@ export default function AdminSubscriptions() {
           </select>
         </div>
         <Link
-          to="/admin/billing"
+          to="/operator/billing"
           style={{ fontSize: 12, color: '#0F1F3D', textDecoration: 'none', padding: '5px 12px', border: '1px solid #E2E8F0', borderRadius: 6 }}
         >
           Billing Overview →

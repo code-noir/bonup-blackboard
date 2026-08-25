@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import type { ReactNode } from 'react'
-import api, { tokenStorage } from '@/api/client'
+import api, { impersonationTokenStorage, tokenStorage } from '@/api/client'
 import type { AuthUser } from '@/types/auth'
 
 interface AuthContextValue {
@@ -36,15 +36,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser({ ...data, subscription_tier: 'anchor' })
     } catch {
       setUser(null)
-      tokenStorage.clear()
+      if (!impersonationTokenStorage.getAccess()) tokenStorage.clear()
     }
   }, [])
 
   useEffect(() => {
-    if (tokenStorage.getAccess()) {
+    if (tokenStorage.getAccess() || impersonationTokenStorage.getAccess()) {
       fetchMe().finally(() => setIsLoading(false))
     } else {
       setIsLoading(false)
+    }
+
+    function onViewAsStarted() {
+      setIsLoading(true)
+      fetchMe().finally(() => setIsLoading(false))
+    }
+    function onViewAsExited() {
+      if (!tokenStorage.getAccess()) setUser(null)
+    }
+    window.addEventListener('view-as-started', onViewAsStarted)
+    window.addEventListener('view-as-exited', onViewAsExited)
+    return () => {
+      window.removeEventListener('view-as-started', onViewAsStarted)
+      window.removeEventListener('view-as-exited', onViewAsExited)
     }
   }, [fetchMe])
 

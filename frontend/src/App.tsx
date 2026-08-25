@@ -1,9 +1,12 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
+import { OperatorProvider } from '@/context/OperatorContext'
 import RequireAuth from '@/components/RequireAuth'
 import RequireAdmin from '@/components/admin/RequireAdmin'
 import AppShell from '@/components/layout/AppShell'
+import OperatorShell from '@/components/layout/OperatorShell'
 import Login from '@/pages/Login'
+import OperatorLogin from '@/pages/OperatorLogin'
 import Register from '@/pages/Register'
 import ForgotPassword from '@/pages/ForgotPassword'
 import ResetPassword from '@/pages/ResetPassword'
@@ -31,8 +34,8 @@ import LifecycleManagement from '@/pages/LifecycleManagement'
 import AgreementPerformance from '@/pages/AgreementPerformance'
 import Negotiation from '@/pages/Negotiation'
 import NotFound from '@/pages/NotFound'
-import AdminLayout from '@/pages/admin/AdminLayout'
 import AdminHome from '@/pages/admin/AdminHome'
+import OperatorHome from '@/pages/admin/OperatorHome'
 import AdminUsers from '@/pages/admin/AdminUsers'
 import AdminUserDetail from '@/pages/admin/AdminUserDetail'
 import AdminPlans from '@/pages/admin/AdminPlans'
@@ -94,107 +97,114 @@ function PaygLock({ name }: { name: string }) {
   )
 }
 
-// Smart root redirect: staff → /admin, everyone else → /hub
+// Smart root redirect: normal authenticated users go to the user hub.
 function RootRedirect() {
-  const { user, isLoading } = useAuth()
+  const { isLoading } = useAuth()
   if (isLoading) return null
-  return <Navigate to={user?.is_staff ? '/admin' : '/hub'} replace />
+  return <Navigate to="/hub" replace />
+}
+
+function AdminUserRedirect() {
+  const { id } = useParams<{ id: string }>()
+  return <Navigate to={`/operator/identity/users/${id}`} replace />
 }
 
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
-          {/* Public */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/verify-email" element={<VerifyEmail />} />
-          <Route path="/workflow/invite/:token" element={<WorkflowInvite />} />
-          <Route path="/" element={<RootRedirect />} />
+        <OperatorProvider>
+          <Routes>
+            {/* Public */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/operator/login" element={<OperatorLogin />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/verify-email" element={<VerifyEmail />} />
+            <Route path="/workflow/invite/:token" element={<WorkflowInvite />} />
+            <Route path="/" element={<RootRedirect />} />
 
-          {/* bonUP Hub — authenticated, no AppShell */}
-          <Route
-            element={
-              <RequireAuth>
-                <Outlet />
-              </RequireAuth>
-            }
-          >
-            <Route path="/hub" element={<BonupHub />} />
-          </Route>
-
-          {/* Protected — wrapped in the app shell */}
-          <Route
-            element={
-              <RequireAuth>
-                <AppShell />
-              </RequireAuth>
-            }
-          >
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/workspace" element={<WorkflowDashboard />} />
-            <Route path="/workflows" element={<WorkflowDashboard />} />
-            <Route path="/workflows/:workflowId" element={<WorkflowDetail />} />
-            <Route path="/agreement-exchange/:exchangeId" element={<AgreementExchange />} />
-            <Route path="/review" element={<ContractReview />} />
-            <Route path="/shared/workflows/:workflowId" element={<CounterpartyWorkflow />} />
-            {/* Contract list decommissioned — creation uses metadata intake first */}
-            <Route path="/contracts" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/contracts/new" element={<NewContract />} />
-            <Route path="/contracts/create" element={<CreateContract />} />
-            <Route path="/contracts/:id/view" element={<ContractDocumentView />} />
-            <Route path="/contracts/:id" element={<ContractDetail />} />
-            <Route path="/obligations/*" element={<PaygLock name="Obligations" />} />
-            <Route path="/payments/*" element={<PaygLock name="Payments" />} />
-            <Route path="/sessions/*" element={<PaygLock name="Live Sessions" />} />
-            <Route path="/sol/*" element={<PaygLock name="Sol Groups" />} />
-            <Route path="/templates/*" element={<Placeholder name="Templates" />} />
-            <Route path="/search" element={<Placeholder name="Search" />} />
-            <Route path="/contacts" element={<Contacts />} />
-            <Route path="/resource" element={<Resource />} />
-            <Route path="/ai" element={<Placeholder name="AI Assistant" />} />
-            <Route path="/analysis" element={<Analysis />} />
-            <Route path="/counter" element={<Counter />} />
-            <Route path="/entities" element={<Entities />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/notifications" element={<PaygLock name="Notifications" />} />
-            <Route path="/settings" element={<Placeholder name="Settings" />} />
-            <Route path="/billing" element={<Billing />} />
-            <Route path="/lifecycle" element={<LifecycleManagement />} />
-            <Route path="/agreement-performance" element={<AgreementPerformance />} />
-            <Route path="/negotiation" element={<Negotiation />} />
-            <Route path="/negotiation/:contractId" element={<Negotiation />} />
-
-            {/* Admin — staff only, nested inside the AppShell */}
+            {/* bonUP Hub — authenticated, no AppShell */}
             <Route
-              path="/admin"
+              element={
+                <RequireAuth>
+                  <Outlet />
+                </RequireAuth>
+              }
+            >
+              <Route path="/hub" element={<BonupHub />} />
+            </Route>
+
+            {/* Protected — wrapped in the app shell */}
+            <Route
+              element={
+                <RequireAuth>
+                  <AppShell />
+                </RequireAuth>
+              }
+            >
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/workspace" element={<WorkflowDashboard />} />
+              <Route path="/workflows" element={<WorkflowDashboard />} />
+              <Route path="/workflows/:workflowId" element={<WorkflowDetail />} />
+              <Route path="/agreement-exchange/:exchangeId" element={<AgreementExchange />} />
+              <Route path="/review" element={<ContractReview />} />
+              <Route path="/shared/workflows/:workflowId" element={<CounterpartyWorkflow />} />
+              {/* Contract list decommissioned — creation uses metadata intake first */}
+              <Route path="/contracts" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/contracts/new" element={<NewContract />} />
+              <Route path="/contracts/create" element={<CreateContract />} />
+              <Route path="/contracts/:id/view" element={<ContractDocumentView />} />
+              <Route path="/contracts/:id" element={<ContractDetail />} />
+              <Route path="/obligations/*" element={<PaygLock name="Obligations" />} />
+              <Route path="/payments/*" element={<PaygLock name="Payments" />} />
+              <Route path="/sessions/*" element={<PaygLock name="Live Sessions" />} />
+              <Route path="/sol/*" element={<PaygLock name="Sol Groups" />} />
+              <Route path="/templates/*" element={<Placeholder name="Templates" />} />
+              <Route path="/search" element={<Placeholder name="Search" />} />
+              <Route path="/contacts" element={<Contacts />} />
+              <Route path="/resource" element={<Resource />} />
+              <Route path="/ai" element={<Placeholder name="AI Assistant" />} />
+              <Route path="/analysis" element={<Analysis />} />
+              <Route path="/counter" element={<Counter />} />
+              <Route path="/entities" element={<Entities />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/notifications" element={<PaygLock name="Notifications" />} />
+              <Route path="/settings" element={<Placeholder name="Settings" />} />
+              <Route path="/billing" element={<Billing />} />
+              <Route path="/lifecycle" element={<LifecycleManagement />} />
+              <Route path="/agreement-performance" element={<AgreementPerformance />} />
+              <Route path="/negotiation" element={<Negotiation />} />
+              <Route path="/negotiation/:contractId" element={<Negotiation />} />
+            </Route>
+
+            {/* Operator — dedicated AdministratorAccount session, outside normal user auth */}
+            <Route
+              path="/operator"
               element={
                 <RequireAdmin>
-                  <AdminLayout />
+                  <OperatorShell />
                 </RequireAdmin>
               }
             >
-              {/* Dashboard */}
-              <Route index element={<AdminHome />} />
+              <Route index element={<OperatorHome />} />
 
-              {/* bonUP */}
-              <Route path="users" element={<AdminUsers />} />
-              <Route path="users/:id" element={<AdminUserDetail />} />
+              <Route path="identity/users" element={<AdminUsers />} />
+              <Route path="identity/users/:id" element={<AdminUserDetail />} />
+              <Route path="identity/entities" element={<AdminEntities />} />
 
-              {/* Blackboard */}
-              <Route path="subscriptions" element={<AdminSubscriptions />} />
-              <Route path="plans" element={<AdminPlans />} />
-              <Route path="contracts" element={<AdminContracts />} />
-              <Route path="obligations" element={<AdminObligations />} />
-              <Route path="entities" element={<AdminEntities />} />
-              <Route path="sol" element={<AdminSol />} />
-              <Route path="activity" element={<AdminActivity />} />
+              <Route path="apps/blackbod" element={<AdminHome />} />
+              <Route path="apps/blackbod/agreements" element={<AdminContracts />} />
+              <Route path="apps/blackbod/obligations" element={<AdminObligations />} />
+              <Route path="apps/blackbod/activity" element={<AdminActivity />} />
+              <Route path="apps/sol/groups" element={<AdminSol />} />
 
-              {/* System */}
-              <Route path="live-sessions" element={
+              <Route path="billing" element={<AdminBilling />} />
+              <Route path="billing/subscriptions" element={<AdminSubscriptions />} />
+              <Route path="billing/plans" element={<AdminPlans />} />
+
+              <Route path="operations/live-sessions" element={
                 <AdminPlaceholder
                   section="Live Sessions"
                   apiNote="GET /api/sessions/ — user-scoped; no operator-level all-sessions API yet"
@@ -202,8 +212,6 @@ export default function App() {
                 />
               } />
 
-              {/* Deep-dive / secondary pages */}
-              <Route path="billing" element={<AdminBilling />} />
               <Route path="profile" element={<AdminProfile />} />
               <Route path="settings" element={
                 <AdminPlaceholder
@@ -212,10 +220,26 @@ export default function App() {
                 />
               } />
             </Route>
-          </Route>
 
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+            {/* Legacy admin compatibility redirects */}
+            <Route path="/admin" element={<Navigate to="/operator" replace />} />
+            <Route path="/admin/users" element={<Navigate to="/operator/identity/users" replace />} />
+            <Route path="/admin/users/:id" element={<AdminUserRedirect />} />
+            <Route path="/admin/entities" element={<Navigate to="/operator/identity/entities" replace />} />
+            <Route path="/admin/contracts" element={<Navigate to="/operator/apps/blackbod/agreements" replace />} />
+            <Route path="/admin/obligations" element={<Navigate to="/operator/apps/blackbod/obligations" replace />} />
+            <Route path="/admin/activity" element={<Navigate to="/operator/apps/blackbod/activity" replace />} />
+            <Route path="/admin/sol" element={<Navigate to="/operator/apps/sol/groups" replace />} />
+            <Route path="/admin/subscriptions" element={<Navigate to="/operator/billing/subscriptions" replace />} />
+            <Route path="/admin/plans" element={<Navigate to="/operator/billing/plans" replace />} />
+            <Route path="/admin/live-sessions" element={<Navigate to="/operator/operations/live-sessions" replace />} />
+            <Route path="/admin/billing" element={<Navigate to="/operator/billing" replace />} />
+            <Route path="/admin/profile" element={<Navigate to="/operator/profile" replace />} />
+            <Route path="/admin/settings" element={<Navigate to="/operator/settings" replace />} />
+
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </OperatorProvider>
       </AuthProvider>
     </BrowserRouter>
   )

@@ -4,7 +4,8 @@
 // Behaves as an identity record / bonID record, not a generic profile.
 
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useOperator } from '@/context/OperatorContext'
 import { AdminBadge, AdminMetricCard, AdminTable, formatDate, formatDateTime, useAdminFetch, planDisplay } from './adminShared'
 
 interface AgreementRow {
@@ -273,7 +274,7 @@ function SupportAccessPanel() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div>
           <p style={{ margin: 0, color: '#0F1F3D', fontSize: 17, fontWeight: 850 }}>Support Access</p>
-          <p style={{ margin: '5px 0 0', color: '#64748B', fontSize: 12 }}>Future operator support boundary. Permission controls are not configured in Phase 1.</p>
+          <p style={{ margin: '5px 0 0', color: '#64748B', fontSize: 12 }}>Future support boundary. Administrator permissions are separate from normal user flags.</p>
         </div>
         <AdminBadge label="Not Configured" style="gray" />
       </div>
@@ -293,7 +294,11 @@ function SupportAccessPanel() {
 
 export default function AdminUserDetail() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
+  const { operator, startViewAs } = useOperator()
   const [selectedObligation, setSelectedObligation] = useState<ObligationRow | null>(null)
+  const [viewAsError, setViewAsError] = useState('')
+  const [viewAsLoading, setViewAsLoading] = useState(false)
   const { data: u, loading, error } = useAdminFetch<UserDetail>(`/admin/users/${id}/`)
 
   if (loading) {
@@ -323,11 +328,25 @@ export default function AdminUserDetail() {
   const statusLabel = STATUS_LABELS[statusKey] || statusKey
   const tierLabel = u.plan_display || planDisplay(u.plan)
 
+  const handleViewAs = async () => {
+    setViewAsError('')
+    setViewAsLoading(true)
+    try {
+      await startViewAs(u.id)
+      navigate('/dashboard', { replace: true })
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setViewAsError(detail || 'Unable to start View-As for this user.')
+    } finally {
+      setViewAsLoading(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
         <Link
-          to="/admin/users"
+          to="/operator/identity/users"
           style={{ fontSize: 12, color: '#64748B', textDecoration: 'none', fontWeight: 650 }}
         >
           ← Back to Users
@@ -345,15 +364,41 @@ export default function AdminUserDetail() {
             <span style={{ fontFamily: 'monospace', fontSize: 13, color: '#F5A623', background: '#243447', padding: '7px 10px', borderRadius: 8, fontWeight: 800 }}>
               {u.bon_id || 'No bonID'}
             </span>
-            {u.is_staff && <AdminBadge label="Operator" style="yellow" />}
+            {u.is_staff && <AdminBadge label="Django staff" style="yellow" />}
+            {operator?.can_view_as_user && (
+              <button
+                type="button"
+                onClick={handleViewAs}
+                disabled={viewAsLoading}
+                style={{
+                  border: '1px solid #0F1F3D',
+                  borderRadius: 8,
+                  background: '#0F1F3D',
+                  color: '#fff',
+                  cursor: viewAsLoading ? 'default' : 'pointer',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  padding: '7px 12px',
+                  opacity: viewAsLoading ? 0.7 : 1,
+                }}
+              >
+                {viewAsLoading ? 'Starting...' : 'View As User'}
+              </button>
+            )}
           </div>
         </div>
+
+        {viewAsError && (
+          <p style={{ margin: '12px 0 0', border: '1px solid #FECACA', borderRadius: 8, background: '#FEF2F2', color: '#B91C1C', padding: '9px 12px', fontSize: 13 }}>
+            {viewAsError}
+          </p>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 18, marginTop: 18 }}>
           <div>
             <SectionHead label="Account" />
             <Row label="Joined" value={formatDate(u.date_joined)} />
-            <Row label="Staff access" value={u.is_staff ? 'Yes — Operator Console' : 'No'} />
+            <Row label="Django staff flag" value={u.is_staff ? 'Yes' : 'No'} />
           </div>
           <div>
             <SectionHead label="Blackbòd" />

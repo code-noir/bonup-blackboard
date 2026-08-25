@@ -1,17 +1,12 @@
 // frontend/src/pages/admin/AdminHome.tsx
-// Operator dashboard. Real counts fetched from GET /api/admin/summary/
-// Separated into bonUP Platform metrics and Blackboard product metrics.
+// Blackbòd operator overview. Real counts fetched from GET /api/admin/summary/
+// This page intentionally shows only Blackbòd contract-system metrics.
 
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import api from '@/api/client'
 
 interface Summary {
-  users: number
-  plans: number
-  subscriptions: number
-  sol_groups: number
-  entities: number
   contracts: number
   obligations: number
   activity_events: number
@@ -90,72 +85,28 @@ export default function AdminHome() {
         </div>
       )}
 
-      {/* bonUP Platform */}
-      <div>
-        <SectionLabel label="bonUP Platform" />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
-          <MetricCard
-            key="users"
-            value={summary?.users}
-            label="bonUP Users"
-            description="Total registered accounts"
-            to="/admin/users"
-            icon="👤"
-          />
-        </div>
-      </div>
-
-      {/* Blackboard */}
       <div>
         <SectionLabel label="Blackbòd" />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
           <MetricCard
-            value={summary?.subscriptions}
-            label="Subscriptions"
-            description="Active Blackbòd subscriptions"
-            to="/admin/subscriptions"
-            icon="💳"
-          />
-          <MetricCard
-            value={summary?.plans}
-            label="Plan Types"
-            description="Available plan definitions"
-            to="/admin/plans"
-            icon="📋"
-          />
-          <MetricCard
-            value={summary?.entities}
-            label="Entities"
-            description="Active business entities"
-            to="/admin/entities"
-            icon="🏢"
-          />
-          <MetricCard
             value={summary?.contracts}
             label="Agreements"
             description="Total agreements in system"
-            to="/admin/contracts"
+            to="/operator/apps/blackbod/agreements"
             icon="📄"
           />
           <MetricCard
             value={summary?.obligations}
             label="Obligations"
             description="Payment and service obligations"
-            to="/admin/obligations"
+            to="/operator/apps/blackbod/obligations"
             icon="✓"
-          />
-          <MetricCard
-            value={summary?.sol_groups}
-            label="Sol Groups"
-            description="Total Sol groups"
-            to="/admin/sol"
-            icon="◎"
           />
           <MetricCard
             value={summary?.activity_events}
             label="Activity Events"
             description="Logged contract activity"
-            to="/admin/activity"
+            to="/operator/apps/blackbod/activity"
             icon="⚡"
           />
         </div>
@@ -170,8 +121,7 @@ export default function AdminHome() {
         fontSize: 12,
         color: '#64748B',
       }}>
-        Operator Console — Phase 1. Read-only monitoring and inspection across all platform data.
-        Write operations (plan changes, user management) are coming in Phase 2.
+        Blackbòd Overview — read-only monitoring for agreements, obligations, and contract activity.
       </div>
     </div>
   )

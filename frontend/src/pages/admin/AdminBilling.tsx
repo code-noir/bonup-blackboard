@@ -110,7 +110,7 @@ export default function AdminBilling() {
       <div style={{ background: '#fff', borderRadius: 10, border: '1px solid rgba(0,0,0,0.07)', overflow: 'hidden' }}>
         <div style={{ padding: '14px 20px', borderBottom: '1px solid #F3F4F6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: '#0F1F3D', margin: 0 }}>Blackbòd Plans</p>
-          <Link to="/admin/plans" style={{ fontSize: 12, color: '#0F1F3D', textDecoration: 'none' }}>
+          <Link to="/operator/billing/plans" style={{ fontSize: 12, color: '#0F1F3D', textDecoration: 'none' }}>
             View full feature matrix →
           </Link>
         </div>
@@ -142,7 +142,7 @@ export default function AdminBilling() {
 
       {/* Deep-dive links */}
       <div style={{ display: 'flex', gap: 10 }}>
-        <Link to="/admin/subscriptions" style={{
+        <Link to="/operator/billing/subscriptions" style={{
           fontSize: 12, fontWeight: 500, color: '#0F1F3D',
           padding: '8px 16px', borderRadius: 7,
           border: '1px solid rgba(0,0,0,0.1)', background: '#fff',
@@ -150,7 +150,7 @@ export default function AdminBilling() {
         }}>
           All Subscriptions →
         </Link>
-        <Link to="/admin/plans" style={{
+        <Link to="/operator/billing/plans" style={{
           fontSize: 12, fontWeight: 500, color: '#0F1F3D',
           padding: '8px 16px', borderRadius: 7,
           border: '1px solid rgba(0,0,0,0.1)', background: '#fff',

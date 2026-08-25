@@ -1,19 +1,18 @@
 # backend/api/admin_views.py
 #
 # Internal admin API endpoints.
-# All views require is_staff=True (IsAdminUser).
-# Structured so permission can be swapped to a custom role check later.
+# All views require an operator-scoped JWT.
 
 import re
 
 from django.contrib.auth import get_user_model
 from django.db.models import Max, Q
 from django.shortcuts import get_object_or_404
-from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from backend.activity.models import ContractActivity
+from backend.api.operator.permissions import IsOperator
 from backend.api.contracts.services.visibility_service import can_user_see_contract_on_dashboard
 from backend.billing.models import SubscriptionPlan, UserSubscription
 from backend.contracts.models import Contract, ContractObligation, ContractServiceObligation
@@ -277,7 +276,7 @@ def _paginate(qs, request, serialize_fn):
 # ---------------------------------------------------------------------------
 
 class AdminSummaryView(APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsOperator]
 
     def get(self, request):
         return Response({
@@ -330,7 +329,7 @@ def _serialize_user(u):
 
 
 class AdminUserListView(APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsOperator]
 
     def get(self, request):
         q = request.query_params.get("q", "").strip()
@@ -353,7 +352,7 @@ class AdminUserListView(APIView):
 # ---------------------------------------------------------------------------
 
 class AdminUserDetailView(APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsOperator]
 
     def get(self, request, pk):
         u = get_object_or_404(
@@ -445,7 +444,7 @@ def _serialize_sub(sub):
 
 
 class AdminSubscriptionListView(APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsOperator]
 
     def get(self, request):
         qs = (
@@ -481,7 +480,7 @@ def _serialize_sol(sol):
 
 
 class AdminSolListView(APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsOperator]
 
     def get(self, request):
         qs = Sol.objects.order_by("-created_at")
@@ -505,7 +504,7 @@ def _serialize_entity(e):
 
 
 class AdminEntityListView(APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsOperator]
 
     def get(self, request):
         qs = BusinessEntity.objects.select_related("owner").order_by("-created_at")
@@ -521,7 +520,7 @@ def _serialize_contract(c):
 
 
 class AdminContractListView(APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsOperator]
 
     def get(self, request):
         qs = Contract.objects.select_related("initiator", "initiator__bon_profile").order_by("-created_at")
@@ -537,7 +536,7 @@ class AdminContractListView(APIView):
 # ---------------------------------------------------------------------------
 
 class AdminObligationListView(APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsOperator]
 
     def get(self, request):
         obligation_type = request.query_params.get("type", "").strip()
@@ -565,7 +564,7 @@ def _serialize_activity(a):
 
 
 class AdminActivityListView(APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsOperator]
 
     def get(self, request):
         qs = ContractActivity.objects.order_by("-created_at")

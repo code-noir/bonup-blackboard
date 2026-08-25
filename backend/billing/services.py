@@ -25,7 +25,23 @@ logger = logging.getLogger(__name__)
 
 # Plans that can be purchased through Stripe Checkout.
 # trial, sol_member, and per_contract are not self-serve Checkout plans.
-CHECKOUT_ALLOWED_PLANS = {"starter", "professional", "business", "anchor"}
+# Legacy slugs are retained so existing Stripe metadata/price configuration can
+# continue to resolve until the external Stripe migration is handled separately.
+CHECKOUT_ALLOWED_PLANS = {"basic", "professional", "advanced", "starter", "business", "anchor"}
+
+_LEGACY_CHECKOUT_PLAN_MAP = {
+    "starter": "basic",
+    "business": "advanced",
+}
+_STRIPE_PRICE_ID_FALLBACK_SLUGS = {
+    "basic": "starter",
+    "advanced": "business",
+}
+
+
+def canonical_plan_slug(plan_slug):
+    """Return the launch-era internal plan slug for supported legacy slugs."""
+    return _LEGACY_CHECKOUT_PLAN_MAP.get(plan_slug, plan_slug)
 
 # Map Stripe subscription status → local UserSubscription.status
 _STRIPE_TO_LOCAL_STATUS = {
@@ -91,6 +107,8 @@ def create_checkout_session(user, plan_slug, success_url, cancel_url):
     price_ids = getattr(settings, "STRIPE_PRICE_IDS", {})
     price_id = price_ids.get(plan_slug, "")
     if not price_id:
+        price_id = price_ids.get(_STRIPE_PRICE_ID_FALLBACK_SLUGS.get(plan_slug, ""), "")
+    if not price_id:
         raise ValueError(
             f"No Stripe price ID configured for plan '{plan_slug}'. "
             "Set STRIPE_PRICE_ID_* in your environment."
@@ -107,12 +125,14 @@ def create_checkout_session(user, plan_slug, success_url, cancel_url):
         cancel_url=cancel_url,
         metadata={
             "bonup_user_id": str(user.id),
-            "plan_slug": plan_slug,
+            "plan_slug": canonical_plan_slug(plan_slug),
+            "legacy_plan_slug": plan_slug,
         },
         subscription_data={
             "metadata": {
                 "bonup_user_id": str(user.id),
-                "plan_slug": plan_slug,
+                "plan_slug": canonical_plan_slug(plan_slug),
+                "legacy_plan_slug": plan_slug,
             }
         },
     )
@@ -161,6 +181,7 @@ def handle_checkout_completed(session):
     if not bonup_user_id or not plan_slug:
         logger.warning("checkout.session.completed missing metadata: %s", session.get("id"))
         return
+    plan_slug = canonical_plan_slug(plan_slug)
 
     stripe_subscription_id = session.get("subscription")
     stripe_customer_id = session.get("customer")
@@ -196,6 +217,7 @@ def handle_subscription_updated(stripe_sub):
     # If plan_slug not in metadata, derive it from the price ID
     if not plan_slug:
         plan_slug = _plan_slug_from_stripe_sub(stripe_sub)
+    plan_slug = canonical_plan_slug(plan_slug)
 
     _sync_subscription_from_stripe(
         bonup_user_id=bonup_user_id,
@@ -292,6 +314,7 @@ def _sync_subscription_from_stripe(bonup_user_id, plan_slug, stripe_sub, stripe_
     from django.contrib.auth import get_user_model
     User = get_user_model()
 
+    plan_slug = canonical_plan_slug(plan_slug)
     try:
         plan = SubscriptionPlan.objects.get(slug=plan_slug)
     except SubscriptionPlan.DoesNotExist:
@@ -340,8 +363,8 @@ def _plan_slug_from_stripe_sub(stripe_sub):
     items = stripe_sub.get("items", {}).get("data", [])
     if items:
         price_id = items[0].get("price", {}).get("id", "")
-        return reverse.get(price_id, "starter")
-    return "starter"
+        return canonical_plan_slug(reverse.get(price_id, "starter"))
+    return "basic"
 
 
 def _user_id_from_customer(stripe_customer_id):

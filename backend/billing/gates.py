@@ -9,12 +9,55 @@
 # Blackboard build mode: subscription gating disabled for contract creation/testing flows.
 
 from django.db import models as django_models
+from datetime import timedelta
+
 from django.utils import timezone
 from django.utils.translation import gettext as _
 
 from .models import UserSubscription
 
 _ACTIVE_STATUSES = {"active", "trialing", "per_contract"}
+
+BLACKBOD_TIER_BASIC = "basic"
+BLACKBOD_TIER_PROFESSIONAL = "professional"
+BLACKBOD_TIER_ADVANCED = "advanced"
+BLACKBOD_PAID_TIERS = {
+    BLACKBOD_TIER_BASIC,
+    BLACKBOD_TIER_PROFESSIONAL,
+    BLACKBOD_TIER_ADVANCED,
+}
+BLACKBOD_TRIAL_DAYS = 14
+
+_LEGACY_BLACKBOD_TIER_MAP = {
+    "starter": BLACKBOD_TIER_BASIC,
+    "professional": BLACKBOD_TIER_PROFESSIONAL,
+    "business": BLACKBOD_TIER_ADVANCED,
+}
+_BLACKBOD_AI_TIER_BY_EFFECTIVE_TIER = {
+    BLACKBOD_TIER_BASIC: "none",
+    BLACKBOD_TIER_PROFESSIONAL: "basic",
+    BLACKBOD_TIER_ADVANCED: "advanced",
+}
+_BLACKBOD_FEATURES_BY_EFFECTIVE_TIER = {
+    BLACKBOD_TIER_BASIC: {
+        "notifications": True,
+        "sol": False,
+        "priority_support": False,
+        "early_access": False,
+    },
+    BLACKBOD_TIER_PROFESSIONAL: {
+        "notifications": True,
+        "sol": True,
+        "priority_support": False,
+        "early_access": False,
+    },
+    BLACKBOD_TIER_ADVANCED: {
+        "notifications": True,
+        "sol": True,
+        "priority_support": False,
+        "early_access": False,
+    },
+}
 
 # Standard error message returned when a PAYG user tries to access a monthly-only feature.
 _PAYG_BLOCKED_MSG = "This feature requires a monthly plan. Upgrade to Blackboard Basic ($19/month) to unlock contract management."
@@ -32,6 +75,47 @@ def get_user_subscription(user):
         return UserSubscription.objects.select_related("plan").get(user=user)
     except UserSubscription.DoesNotExist:
         return None
+
+
+def normalize_blackbod_tier_slug(slug):
+    """Return the launch Blackbòd tier slug for current or supported legacy slugs."""
+    if slug in BLACKBOD_PAID_TIERS:
+        return slug
+    return _LEGACY_BLACKBOD_TIER_MAP.get(slug)
+
+
+def trial_end_for_start(trial_start):
+    """Return the canonical 14-day trial end for a trial start timestamp."""
+    return trial_start + timedelta(days=BLACKBOD_TRIAL_DAYS)
+
+
+def is_trial_valid(subscription, now=None):
+    """Return True when a subscription is actively trialing inside its 14-day window."""
+    if subscription is None or subscription.status != "trialing":
+        return False
+    now = now or timezone.now()
+    trial_start = subscription.trial_start or subscription.current_period_start
+    if trial_start is None:
+        return False
+    trial_end = subscription.trial_end or trial_end_for_start(trial_start)
+    return trial_start <= now < trial_end
+
+
+def get_effective_blackbod_tier(user, now=None):
+    """
+    Resolve the authoritative effective Blackbòd entitlement tier.
+
+    Returns one of: basic, professional, advanced, or None. A valid trial
+    resolves to professional entitlements without changing the stored plan.
+    """
+    sub = get_user_subscription(user)
+    if sub is None:
+        return None
+    if sub.status == "trialing":
+        return BLACKBOD_TIER_PROFESSIONAL if is_trial_valid(sub, now=now) else None
+    if sub.status != "active":
+        return None
+    return normalize_blackbod_tier_slug(sub.plan.slug)
 
 
 def can_create_contract(user):
@@ -55,6 +139,8 @@ def can_create_session(user):
         return False, _("No active subscription. Please subscribe to create live sessions.")
     if sub.status not in _ACTIVE_STATUSES:
         return False, _("Your subscription is not active.")
+    if sub.status == "trialing" and not is_trial_valid(sub):
+        return False, _("Your trial has expired.")
     plan = sub.plan
     if plan.max_live_sessions_per_month == 0:
         return False, _("Live sessions are not included in your plan. Please upgrade.")
@@ -120,6 +206,11 @@ def get_ai_tier(user):
     sub = get_user_subscription(user)
     if sub is None:
         return "none"
+    if sub.status == "trialing" and not is_trial_valid(sub):
+        return "none"
+    effective_tier = get_effective_blackbod_tier(user)
+    if effective_tier is not None:
+        return _BLACKBOD_AI_TIER_BY_EFFECTIVE_TIER[effective_tier]
     return sub.plan.ai_tier
 
 
@@ -136,6 +227,11 @@ def has_feature(user, feature_name):
     sub = get_user_subscription(user)
     if sub is None:
         return False
+    if sub.status == "trialing" and not is_trial_valid(sub):
+        return False
+    effective_tier = get_effective_blackbod_tier(user)
+    if effective_tier is not None:
+        return _BLACKBOD_FEATURES_BY_EFFECTIVE_TIER[effective_tier].get(feature_name, False)
     plan = sub.plan
     feature_map = {
         "notifications": plan.has_notifications,
@@ -168,26 +264,31 @@ def increment_sessions_used(user):
 
 def start_trial(user):
     """
-    Create a business-tier trial subscription for a newly registered user.
+    Create a 14-day Blackbòd trial subscription for a newly registered user.
     Silently no-ops if:
       - the user already has a subscription, or
-      - the business plan does not exist (e.g., before migrations run in tests).
+      - the trial plan does not exist (e.g., before migrations run in tests).
     """
     from .models import SubscriptionPlan
 
     try:
-        plan = SubscriptionPlan.objects.get(slug="business")
+        plan = SubscriptionPlan.objects.get(slug="trial")
     except SubscriptionPlan.DoesNotExist:
         return
 
+    trial_start = timezone.now()
+    trial_end = trial_end_for_start(trial_start)
     UserSubscription.objects.get_or_create(
         user=user,
         defaults={
             "plan": plan,
             "status": "trialing",
             "billing_period": "monthly",
-            "current_period_start": timezone.now(),
-            "trial_contracts_remaining": 1,
+            "current_period_start": trial_start,
+            "current_period_end": trial_end,
+            "trial_start": trial_start,
+            "trial_end": trial_end,
+            "trial_contracts_remaining": 0,
         },
     )
 
@@ -210,7 +311,10 @@ _MAX_BUSINESSES = {
     "professional": 1,
     "business": 4,
     "anchor": 35,
-    # Current slugs
+    # Launch slugs
+    "basic": 0,
+    "advanced": 4,
+    # Stale/future slugs retained temporarily for compatibility with older code.
     "blackboard_basic": 0,
     "blackboard_pro": 1,
     "blackboard_business": 4,
@@ -227,6 +331,8 @@ def max_businesses(user):
     if sub is None:
         from django.conf import settings
         return _DEV_MAX_BUSINESSES if settings.DEBUG else 0
+    if sub.status == "trialing":
+        return _MAX_BUSINESSES["professional"] if is_trial_valid(sub) else 0
     return _MAX_BUSINESSES.get(sub.plan.slug, 0)
 
 
@@ -249,8 +355,10 @@ def can_create_business_entity(user):
         return True, ""
     if sub.status not in _ACTIVE_STATUSES:
         return False, _("Your subscription is not active.")
+    if sub.status == "trialing" and not is_trial_valid(sub):
+        return False, _("Your trial has expired.")
 
-    max_biz = _MAX_BUSINESSES.get(sub.plan.slug, 0)
+    max_biz = _MAX_BUSINESSES["professional"] if sub.status == "trialing" else _MAX_BUSINESSES.get(sub.plan.slug, 0)
     if max_biz == 0:
         return (
             False,
@@ -324,9 +432,12 @@ def auto_downgrade_from_sol_member(user):
         return
 
     try:
-        starter_plan = SubscriptionPlan.objects.get(slug="starter")
+        starter_plan = SubscriptionPlan.objects.get(slug="basic")
     except SubscriptionPlan.DoesNotExist:
-        return
+        try:
+            starter_plan = SubscriptionPlan.objects.get(slug="starter")
+        except SubscriptionPlan.DoesNotExist:
+            return
 
     sub.plan = starter_plan
     sub.save(update_fields=["plan"])

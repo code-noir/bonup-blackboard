@@ -95,6 +95,8 @@ class UserSubscription(models.Model):
 
     # Trial
     trial_contracts_remaining = models.PositiveIntegerField(default=0)
+    trial_start = models.DateTimeField(null=True, blank=True)
+    trial_end = models.DateTimeField(null=True, blank=True)
 
     # Stripe stubs
     stripe_customer_id = models.CharField(max_length=255, blank=True, default="")

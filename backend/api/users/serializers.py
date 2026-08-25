@@ -112,6 +112,10 @@ class UserProfileSerializer(serializers.Serializer):
 
     # From billing
     subscription_tier = serializers.SerializerMethodField()
+    effective_blackbod_tier = serializers.SerializerMethodField()
+    trial_start = serializers.SerializerMethodField()
+    trial_end = serializers.SerializerMethodField()
+    trial_valid = serializers.SerializerMethodField()
 
     def _profile(self, obj):
         try:
@@ -155,6 +159,29 @@ class UserProfileSerializer(serializers.Serializer):
             return obj.subscription.plan.slug
         except Exception:
             return None
+
+    def get_effective_blackbod_tier(self, obj):
+        from backend.billing.gates import get_effective_blackbod_tier
+        return get_effective_blackbod_tier(obj)
+
+    def get_trial_start(self, obj):
+        try:
+            return obj.subscription.trial_start
+        except Exception:
+            return None
+
+    def get_trial_end(self, obj):
+        try:
+            return obj.subscription.trial_end
+        except Exception:
+            return None
+
+    def get_trial_valid(self, obj):
+        from backend.billing.gates import is_trial_valid
+        try:
+            return is_trial_valid(obj.subscription)
+        except Exception:
+            return False
 
 
 class PublicUserSerializer(serializers.Serializer):

@@ -14,7 +14,7 @@ export default function BonupHub() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
 
-  const hasBlackboardAccess = !!user?.subscription_tier
+  const hasBlackboardAccess = !!user?.effective_blackbod_tier || !!user?.subscription_tier
 
   async function handleLogout() {
     await logout()

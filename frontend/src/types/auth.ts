@@ -2,8 +2,10 @@ export type SubscriptionTier =
   | 'trial'
   | 'sol_member'
   | 'per_contract'
-  | 'starter'
+  | 'basic'
   | 'professional'
+  | 'advanced'
+  | 'starter'
   | 'business'
   | 'anchor'
 
@@ -20,6 +22,10 @@ export interface AuthUser {
   last_name: string
   bon_id?: string
   subscription_tier?: SubscriptionTier
+  effective_blackbod_tier?: 'basic' | 'professional' | 'advanced' | null
+  trial_start?: string | null
+  trial_end?: string | null
+  trial_valid?: boolean
   trial_ends_at?: string | null
   trial_expired?: boolean
   is_staff?: boolean

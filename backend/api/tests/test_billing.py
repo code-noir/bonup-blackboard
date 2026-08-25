@@ -7,6 +7,7 @@
 #   - API endpoints (plans, subscription, invoices, usage)
 #   - Gate integration: POST /api/contracts/, POST /api/sessions/, GET/retrieve /api/templates/
 
+from datetime import timedelta
 from decimal import Decimal
 
 from django.test import TestCase
@@ -69,8 +70,8 @@ def make_template(category="health_wellness", name="Test Template"):
 
 class PlanSeedingTests(TestCase):
 
-    def test_seven_plans_seeded(self):
-        self.assertEqual(SubscriptionPlan.objects.filter(is_active=True).count(), 7)
+    def test_six_active_plans_seeded(self):
+        self.assertEqual(SubscriptionPlan.objects.filter(is_active=True).count(), 6)
 
     def test_sol_member_plan(self):
         plan = SubscriptionPlan.objects.get(slug="sol_member")
@@ -91,7 +92,7 @@ class PlanSeedingTests(TestCase):
 
     def test_trial_plan(self):
         plan = SubscriptionPlan.objects.get(slug="trial")
-        self.assertEqual(plan.display_name, "Free Trial")
+        self.assertEqual(plan.display_name, "Blackbòd Trial")
         self.assertEqual(plan.price_monthly, Decimal("0.00"))
         self.assertIsNone(plan.price_yearly)
         self.assertIsNone(plan.max_active_contracts)
@@ -101,7 +102,7 @@ class PlanSeedingTests(TestCase):
         self.assertTrue(plan.has_negotiation_prep)
         self.assertTrue(plan.all_templates)
         self.assertTrue(plan.has_sol)
-        self.assertEqual(plan.ai_tier, "advanced")
+        self.assertEqual(plan.ai_tier, "basic")
         self.assertFalse(plan.has_priority_support)
         self.assertFalse(plan.has_early_access)
 
@@ -119,9 +120,9 @@ class PlanSeedingTests(TestCase):
         self.assertFalse(plan.has_priority_support)
         self.assertFalse(plan.has_early_access)
 
-    def test_starter_plan(self):
-        plan = SubscriptionPlan.objects.get(slug="starter")
-        self.assertEqual(plan.display_name, "Blackboard Starter")
+    def test_basic_plan(self):
+        plan = SubscriptionPlan.objects.get(slug="basic")
+        self.assertEqual(plan.display_name, "Blackbòd Basic")
         self.assertEqual(plan.price_monthly, Decimal("19.00"))
         self.assertEqual(plan.price_yearly, Decimal("100.00"))
         self.assertFalse(plan.all_templates)
@@ -137,7 +138,7 @@ class PlanSeedingTests(TestCase):
 
     def test_professional_plan(self):
         plan = SubscriptionPlan.objects.get(slug="professional")
-        self.assertEqual(plan.display_name, "Blackboard Pro")
+        self.assertEqual(plan.display_name, "Blackbòd Professional")
         self.assertEqual(plan.price_monthly, Decimal("149.00"))
         self.assertTrue(plan.all_templates)
         self.assertEqual(plan.excluded_categories, [])
@@ -147,17 +148,18 @@ class PlanSeedingTests(TestCase):
         # Sol manager starts at Pro — confirmed commercial rule
         self.assertTrue(plan.has_sol)
 
-    def test_business_plan(self):
-        plan = SubscriptionPlan.objects.get(slug="business")
+    def test_advanced_plan(self):
+        plan = SubscriptionPlan.objects.get(slug="advanced")
         self.assertEqual(plan.price_monthly, Decimal("399.00"))
         self.assertTrue(plan.all_templates)
         self.assertIsNone(plan.max_active_contracts)
         self.assertEqual(plan.max_live_sessions_per_month, 60)
         self.assertEqual(plan.ai_tier, "advanced")
 
-    def test_anchor_plan(self):
+    def test_anchor_plan_is_legacy_inactive(self):
         plan = SubscriptionPlan.objects.get(slug="anchor")
-        self.assertEqual(plan.display_name, "Blackboard Enterprise")
+        self.assertEqual(plan.display_name, "Blackboard Enterprise (Legacy)")
+        self.assertFalse(plan.is_active)
         self.assertEqual(plan.price_monthly, Decimal("999.00"))
         self.assertTrue(plan.all_templates)
         self.assertIsNone(plan.max_active_contracts)
@@ -366,19 +368,20 @@ class PlanListAPITests(TestCase):
         self.user = make_user("u_pl", "u_pl@example.com")
         self.client = authed_client(self.user)
 
-    def test_returns_seven_plans(self):
+    def test_returns_six_active_plans(self):
         r = self.client.get("/api/billing/plans/")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(len(r.data), 7)
+        self.assertEqual(len(r.data), 6)
 
     def test_plan_has_expected_fields(self):
         r = self.client.get("/api/billing/plans/")
         slugs = {p["slug"] for p in r.data}
-        self.assertIn("anchor", slugs)
-        plan = next(p for p in r.data if p["slug"] == "anchor")
-        self.assertTrue(plan["has_priority_support"])
-        self.assertTrue(plan["has_early_access"])
-        self.assertEqual(plan["ai_tier"], "full")
+        self.assertIn("advanced", slugs)
+        self.assertNotIn("anchor", slugs)
+        plan = next(p for p in r.data if p["slug"] == "advanced")
+        self.assertFalse(plan["has_priority_support"])
+        self.assertFalse(plan["has_early_access"])
+        self.assertEqual(plan["ai_tier"], "advanced")
 
 
 # ---------------------------------------------------------------------------
@@ -399,11 +402,11 @@ class SubscriptionAPITests(TestCase):
     def test_post_creates_subscription(self):
         r = self.client.post(
             "/api/billing/subscription/",
-            {"plan_slug": "starter", "billing_period": "monthly"},
+            {"plan_slug": "basic", "billing_period": "monthly"},
             format="json",
         )
         self.assertEqual(r.status_code, 201)
-        self.assertEqual(r.data["plan"]["slug"], "starter")
+        self.assertEqual(r.data["plan"]["slug"], "basic")
         self.assertEqual(r.data["status"], "active")
 
     def test_post_invalid_plan_returns_404(self):
@@ -419,20 +422,20 @@ class SubscriptionAPITests(TestCase):
         self.assertEqual(r.status_code, 400)
 
     def test_post_changes_existing_plan(self):
-        subscribe(self.user, "starter")
+        subscribe(self.user, "basic")
         r = self.client.post(
             "/api/billing/subscription/",
-            {"plan_slug": "business"},
+            {"plan_slug": "advanced"},
             format="json",
         )
         self.assertEqual(r.status_code, 201)
-        self.assertEqual(r.data["plan"]["slug"], "business")
+        self.assertEqual(r.data["plan"]["slug"], "advanced")
 
     def test_get_returns_subscription_after_create(self):
-        subscribe(self.user, "business")
+        subscribe(self.user, "advanced")
         r = self.client.get("/api/billing/subscription/")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.data["plan"]["slug"], "business")
+        self.assertEqual(r.data["plan"]["slug"], "advanced")
 
     def test_delete_cancels_subscription(self):
         subscribe(self.user, "business")
@@ -696,9 +699,9 @@ class TrialGateTests(TestCase):
         start_trial(self.user)
         sub = UserSubscription.objects.get(user=self.user)
         self.assertEqual(sub.status, "trialing")
-        self.assertEqual(sub.plan.slug, "business")
+        self.assertEqual(sub.plan.slug, "trial")
         self.assertEqual(sub.billing_period, "monthly")
-        self.assertEqual(sub.trial_contracts_remaining, 1)
+        self.assertEqual(sub.trial_contracts_remaining, 0)
 
     def test_start_trial_idempotent(self):
         start_trial(self.user)
@@ -723,7 +726,7 @@ class TrialGateTests(TestCase):
         start_trial(self.user)
         consume_trial_contract(self.user)
         sub = UserSubscription.objects.get(user=self.user)
-        self.assertEqual(sub.trial_contracts_remaining, 1)
+        self.assertEqual(sub.trial_contracts_remaining, 0)
 
     def test_consume_does_not_transition_to_no_subscription_in_build_mode(self):
         start_trial(self.user)
@@ -775,19 +778,31 @@ class TrialAPITests(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.data["is_trial"])
         self.assertFalse(r.data["trial_expired"])
-        self.assertEqual(r.data["trial_contracts_remaining"], 1)
-        self.assertEqual(r.data["plan"], "business")
+        self.assertEqual(r.data["trial_contracts_remaining"], 0)
+        self.assertEqual(r.data["plan"], "trial")
         self.assertEqual(r.data["status"], "trialing")
 
     def test_trial_endpoint_after_expiry(self):
-        start_trial(self.user)
-        consume_trial_contract(self.user)
+        start = timezone.now() - timedelta(days=15)
+        plan = SubscriptionPlan.objects.get(slug="trial")
+        UserSubscription.objects.create(
+            user=self.user,
+            plan=plan,
+            status="trialing",
+            billing_period="monthly",
+            current_period_start=start,
+            current_period_end=start + timedelta(days=14),
+            trial_start=start,
+            trial_end=start + timedelta(days=14),
+        )
         r = self.client.get("/api/billing/trial/")
         self.assertEqual(r.status_code, 200)
-        self.assertFalse(r.data["is_trial"])
+        self.assertTrue(r.data["is_trial"])
         self.assertTrue(r.data["trial_expired"])
+        self.assertFalse(r.data["is_trial_valid"])
+        self.assertIsNone(r.data["effective_blackbod_tier"])
         self.assertEqual(r.data["trial_contracts_remaining"], 0)
-        self.assertEqual(r.data["status"], "no_subscription")
+        self.assertEqual(r.data["status"], "trialing")
 
     def test_trial_endpoint_active_subscription_not_trial(self):
         subscribe(self.user, "business")
@@ -870,7 +885,7 @@ class SolManagerEligibilityTests(TestCase):
     def test_trialing_cannot_create_sol(self):
         """Free trial (trialing status) does not qualify as a paid Pro+ subscription."""
         user = make_user("mgr_trial", "mgr_trial@example.com")
-        start_trial(user)  # puts user on business plan, trialing status
+        start_trial(user)  # puts user on the trial plan with trialing status
         r = authed_client(user).post(self.SOL_URL, self.SOL_PAYLOAD, format="json")
         self.assertEqual(r.status_code, 403)
 
@@ -937,29 +952,26 @@ class BusinessEntityLimitTests(TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Free/Trial Contract Limit — confirmed: 1 contract, global per user
+# Trial Compatibility — time-based trial in build mode
 # ---------------------------------------------------------------------------
 
 class FreeTierContractLimitTests(TestCase):
     """
-    Free/trial experience = exactly 1 contract, enforced globally per user.
-    The limit is tracked via trial_contracts_remaining on UserSubscription,
-    not per entity — a user cannot get 1 personal + 1 business contract.
+    The 14-day trial is time-based and does not consume or delete contract data.
+    The legacy trial_contracts_remaining field is retained for compatibility but is no longer consumed in build mode.
     """
 
-    def test_trial_limit_is_one_not_per_entity(self):
+    def test_trial_counter_is_not_used_for_entitlement(self):
         """
-        The trial contract counter is a single global counter — there is no
-        separate personal vs. business allowance.
+        Trial entitlement is time-based, not a per-contract counter.
         """
         user = make_user("free_entity", "free_entity@example.com")
         start_trial(user)
         sub = UserSubscription.objects.get(user=user)
-        # Only 1 remaining regardless of entity context
-        self.assertEqual(sub.trial_contracts_remaining, 1)
+        self.assertEqual(sub.trial_contracts_remaining, 0)
 
     def test_trial_second_contract_allowed_in_build_mode(self):
-        """After the 1 free contract is used, no further contracts are allowed."""
+        """Contract creation remains bypassed during Blackboard build mode."""
         user = make_user("free_second", "free_second@example.com")
         start_trial(user)
         client = authed_client(user)

@@ -12,6 +12,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from backend.billing.models import Invoice, SubscriptionPlan, UserSubscription
+from backend.billing.gates import get_effective_blackbod_tier, is_trial_valid
 from backend.billing.stripe_client import stripe_configured
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,10 @@ def _serialize_subscription(sub):
         "billing_period": sub.billing_period,
         "current_period_start": sub.current_period_start,
         "current_period_end": sub.current_period_end,
+        "trial_start": sub.trial_start,
+        "trial_end": sub.trial_end,
+        "is_trial_valid": is_trial_valid(sub),
+        "effective_blackbod_tier": get_effective_blackbod_tier(sub.user),
         "contracts_used_this_period": sub.contracts_used_this_period,
         "live_sessions_used_this_month": sub.live_sessions_used_this_month,
         "created_at": sub.created_at,
@@ -241,12 +246,17 @@ class TrialStatusAPIView(APIView):
             })
 
         is_trial = sub.status == "trialing"
-        trial_expired = sub.status == "no_subscription"
+        trial_valid = is_trial_valid(sub)
+        trial_expired = (is_trial and not trial_valid) or sub.status == "no_subscription"
 
         return Response({
             "is_trial": is_trial,
             "trial_expired": trial_expired,
             "trial_contracts_remaining": sub.trial_contracts_remaining if is_trial else 0,
+            "trial_start": sub.trial_start,
+            "trial_end": sub.trial_end,
+            "is_trial_valid": trial_valid,
+            "effective_blackbod_tier": get_effective_blackbod_tier(request.user),
             "plan": sub.plan.slug,
             "status": sub.status,
         })

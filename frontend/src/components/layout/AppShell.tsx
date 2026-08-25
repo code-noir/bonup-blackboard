@@ -13,7 +13,7 @@ import ViewAsBanner from './ViewAsBanner'
 //   Total           → pt-[158px] on main when ActionBar is shown
 
 // Pages where the action bar should be visible
-const ACTION_BAR_ROUTES = ['/dashboard', '/sessions']
+const ACTION_BAR_ROUTES = ['/apps/blackbod/dashboard', '/apps/blackbod/sessions']
 
 export default function AppShell() {
   const location = useLocation()

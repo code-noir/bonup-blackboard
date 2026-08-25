@@ -11,33 +11,14 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 
 export default function BonupHub() {
-  const { user, logout } = useAuth()
+  const { user } = useAuth()
   const navigate = useNavigate()
 
   const hasBlackboardAccess = !!user?.effective_blackbod_tier || !!user?.subscription_tier
 
-  async function handleLogout() {
-    await logout()
-    navigate('/login', { replace: true })
-  }
-
   return (
-    <div className="min-h-screen bg-[#F7F8FA]">
-      {/* Top bar */}
-      <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
-        <p className="text-xl font-bold tracking-tight text-[#1E3A6E]">
-          bon<span className="text-[#F5A623]">UP</span>
-        </p>
-        <button
-          onClick={handleLogout}
-          className="text-sm text-slate-500 hover:text-slate-700 transition-colors"
-        >
-          Sign out
-        </button>
-      </header>
-
-      {/* Main content */}
-      <main className="mx-auto max-w-2xl px-6 py-16">
+    <div>
+      <main className="mx-auto max-w-2xl px-6 py-10">
         {/* Welcome */}
         <div className="mb-10">
           <h1 className="text-3xl font-bold text-slate-900">
@@ -71,7 +52,7 @@ export default function BonupHub() {
 
           {hasBlackboardAccess ? (
             <button
-              onClick={() => navigate('/dashboard')}
+              onClick={() => navigate('/apps/blackbod')}
               className="rounded-lg bg-black px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#1a1a1a] focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 transition-colors"
             >
               Enter Blackbòd
@@ -84,7 +65,7 @@ export default function BonupHub() {
               </p>
               <div className="flex gap-3">
                 <button
-                  onClick={() => navigate('/profile')}
+                  onClick={() => navigate('/account')}
                   className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
                 >
                   Complete your profile

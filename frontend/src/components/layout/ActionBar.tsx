@@ -361,7 +361,7 @@ export default function ActionBar() {
   const [askAiOpen, setAskAiOpen] = useState(false)
   const [isCompact, setIsCompact] = useState(false)
   const location = useLocation()
-  const isDashboard = location.pathname === '/dashboard'
+  const isDashboard = location.pathname === '/apps/blackbod/dashboard'
 
   useEffect(() => {
     const query = window.matchMedia('(max-width: 1100px)')

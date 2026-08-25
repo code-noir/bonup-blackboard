@@ -18,7 +18,7 @@ const INTERNAL_ADS: Ad[] = [
   { title: 'bonUP Pro',        sub: 'Upgrade your experience today' },
   { title: 'bonUP Templates',  sub: 'Start any contract in seconds' },
   { title: 'bonUP Sessions',   sub: 'Go live with your partner'     },
-  { title: 'bonUP Sol',        sub: 'Manage payments seamlessly'    },
+  { title: 'bonUP Workspace',  sub: 'Track agreement work clearly' },
 ]
 
 function AdBanner({

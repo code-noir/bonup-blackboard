@@ -198,16 +198,10 @@ export default function Header() {
               <p className="truncate text-sm font-medium text-slate-800">{user?.email}</p>
             </div>
             <button
-              onClick={() => { setOpen(false); navigate('/profile') }}
+              onClick={() => { setOpen(false); navigate('/account') }}
               className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
             >
               Profile
-            </button>
-            <button
-              onClick={() => { setOpen(false); navigate('/billing') }}
-              className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-            >
-              Billing
             </button>
             <button
               onClick={() => { setOpen(false); navigate('/settings') }}

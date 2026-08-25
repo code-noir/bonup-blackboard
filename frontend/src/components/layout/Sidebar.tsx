@@ -24,21 +24,19 @@ function emojiIcon(emoji: string): React.ElementType {
 // ---------------------------------------------------------------------------
 
 const userNav = [
-  { to: '/dashboard',   label: 'Dashboard',            Icon: HomeIcon },
-  { to: '/workspace',   label: 'Workspace',            Icon: RectangleStackIcon },
-  { to: '/resource',    label: 'Resource',             Icon: ClipboardDocumentListIcon },
-  { to: '/contacts',    label: 'Contacts',             Icon: emojiIcon('👥') },
-  { to: '/ai',          label: 'AI Assistant',         Icon: SparklesIcon },
-  { to: '/analysis',    label: 'Contract Analysis',    Icon: emojiIcon('🔍') },
-  { to: '/counter',     label: 'Contract Counter',     Icon: emojiIcon('⚡') },
-  { to: '/agreement-performance', label: 'Agreement Performance', Icon: BoltIcon },
-  { to: '/entities',    label: 'My Businesses',        Icon: emojiIcon('🏢') },
+  { to: '/apps/blackbod/dashboard',   label: 'Dashboard',            Icon: HomeIcon },
+  { to: '/apps/blackbod/workspace',   label: 'Workspace',            Icon: RectangleStackIcon },
+  { to: '/apps/blackbod/resource',    label: 'Resource',             Icon: ClipboardDocumentListIcon },
+  { to: '/apps/blackbod/contacts',    label: 'Contacts',             Icon: emojiIcon('👥') },
+  { to: '/apps/blackbod/ai',          label: 'AI Assistant',         Icon: SparklesIcon },
+  { to: '/apps/blackbod/analysis',    label: 'Contract Analysis',    Icon: emojiIcon('🔍') },
+  { to: '/apps/blackbod/counter',     label: 'Contract Counter',     Icon: emojiIcon('⚡') },
+  { to: '/apps/blackbod/agreement-performance', label: 'Agreement Performance', Icon: BoltIcon },
+  { to: '/apps/blackbod/entities',    label: 'My Businesses',        Icon: emojiIcon('🏢') },
 ]
 
 const userBottomNav = [
-  { to: '/profile',       label: 'My Profile',    Icon: emojiIcon('🧑'), goldIcon: false },
-  { to: '/settings',      label: 'Settings',       Icon: Cog6ToothIcon,   goldIcon: false },
-  { to: '/billing',       label: 'Billing',        Icon: emojiIcon('💳'), goldIcon: false },
+  { to: '/hub', label: 'bonUP Home', Icon: HomeIcon, goldIcon: false },
 ]
 
 // ---------------------------------------------------------------------------

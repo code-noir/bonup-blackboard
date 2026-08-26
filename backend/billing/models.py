@@ -180,6 +180,8 @@ class ToolProductMetadata(models.Model):
     )
     tool_slug = models.SlugField(max_length=80, unique=True)
     ai_capable = models.BooleanField(default=False)
+    included_storage_bytes = models.PositiveBigIntegerField(default=0)
+    included_ai_allowance = models.CharField(max_length=80, blank=True, default="")
 
     class Meta:
         ordering = ["tool_slug"]
@@ -347,6 +349,77 @@ class ToolEntitlement(models.Model):
 
     def __str__(self):
         return f"{self.user_id}: {self.product.slug} ({self.status})"
+
+
+class StorageCapacityGrantOrigin(models.TextChoices):
+    PURCHASE = "purchase", "Purchase"
+    OPERATOR_ADJUSTMENT = "operator_adjustment", "Operator Adjustment"
+
+
+class StorageCapacityGrantStatus(models.TextChoices):
+    ACTIVE = "active", "Active"
+    REVOKED = "revoked", "Revoked"
+    EXPIRED = "expired", "Expired"
+
+
+class StorageCapacityGrant(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="storage_capacity_grants",
+    )
+    capacity_bytes = models.PositiveBigIntegerField()
+    origin = models.CharField(
+        max_length=40,
+        choices=StorageCapacityGrantOrigin.choices,
+    )
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="storage_capacity_grants",
+    )
+    source_item = models.ForeignKey(
+        PackageItem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="storage_capacity_grants",
+    )
+    granted_at = models.DateTimeField(default=timezone.now)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=StorageCapacityGrantStatus.choices,
+        default=StorageCapacityGrantStatus.ACTIVE,
+    )
+    reason = models.CharField(max_length=255, blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-granted_at", "-id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(capacity_bytes__gt=0),
+                name="storage_grant_capacity_pos",
+            ),
+        ]
+
+    def clean(self):
+        if self.origin == StorageCapacityGrantOrigin.PURCHASE and self.product_id is None:
+            raise ValidationError({"product": "Purchased storage capacity requires a Storage product."})
+        if self.product_id and self.product.product_type != Product.ProductType.STORAGE:
+            raise ValidationError({"product": "Storage capacity grants may only reference Storage products."})
+        if self.origin == StorageCapacityGrantOrigin.PURCHASE and self.expires_at is not None:
+            raise ValidationError({"expires_at": "Purchased storage capacity must not expire."})
+        if self.expires_at is not None and self.expires_at <= self.granted_at:
+            raise ValidationError({"expires_at": "Grant expiration must be after grant time."})
+
+    def __str__(self):
+        return f"{self.user_id}: {self.capacity_bytes} bytes ({self.origin}, {self.status})"
 
 
 class StorageEntitlement(models.Model):

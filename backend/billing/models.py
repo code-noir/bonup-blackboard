@@ -298,6 +298,11 @@ class CommercialEntitlementStatus(models.TextChoices):
     EXPIRED = "expired", "Expired"
 
 
+class ToolEntitlementOrigin(models.TextChoices):
+    NATIVE = "native", "Native"
+    LEGACY_SUBSCRIPTION = "legacy_subscription", "Legacy Subscription"
+
+
 class ToolEntitlement(models.Model):
     user = models.ForeignKey(
         User,
@@ -313,6 +318,11 @@ class ToolEntitlement(models.Model):
         max_length=20,
         choices=CommercialEntitlementStatus.choices,
         default=CommercialEntitlementStatus.ACTIVE,
+    )
+    origin = models.CharField(
+        max_length=40,
+        choices=ToolEntitlementOrigin.choices,
+        default=ToolEntitlementOrigin.NATIVE,
     )
     starts_at = models.DateTimeField(default=timezone.now)
     ends_at = models.DateTimeField(null=True, blank=True)

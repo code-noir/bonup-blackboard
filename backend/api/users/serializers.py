@@ -113,6 +113,7 @@ class UserProfileSerializer(serializers.Serializer):
     # From billing
     subscription_tier = serializers.SerializerMethodField()
     effective_blackbod_tier = serializers.SerializerMethodField()
+    has_blackbod_access = serializers.SerializerMethodField()
     trial_start = serializers.SerializerMethodField()
     trial_end = serializers.SerializerMethodField()
     trial_valid = serializers.SerializerMethodField()
@@ -163,6 +164,10 @@ class UserProfileSerializer(serializers.Serializer):
     def get_effective_blackbod_tier(self, obj):
         from backend.billing.gates import get_effective_blackbod_tier
         return get_effective_blackbod_tier(obj)
+
+    def get_has_blackbod_access(self, obj):
+        from backend.billing.blackbod import has_blackbod_access
+        return has_blackbod_access(obj)
 
     def get_trial_start(self, obj):
         try:

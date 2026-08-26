@@ -14,7 +14,7 @@ export default function BonupHub() {
   const { user } = useAuth()
   const navigate = useNavigate()
 
-  const hasBlackboardAccess = !!user?.effective_blackbod_tier || !!user?.subscription_tier
+  const hasBlackbodAccess = user?.has_blackbod_access === true
 
   return (
     <div>
@@ -50,7 +50,7 @@ export default function BonupHub() {
             Create, negotiate, and track contracts — all tied to your bonID.
           </p>
 
-          {hasBlackboardAccess ? (
+          {hasBlackbodAccess ? (
             <button
               onClick={() => navigate('/apps/blackbod')}
               className="rounded-lg bg-black px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#1a1a1a] focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 transition-colors"
@@ -60,8 +60,7 @@ export default function BonupHub() {
           ) : (
             <div className="space-y-3">
               <p className="text-sm text-slate-500">
-                You don't have a Blackbòd subscription yet.
-                Complete your profile to get started.
+                Blackbòd is not currently active in your bonUP package.
               </p>
               <div className="flex gap-3">
                 <button

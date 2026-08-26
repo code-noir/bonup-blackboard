@@ -23,6 +23,7 @@ export interface AuthUser {
   bon_id?: string
   subscription_tier?: SubscriptionTier
   effective_blackbod_tier?: 'basic' | 'professional' | 'advanced' | null
+  has_blackbod_access?: boolean
   trial_start?: string | null
   trial_end?: string | null
   trial_valid?: boolean

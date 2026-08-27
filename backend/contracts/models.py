@@ -1079,7 +1079,7 @@ class ContractExtractionRun(models.Model):
             models.Index(fields=["contract", "stage", "status"], name="contract_extract_run_state_idx"),
             models.Index(fields=["contract_version", "stage"], name="contract_extract_run_ver_idx"),
             models.Index(fields=["source_hash"], name="contract_extract_run_hash_idx"),
-            models.Index(fields=["created_at"], name="contract_extract_run_created_idx"),
+            models.Index(fields=["created_at"], name="ctr_extr_run_created_idx"),
         ]
 
     def __str__(self):
@@ -1179,7 +1179,7 @@ class ContractExtractionCandidate(models.Model):
 
     class Meta:
         indexes = [
-            models.Index(fields=["contract", "review_status"], name="contract_extract_cand_review_idx"),
+            models.Index(fields=["contract", "review_status"], name="ctr_extr_cand_review_idx"),
             models.Index(fields=["run", "candidate_type"], name="contract_extract_cand_type_idx"),
             models.Index(fields=["contract_version", "review_status"], name="contract_extract_cand_ver_idx"),
             models.Index(fields=["due_date"], name="contract_extract_cand_due_idx"),

@@ -172,6 +172,43 @@ class Product(models.Model):
         return f"{self.name} ({self.slug})"
 
 
+class ProductPrice(models.Model):
+    class PriceType(models.TextChoices):
+        ONE_TIME = "one_time", "One Time"
+        MONTHLY = "monthly", "Monthly"
+        ANNUAL = "annual", "Annual"
+
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name="prices",
+    )
+    price_type = models.CharField(max_length=20, choices=PriceType.choices)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    currency = models.CharField(max_length=3, default="USD")
+    active = models.BooleanField(default=True)
+    effective_from = models.DateTimeField(default=timezone.now)
+    effective_until = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["product", "price_type", "-effective_from"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(amount__gte=0),
+                name="product_price_amount_nonneg",
+            ),
+        ]
+
+    def clean(self):
+        if self.effective_until is not None and self.effective_until <= self.effective_from:
+            raise ValidationError({"effective_until": "Price end must be after price start."})
+
+    def __str__(self):
+        return f"{self.product.slug}: {self.amount} {self.currency} ({self.price_type})"
+
+
 class ToolProductMetadata(models.Model):
     product = models.OneToOneField(
         Product,
@@ -365,7 +402,7 @@ class StorageCapacityGrantStatus(models.TextChoices):
 class StorageCapacityGrant(models.Model):
     user = models.ForeignKey(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="storage_capacity_grants",
     )
     capacity_bytes = models.PositiveBigIntegerField()
@@ -420,6 +457,108 @@ class StorageCapacityGrant(models.Model):
 
     def __str__(self):
         return f"{self.user_id}: {self.capacity_bytes} bytes ({self.origin}, {self.status})"
+
+
+class StoragePurchaseStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    COMPLETED = "completed", "Completed"
+    FAILED = "failed", "Failed"
+    REFUNDED = "refunded", "Refunded"
+
+
+class StoragePurchase(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name="storage_purchases",
+    )
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.PROTECT,
+        related_name="storage_purchases",
+    )
+    product_price = models.ForeignKey(
+        ProductPrice,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="storage_purchases",
+    )
+    capacity_bytes_snapshot = models.PositiveBigIntegerField()
+    capacity_label_snapshot = models.CharField(max_length=120, blank=True, default="")
+    price_amount_snapshot = models.DecimalField(max_digits=10, decimal_places=2)
+    currency_snapshot = models.CharField(max_length=3)
+    status = models.CharField(
+        max_length=20,
+        choices=StoragePurchaseStatus.choices,
+        default=StoragePurchaseStatus.PENDING,
+    )
+    purchased_at = models.DateTimeField(default=timezone.now)
+    payment_reference = models.CharField(max_length=255, blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    capacity_grant = models.OneToOneField(
+        StorageCapacityGrant,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="storage_purchase",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-purchased_at", "-id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(capacity_bytes_snapshot__gt=0),
+                name="storage_purchase_capacity_pos",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(price_amount_snapshot__gte=0),
+                name="storage_purchase_price_nonneg",
+            ),
+        ]
+
+    def clean(self):
+        if self.product_id and self.product.product_type != Product.ProductType.STORAGE:
+            raise ValidationError({"product": "Storage purchases require a Storage product."})
+        if self.capacity_grant_id and self.capacity_grant.capacity_bytes != self.capacity_bytes_snapshot:
+            raise ValidationError({"capacity_grant": "Storage grant capacity must match the purchase snapshot."})
+        if self.capacity_grant_id and self.capacity_grant.origin != StorageCapacityGrantOrigin.PURCHASE:
+            raise ValidationError({"capacity_grant": "Storage purchases require purchase-origin capacity grants."})
+        if self.capacity_grant_id and self.capacity_grant.expires_at is not None:
+            raise ValidationError({"capacity_grant": "Storage purchase grants must not expire."})
+
+    def __str__(self):
+        return f"{self.user_id}: {self.product.slug} ({self.status})"
+
+
+class ProviderStorageCost(models.Model):
+    provider = models.CharField(max_length=120)
+    period_start = models.DateTimeField()
+    period_end = models.DateTimeField()
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    currency = models.CharField(max_length=3, default="USD")
+    physical_capacity_bytes = models.PositiveBigIntegerField(null=True, blank=True)
+    stored_bytes = models.PositiveBigIntegerField(null=True, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-period_start", "provider"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(amount__gte=0),
+                name="provider_storage_cost_nonneg",
+            ),
+        ]
+
+    def clean(self):
+        if self.period_end <= self.period_start:
+            raise ValidationError({"period_end": "Provider cost period end must be after period start."})
+
+    def __str__(self):
+        return f"{self.provider}: {self.amount} {self.currency}"
 
 
 class StorageEntitlement(models.Model):

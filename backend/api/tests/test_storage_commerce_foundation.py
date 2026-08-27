@@ -52,6 +52,14 @@ def storage_product(slug="storage-8gb"):
     return Product.objects.get(slug=slug)
 
 
+def deactivate_current_one_time_prices(product):
+    ProductPrice.objects.filter(
+        product=product,
+        price_type=ProductPrice.PriceType.ONE_TIME,
+        active=True,
+    ).update(active=False, effective_until=timezone.now() - timedelta(minutes=1))
+
+
 def add_price(
     product,
     amount="120.00",
@@ -60,7 +68,10 @@ def add_price(
     active=True,
     effective_from=None,
     effective_until=None,
+    deactivate_existing=True,
 ):
+    if deactivate_existing and price_type == ProductPrice.PriceType.ONE_TIME:
+        deactivate_current_one_time_prices(product)
     return ProductPrice.objects.create(
         product=product,
         price_type=price_type,
@@ -82,12 +93,7 @@ def make_eligible_user(username="storage_buyer", email="storage_buyer@example.co
 def create_pending_purchase(user=None, product=None, amount="120.00"):
     user = user or make_eligible_user()
     product = product or storage_product("storage-8gb")
-    if not product.prices.filter(
-        price_type=ProductPrice.PriceType.ONE_TIME,
-        active=True,
-        effective_until__isnull=True,
-    ).exists():
-        add_price(product, amount)
+    add_price(product, amount)
     return create_storage_purchase(user=user, product=product)
 
 
@@ -117,13 +123,16 @@ class ProductPriceFoundationTests(TestCase):
 
     def test_no_active_one_time_price_rejects_purchase(self):
         user = make_eligible_user("no_price", "no_price@example.com")
+        product = storage_product("storage-8gb")
+        deactivate_current_one_time_prices(product)
 
         with self.assertRaises(ValidationError):
-            create_storage_purchase(user=user, product=storage_product("storage-8gb"))
+            create_storage_purchase(user=user, product=product)
 
     def test_monthly_and_annual_prices_do_not_satisfy_storage_purchase_price_requirement(self):
         user = make_eligible_user("recurring_price", "recurring_price@example.com")
         product = storage_product("storage-8gb")
+        deactivate_current_one_time_prices(product)
         add_price(product, price_type=ProductPrice.PriceType.MONTHLY)
         add_price(product, price_type=ProductPrice.PriceType.ANNUAL)
 
@@ -134,7 +143,7 @@ class ProductPriceFoundationTests(TestCase):
         user = make_eligible_user("ambiguous_price", "ambiguous_price@example.com")
         product = storage_product("storage-8gb")
         add_price(product, "120.00", effective_from=timezone.now() - timedelta(days=2))
-        add_price(product, "130.00", effective_from=timezone.now() - timedelta(days=1))
+        add_price(product, "130.00", effective_from=timezone.now() - timedelta(days=1), deactivate_existing=False)
 
         with self.assertRaisesMessage(ValidationError, "Ambiguous active ProductPrice"):
             create_storage_purchase(user=user, product=product)
@@ -143,7 +152,7 @@ class ProductPriceFoundationTests(TestCase):
         user = make_eligible_user("future_price", "future_price@example.com")
         product = storage_product("storage-8gb")
         current_price = add_price(product, "120.00", effective_from=timezone.now() - timedelta(days=1))
-        add_price(product, "130.00", effective_from=timezone.now() + timedelta(days=1))
+        add_price(product, "130.00", effective_from=timezone.now() + timedelta(days=1), deactivate_existing=False)
 
         purchase = create_storage_purchase(user=user, product=product)
 

@@ -19,9 +19,11 @@ from .models import (
     StoragePurchaseStatus,
 )
 from .storage import (
+    GIB,
     LAUNCH_STORAGE_PRODUCTS,
     create_storage_capacity_grant,
     evaluate_storage_purchase_eligibility,
+    get_launch_storage_products,
     get_platform_storage_capacity_report,
 )
 
@@ -46,6 +48,17 @@ class StorageEconomicsReport:
     physical_capacity_bytes_or_none: int | None
     gross_margin_or_none: Decimal | None
     utilization_ratio: Decimal | None
+    currency: str
+
+
+@dataclass(frozen=True)
+class StorageCatalogItem:
+    product_slug: str
+    name: str
+    capacity_bytes: int
+    capacity_gib: int
+    price_type: str
+    amount: Decimal
     currency: str
 
 
@@ -83,6 +96,40 @@ def validate_storage_purchase_product(product, *, require_active=True):
     return True
 
 
+def get_storage_catalog(now=None):
+    catalog_items = []
+    for product in get_launch_storage_products().filter(active=True):
+        if not hasattr(product, "storage_metadata"):
+            continue
+
+        capacity_bytes = product.storage_metadata.capacity_bytes
+        if capacity_bytes not in LAUNCH_STORAGE_PRODUCTS.values():
+            continue
+
+        price = get_active_product_price(
+            product,
+            ProductPrice.PriceType.ONE_TIME,
+            now=now,
+            currency="USD",
+        )
+        if price is None:
+            continue
+
+        catalog_items.append(
+            StorageCatalogItem(
+                product_slug=product.slug,
+                name=product.name,
+                capacity_bytes=capacity_bytes,
+                capacity_gib=capacity_bytes // GIB,
+                price_type=price.price_type,
+                amount=price.amount,
+                currency=price.currency,
+            )
+        )
+
+    return tuple(sorted(catalog_items, key=lambda item: item.capacity_bytes))
+
+
 @transaction.atomic
 def create_storage_purchase(
     *,
@@ -94,7 +141,7 @@ def create_storage_purchase(
     now=None,
 ):
     now = now or timezone.now()
-    product = Product.objects.select_for_update().select_related("storage_metadata").get(pk=product.pk)
+    product = Product.objects.select_for_update(of=("self",)).select_related("storage_metadata").get(pk=product.pk)
     validate_storage_purchase_product(product, require_active=True)
 
     price = get_active_product_price(product, ProductPrice.PriceType.ONE_TIME, now=now)
@@ -129,7 +176,7 @@ def create_storage_purchase(
 @transaction.atomic
 def complete_storage_purchase(purchase, *, now=None):
     now = now or timezone.now()
-    purchase = StoragePurchase.objects.select_for_update().select_related("product", "capacity_grant").get(pk=purchase.pk)
+    purchase = StoragePurchase.objects.select_for_update(of=("self",)).select_related("product", "capacity_grant").get(pk=purchase.pk)
 
     if purchase.status == StoragePurchaseStatus.COMPLETED and purchase.capacity_grant_id is not None:
         return purchase

@@ -3,6 +3,7 @@
 import logging
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
@@ -11,9 +12,11 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from backend.billing.models import Invoice, SubscriptionPlan, UserSubscription
+from backend.billing.models import Invoice, Product, SubscriptionPlan, UserSubscription
 from backend.billing.gates import get_effective_blackbod_tier, is_trial_valid
 from backend.billing.stripe_client import stripe_configured
+from backend.billing.storage import GIB
+from backend.billing.storage_commerce import get_storage_catalog
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +74,94 @@ def _serialize_invoice(inv):
         "created_at": inv.created_at,
         "paid_at": inv.paid_at,
     }
+
+
+def _serialize_blackbod_catalog_tool():
+    product = (
+        Product.objects
+        .filter(slug="blackbod", product_type=Product.ProductType.TOOL, active=True)
+        .select_related("tool_metadata")
+        .first()
+    )
+    if product is None:
+        return None
+    if not hasattr(product, "tool_metadata"):
+        raise ValidationError({"blackbod": "Active Blackbòd catalog product requires tool metadata."})
+    if product.monthly_price is None or product.annual_price is None:
+        raise ValidationError({"blackbod": "Active Blackbòd catalog product requires monthly and annual pricing."})
+
+    included_storage_bytes = product.tool_metadata.included_storage_bytes
+    return {
+        "slug": product.slug,
+        "name": product.name,
+        "product_type": product.product_type,
+        "active": product.active,
+        "pricing": {
+            "monthly": {
+                "amount": str(product.monthly_price),
+                "currency": "USD",
+            },
+            "annual": {
+                "amount": str(product.annual_price),
+                "currency": "USD",
+            },
+        },
+        "included_storage": {
+            "bytes": included_storage_bytes,
+            "gib": included_storage_bytes // GIB,
+        },
+        "included_ai_allowance": product.tool_metadata.included_ai_allowance,
+    }
+
+
+def _serialize_storage_catalog_item(item):
+    return {
+        "slug": item.product_slug,
+        "name": item.name,
+        "product_type": Product.ProductType.STORAGE,
+        "capacity": {
+            "bytes": item.capacity_bytes,
+            "gib": item.capacity_gib,
+        },
+        "price": {
+            "type": item.price_type,
+            "amount": str(item.amount),
+            "currency": item.currency,
+        },
+    }
+
+
+def _serialize_validation_error(exc):
+    if hasattr(exc, "message_dict"):
+        return exc.message_dict
+    if hasattr(exc, "messages"):
+        return exc.messages
+    return str(exc)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/billing/catalog/
+# ---------------------------------------------------------------------------
+
+class SubscriptionCatalogAPIView(APIView):
+    """Customer-facing subscription catalog for tools and storage add-ons."""
+
+    def get(self, request):
+        try:
+            blackbod_tool = _serialize_blackbod_catalog_tool()
+            storage_catalog = [_serialize_storage_catalog_item(item) for item in get_storage_catalog()]
+        except ValidationError as exc:
+            return Response({"error": _serialize_validation_error(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        tools = []
+        if blackbod_tool is not None:
+            tools.append(blackbod_tool)
+
+        return Response({
+            "tools": tools,
+            "storage": storage_catalog,
+            "ai": [],
+        })
 
 
 # ---------------------------------------------------------------------------

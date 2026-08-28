@@ -185,12 +185,27 @@ class StorageCapacityFoundationTests(TestCase):
         self.assertEqual(result.reason, "capacity_needed")
         self.assertEqual(result.recommended_capacity_bytes, 8 * GIB)
 
-    def test_declared_upcoming_need_affects_eligibility(self):
+    def test_active_blackbod_customer_can_proactively_purchase_ordinary_storage(self):
+        user = make_user("storage_proactive", "storage_proactive@example.com")
+        create_tool_entitlement(user=user, product=blackbod_product())
+
+        eight = evaluate_storage_purchase_eligibility(user, 8 * GIB)
+        eighty_eight = evaluate_storage_purchase_eligibility(user, 88 * GIB)
+        protected = evaluate_storage_purchase_eligibility(user, 288 * GIB)
+
+        self.assertTrue(eight.eligible)
+        self.assertEqual(eight.reason, "proactive_capacity_available")
+        self.assertTrue(eighty_eight.eligible)
+        self.assertEqual(eighty_eight.reason, "proactive_capacity_available")
+        self.assertFalse(protected.eligible)
+        self.assertEqual(protected.reason, "sufficient_reserve")
+
+    def test_declared_upcoming_need_affects_protected_storage_eligibility(self):
         user = make_user("storage_declared", "storage_declared@example.com")
         create_tool_entitlement(user=user, product=blackbod_product())
 
-        without_need = evaluate_storage_purchase_eligibility(user, 88 * GIB)
-        with_need = evaluate_storage_purchase_eligibility(user, 88 * GIB, declared_upcoming_need_bytes=70 * GIB)
+        without_need = evaluate_storage_purchase_eligibility(user, 288 * GIB)
+        with_need = evaluate_storage_purchase_eligibility(user, 288 * GIB, declared_upcoming_need_bytes=70 * GIB)
 
         self.assertFalse(without_need.eligible)
         self.assertEqual(without_need.reason, "sufficient_reserve")

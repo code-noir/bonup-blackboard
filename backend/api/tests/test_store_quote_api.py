@@ -275,18 +275,34 @@ class StoreQuoteAPITests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["code"], "mixed_currency")
 
-    def test_storage_eligibility_denial_surfaced(self):
+    def test_active_blackbod_with_unused_included_storage_can_quote_8gb_storage(self):
         create_tool_entitlement(user=self.user, product=blackbod_product())
 
         response = self.post_quote(quote_payload(storage_slug="storage-8gb"))
 
-        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
-        self.assertEqual(response.data["code"], "storage_ineligible")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assert_money_totals(response, one_time="18.00", due_today="18.00")
+        self.assertEqual(response.data["items"][0]["eligibility"], {"eligible": True, "reason": "proactive_capacity_available"})
+        self.assertEqual(StoragePurchase.objects.count(), 0)
+        self.assertEqual(StorageCapacityGrant.objects.count(), 0)
+        self.assertEqual(ToolEntitlement.objects.filter(user=self.user).count(), 1)
 
-    def test_active_blackbod_with_unused_included_storage_cannot_quote_extra_storage_without_need(self):
+    def test_active_blackbod_with_unused_included_storage_can_quote_88gb_storage(self):
         create_tool_entitlement(user=self.user, product=blackbod_product())
 
         response = self.post_quote(quote_payload(storage_slug="storage-88gb"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assert_money_totals(response, one_time="118.00", due_today="118.00")
+        self.assertEqual(response.data["items"][0]["eligibility"], {"eligible": True, "reason": "proactive_capacity_available"})
+        self.assertEqual(StoragePurchase.objects.count(), 0)
+        self.assertEqual(StorageCapacityGrant.objects.count(), 0)
+        self.assertEqual(ToolEntitlement.objects.filter(user=self.user).count(), 1)
+
+    def test_active_blackbod_with_unused_included_storage_cannot_quote_288gb_storage(self):
+        create_tool_entitlement(user=self.user, product=blackbod_product())
+
+        response = self.post_quote(quote_payload(storage_slug="storage-288gb"))
 
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
         self.assertEqual(response.data["code"], "storage_ineligible")

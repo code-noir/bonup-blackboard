@@ -18,7 +18,7 @@ from .storage_commerce import get_active_product_price, get_storage_catalog
 SUPPORTED_BILLING_INTERVALS = {"monthly", "annual"}
 ZERO_MONEY = Decimal("0.00")
 TOOL_CURRENCY = "USD"
-STORAGE_SUFFICIENT_RESERVE_MESSAGE = "You currently have enough available Vault storage. Additional permanent Storage becomes available as you approach your current capacity."
+STORAGE_SUFFICIENT_RESERVE_MESSAGE = "This larger Storage option becomes available as your Vault usage grows."
 STORAGE_AVAILABLE_MESSAGE = "Additional permanent Storage is available for your current selection."
 STORAGE_UNAVAILABLE_MESSAGE = "This Storage option is not currently available."
 

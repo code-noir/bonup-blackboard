@@ -17,7 +17,7 @@ from .helpers import authed_client, make_user
 
 
 ELIGIBILITY_URL = "/api/billing/store/eligibility/"
-SUFFICIENT_RESERVE_MESSAGE = "You currently have enough available Vault storage. Additional permanent Storage becomes available as you approach your current capacity."
+SUFFICIENT_RESERVE_MESSAGE = "This larger Storage option becomes available as your Vault usage grows."
 
 
 def blackbod_product():
@@ -56,14 +56,19 @@ class StoreEligibilityAPITests(TestCase):
 
         self.assertIn(response.status_code, {status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN})
 
-    def test_existing_blackbod_with_unused_included_storage_marks_storage_unavailable(self):
+    def test_existing_blackbod_with_unused_included_storage_allows_ordinary_storage(self):
         create_tool_entitlement(user=self.user, product=blackbod_product())
 
         response = self.post_eligibility(eligibility_payload())
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assert_all_storage(response, eligible=False, code="sufficient_reserve")
-        self.assertEqual(response.data["storage"]["storage-88gb"]["message"], SUFFICIENT_RESERVE_MESSAGE)
+        self.assertEqual(response.data["storage"]["storage-8gb"]["eligible"], True)
+        self.assertEqual(response.data["storage"]["storage-8gb"]["code"], "proactive_capacity_available")
+        self.assertEqual(response.data["storage"]["storage-88gb"]["eligible"], True)
+        self.assertEqual(response.data["storage"]["storage-88gb"]["code"], "proactive_capacity_available")
+        self.assertEqual(response.data["storage"]["storage-288gb"]["eligible"], False)
+        self.assertEqual(response.data["storage"]["storage-288gb"]["code"], "sufficient_reserve")
+        self.assertEqual(response.data["storage"]["storage-288gb"]["message"], SUFFICIENT_RESERVE_MESSAGE)
 
     def test_existing_blackbod_near_capacity_marks_storage_available(self):
         create_tool_entitlement(user=self.user, product=blackbod_product())
@@ -119,5 +124,7 @@ class StoreEligibilityAPITests(TestCase):
         response = self.post_eligibility(eligibility_payload(tool_interval="monthly"))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assert_all_storage(response, eligible=False, code="sufficient_reserve")
+        self.assertEqual(response.data["storage"]["storage-8gb"]["code"], "proactive_capacity_available")
+        self.assertEqual(response.data["storage"]["storage-88gb"]["code"], "proactive_capacity_available")
+        self.assertEqual(response.data["storage"]["storage-288gb"]["code"], "sufficient_reserve")
         self.assertEqual(ToolEntitlement.objects.filter(user=self.user).count(), 1)

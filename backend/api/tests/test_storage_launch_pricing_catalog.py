@@ -154,8 +154,8 @@ class StorageLaunchPricingCatalogTests(TestCase):
         eligibility = evaluate_storage_purchase_eligibility(user, 88 * GIB)
 
         self.assertEqual(len(catalog), 3)
-        self.assertFalse(eligibility.eligible)
-        self.assertEqual(eligibility.reason, "sufficient_reserve")
+        self.assertTrue(eligibility.eligible)
+        self.assertEqual(eligibility.reason, "proactive_capacity_available")
 
     def test_catalog_read_creates_no_entitlements_or_provider_costs(self):
         get_storage_catalog()

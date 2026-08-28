@@ -31,6 +31,10 @@ LAUNCH_STORAGE_PRODUCTS = {
     "storage-88gb": 88 * GIB,
     "storage-288gb": 288 * GIB,
 }
+LAUNCH_PROACTIVE_STORAGE_CAPACITY_BYTES = frozenset({
+    LAUNCH_STORAGE_PRODUCTS["storage-8gb"],
+    LAUNCH_STORAGE_PRODUCTS["storage-88gb"],
+})
 STORAGE_RESERVE_BYTES = 8 * GIB
 
 
@@ -177,6 +181,18 @@ def evaluate_storage_purchase_eligibility(
         )
 
     if needed_extra_bytes == 0:
+        if has_tool(user, BLACKBOD_TOOL_SLUG, now=now) and requested_capacity_bytes in LAUNCH_PROACTIVE_STORAGE_CAPACITY_BYTES:
+            return StoragePurchaseEligibility(
+                eligible=True,
+                reason="proactive_capacity_available",
+                entitled_bytes=snapshot.entitled_bytes,
+                used_bytes=snapshot.used_bytes,
+                remaining_bytes=snapshot.remaining_bytes,
+                declared_upcoming_need_bytes=declared_upcoming_need_bytes,
+                recommended_capacity_bytes=None,
+                maximum_purchase_bytes=max(LAUNCH_PROACTIVE_STORAGE_CAPACITY_BYTES),
+                eligible_capacity_bytes=tuple(sorted(LAUNCH_PROACTIVE_STORAGE_CAPACITY_BYTES)),
+            )
         return StoragePurchaseEligibility(
             eligible=False,
             reason="sufficient_reserve",

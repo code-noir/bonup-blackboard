@@ -19,6 +19,12 @@ type EligibilityState =
   | { status: 'error'; data: null }
 
 const STORAGE_ELIGIBILITY_ERROR_MESSAGE = 'Storage availability could not be checked. Additional Storage is temporarily unavailable.'
+const BYTES_PER_GIB = 1024 ** 3
+const FUTURE_PRODUCTS = [
+  { name: 'Unfair', description: 'Team execution and organized work' },
+  { name: 'Sol', description: 'Rotating savings group management' },
+  { name: 'Rosa', description: '' },
+]
 
 function toolStateFor(storeState: CustomerStoreState, slug: string): StoreToolState | null {
   return storeState.tools[slug] ?? null
@@ -38,7 +44,11 @@ function sanitizeDraft(draft: PackageDraft, storeState: CustomerStoreState): Pac
 }
 
 function activeToolAiAllowance(catalog: SubscriptionCatalog, storeState: CustomerStoreState) {
-  return catalog.tools.find((tool) => toolStateFor(storeState, tool.slug)?.active && toolStateFor(storeState, tool.slug)?.included_ai)?.included_ai_allowance ?? ''
+  for (const tool of catalog.tools) {
+    const state = toolStateFor(storeState, tool.slug)
+    if (state?.active && state.included_ai) return state.included_ai
+  }
+  return ''
 }
 
 function displayInterval(value: BillingInterval) {
@@ -126,7 +136,20 @@ export default function PackageBuilder({
   const selectedStorage = catalog.storage.find((option) => option.slug === draft.storageProductSlug) ?? null
   const selectedToolAiAllowance = selectedTools.find((tool) => tool.included_ai_allowance)?.included_ai_allowance ?? ''
   const activeAiAllowance = activeToolAiAllowance(catalog, storeState)
-  const representedAiAllowance = selectedToolAiAllowance || activeAiAllowance
+  const purchasableTools = useMemo(
+    () => catalog.tools.filter((tool) => toolIsPurchasable(storeState, tool.slug)),
+    [catalog.tools, storeState],
+  )
+  const activeTools = useMemo(
+    () => catalog.tools.filter((tool) => toolStateFor(storeState, tool.slug)?.active),
+    [catalog.tools, storeState],
+  )
+  const activeStorageGib = Math.floor(storeState.storage.entitled_bytes / BYTES_PER_GIB)
+  const activeIncludedStorageGib = activeTools.reduce((total, tool) => total + tool.included_storage.gib, 0)
+  const storageOwnershipDetail = activeIncludedStorageGib > 0
+    ? activeStorageGib > activeIncludedStorageGib ? 'Includes Blackbòd and purchased Storage' : 'Included with Blackbòd'
+    : 'Purchased Storage'
+  const hasOwnedResources = activeTools.length > 0 || activeStorageGib > 0 || activeAiAllowance !== ''
 
   const eligibilityRequest = useMemo<StoreEligibilityRequest>(() => ({
     tools: draft.toolSlugs.map((slug) => ({
@@ -233,37 +256,60 @@ export default function PackageBuilder({
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       <main className="space-y-6">
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-          <div className="mb-6">
-            <p className="text-xs font-bold uppercase text-slate-400">Choose what you need</p>
-            <h2 className="mt-1 text-2xl font-bold text-slate-900">Store resources</h2>
-            <p className="mt-2 max-w-2xl text-sm text-slate-600">
-              Choose the Tools and resources you want.
-            </p>
-          </div>
+        <PackageSection title="YOUR PRODUCTS" description="What you currently have.">
+          {hasOwnedResources ? (
+            <div className="grid gap-3">
+              {activeTools.map((tool) => (
+                <OwnedProductCard
+                  key={tool.slug}
+                  name={tool.name}
+                  status="Active"
+                  actionLabel="Open"
+                  onAction={() => navigate('/apps/blackbod')}
+                />
+              ))}
+              {activeStorageGib > 0 && (
+                <OwnedProductCard
+                  name="Vault Storage"
+                  status={`${activeStorageGib} GiB`}
+                  detail={storageOwnershipDetail}
+                  actionLabel="Open Vault"
+                  onAction={() => navigate('/vault')}
+                />
+              )}
+              {activeAiAllowance && (
+                <OwnedProductCard
+                  name="AI"
+                  status={activeAiAllowance.charAt(0).toUpperCase() + activeAiAllowance.slice(1)}
+                  detail="Included with Blackbòd"
+                />
+              )}
+            </div>
+          ) : (
+            <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">No products yet.</p>
+          )}
+        </PackageSection>
 
+        <PackageSection title="STORE" description="Products and resources available to you.">
           <div className="space-y-6">
-            <PackageSection number="1" title="Tools">
-              <div className="grid gap-3">
-                {catalog.tools.map((tool) => (
-                  <ToolOption
-                    key={tool.slug}
-                    tool={tool}
-                    selected={draft.toolSlugs.includes(tool.slug)}
-                    interval={draft.billingInterval}
-                    customerState={toolState(tool)}
-                    onChange={() => toggleTool(tool)}
-                  />
-                ))}
-              </div>
-            </PackageSection>
+            {purchasableTools.length > 0 && (
+              <StoreSubsection title="Blackbòd">
+                <div className="grid gap-3">
+                  {purchasableTools.map((tool) => (
+                    <ToolOption
+                      key={tool.slug}
+                      tool={tool}
+                      selected={draft.toolSlugs.includes(tool.slug)}
+                      interval={draft.billingInterval}
+                      customerState={toolState(tool)}
+                      onChange={() => toggleTool(tool)}
+                    />
+                  ))}
+                </div>
+              </StoreSubsection>
+            )}
 
-            <PackageSection
-              number="2"
-              title="Storage"
-              description="Add more storage when you need it. One-time purchase."
-              action={<StorageDescription />}
-            >
+            <StoreSubsection title="Additional Storage" description="Permanent capacity you can add when you need it.">
               {storageMessage && (
                 <StorageAvailabilityNotice
                   message={storageMessage}
@@ -291,33 +337,24 @@ export default function PackageBuilder({
                   )
                 })}
               </div>
-            </PackageSection>
+            </StoreSubsection>
 
-            <PackageSection
-              number="3"
-              title="AI"
-              description="Choose additional AI options when they become available."
-              action={<AIDescription />}
-            >
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <h4 className="text-base font-bold text-slate-900">AI options</h4>
-                <p className="mt-1 text-sm leading-6 text-slate-600">Additional AI options are coming soon.</p>
-                {representedAiAllowance && (
-                  <p className="mt-3 text-sm font-semibold text-slate-900">
-                    {allowanceLabel(representedAiAllowance)} with Blackbòd
-                  </p>
-                )}
-              </div>
-            </PackageSection>
-
-            <PackageSection number="4" title="Billing">
+            <StoreSubsection title="Billing">
               <BillingIntervalSelector
                 value={draft.billingInterval}
                 onChange={selectBillingInterval}
               />
-            </PackageSection>
+            </StoreSubsection>
           </div>
-        </section>
+        </PackageSection>
+
+        <PackageSection title="FUTURE PRODUCTS" description="More from bonUP.">
+          <div className="grid gap-3 sm:grid-cols-3">
+            {FUTURE_PRODUCTS.map((product) => (
+              <FutureProductCard key={product.name} name={product.name} description={product.description} />
+            ))}
+          </div>
+        </PackageSection>
       </main>
 
       <PackageSummary
@@ -325,7 +362,6 @@ export default function PackageBuilder({
         selectedTools={selectedTools}
         selectedStorage={selectedStorage}
         selectedToolAiAllowance={selectedToolAiAllowance}
-        activeToolAiAllowance={activeAiAllowance}
         hasMeaningfulSelection={hasMeaningfulSelection}
         canContinue={canContinue}
         onContinue={continueToReview}
@@ -335,29 +371,22 @@ export default function PackageBuilder({
 }
 
 function PackageSection({
-  number,
   title,
   description,
   action,
   children,
 }: {
-  number: string
   title: string
   description?: string
   action?: ReactNode
   children: ReactNode
 }) {
   return (
-    <section className="border-t border-slate-200 pt-6 first:border-t-0 first:pt-0">
-      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex gap-3">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">
-            {number}
-          </span>
-          <div>
-            <h3 className="text-lg font-bold text-slate-900">{title}</h3>
-            {description && <p className="mt-1 max-w-2xl text-sm text-slate-600">{description}</p>}
-          </div>
+    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-xs font-bold uppercase text-slate-400">{title}</h2>
+          {description && <p className="mt-1 max-w-2xl text-sm text-slate-600">{description}</p>}
         </div>
         {action}
       </div>
@@ -366,15 +395,70 @@ function PackageSection({
   )
 }
 
+function StoreSubsection({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+  return (
+    <section className="border-t border-slate-200 pt-5 first:border-t-0 first:pt-0">
+      <h3 className="text-base font-bold text-slate-900">{title}</h3>
+      {description && <p className="mt-1 text-sm text-slate-600">{description}</p>}
+      <div className="mt-3">{children}</div>
+    </section>
+  )
+}
+
+function OwnedProductCard({
+  name,
+  status,
+  detail,
+  actionLabel,
+  onAction,
+}: {
+  name: string
+  status: string
+  detail?: string
+  actionLabel?: string
+  onAction?: () => void
+}) {
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-base font-bold text-slate-900">{name}</h3>
+          <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold uppercase text-slate-600">{status}</span>
+        </div>
+        {detail && <p className="mt-1 text-sm text-slate-600">{detail}</p>}
+      </div>
+      {actionLabel && onAction && (
+        <button
+          type="button"
+          onClick={onAction}
+          className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-100"
+        >
+          {actionLabel}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function FutureProductCard({ name, description }: { name: string; description: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <h3 className="text-base font-bold text-slate-800">{name}</h3>
+      {description && <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p>}
+      <p className="mt-3 text-xs font-bold uppercase text-slate-500">Coming later</p>
+    </div>
+  )
+}
+
 function StorageAvailabilityNotice({ message, canRetry, onRetry }: { message: string; canRetry: boolean; onRetry: () => void }) {
   return (
-    <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+    <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">
       <p>{message}</p>
       {canRetry && (
         <button
           type="button"
           onClick={onRetry}
-          className="mt-3 h-9 rounded-lg border border-amber-300 bg-white px-3 text-sm font-bold text-amber-900 hover:bg-amber-100"
+          className="mt-3 h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-100"
         >
           Retry Storage check
         </button>
@@ -400,7 +484,7 @@ function ToolOption({
   const [expanded, setExpanded] = useState(false)
 
   return (
-    <div className={`rounded-lg border p-4 transition ${owned ? 'border-emerald-200 bg-emerald-50' : selected ? 'border-[#D4900A] bg-[#FFF8EA]' : 'border-slate-200 bg-slate-50 hover:border-slate-300'}`}>
+    <div className={`rounded-lg border p-4 transition ${owned ? 'border-slate-200 bg-slate-50' : selected ? 'border-[#D4900A] bg-[#FFF8EA]' : 'border-slate-200 bg-slate-50 hover:border-slate-300'}`}>
       <div className="flex gap-3">
         {!owned && (
           <input
@@ -413,7 +497,7 @@ function ToolOption({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="text-lg font-bold text-slate-900">{tool.name}</h4>
-            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase ${owned ? 'border-emerald-200 bg-white text-emerald-700' : 'border-slate-200 bg-white text-slate-500'}`}>
+            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase ${owned ? 'border-slate-200 bg-white text-slate-600' : 'border-slate-200 bg-white text-slate-500'}`}>
               {owned ? 'Active' : 'Tool'}
             </span>
           </div>
@@ -473,8 +557,9 @@ function StorageOptionCard({
       description={option.name}
       selected={selected}
       disabled={disabled}
-      price={formatStoragePrice(option)}
+      price={disabled ? null : formatStoragePrice(option)}
       helperText={unavailableReason}
+      badge={disabled ? 'Currently unavailable' : 'Available'}
       control="radio"
       onChange={onChange}
     />
@@ -488,6 +573,7 @@ function CatalogOption({
   disabled = false,
   price = null,
   helperText = null,
+  badge = null,
   control,
   onChange,
 }: {
@@ -497,6 +583,7 @@ function CatalogOption({
   disabled?: boolean
   price?: string | null
   helperText?: string | null
+  badge?: string | null
   control: 'checkbox' | 'radio'
   onChange: () => void
 }) {
@@ -511,39 +598,16 @@ function CatalogOption({
           className="mt-1 h-4 w-4 border-slate-300 text-[#D4900A] focus:ring-[#D4900A]"
         />
         <div className="min-w-0 flex-1">
-          <h4 className="text-base font-bold text-slate-900">{name}</h4>
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="text-base font-bold text-slate-900">{name}</h4>
+            {badge && <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold uppercase text-slate-500">{badge}</span>}
+          </div>
           <p className="mt-1 text-sm leading-6 text-slate-600">{description}</p>
           {price !== null && <p className="mt-3 text-sm font-semibold text-slate-900">{price}</p>}
           {helperText && <p className="mt-3 text-xs font-semibold leading-5 text-slate-600">{helperText}</p>}
         </div>
       </div>
     </label>
-  )
-}
-
-function DescriptionDetails({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <details className="text-sm">
-      <summary className="cursor-pointer list-none font-bold text-[#8A5A00] hover:text-[#5F3E00]">{label}</summary>
-      <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3 leading-6 text-slate-600">{children}</div>
-    </details>
-  )
-}
-
-function StorageDescription() {
-  return (
-    <DescriptionDetails label="How storage works">
-      <p>Blackbòd already includes 8 GiB. Additional storage can be purchased when more capacity is needed.</p>
-      <p className="mt-2">Purchased storage is additional capacity, not a monthly storage plan, and does not expire while the account remains eligible to retain it under bonUP's applicable account and service terms.</p>
-    </DescriptionDetails>
-  )
-}
-
-function AIDescription() {
-  return (
-    <DescriptionDetails label="How AI works">
-      <p>Blackbòd includes starter AI access. Additional AI options will eventually allow customers to choose more AI capacity or features, but those products are not available yet.</p>
-    </DescriptionDetails>
   )
 }
 
@@ -582,7 +646,6 @@ function PackageSummary({
   selectedTools,
   selectedStorage,
   selectedToolAiAllowance,
-  activeToolAiAllowance,
   hasMeaningfulSelection,
   canContinue,
   onContinue,
@@ -591,7 +654,6 @@ function PackageSummary({
   selectedTools: ToolCatalogItem[]
   selectedStorage: StorageCatalogItem | null
   selectedToolAiAllowance: string
-  activeToolAiAllowance: string
   hasMeaningfulSelection: boolean
   canContinue: boolean
   onContinue: () => void
@@ -629,7 +691,7 @@ function PackageSummary({
           />
           <SummaryGroup
             label="AI"
-            value={selectedToolAiAllowance ? allowanceLabel(selectedToolAiAllowance) : activeToolAiAllowance ? `${allowanceLabel(activeToolAiAllowance)} active` : 'No additional AI selected'}
+            value={selectedToolAiAllowance ? allowanceLabel(selectedToolAiAllowance) : 'No additional AI selected'}
           />
           <SummaryGroup label="Billing" value={displayInterval(draft.billingInterval)} />
           <SummaryGroup label="Recurring" value={recurringValue} />

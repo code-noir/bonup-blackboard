@@ -92,10 +92,14 @@ class StoreStateAPITests(TestCase):
         response = self.get_state()
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(set(response.data["storage"]["products"].keys()), {"storage-8gb", "storage-88gb", "storage-288gb"})
-        for result in response.data["storage"]["products"].values():
-            self.assertFalse(result["eligible"])
-            self.assertEqual(result["code"], "sufficient_reserve")
+        storage = response.data["storage"]["products"]
+        self.assertEqual(set(storage.keys()), {"storage-8gb", "storage-88gb", "storage-288gb"})
+        self.assertTrue(storage["storage-8gb"]["eligible"])
+        self.assertEqual(storage["storage-8gb"]["code"], "proactive_capacity_available")
+        self.assertTrue(storage["storage-88gb"]["eligible"])
+        self.assertEqual(storage["storage-88gb"]["code"], "proactive_capacity_available")
+        self.assertFalse(storage["storage-288gb"]["eligible"])
+        self.assertEqual(storage["storage-288gb"]["code"], "sufficient_reserve")
 
     def test_store_state_creates_no_commercial_records(self):
         response = self.get_state()

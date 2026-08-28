@@ -17,7 +17,7 @@ from backend.billing.gates import get_effective_blackbod_tier, is_trial_valid
 from backend.billing.stripe_client import stripe_configured
 from backend.billing.storage import GIB
 from backend.billing.storage_commerce import get_storage_catalog
-from backend.billing.store_quote import StoreQuoteValidationError, build_store_quote
+from backend.billing.store_quote import StoreQuoteValidationError, build_store_purchase_eligibility, build_store_quote
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +163,25 @@ class SubscriptionCatalogAPIView(APIView):
             "storage": storage_catalog,
             "ai": [],
         })
+
+
+# ---------------------------------------------------------------------------
+# POST /api/billing/store/eligibility/
+# ---------------------------------------------------------------------------
+
+class StoreEligibilityAPIView(APIView):
+    """Authenticated Store purchase eligibility for proposed selections."""
+
+    def post(self, request):
+        try:
+            eligibility = build_store_purchase_eligibility(user=request.user, selection=request.data)
+        except StoreQuoteValidationError as exc:
+            return Response(
+                {"code": exc.code, "detail": exc.detail},
+                status=exc.status_code,
+            )
+
+        return Response(eligibility)
 
 
 # ---------------------------------------------------------------------------

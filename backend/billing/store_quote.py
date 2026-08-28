@@ -13,11 +13,14 @@ from .blackbod import BLACKBOD_TOOL_SLUG, has_blackbod_access
 from .commercial import has_tool
 from .models import Product, ProductPrice
 from .storage import GIB, evaluate_storage_purchase_eligibility
-from .storage_commerce import get_active_product_price
+from .storage_commerce import get_active_product_price, get_storage_catalog
 
 SUPPORTED_BILLING_INTERVALS = {"monthly", "annual"}
 ZERO_MONEY = Decimal("0.00")
 TOOL_CURRENCY = "USD"
+STORAGE_SUFFICIENT_RESERVE_MESSAGE = "You currently have enough available Vault storage. Additional permanent Storage becomes available as you approach your current capacity."
+STORAGE_AVAILABLE_MESSAGE = "Additional permanent Storage is available for your current selection."
+STORAGE_UNAVAILABLE_MESSAGE = "This Storage option is not currently available."
 
 
 @dataclass(frozen=True)
@@ -43,16 +46,7 @@ def _as_optional_slug(value, field_name):
     return value.strip()
 
 
-def _validate_request_shape(selection):
-    if not isinstance(selection, dict):
-        raise StoreQuoteValidationError("invalid_request", "Quote request must be a JSON object.")
-
-    allowed_keys = {"tools", "storage_product_slug", "ai_product_slug"}
-    unknown_keys = set(selection.keys()) - allowed_keys
-    if unknown_keys:
-        raise StoreQuoteValidationError("invalid_request", f"Unsupported quote field: {sorted(unknown_keys)[0]}.")
-
-    tools = selection.get("tools", [])
+def _normalize_tool_selections(tools):
     if not isinstance(tools, list):
         raise StoreQuoteValidationError("invalid_request", "tools must be a list.")
 
@@ -78,7 +72,19 @@ def _validate_request_shape(selection):
             raise StoreQuoteValidationError("duplicate_tool", "Duplicate Tool selections are not allowed.")
         seen_tool_slugs.add(slug)
         normalized_tools.append({"slug": slug, "billing_interval": billing_interval})
+    return normalized_tools
 
+
+def _validate_request_shape(selection):
+    if not isinstance(selection, dict):
+        raise StoreQuoteValidationError("invalid_request", "Quote request must be a JSON object.")
+
+    allowed_keys = {"tools", "storage_product_slug", "ai_product_slug"}
+    unknown_keys = set(selection.keys()) - allowed_keys
+    if unknown_keys:
+        raise StoreQuoteValidationError("invalid_request", f"Unsupported quote field: {sorted(unknown_keys)[0]}.")
+
+    normalized_tools = _normalize_tool_selections(selection.get("tools", []))
     storage_product_slug = _as_optional_slug(selection.get("storage_product_slug"), "storage_product_slug")
     ai_product_slug = _as_optional_slug(selection.get("ai_product_slug"), "ai_product_slug")
 
@@ -89,6 +95,39 @@ def _validate_request_shape(selection):
         "tools": normalized_tools,
         "storage_product_slug": storage_product_slug,
         "ai_product_slug": ai_product_slug,
+    }
+
+
+def _validate_eligibility_request_shape(selection):
+    if not isinstance(selection, dict):
+        raise StoreQuoteValidationError("invalid_request", "Eligibility request must be a JSON object.")
+
+    allowed_keys = {"tools", "ai_product_slug", "storage_product_slugs"}
+    unknown_keys = set(selection.keys()) - allowed_keys
+    if unknown_keys:
+        raise StoreQuoteValidationError("invalid_request", f"Unsupported eligibility field: {sorted(unknown_keys)[0]}.")
+
+    storage_product_slugs = selection.get("storage_product_slugs")
+    if storage_product_slugs is not None:
+        if not isinstance(storage_product_slugs, list):
+            raise StoreQuoteValidationError("invalid_request", "storage_product_slugs must be a list when supplied.")
+        normalized_storage_slugs = []
+        seen_storage_slugs = set()
+        for slug in storage_product_slugs:
+            if not isinstance(slug, str) or not slug.strip():
+                raise StoreQuoteValidationError("invalid_request", "Storage product slugs must be non-empty strings.")
+            slug = slug.strip()
+            if slug in seen_storage_slugs:
+                raise StoreQuoteValidationError("invalid_request", "Duplicate Storage product slugs are not allowed.")
+            seen_storage_slugs.add(slug)
+            normalized_storage_slugs.append(slug)
+    else:
+        normalized_storage_slugs = None
+
+    return {
+        "tools": _normalize_tool_selections(selection.get("tools", [])),
+        "ai_product_slug": _as_optional_slug(selection.get("ai_product_slug"), "ai_product_slug"),
+        "storage_product_slugs": normalized_storage_slugs,
     }
 
 
@@ -224,4 +263,73 @@ def build_store_quote(*, user, selection, now=None):
             "one_time": _money_string(one_time_total["amount"]),
             "due_today": _money_string(due_today_total["amount"]),
         },
+    }
+
+
+def _storage_eligibility_message(code, eligible):
+    if eligible:
+        return STORAGE_AVAILABLE_MESSAGE
+    if code == "sufficient_reserve":
+        return STORAGE_SUFFICIENT_RESERVE_MESSAGE
+    if code == "requested_capacity_too_small":
+        return "Choose a larger Storage option for your current capacity needs."
+    return STORAGE_UNAVAILABLE_MESSAGE
+
+
+def _storage_eligibility_result(*, eligible, code, message=None):
+    return {
+        "eligible": eligible,
+        "code": code,
+        "message": message or _storage_eligibility_message(code, eligible),
+    }
+
+
+def _resolve_storage_eligibility(user, storage_product_slug, now):
+    try:
+        product = _resolve_product(storage_product_slug)
+    except StoreQuoteValidationError as exc:
+        return _storage_eligibility_result(eligible=False, code=exc.code)
+
+    if product.product_type != Product.ProductType.STORAGE:
+        return _storage_eligibility_result(eligible=False, code="invalid_product_kind")
+    if not product.active:
+        return _storage_eligibility_result(eligible=False, code="inactive_product")
+    if not hasattr(product, "storage_metadata"):
+        return _storage_eligibility_result(eligible=False, code="missing_product_metadata")
+
+    try:
+        price = get_active_product_price(product, ProductPrice.PriceType.ONE_TIME, now=now)
+    except ValidationError:
+        return _storage_eligibility_result(eligible=False, code="ambiguous_product_price")
+    if price is None:
+        return _storage_eligibility_result(eligible=False, code="missing_product_price")
+
+    eligibility = evaluate_storage_purchase_eligibility(
+        user,
+        product.storage_metadata.capacity_bytes,
+        declared_upcoming_need_bytes=0,
+        now=now,
+    )
+    return _storage_eligibility_result(
+        eligible=eligibility.eligible,
+        code=eligibility.reason,
+    )
+
+
+def build_store_purchase_eligibility(*, user, selection, now=None):
+    now = now or timezone.now()
+    normalized = _validate_eligibility_request_shape(selection)
+
+    if normalized["ai_product_slug"] is not None:
+        raise StoreQuoteValidationError("unsupported_ai_product", "Additional AI products are not available yet.")
+
+    storage_slugs = normalized["storage_product_slugs"]
+    if storage_slugs is None:
+        storage_slugs = [item.product_slug for item in get_storage_catalog(now=now)]
+
+    return {
+        "storage": {
+            slug: _resolve_storage_eligibility(user, slug, now)
+            for slug in storage_slugs
+        }
     }

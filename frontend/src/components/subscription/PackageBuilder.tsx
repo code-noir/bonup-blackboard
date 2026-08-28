@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { ReactNode } from 'react'
-import type { BillingInterval, PackageDraft, StorageCatalogItem, SubscriptionCatalog, ToolCatalogItem } from '@/types/subscriptionCatalog'
+import api from '@/api/client'
+import type { BillingInterval, PackageDraft, StorageCatalogItem, StoreEligibility, StoreEligibilityRequest, StoreStorageEligibilityResult, SubscriptionCatalog, ToolCatalogItem } from '@/types/subscriptionCatalog'
 
 export type { BillingInterval } from '@/types/subscriptionCatalog'
 
@@ -10,6 +11,13 @@ type PackageBuilderProps = {
   initialBillingInterval: BillingInterval
   initialDraft?: PackageDraft | null
 }
+
+type EligibilityState =
+  | { status: 'loading'; data: null }
+  | { status: 'success'; data: StoreEligibility }
+  | { status: 'error'; data: null }
+
+const STORAGE_ELIGIBILITY_ERROR_MESSAGE = 'Storage availability could not be checked. Additional Storage is temporarily unavailable.'
 
 function displayInterval(value: BillingInterval) {
   return value === 'annual' ? 'Annual' : 'Monthly'
@@ -40,6 +48,26 @@ function allowanceLabel(value: string) {
   return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)} AI included` : 'AI included'
 }
 
+function storageEligibilityFor(state: EligibilityState, slug: string): StoreStorageEligibilityResult | null {
+  return state.status === 'success' ? state.data.storage[slug] ?? null : null
+}
+
+function storageIsSelectable(state: EligibilityState, slug: string) {
+  return storageEligibilityFor(state, slug)?.eligible === true
+}
+
+function storageSectionMessage(state: EligibilityState, storage: StorageCatalogItem[], clearedMessage: string | null) {
+  if (clearedMessage) return clearedMessage
+  if (state.status === 'loading') return 'Checking Storage availability for your current selection.'
+  if (state.status === 'error') return STORAGE_ELIGIBILITY_ERROR_MESSAGE
+
+  const firstIneligible = storage
+    .map((option) => state.data.storage[option.slug])
+    .find((result) => result && !result.eligible)
+  const allUnavailable = storage.length > 0 && storage.every((option) => state.data.storage[option.slug]?.eligible === false)
+  return allUnavailable ? firstIneligible?.message ?? null : null
+}
+
 export default function PackageBuilder({
   catalog,
   initialBillingInterval,
@@ -52,6 +80,9 @@ export default function PackageBuilder({
     aiProductSlug: null,
     billingInterval: 'monthly',
   })
+  const [eligibilityState, setEligibilityState] = useState<EligibilityState>({ status: 'loading', data: null })
+  const [eligibilityLoadKey, setEligibilityLoadKey] = useState(0)
+  const [clearedStorageMessage, setClearedStorageMessage] = useState<string | null>(null)
 
   useEffect(() => {
     if (initialDraft) return
@@ -67,10 +98,63 @@ export default function PackageBuilder({
   )
   const selectedStorage = catalog.storage.find((option) => option.slug === draft.storageProductSlug) ?? null
   const selectedToolAiAllowance = selectedTools.find((tool) => tool.included_ai_allowance)?.included_ai_allowance ?? ''
+
+  const eligibilityRequest = useMemo<StoreEligibilityRequest>(() => ({
+    tools: draft.toolSlugs.map((slug) => ({
+      slug,
+      billing_interval: draft.billingInterval,
+    })),
+    ai_product_slug: draft.aiProductSlug,
+    storage_product_slugs: catalog.storage.map((option) => option.slug),
+  }), [catalog.storage, draft.aiProductSlug, draft.billingInterval, draft.toolSlugs])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadEligibility() {
+      setEligibilityState({ status: 'loading', data: null })
+      try {
+        const response = await api.post<StoreEligibility>('/billing/store/eligibility/', eligibilityRequest)
+        if (cancelled) return
+        setEligibilityState({ status: 'success', data: response.data })
+      } catch {
+        if (cancelled) return
+        setEligibilityState({ status: 'error', data: null })
+      }
+    }
+
+    loadEligibility()
+
+    return () => {
+      cancelled = true
+    }
+  }, [eligibilityLoadKey, eligibilityRequest])
+
+  useEffect(() => {
+    if (!draft.storageProductSlug) return
+
+    if (eligibilityState.status === 'error') {
+      setDraft((current) => current.storageProductSlug ? { ...current, storageProductSlug: null } : current)
+      setClearedStorageMessage(STORAGE_ELIGIBILITY_ERROR_MESSAGE)
+      return
+    }
+
+    if (eligibilityState.status !== 'success') return
+
+    const selectedEligibility = eligibilityState.data.storage[draft.storageProductSlug]
+    if (selectedEligibility?.eligible === false) {
+      setDraft((current) => current.storageProductSlug === draft.storageProductSlug ? { ...current, storageProductSlug: null } : current)
+      setClearedStorageMessage('Selected Storage is no longer available for the current selection.')
+    }
+  }, [draft.storageProductSlug, eligibilityState])
+
   const hasMeaningfulSelection = draft.toolSlugs.length > 0 || draft.storageProductSlug !== null || draft.aiProductSlug !== null
-  const canContinue = hasMeaningfulSelection
+  const selectedStorageKnownEligible = draft.storageProductSlug === null || storageIsSelectable(eligibilityState, draft.storageProductSlug)
+  const canContinue = hasMeaningfulSelection && selectedStorageKnownEligible
+  const storageMessage = storageSectionMessage(eligibilityState, catalog.storage, clearedStorageMessage)
 
   function toggleTool(tool: ToolCatalogItem) {
+    setClearedStorageMessage(null)
     setDraft((current) => {
       const selected = current.toolSlugs.includes(tool.slug)
       const toolSlugs = selected
@@ -86,6 +170,8 @@ export default function PackageBuilder({
   }
 
   function selectStorage(slug: string | null) {
+    setClearedStorageMessage(null)
+    if (slug !== null && !storageIsSelectable(eligibilityState, slug)) return
     setDraft((current) => ({
       ...current,
       storageProductSlug: slug,
@@ -93,10 +179,16 @@ export default function PackageBuilder({
   }
 
   function selectBillingInterval(billingInterval: BillingInterval) {
+    setClearedStorageMessage(null)
     setDraft((current) => ({
       ...current,
       billingInterval,
     }))
+  }
+
+  function retryEligibility() {
+    setClearedStorageMessage(null)
+    setEligibilityLoadKey((value) => value + 1)
   }
 
   function continueToReview() {
@@ -137,19 +229,32 @@ export default function PackageBuilder({
               description="Add more storage when you need it. One-time purchase."
               action={<StorageDescription />}
             >
+              {storageMessage && (
+                <StorageAvailabilityNotice
+                  message={storageMessage}
+                  canRetry={eligibilityState.status === 'error'}
+                  onRetry={retryEligibility}
+                />
+              )}
               <div className="grid gap-3">
                 <StorageNoneOption
                   selected={draft.storageProductSlug === null}
                   onChange={() => selectStorage(null)}
                 />
-                {catalog.storage.map((option) => (
-                  <StorageOptionCard
-                    key={option.slug}
-                    option={option}
-                    selected={draft.storageProductSlug === option.slug}
-                    onChange={() => selectStorage(option.slug)}
-                  />
-                ))}
+                {catalog.storage.map((option) => {
+                  const eligibility = storageEligibilityFor(eligibilityState, option.slug)
+                  const disabled = eligibilityState.status !== 'success' || eligibility?.eligible !== true
+                  return (
+                    <StorageOptionCard
+                      key={option.slug}
+                      option={option}
+                      selected={draft.storageProductSlug === option.slug}
+                      disabled={disabled}
+                      unavailableReason={disabled ? eligibility?.message ?? STORAGE_ELIGIBILITY_ERROR_MESSAGE : null}
+                      onChange={() => selectStorage(option.slug)}
+                    />
+                  )
+                })}
               </div>
             </PackageSection>
 
@@ -225,6 +330,23 @@ function PackageSection({
   )
 }
 
+function StorageAvailabilityNotice({ message, canRetry, onRetry }: { message: string; canRetry: boolean; onRetry: () => void }) {
+  return (
+    <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+      <p>{message}</p>
+      {canRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-3 h-9 rounded-lg border border-amber-300 bg-white px-3 text-sm font-bold text-amber-900 hover:bg-amber-100"
+        >
+          Retry Storage check
+        </button>
+      )}
+    </div>
+  )
+}
+
 function ToolOption({
   tool,
   selected,
@@ -296,10 +418,14 @@ function StorageNoneOption({ selected, onChange }: { selected: boolean; onChange
 function StorageOptionCard({
   option,
   selected,
+  disabled,
+  unavailableReason,
   onChange,
 }: {
   option: StorageCatalogItem
   selected: boolean
+  disabled: boolean
+  unavailableReason: string | null
   onChange: () => void
 }) {
   return (
@@ -307,7 +433,9 @@ function StorageOptionCard({
       name={`+${option.capacity.gib} GiB`}
       description={option.name}
       selected={selected}
+      disabled={disabled}
       price={formatStoragePrice(option)}
+      helperText={unavailableReason}
       control="radio"
       onChange={onChange}
     />
@@ -320,6 +448,7 @@ function CatalogOption({
   selected,
   disabled = false,
   price = null,
+  helperText = null,
   control,
   onChange,
 }: {
@@ -328,11 +457,12 @@ function CatalogOption({
   selected: boolean
   disabled?: boolean
   price?: string | null
+  helperText?: string | null
   control: 'checkbox' | 'radio'
   onChange: () => void
 }) {
   return (
-    <label className={`block rounded-lg border p-4 transition ${disabled ? 'cursor-not-allowed border-slate-200 bg-slate-100 opacity-60' : selected ? 'cursor-pointer border-[#D4900A] bg-[#FFF8EA]' : 'cursor-pointer border-slate-200 bg-slate-50 hover:border-slate-300'}`}>
+    <label className={`block rounded-lg border p-4 transition ${disabled ? 'cursor-not-allowed border-slate-200 bg-slate-100 opacity-70' : selected ? 'cursor-pointer border-[#D4900A] bg-[#FFF8EA]' : 'cursor-pointer border-slate-200 bg-slate-50 hover:border-slate-300'}`}>
       <div className="flex gap-3">
         <input
           type={control}
@@ -345,6 +475,7 @@ function CatalogOption({
           <h4 className="text-base font-bold text-slate-900">{name}</h4>
           <p className="mt-1 text-sm leading-6 text-slate-600">{description}</p>
           {price !== null && <p className="mt-3 text-sm font-semibold text-slate-900">{price}</p>}
+          {helperText && <p className="mt-3 text-xs font-semibold leading-5 text-slate-600">{helperText}</p>}
         </div>
       </div>
     </label>

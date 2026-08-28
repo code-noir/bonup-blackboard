@@ -126,3 +126,19 @@ export type StoreQuoteError = {
   detail?: string
   error?: unknown
 }
+
+export type StoreEligibilityRequest = {
+  tools: StoreQuoteToolSelection[]
+  ai_product_slug: string | null
+  storage_product_slugs: string[]
+}
+
+export type StoreStorageEligibilityResult = {
+  eligible: boolean
+  code: string
+  message: string
+}
+
+export type StoreEligibility = {
+  storage: Record<string, StoreStorageEligibilityResult>
+}

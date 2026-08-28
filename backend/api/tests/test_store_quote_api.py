@@ -8,7 +8,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from backend.billing.commercial import create_tool_entitlement
+from backend.billing.commercial import create_storage_entitlement, create_tool_entitlement
 from backend.billing.models import (
     AIEntitlement,
     CustomerPackage,
@@ -282,6 +282,30 @@ class StoreQuoteAPITests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
         self.assertEqual(response.data["code"], "storage_ineligible")
+
+    def test_active_blackbod_with_unused_included_storage_cannot_quote_extra_storage_without_need(self):
+        create_tool_entitlement(user=self.user, product=blackbod_product())
+
+        response = self.post_quote(quote_payload(storage_slug="storage-88gb"))
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "storage_ineligible")
+        self.assertEqual(StoragePurchase.objects.count(), 0)
+        self.assertEqual(StorageCapacityGrant.objects.count(), 0)
+        self.assertEqual(ToolEntitlement.objects.filter(user=self.user).count(), 1)
+
+    def test_active_blackbod_approaching_capacity_can_quote_storage(self):
+        create_tool_entitlement(user=self.user, product=blackbod_product())
+        create_storage_entitlement(user=self.user, capacity_bytes=8 * GIB, usage_bytes=7 * GIB)
+
+        response = self.post_quote(quote_payload(storage_slug="storage-8gb"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assert_money_totals(response, one_time="18.00", due_today="18.00")
+        self.assertEqual(response.data["items"][0]["eligibility"], {"eligible": True, "reason": "capacity_needed"})
+        self.assertEqual(StoragePurchase.objects.count(), 0)
+        self.assertEqual(StorageCapacityGrant.objects.count(), 0)
+        self.assertEqual(ToolEntitlement.objects.filter(user=self.user).count(), 1)
 
     def test_repeated_identical_quote_calls_create_no_storage_purchase(self):
         payload = quote_payload(storage_slug="storage-8gb")

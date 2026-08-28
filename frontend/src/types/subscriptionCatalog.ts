@@ -142,3 +142,22 @@ export type StoreStorageEligibilityResult = {
 export type StoreEligibility = {
   storage: Record<string, StoreStorageEligibilityResult>
 }
+export type StoreToolState = {
+  active: boolean
+  purchasable: boolean
+  included_storage_bytes: number
+  included_storage_gib: number
+  included_ai: string
+}
+
+export type StoreStorageState = {
+  entitled_bytes: number
+  used_bytes: number
+  remaining_bytes: number
+  products: Record<string, StoreStorageEligibilityResult>
+}
+
+export type CustomerStoreState = {
+  tools: Record<string, StoreToolState>
+  storage: StoreStorageState
+}

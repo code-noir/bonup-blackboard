@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import api from '@/api/client'
 import PackageBuilder from '@/components/subscription/PackageBuilder'
-import type { BillingInterval, PackageDraft, StoreReviewLocationState, SubscriptionCatalog } from '@/types/subscriptionCatalog'
+import type { BillingInterval, CustomerStoreState, PackageDraft, StoreReviewLocationState, SubscriptionCatalog } from '@/types/subscriptionCatalog'
 
 type SubscriptionResponse =
   | {
@@ -10,9 +10,9 @@ type SubscriptionResponse =
     }
   | { subscription: null }
 
-type CatalogState =
+type StoreLoadState =
   | { status: 'loading'; data: null }
-  | { status: 'success'; data: SubscriptionCatalog }
+  | { status: 'success'; data: { catalog: SubscriptionCatalog; storeState: CustomerStoreState } }
   | { status: 'error'; data: null }
 
 function isSubscriptionResponse(value: SubscriptionResponse): value is { billing_period?: string | null } {
@@ -42,7 +42,7 @@ export default function Store() {
     return isPackageDraft(state?.draft) ? state.draft : null
   }, [location.state])
   const [initialBillingInterval, setInitialBillingInterval] = useState<BillingInterval>('monthly')
-  const [catalogState, setCatalogState] = useState<CatalogState>({ status: 'loading', data: null })
+  const [storeLoadState, setStoreLoadState] = useState<StoreLoadState>({ status: 'loading', data: null })
   const [catalogLoadKey, setCatalogLoadKey] = useState(0)
 
   useEffect(() => {
@@ -69,19 +69,22 @@ export default function Store() {
   useEffect(() => {
     let cancelled = false
 
-    async function loadCatalog() {
-      setCatalogState({ status: 'loading', data: null })
+    async function loadStore() {
+      setStoreLoadState({ status: 'loading', data: null })
       try {
-        const response = await api.get<SubscriptionCatalog>('/billing/catalog/')
+        const [catalogResponse, stateResponse] = await Promise.all([
+          api.get<SubscriptionCatalog>('/billing/catalog/'),
+          api.get<CustomerStoreState>('/billing/store/state/'),
+        ])
         if (cancelled) return
-        setCatalogState({ status: 'success', data: response.data })
+        setStoreLoadState({ status: 'success', data: { catalog: catalogResponse.data, storeState: stateResponse.data } })
       } catch {
         if (cancelled) return
-        setCatalogState({ status: 'error', data: null })
+        setStoreLoadState({ status: 'error', data: null })
       }
     }
 
-    loadCatalog()
+    loadStore()
 
     return () => {
       cancelled = true
@@ -98,15 +101,16 @@ export default function Store() {
         </p>
       </header>
 
-      {catalogState.status === 'loading' && <CatalogLoadingState />}
+      {storeLoadState.status === 'loading' && <CatalogLoadingState />}
 
-      {catalogState.status === 'error' && (
+      {storeLoadState.status === 'error' && (
         <CatalogErrorState onRetry={() => setCatalogLoadKey((value) => value + 1)} />
       )}
 
-      {catalogState.status === 'success' && (
+      {storeLoadState.status === 'success' && (
         <PackageBuilder
-          catalog={catalogState.data}
+          catalog={storeLoadState.data.catalog}
+          storeState={storeLoadState.data.storeState}
           initialBillingInterval={initialBillingInterval}
           initialDraft={initialDraft}
         />

@@ -12,7 +12,7 @@ from django.utils import timezone
 from .blackbod import BLACKBOD_TOOL_SLUG, has_blackbod_access
 from .commercial import has_tool
 from .models import Product, ProductPrice
-from .storage import GIB, evaluate_storage_purchase_eligibility
+from .storage import GIB, evaluate_storage_purchase_eligibility, get_storage_capacity_snapshot
 from .storage_commerce import get_active_product_price, get_storage_catalog
 
 SUPPORTED_BILLING_INTERVALS = {"monthly", "annual"}
@@ -332,4 +332,43 @@ def build_store_purchase_eligibility(*, user, selection, now=None):
             slug: _resolve_storage_eligibility(user, slug, now)
             for slug in storage_slugs
         }
+    }
+
+def _tool_is_active_for_user(user, product, now):
+    tool_slug = product.tool_metadata.tool_slug
+    if tool_slug == BLACKBOD_TOOL_SLUG:
+        return has_blackbod_access(user, now=now)
+    return has_tool(user, tool_slug, now=now)
+
+
+def build_customer_store_state(*, user, now=None):
+    now = now or timezone.now()
+    tools = {}
+    for product in Product.objects.filter(product_type=Product.ProductType.TOOL).select_related("tool_metadata").order_by("slug"):
+        if not hasattr(product, "tool_metadata"):
+            continue
+
+        active = _tool_is_active_for_user(user, product, now)
+        metadata = product.tool_metadata
+        tools[product.slug] = {
+            "active": active,
+            "purchasable": product.active and not active,
+            "included_storage_bytes": metadata.included_storage_bytes if active else 0,
+            "included_storage_gib": (metadata.included_storage_bytes // GIB) if active else 0,
+            "included_ai": metadata.included_ai_allowance if active else "",
+        }
+
+    snapshot = get_storage_capacity_snapshot(user, now=now)
+    storage_slugs = [item.product_slug for item in get_storage_catalog(now=now)]
+    return {
+        "tools": tools,
+        "storage": {
+            "entitled_bytes": snapshot.entitled_bytes,
+            "used_bytes": snapshot.used_bytes,
+            "remaining_bytes": snapshot.remaining_bytes,
+            "products": {
+                slug: _resolve_storage_eligibility(user, slug, now)
+                for slug in storage_slugs
+            },
+        },
     }

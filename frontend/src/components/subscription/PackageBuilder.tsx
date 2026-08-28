@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import api from '@/api/client'
-import type { BillingInterval, PackageDraft, StorageCatalogItem, StoreEligibility, StoreEligibilityRequest, StoreStorageEligibilityResult, SubscriptionCatalog, ToolCatalogItem } from '@/types/subscriptionCatalog'
+import type { BillingInterval, CustomerStoreState, PackageDraft, StorageCatalogItem, StoreEligibility, StoreEligibilityRequest, StoreStorageEligibilityResult, StoreToolState, SubscriptionCatalog, ToolCatalogItem } from '@/types/subscriptionCatalog'
 
 export type { BillingInterval } from '@/types/subscriptionCatalog'
 
 type PackageBuilderProps = {
   catalog: SubscriptionCatalog
+  storeState: CustomerStoreState
   initialBillingInterval: BillingInterval
   initialDraft?: PackageDraft | null
 }
@@ -18,6 +19,27 @@ type EligibilityState =
   | { status: 'error'; data: null }
 
 const STORAGE_ELIGIBILITY_ERROR_MESSAGE = 'Storage availability could not be checked. Additional Storage is temporarily unavailable.'
+
+function toolStateFor(storeState: CustomerStoreState, slug: string): StoreToolState | null {
+  return storeState.tools[slug] ?? null
+}
+
+function toolIsPurchasable(storeState: CustomerStoreState, slug: string) {
+  return toolStateFor(storeState, slug)?.purchasable !== false
+}
+
+function sanitizeDraft(draft: PackageDraft, storeState: CustomerStoreState): PackageDraft {
+  const toolSlugs = draft.toolSlugs.filter((slug) => toolIsPurchasable(storeState, slug))
+  return {
+    ...draft,
+    toolSlugs,
+    aiProductSlug: toolSlugs.length > 0 ? draft.aiProductSlug : null,
+  }
+}
+
+function activeToolAiAllowance(catalog: SubscriptionCatalog, storeState: CustomerStoreState) {
+  return catalog.tools.find((tool) => toolStateFor(storeState, tool.slug)?.active && toolStateFor(storeState, tool.slug)?.included_ai)?.included_ai_allowance ?? ''
+}
 
 function displayInterval(value: BillingInterval) {
   return value === 'annual' ? 'Annual' : 'Monthly'
@@ -70,27 +92,32 @@ function storageSectionMessage(state: EligibilityState, storage: StorageCatalogI
 
 export default function PackageBuilder({
   catalog,
+  storeState,
   initialBillingInterval,
   initialDraft = null,
 }: PackageBuilderProps) {
   const navigate = useNavigate()
-  const [draft, setDraft] = useState<PackageDraft>(() => initialDraft ?? {
+  const [draft, setDraft] = useState<PackageDraft>(() => sanitizeDraft(initialDraft ?? {
     toolSlugs: [],
     storageProductSlug: null,
     aiProductSlug: null,
     billingInterval: 'monthly',
-  })
+  }, storeState))
   const [eligibilityState, setEligibilityState] = useState<EligibilityState>({ status: 'loading', data: null })
   const [eligibilityLoadKey, setEligibilityLoadKey] = useState(0)
   const [clearedStorageMessage, setClearedStorageMessage] = useState<string | null>(null)
 
   useEffect(() => {
+    setDraft((current) => sanitizeDraft(current, storeState))
+  }, [storeState])
+
+  useEffect(() => {
     if (initialDraft) return
-    setDraft((current) => ({
+    setDraft((current) => sanitizeDraft({
       ...current,
       billingInterval: initialBillingInterval,
-    }))
-  }, [initialBillingInterval, initialDraft])
+    }, storeState))
+  }, [initialBillingInterval, initialDraft, storeState])
 
   const selectedTools = useMemo(
     () => catalog.tools.filter((tool) => draft.toolSlugs.includes(tool.slug)),
@@ -98,6 +125,8 @@ export default function PackageBuilder({
   )
   const selectedStorage = catalog.storage.find((option) => option.slug === draft.storageProductSlug) ?? null
   const selectedToolAiAllowance = selectedTools.find((tool) => tool.included_ai_allowance)?.included_ai_allowance ?? ''
+  const activeAiAllowance = activeToolAiAllowance(catalog, storeState)
+  const representedAiAllowance = selectedToolAiAllowance || activeAiAllowance
 
   const eligibilityRequest = useMemo<StoreEligibilityRequest>(() => ({
     tools: draft.toolSlugs.map((slug) => ({
@@ -156,6 +185,7 @@ export default function PackageBuilder({
   function toggleTool(tool: ToolCatalogItem) {
     setClearedStorageMessage(null)
     setDraft((current) => {
+      if (!toolIsPurchasable(storeState, tool.slug)) return current
       const selected = current.toolSlugs.includes(tool.slug)
       const toolSlugs = selected
         ? current.toolSlugs.filter((slug) => slug !== tool.slug)
@@ -167,6 +197,10 @@ export default function PackageBuilder({
         aiProductSlug: toolSlugs.length > 0 ? current.aiProductSlug : null,
       }
     })
+  }
+
+  function toolState(tool: ToolCatalogItem) {
+    return toolStateFor(storeState, tool.slug)
   }
 
   function selectStorage(slug: string | null) {
@@ -217,6 +251,7 @@ export default function PackageBuilder({
                     tool={tool}
                     selected={draft.toolSlugs.includes(tool.slug)}
                     interval={draft.billingInterval}
+                    customerState={toolState(tool)}
                     onChange={() => toggleTool(tool)}
                   />
                 ))}
@@ -267,9 +302,9 @@ export default function PackageBuilder({
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <h4 className="text-base font-bold text-slate-900">AI options</h4>
                 <p className="mt-1 text-sm leading-6 text-slate-600">Additional AI options are coming soon.</p>
-                {selectedToolAiAllowance && (
+                {representedAiAllowance && (
                   <p className="mt-3 text-sm font-semibold text-slate-900">
-                    {allowanceLabel(selectedToolAiAllowance)} with Blackbòd
+                    {allowanceLabel(representedAiAllowance)} with Blackbòd
                   </p>
                 )}
               </div>
@@ -290,6 +325,7 @@ export default function PackageBuilder({
         selectedTools={selectedTools}
         selectedStorage={selectedStorage}
         selectedToolAiAllowance={selectedToolAiAllowance}
+        activeToolAiAllowance={activeAiAllowance}
         hasMeaningfulSelection={hasMeaningfulSelection}
         canContinue={canContinue}
         onContinue={continueToReview}
@@ -351,41 +387,44 @@ function ToolOption({
   tool,
   selected,
   interval,
+  customerState,
   onChange,
 }: {
   tool: ToolCatalogItem
   selected: boolean
   interval: BillingInterval
+  customerState: StoreToolState | null
   onChange: () => void
 }) {
+  const owned = customerState?.active === true
   const [expanded, setExpanded] = useState(false)
 
   return (
-    <div className={`rounded-lg border p-4 transition ${selected ? 'border-[#D4900A] bg-[#FFF8EA]' : 'border-slate-200 bg-slate-50 hover:border-slate-300'}`}>
-      <label className="block cursor-pointer">
-        <div className="flex gap-3">
+    <div className={`rounded-lg border p-4 transition ${owned ? 'border-emerald-200 bg-emerald-50' : selected ? 'border-[#D4900A] bg-[#FFF8EA]' : 'border-slate-200 bg-slate-50 hover:border-slate-300'}`}>
+      <div className="flex gap-3">
+        {!owned && (
           <input
             type="checkbox"
             checked={selected}
             onChange={onChange}
             className="mt-1 h-4 w-4 rounded border-slate-300 text-[#D4900A] focus:ring-[#D4900A]"
           />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h4 className="text-lg font-bold text-slate-900">{tool.name}</h4>
-              <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold uppercase text-slate-500">
-                Tool
-              </span>
-            </div>
-            <p className="mt-2 text-sm leading-6 text-slate-600">Contract intelligence workspace for drafting, review, and agreement workflows.</p>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-700">
-              <span className="rounded-full bg-white px-2.5 py-1">Includes {tool.included_storage.gib} GiB storage</span>
-              {tool.included_ai_allowance && <span className="rounded-full bg-white px-2.5 py-1">{allowanceLabel(tool.included_ai_allowance)}</span>}
-            </div>
-            <p className="mt-3 text-sm font-semibold text-slate-900">{formatToolPrice(tool, interval)}</p>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="text-lg font-bold text-slate-900">{tool.name}</h4>
+            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase ${owned ? 'border-emerald-200 bg-white text-emerald-700' : 'border-slate-200 bg-white text-slate-500'}`}>
+              {owned ? 'Active' : 'Tool'}
+            </span>
           </div>
+          <p className="mt-2 text-sm leading-6 text-slate-600">Contract intelligence workspace for drafting, review, and agreement workflows.</p>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-700">
+            <span className="rounded-full bg-white px-2.5 py-1">Includes {tool.included_storage.gib} GiB Storage</span>
+            {tool.included_ai_allowance && <span className="rounded-full bg-white px-2.5 py-1">{allowanceLabel(tool.included_ai_allowance)}</span>}
+          </div>
+          <p className="mt-3 text-sm font-semibold text-slate-900">{owned ? 'Already active' : formatToolPrice(tool, interval)}</p>
         </div>
-      </label>
+      </div>
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
@@ -543,6 +582,7 @@ function PackageSummary({
   selectedTools,
   selectedStorage,
   selectedToolAiAllowance,
+  activeToolAiAllowance,
   hasMeaningfulSelection,
   canContinue,
   onContinue,
@@ -551,6 +591,7 @@ function PackageSummary({
   selectedTools: ToolCatalogItem[]
   selectedStorage: StorageCatalogItem | null
   selectedToolAiAllowance: string
+  activeToolAiAllowance: string
   hasMeaningfulSelection: boolean
   canContinue: boolean
   onContinue: () => void
@@ -588,7 +629,7 @@ function PackageSummary({
           />
           <SummaryGroup
             label="AI"
-            value={selectedToolAiAllowance ? allowanceLabel(selectedToolAiAllowance) : 'No additional AI selected'}
+            value={selectedToolAiAllowance ? allowanceLabel(selectedToolAiAllowance) : activeToolAiAllowance ? `${allowanceLabel(activeToolAiAllowance)} active` : 'No additional AI selected'}
           />
           <SummaryGroup label="Billing" value={displayInterval(draft.billingInterval)} />
           <SummaryGroup label="Recurring" value={recurringValue} />

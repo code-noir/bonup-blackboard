@@ -17,7 +17,7 @@ from backend.billing.gates import get_effective_blackbod_tier, is_trial_valid
 from backend.billing.stripe_client import stripe_configured
 from backend.billing.storage import GIB
 from backend.billing.storage_commerce import get_storage_catalog
-from backend.billing.store_quote import StoreQuoteValidationError, build_store_purchase_eligibility, build_store_quote
+from backend.billing.store_quote import StoreQuoteValidationError, build_customer_store_state, build_store_purchase_eligibility, build_store_quote
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +163,17 @@ class SubscriptionCatalogAPIView(APIView):
             "storage": storage_catalog,
             "ai": [],
         })
+
+
+# ---------------------------------------------------------------------------
+# GET /api/billing/store/state/
+# ---------------------------------------------------------------------------
+
+class StoreStateAPIView(APIView):
+    """Authenticated customer Store ownership and purchase state."""
+
+    def get(self, request):
+        return Response(build_customer_store_state(user=request.user))
 
 
 # ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@ from .views import (
     CheckoutSessionAPIView,
     InvoiceListAPIView,
     PlanListAPIView,
+    StoreQuoteAPIView,
     SubscriptionCatalogAPIView,
     SubscriptionAPIView,
     TrialStatusAPIView,
@@ -17,6 +18,7 @@ from .views import (
 urlpatterns = [
     path("catalog/",     SubscriptionCatalogAPIView.as_view(), name="billing-catalog"),
     path("plans/",        PlanListAPIView.as_view(),      name="billing-plans"),
+    path("quote/",       StoreQuoteAPIView.as_view(),   name="billing-quote"),
     path("subscription/", SubscriptionAPIView.as_view(),  name="billing-subscription"),
     path("invoices/",     InvoiceListAPIView.as_view(),   name="billing-invoices"),
     path("usage/",        UsageAPIView.as_view(),         name="billing-usage"),

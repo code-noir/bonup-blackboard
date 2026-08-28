@@ -59,3 +59,70 @@ export type PackageDraft = {
 export type StoreReviewLocationState = {
   draft?: PackageDraft
 }
+
+export type StoreQuoteToolSelection = {
+  slug: string
+  billing_interval: BillingInterval
+}
+
+export type StoreQuoteRequest = {
+  tools: StoreQuoteToolSelection[]
+  storage_product_slug: string | null
+  ai_product_slug: string | null
+}
+
+export type StoreQuoteItem =
+  | {
+      kind: 'tool'
+      product_slug: string
+      name: string
+      billing_interval: BillingInterval
+      charge_type: 'recurring'
+      amount: string
+      currency: string
+      included_storage_bytes: number
+      included_storage_gib: number
+      included_ai: string
+    }
+  | {
+      kind: 'storage'
+      product_slug: string
+      name: string
+      charge_type: 'one_time'
+      amount: string
+      currency: string
+      capacity_bytes: number
+      capacity_gib: number
+      eligibility?: {
+        eligible: boolean
+        reason: string
+      }
+    }
+  | {
+      kind: 'ai'
+      product_slug: string
+      name: string
+      charge_type: 'recurring' | 'one_time'
+      amount: string
+      currency: string
+      [key: string]: unknown
+    }
+
+export type StoreQuote = {
+  currency: string
+  items: StoreQuoteItem[]
+  totals: {
+    recurring: {
+      monthly: string
+      annual: string
+    }
+    one_time: string
+    due_today: string
+  }
+}
+
+export type StoreQuoteError = {
+  code?: string
+  detail?: string
+  error?: unknown
+}

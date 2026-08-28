@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import api from '@/api/client'
-import type { BillingInterval, PackageDraft, StorageCatalogItem, StoreReviewLocationState, SubscriptionCatalog, ToolCatalogItem } from '@/types/subscriptionCatalog'
+import type { BillingInterval, PackageDraft, StoreQuote, StoreQuoteError, StoreQuoteItem, StoreQuoteRequest, StoreReviewLocationState } from '@/types/subscriptionCatalog'
 
-type CatalogState =
-  | { status: 'idle'; data: null }
-  | { status: 'loading'; data: null }
-  | { status: 'success'; data: SubscriptionCatalog }
-  | { status: 'error'; data: null }
+type QuoteState =
+  | { status: 'idle'; quote: null; error: null }
+  | { status: 'loading'; quote: null; error: null }
+  | { status: 'success'; quote: StoreQuote; error: null }
+  | { status: 'error'; quote: null; error: StoreQuoteError }
 
 function isPackageDraft(value: unknown): value is PackageDraft {
   if (!value || typeof value !== 'object') return false
@@ -26,24 +26,37 @@ function displayInterval(value: BillingInterval) {
   return value === 'annual' ? 'Annual' : 'Monthly'
 }
 
-function recurringLabel(value: BillingInterval) {
-  return value === 'annual' ? 'year' : 'month'
-}
-
-function priceWithCurrency(amount: string, currency: string) {
+function formatMoney(amount: string, currency: string) {
   return currency === 'USD' ? `$${amount}` : `${amount} ${currency}`
 }
 
-function toolPrice(tool: ToolCatalogItem, interval: BillingInterval) {
-  return interval === 'annual' ? tool.pricing.annual : tool.pricing.monthly
+function buildQuoteRequest(draft: PackageDraft): StoreQuoteRequest {
+  return {
+    tools: draft.toolSlugs.map((slug) => ({
+      slug,
+      billing_interval: draft.billingInterval,
+    })),
+    storage_product_slug: draft.storageProductSlug,
+    ai_product_slug: draft.aiProductSlug,
+  }
 }
 
-function allowanceLabel(value: string) {
-  return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)} AI` : 'AI'
+function isQuoteError(value: unknown): value is StoreQuoteError {
+  return !!value && typeof value === 'object'
 }
 
-function storagePrice(storage: StorageCatalogItem | null) {
-  return storage ? Number(storage.price.amount) : 0
+function quoteErrorFrom(error: unknown): StoreQuoteError {
+  if (error && typeof error === 'object' && 'response' in error) {
+    const response = (error as { response?: { data?: unknown } }).response
+    if (isQuoteError(response?.data)) return response.data
+  }
+  return { detail: 'Store quote could not be loaded.' }
+}
+
+function quoteErrorMessage(error: StoreQuoteError) {
+  if (error.code === 'storage_ineligible') return 'Selected additional Storage cannot currently be purchased.'
+  if (error.detail) return error.detail
+  return 'Store quote could not be loaded.'
 }
 
 export default function StoreReview() {
@@ -53,30 +66,31 @@ export default function StoreReview() {
     const state = location.state as StoreReviewLocationState | null
     return isPackageDraft(state?.draft) ? state.draft : null
   }, [location.state])
-  const [catalogState, setCatalogState] = useState<CatalogState>({ status: draft ? 'loading' : 'idle', data: null })
+  const [quoteState, setQuoteState] = useState<QuoteState>({ status: draft ? 'loading' : 'idle', quote: null, error: null })
+  const [quoteLoadKey, setQuoteLoadKey] = useState(0)
 
   useEffect(() => {
     if (!draft) return
     let cancelled = false
 
-    async function loadCatalog() {
-      setCatalogState({ status: 'loading', data: null })
+    async function loadQuote() {
+      setQuoteState({ status: 'loading', quote: null, error: null })
       try {
-        const response = await api.get<SubscriptionCatalog>('/billing/catalog/')
+        const response = await api.post<StoreQuote>('/billing/quote/', buildQuoteRequest(draft))
         if (cancelled) return
-        setCatalogState({ status: 'success', data: response.data })
-      } catch {
+        setQuoteState({ status: 'success', quote: response.data, error: null })
+      } catch (error) {
         if (cancelled) return
-        setCatalogState({ status: 'error', data: null })
+        setQuoteState({ status: 'error', quote: null, error: quoteErrorFrom(error) })
       }
     }
 
-    loadCatalog()
+    loadQuote()
 
     return () => {
       cancelled = true
     }
-  }, [draft])
+  }, [draft, quoteLoadKey])
 
   function editStore() {
     navigate('/store', draft ? { state: { draft } } : undefined)
@@ -86,53 +100,39 @@ export default function StoreReview() {
     return <EmptyReview onEdit={editStore} />
   }
 
-  if (catalogState.status === 'loading') {
+  if (quoteState.status === 'loading') {
     return (
       <ReviewShell onEdit={editStore}>
         <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-sm font-semibold text-slate-700">Loading Store review...</p>
-          <p className="mt-1 text-sm text-slate-500">Fetching the latest bonUP resources.</p>
+          <p className="text-sm font-semibold text-slate-700">Loading Store quote...</p>
+          <p className="mt-1 text-sm text-slate-500">Validating your selections with bonUP.</p>
         </section>
       </ReviewShell>
     )
   }
 
-  if (catalogState.status === 'error') {
+  if (quoteState.status === 'error') {
     return (
       <ReviewShell onEdit={editStore}>
         <section className="rounded-lg border border-red-200 bg-red-50 p-6 shadow-sm">
-          <p className="text-sm font-bold text-red-700">Store review could not be loaded.</p>
-          <p className="mt-1 text-sm text-red-700">Please return to the Store and try again.</p>
-          <button type="button" onClick={editStore} className="mt-4 h-10 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white">
-            Edit Store
-          </button>
+          <p className="text-sm font-bold text-red-700">Store quote could not be loaded.</p>
+          <p className="mt-1 text-sm text-red-700">{quoteErrorMessage(quoteState.error)}</p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button type="button" onClick={() => setQuoteLoadKey((value) => value + 1)} className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800">
+              Retry quote
+            </button>
+            <button type="button" onClick={editStore} className="h-10 rounded-lg border border-red-200 bg-white px-4 text-sm font-bold text-red-700 hover:bg-red-50">
+              Return to Store
+            </button>
+          </div>
         </section>
       </ReviewShell>
     )
   }
 
-  if (catalogState.status !== 'success') {
+  if (quoteState.status !== 'success') {
     return <EmptyReview onEdit={editStore} />
   }
-
-  const selectedTools = catalogState.data.tools.filter((tool) => draft.toolSlugs.includes(tool.slug))
-  const selectedStorage = catalogState.data.storage.find((option) => option.slug === draft.storageProductSlug) ?? null
-  const selectedAI = catalogState.data.ai.find((option) => option.slug === draft.aiProductSlug) ?? null
-  const hasValidSelection = selectedTools.length > 0 || selectedStorage !== null || selectedAI !== null
-
-  if (!hasValidSelection) {
-    return <EmptyReview onEdit={editStore} />
-  }
-
-  const recurringItems = selectedTools.map((tool) => toolPrice(tool, draft.billingInterval))
-  const recurringAmount = recurringItems.reduce((total, price) => total + Number(price.amount), 0)
-  const recurringCurrency = recurringItems[0]?.currency ?? 'USD'
-  const recurringValue = recurringItems.length > 0
-    ? `${priceWithCurrency(recurringAmount.toFixed(2), recurringCurrency)} / ${recurringLabel(draft.billingInterval)}`
-    : 'No recurring charge'
-  const oneTimeValue = selectedStorage
-    ? priceWithCurrency(storagePrice(selectedStorage).toFixed(2), selectedStorage.price.currency)
-    : 'No one-time charge'
 
   return (
     <ReviewShell onEdit={editStore}>
@@ -144,42 +144,35 @@ export default function StoreReview() {
           </div>
 
           <div className="space-y-5">
-            <ReviewGroup title="Tools">
-              {selectedTools.length > 0 ? selectedTools.map((tool) => (
-                <ReviewLine key={tool.slug} label={tool.name} value={priceWithCurrency(toolPrice(tool, draft.billingInterval).amount, toolPrice(tool, draft.billingInterval).currency)} />
-              )) : <EmptyLine>No tools selected</EmptyLine>}
-            </ReviewGroup>
+            <QuoteGroup title="Tools">
+              {quoteState.quote.items.filter((item) => item.kind === 'tool').length > 0 ? quoteState.quote.items.filter((item) => item.kind === 'tool').map((item) => (
+                <ToolReview key={item.product_slug} item={item} />
+              )) : <EmptyLine>No Tools selected</EmptyLine>}
+            </QuoteGroup>
 
-            {selectedTools.map((tool) => (
-              <ReviewGroup key={`${tool.slug}-included`} title={`Included with ${tool.name}`}>
-                <ReviewLine label="Storage" value={`${tool.included_storage.gib} GiB`} />
-                <ReviewLine label="AI" value={allowanceLabel(tool.included_ai_allowance || 'starter')} />
-              </ReviewGroup>
-            ))}
+            <QuoteGroup title="Additional Storage">
+              {quoteState.quote.items.filter((item) => item.kind === 'storage').length > 0 ? quoteState.quote.items.filter((item) => item.kind === 'storage').map((item) => (
+                <StorageReview key={item.product_slug} item={item} />
+              )) : <EmptyLine>No additional Storage selected</EmptyLine>}
+            </QuoteGroup>
 
-            <ReviewGroup title="Additional storage">
-              {selectedStorage ? (
-                <ReviewLine label={selectedStorage.name} value={priceWithCurrency(selectedStorage.price.amount, selectedStorage.price.currency)} />
-              ) : <EmptyLine>No additional storage selected</EmptyLine>}
-            </ReviewGroup>
-
-            <ReviewGroup title="AI">
-              {selectedAI ? <ReviewLine label={selectedAI.name} value="Selected" /> : <EmptyLine>No additional AI selected</EmptyLine>}
-            </ReviewGroup>
-
-            <ReviewGroup title="Billing">
-              <ReviewLine label="Interval" value={displayInterval(draft.billingInterval)} />
-            </ReviewGroup>
+            <QuoteGroup title="AI">
+              {quoteState.quote.items.filter((item) => item.kind === 'ai').length > 0 ? quoteState.quote.items.filter((item) => item.kind === 'ai').map((item) => (
+                <ReviewLine key={item.product_slug} label={item.name} value={formatMoney(item.amount, item.currency)} />
+              )) : <EmptyLine>No additional AI selected</EmptyLine>}
+            </QuoteGroup>
           </div>
         </section>
 
         <aside className="lg:sticky lg:top-6">
           <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-            <p className="text-xs font-bold uppercase text-slate-400">Total</p>
+            <p className="text-xs font-bold uppercase text-slate-400">Quote</p>
             <h2 className="mt-1 text-2xl font-bold text-slate-900">Store review</h2>
             <div className="mt-6 space-y-4">
-              <SummaryGroup label="Recurring charge" value={recurringValue} />
-              <SummaryGroup label="One-time charge" value={oneTimeValue} />
+              <SummaryGroup label="Monthly recurring" value={formatMoney(quoteState.quote.totals.recurring.monthly, quoteState.quote.currency)} />
+              <SummaryGroup label="Annual recurring" value={formatMoney(quoteState.quote.totals.recurring.annual, quoteState.quote.currency)} />
+              <SummaryGroup label="One-time charge" value={formatMoney(quoteState.quote.totals.one_time, quoteState.quote.currency)} />
+              <SummaryGroup label="Due today" value={formatMoney(quoteState.quote.totals.due_today, quoteState.quote.currency)} />
             </div>
             <button type="button" disabled className="mt-6 h-11 w-full rounded-lg bg-slate-900 px-5 text-sm font-bold text-white opacity-50">
               Continue to payment
@@ -192,6 +185,34 @@ export default function StoreReview() {
   )
 }
 
+function ToolReview({ item }: { item: Extract<StoreQuoteItem, { kind: 'tool' }> }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <span className="break-words text-sm font-semibold text-slate-900">{item.name}</span>
+        <span className="break-words text-sm font-bold text-slate-700">{formatMoney(item.amount, item.currency)}</span>
+      </div>
+      <div className="mt-3 grid gap-2 text-xs font-semibold text-slate-600 sm:grid-cols-3">
+        <span className="rounded-full bg-white px-2.5 py-1">{displayInterval(item.billing_interval)}</span>
+        <span className="rounded-full bg-white px-2.5 py-1">Includes {item.included_storage_gib} GiB Storage</span>
+        <span className="rounded-full bg-white px-2.5 py-1">{item.included_ai || 'AI'} AI included</span>
+      </div>
+    </div>
+  )
+}
+
+function StorageReview({ item }: { item: Extract<StoreQuoteItem, { kind: 'storage' }> }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <span className="break-words text-sm font-semibold text-slate-900">{item.name}</span>
+        <span className="break-words text-sm font-bold text-slate-700">{formatMoney(item.amount, item.currency)}</span>
+      </div>
+      <p className="mt-3 text-xs font-semibold text-slate-600">Adds {item.capacity_gib} GiB Storage.</p>
+    </div>
+  )
+}
+
 function ReviewShell({ children, onEdit }: { children: ReactNode; onEdit: () => void }) {
   return (
     <div className="mx-auto max-w-6xl py-8">
@@ -199,7 +220,7 @@ function ReviewShell({ children, onEdit }: { children: ReactNode; onEdit: () => 
         <div>
           <p className="mb-2 text-xs font-bold uppercase text-[#D4900A]">bonUP</p>
           <h1 className="text-3xl font-bold text-slate-900">Review your Store selections</h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600">Confirm your selected Tools, storage, AI resources, and charges.</p>
+          <p className="mt-2 max-w-2xl text-sm text-slate-600">Confirm your selected Tools, Storage, AI resources, and charges.</p>
         </div>
         <button type="button" onClick={onEdit} className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50">
           Edit Store
@@ -224,7 +245,7 @@ function EmptyReview({ onEdit }: { onEdit: () => void }) {
   )
 }
 
-function ReviewGroup({ title, children }: { title: string; children: ReactNode }) {
+function QuoteGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="border-t border-slate-200 pt-5 first:border-t-0 first:pt-0">
       <h3 className="text-xs font-bold uppercase text-slate-400">{title}</h3>

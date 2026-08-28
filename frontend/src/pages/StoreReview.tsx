@@ -59,6 +59,32 @@ function quoteErrorMessage(error: StoreQuoteError) {
   return 'Store quote could not be loaded.'
 }
 
+type CheckoutError = {
+  code?: string
+  detail?: string
+  error?: unknown
+}
+
+function isCheckoutError(value: unknown): value is CheckoutError {
+  return !!value && typeof value === 'object'
+}
+
+function checkoutErrorFrom(error: unknown): CheckoutError {
+  if (error && typeof error === 'object' && 'response' in error) {
+    const response = (error as { response?: { data?: unknown } }).response
+    if (isCheckoutError(response?.data)) return response.data
+  }
+  return { detail: 'Payment checkout could not be started.' }
+}
+
+function checkoutErrorMessage(error: CheckoutError) {
+  if (error.code === 'payment_checkout_not_configured') return 'Payment checkout is not configured yet.'
+  if (error.code === 'storage_ineligible') return 'Selected additional Storage cannot currently be purchased.'
+  if (error.detail) return error.detail
+  if (typeof error.error === 'string') return error.error
+  return 'Payment checkout could not be started.'
+}
+
 export default function StoreReview() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -106,8 +132,7 @@ export default function StoreReview() {
       const response = await api.post<StoreCheckoutCreateResponse>('/billing/checkout/', buildQuoteRequest(draft))
       window.location.assign(response.data.checkout_url)
     } catch (error) {
-      const quoteError = quoteErrorFrom(error)
-      setCheckoutError(quoteErrorMessage(quoteError) || 'Payment could not be started.')
+      setCheckoutError(checkoutErrorMessage(checkoutErrorFrom(error)))
       setCheckoutPending(false)
     }
   }

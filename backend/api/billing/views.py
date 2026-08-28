@@ -413,7 +413,10 @@ class CheckoutSessionAPIView(APIView):
     def post(self, request):
         if not stripe_test_mode_configured():
             return Response(
-                {"error": "Stripe test mode is not configured. Set STRIPE_SECRET_KEY to a test key."},
+                {
+                    "code": "payment_checkout_not_configured",
+                    "detail": "Payment checkout is not configured yet.",
+                },
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 

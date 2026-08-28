@@ -441,11 +441,14 @@ class CheckoutAPITests(TestCase):
     def test_checkout_503_when_stripe_not_configured(self):
         response = self.client.post("/api/billing/checkout/", self.payload(tool_interval="monthly"), format="json")
         self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.data["code"], "payment_checkout_not_configured")
+        self.assertEqual(response.data["detail"], "Payment checkout is not configured yet.")
 
     @override_settings(STRIPE_SECRET_KEY="sk_live_never_for_store_checkout")
     def test_checkout_rejects_live_secret_key(self):
         response = self.client.post("/api/billing/checkout/", self.payload(tool_interval="monthly"), format="json")
         self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.data["code"], "payment_checkout_not_configured")
 
     @override_settings(**STRIPE_SETTINGS)
     @patch("backend.billing.services.get_or_create_store_stripe_customer", return_value="cus_store")

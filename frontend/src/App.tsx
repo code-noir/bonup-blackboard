@@ -30,7 +30,9 @@ import Contacts from '@/pages/Contacts'
 import Resource from '@/pages/Resource'
 import Entities from '@/pages/Entities'
 import Profile from '@/pages/Profile'
-import Subscription from '@/pages/Subscription'
+import Store from '@/pages/Store'
+import StoreReview from '@/pages/StoreReview'
+import Vault from '@/pages/Vault'
 import LifecycleManagement from '@/pages/LifecycleManagement'
 import AgreementPerformance from '@/pages/AgreementPerformance'
 import Negotiation from '@/pages/Negotiation'
@@ -149,7 +151,11 @@ export default function App() {
             }
           >
             <Route path="/hub" element={<BonupHub />} />
-            <Route path="/subscription" element={<Subscription />} />
+            <Route path="/store" element={<Store />} />
+            <Route path="/store/review" element={<StoreReview />} />
+            <Route path="/vault" element={<Vault />} />
+            <Route path="/vault/review" element={<Navigate to="/store" replace />} />
+            <Route path="/subscription" element={<Navigate to="/store" replace />} />
             <Route path="/billing" element={<PlatformBillingPlaceholder />} />
             <Route path="/account" element={<Profile />} />
             <Route path="/settings" element={<Placeholder name="Settings" />} />

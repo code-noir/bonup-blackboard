@@ -4,8 +4,8 @@
 // Every authenticated user arrives here first regardless of Blackboard access.
 //
 // Access states:
-//   no subscription   → welcome message + explain Blackboard + access guided CTA
-//   has subscription  → welcome message + "Enter Blackboard" button
+//   no Blackbòd access   -> welcome message + explain Blackbòd + access guided CTA
+//   has Blackbòd access  -> welcome message + "Enter Blackbòd" button
 
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
@@ -46,7 +46,7 @@ export default function BonupHub() {
             <span className="text-slate-700">Blackbòd</span>
           </h2>
           <p className="mb-6 text-sm text-slate-600">
-            Blackbòd is bonUP's contract lifecycle platform.
+            Blackbòd is bonUP's contract lifecycle workspace.
             Create, negotiate, and track contracts — all tied to your bonID.
           </p>
 
@@ -60,7 +60,7 @@ export default function BonupHub() {
           ) : (
             <div className="space-y-3">
               <p className="text-sm text-slate-500">
-                Blackbòd is not currently active in your bonUP package.
+                Blackbòd is not currently active for your account.
               </p>
               <div className="flex gap-3">
                 <button
@@ -71,7 +71,7 @@ export default function BonupHub() {
                 </button>
                 <button
                   disabled
-                  title="Subscription access coming soon"
+                  title="Store access coming soon"
                   className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-400 cursor-not-allowed"
                 >
                   Access Blackbòd

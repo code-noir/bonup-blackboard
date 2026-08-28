@@ -161,7 +161,7 @@ export default function Billing() {
               <span style={{ fontWeight: 600, color: '#374151' }}>May 8, 2026</span>
             </div>
             <span style={{ fontSize: 13, color: '#374151', cursor: 'pointer', marginTop: 8, display: 'block' }}>
-              Manage subscription
+              Manage billing
             </span>
           </div>
         </div>

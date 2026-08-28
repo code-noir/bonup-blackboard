@@ -7,6 +7,7 @@ import {
   Cog6ToothIcon,
   IdentificationIcon,
   RectangleStackIcon,
+  ShoppingBagIcon,
 } from '@heroicons/react/24/outline'
 import { useAuth } from '@/context/AuthContext'
 import ViewAsBanner from './ViewAsBanner'
@@ -14,7 +15,8 @@ import ViewAsBanner from './ViewAsBanner'
 const platformNav = [
   { to: '/hub', label: 'Home', Icon: HomeIcon },
   { to: '/apps/blackbod', label: 'Blackbòd', Icon: ClipboardDocumentListIcon },
-  { to: '/subscription', label: 'Subscription', Icon: RectangleStackIcon },
+  { to: '/store', label: 'Store', Icon: ShoppingBagIcon },
+  { to: '/vault', label: 'Vault', Icon: RectangleStackIcon },
   { to: '/billing', label: 'Billing', Icon: CreditCardIcon },
   { to: '/account', label: 'Account / Identity', Icon: IdentificationIcon },
   { to: '/settings', label: 'Settings', Icon: Cog6ToothIcon },
@@ -24,7 +26,7 @@ function PlatformNavItem({ to, label, Icon, compact }: { to: string; label: stri
   return (
     <NavLink
       to={to}
-      end={to !== '/apps/blackbod'}
+      end={to !== '/apps/blackbod' && to !== '/store' && to !== '/vault'}
       style={({ isActive }) => ({
         display: 'flex',
         alignItems: 'center',
@@ -80,7 +82,7 @@ export default function PlatformShell() {
   const sidebarWidth = compact ? 64 : 232
   const displayName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.email || ''
   const initials = ([user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join('') || '?').toUpperCase()
-  const currentTitle = platformNav.find((item) => item.to === location.pathname)?.label || 'Home'
+  const currentTitle = platformNav.find((item) => location.pathname === item.to || (item.to !== '/hub' && location.pathname.startsWith(item.to + '/')))?.label || 'Home'
 
   return (
     <div className="min-h-screen bg-[#F7F8FA]" style={{ ['--sidebar-w' as string]: `${sidebarWidth}px` }}>

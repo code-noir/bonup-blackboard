@@ -32,6 +32,7 @@ import Entities from '@/pages/Entities'
 import Profile from '@/pages/Profile'
 import Store from '@/pages/Store'
 import StoreReview from '@/pages/StoreReview'
+import StorePaymentSuccess from '@/pages/StorePaymentSuccess'
 import Vault from '@/pages/Vault'
 import LifecycleManagement from '@/pages/LifecycleManagement'
 import AgreementPerformance from '@/pages/AgreementPerformance'
@@ -153,6 +154,7 @@ export default function App() {
             <Route path="/hub" element={<BonupHub />} />
             <Route path="/store" element={<Store />} />
             <Route path="/store/review" element={<StoreReview />} />
+            <Route path="/store/payment/success" element={<StorePaymentSuccess />} />
             <Route path="/vault" element={<Vault />} />
             <Route path="/vault/review" element={<Navigate to="/store" replace />} />
             <Route path="/subscription" element={<Navigate to="/store" replace />} />

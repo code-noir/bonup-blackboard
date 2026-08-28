@@ -533,6 +533,75 @@ class StoragePurchase(models.Model):
         return f"{self.user_id}: {self.product.slug} ({self.status})"
 
 
+class StoreCheckoutStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    CHECKOUT_CREATED = "checkout_created", "Checkout Created"
+    PAID = "paid", "Paid"
+    FULFILLED = "fulfilled", "Fulfilled"
+    FAILED = "failed", "Failed"
+    EXPIRED = "expired", "Expired"
+
+
+class StoreCheckout(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name="store_checkouts",
+    )
+    status = models.CharField(
+        max_length=30,
+        choices=StoreCheckoutStatus.choices,
+        default=StoreCheckoutStatus.PENDING,
+    )
+    currency = models.CharField(max_length=3, default="USD")
+    recurring_amount_snapshot = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    one_time_amount_snapshot = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    due_today_snapshot = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    selection_snapshot = models.JSONField(default=dict)
+    quote_snapshot = models.JSONField(default=dict)
+    stripe_checkout_session_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
+    stripe_customer_id = models.CharField(max_length=255, blank=True, default="")
+    stripe_subscription_id = models.CharField(max_length=255, blank=True, default="")
+    stripe_payment_intent_id = models.CharField(max_length=255, blank=True, default="")
+    tool_entitlement = models.ForeignKey(
+        ToolEntitlement,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="store_checkouts",
+    )
+    storage_purchase = models.OneToOneField(
+        StoragePurchase,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="store_checkout",
+    )
+    fulfilled_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(recurring_amount_snapshot__gte=0),
+                name="store_checkout_recurring_amount_nonneg",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(one_time_amount_snapshot__gte=0),
+                name="store_checkout_one_time_amount_nonneg",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(due_today_snapshot__gte=0),
+                name="store_checkout_due_today_nonneg",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Store checkout {self.id} - {self.user_id} ({self.status})"
+
+
 class ProviderStorageCost(models.Model):
     provider = models.CharField(max_length=120)
     period_start = models.DateTimeField()

@@ -14,7 +14,7 @@ from rest_framework.views import APIView
 
 from backend.billing.models import Invoice, Product, SubscriptionPlan, UserSubscription
 from backend.billing.gates import get_effective_blackbod_tier, is_trial_valid
-from backend.billing.stripe_client import stripe_configured
+from backend.billing.stripe_client import stripe_configured, stripe_test_mode_configured
 from backend.billing.storage import GIB
 from backend.billing.storage_commerce import get_storage_catalog
 from backend.billing.store_quote import StoreQuoteValidationError, build_customer_store_state, build_store_purchase_eligibility, build_store_quote
@@ -408,59 +408,51 @@ class TrialStatusAPIView(APIView):
 # ---------------------------------------------------------------------------
 
 class CheckoutSessionAPIView(APIView):
-    """
-    Create a Stripe Checkout Session for a new or upgraded subscription.
-
-    Required body fields:
-      plan_slug    — one of: starter, professional, business, anchor
-      success_url  — absolute URL Stripe redirects to on success
-      cancel_url   — absolute URL Stripe redirects to on cancel
-    """
+    """Create a Stripe Checkout Session from authoritative Store selections."""
 
     def post(self, request):
-        if not stripe_configured():
+        if not stripe_test_mode_configured():
             return Response(
-                {"error": "Stripe is not configured. Set STRIPE_SECRET_KEY in the environment."},
+                {"error": "Stripe test mode is not configured. Set STRIPE_SECRET_KEY to a test key."},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
-        from backend.billing.services import CHECKOUT_ALLOWED_PLANS, create_checkout_session
+        from backend.billing.services import create_store_checkout_session
         import stripe as _stripe
 
-        plan_slug = request.data.get("plan_slug", "").strip()
-        success_url = request.data.get("success_url", "").strip()
-        cancel_url = request.data.get("cancel_url", "").strip()
-
-        if not plan_slug:
-            return Response({"error": "plan_slug is required."}, status=status.HTTP_400_BAD_REQUEST)
-        if not success_url or not cancel_url:
-            return Response(
-                {"error": "success_url and cancel_url are required."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if plan_slug not in CHECKOUT_ALLOWED_PLANS:
-            return Response(
-                {"error": f"plan_slug must be one of: {', '.join(sorted(CHECKOUT_ALLOWED_PLANS))}."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         try:
-            session = create_checkout_session(
-                user=request.user,
-                plan_slug=plan_slug,
-                success_url=success_url,
-                cancel_url=cancel_url,
-            )
-        except ValueError as exc:
-            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            checkout, session = create_store_checkout_session(user=request.user, selection=request.data)
+        except StoreQuoteValidationError as exc:
+            return Response({"code": exc.code, "detail": exc.detail}, status=exc.status_code)
+        except ValidationError as exc:
+            return Response({"error": _serialize_validation_error(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except _stripe.error.StripeError as exc:
-            logger.error("Stripe error creating checkout session: %s", exc)
+            logger.error("Stripe error creating Store checkout session: %s", exc)
             return Response(
                 {"error": "Payment provider error. Please try again later."},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
-        return Response({"checkout_url": session["url"]}, status=status.HTTP_201_CREATED)
+        return Response(
+            {
+                "checkout_url": session["url"],
+                "session_id": session["id"],
+                "status": checkout.status,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class CheckoutStatusAPIView(APIView):
+    """Safe authenticated status lookup for a Store Checkout Session."""
+
+    def get(self, request, session_id):
+        from backend.billing.services import safe_store_checkout_status
+
+        checkout_status = safe_store_checkout_status(request.user, session_id)
+        if checkout_status is None:
+            return Response({"error": "Checkout was not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(checkout_status)
 
 
 # ---------------------------------------------------------------------------
@@ -550,22 +542,28 @@ class WebhookAPIView(APIView):
         event_type = event.get("type", "")
         data_object = (event.get("data") or {}).get("object") or {}
 
-        _HANDLERS = {
-            "checkout.session.completed":       services.handle_checkout_completed,
-            "customer.subscription.updated":    services.handle_subscription_updated,
-            "customer.subscription.deleted":    services.handle_subscription_deleted,
-            "invoice.paid":                     services.handle_invoice_paid,
-            "invoice.payment_failed":           services.handle_invoice_payment_failed,
-        }
-
-        handler = _HANDLERS.get(event_type)
-        if handler:
-            try:
-                handler(data_object)
-            except Exception as exc:
-                logger.exception("Webhook handler error for %s: %s", event_type, exc)
-                # Return 200 to prevent Stripe from retrying for application errors
-        else:
-            logger.debug("Unhandled Stripe event: %s", event_type)
+        try:
+            if event_type in {"checkout.session.completed", "checkout.session.async_payment_succeeded"}:
+                if (data_object.get("metadata") or {}).get("bonup_checkout_id"):
+                    services.fulfill_store_checkout_session(data_object)
+                else:
+                    services.handle_checkout_completed(data_object)
+            elif event_type in {"checkout.session.async_payment_failed", "checkout.session.expired"}:
+                services.mark_store_checkout_failed(data_object)
+            else:
+                _HANDLERS = {
+                    "customer.subscription.updated":    services.handle_subscription_updated,
+                    "customer.subscription.deleted":    services.handle_subscription_deleted,
+                    "invoice.paid":                     services.handle_invoice_paid,
+                    "invoice.payment_failed":           services.handle_invoice_payment_failed,
+                }
+                handler = _HANDLERS.get(event_type)
+                if handler:
+                    handler(data_object)
+                else:
+                    logger.debug("Unhandled Stripe event: %s", event_type)
+        except Exception as exc:
+            logger.exception("Webhook handler error for %s: %s", event_type, exc)
+            # Return 200 to prevent Stripe from retrying for application errors.
 
         return Response({"received": True})

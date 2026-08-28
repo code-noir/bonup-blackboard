@@ -516,3 +516,28 @@ Stripe is owned entirely by the billing domain. The payments domain (`backend/pa
 ## 11. Update Rule
 
 Update this file when code changes any of: billing models, Stripe integration, webhook handlers, gate functions, API routes, or cross-domain gate call sites.
+
+
+---
+
+## 12. Store Checkout Test-Mode Foundation
+
+> Updated: 2026-08-28
+
+`POST /api/billing/checkout/` now starts the Store payment flow from the same customer selection shape used by `POST /api/billing/quote/`. The backend re-runs `build_store_quote()` before creating Stripe Checkout, snapshots the authoritative selection/quote in `StoreCheckout`, and generates Stripe Checkout `price_data` from bonUP `Product` / `ProductPrice` state instead of trusting frontend totals or requiring Stripe Price IDs for Store products.
+
+Store Checkout is test-mode only in this phase. The endpoint requires `STRIPE_SECRET_KEY` to start with `sk_test_`; hosted Checkout redirects back to `FRONTEND_URL/store/payment/success?session_id={CHECKOUT_SESSION_ID}`. `STRIPE_WEBHOOK_SECRET` is still required for webhook processing.
+
+Checkout modes:
+
+| bonUP quote contents | Stripe Checkout mode | Line item shape |
+|---|---|---|
+| Storage only | `payment` | one-time `price_data` only |
+| Blackbòd only | `subscription` | recurring `price_data` with `month` or `year` interval |
+| Blackbòd + Storage | `subscription` | recurring Blackbòd line plus one-time Storage line on initial checkout/invoice |
+
+`GET /api/billing/checkout/<session_id>/status/` returns only the authenticated user's safe bonUP checkout status and item summary. It does not expose raw Stripe objects, Stripe customer IDs, provider economics, or secrets.
+
+Webhook handling now routes `checkout.session.completed` and `checkout.session.async_payment_succeeded` Store events to idempotent fulfillment when `metadata.bonup_checkout_id` is present. It handles `checkout.session.async_payment_failed` and `checkout.session.expired` by marking the local attempt failed/expired without granting resources. Legacy subscription webhook handlers remain available for non-Store events.
+
+Fulfillment retrieves the Stripe Checkout Session and requires `payment_status == "paid"` before granting resources. The MVP uses card-only Checkout sessions to avoid delayed payment method fulfillment risk. A transaction and row lock on `StoreCheckout` protect webhook retries and concurrent processing. Blackbòd fulfillment updates the canonical `UserSubscription` / `ToolEntitlement` bridge and stores Stripe customer/subscription IDs. Storage fulfillment creates one `StoragePurchase` from the checkout snapshot and calls `complete_storage_purchase()` so exactly one purchase-origin `StorageCapacityGrant` is created.

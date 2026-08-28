@@ -13,13 +13,28 @@
 # functions assume the caller has already checked.
 
 import logging
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.conf import settings
-from django.db import transaction
+from django.core.exceptions import ValidationError
+from django.db import models, transaction
 from django.utils import timezone
 
-from .models import Invoice, SubscriptionPlan, UserSubscription
+from .models import (
+    CommercialEntitlementStatus,
+    Invoice,
+    Product,
+    StoreCheckout,
+    StoreCheckoutStatus,
+    StoragePurchase,
+    StoragePurchaseStatus,
+    SubscriptionPlan,
+    ToolEntitlement,
+    ToolEntitlementOrigin,
+    UserSubscription,
+)
 from .stripe_client import get_stripe
+from .store_quote import build_store_quote
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +152,325 @@ def create_checkout_session(user, plan_slug, success_url, cancel_url):
         },
     )
     return session
+
+
+def _money(value):
+    return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _money_to_cents(value):
+    return int((_money(value) * Decimal("100")).to_integral_value(rounding=ROUND_HALF_UP))
+
+
+def _frontend_base_url():
+    return getattr(settings, "FRONTEND_URL", "http://localhost:5173").rstrip("/")
+
+
+def _quote_recurring_amount(quote):
+    recurring = quote["totals"]["recurring"]
+    return _money(recurring["monthly"]) + _money(recurring["annual"])
+
+
+def _checkout_mode_for_quote(quote):
+    has_recurring = any(item.get("charge_type") == "recurring" for item in quote["items"])
+    return "subscription" if has_recurring else "payment"
+
+
+def _line_item_for_quote_item(item):
+    unit_amount = _money_to_cents(item["amount"])
+    price_data = {
+        "currency": item["currency"].lower(),
+        "unit_amount": unit_amount,
+        "product_data": {
+            "name": item["name"],
+            "metadata": {
+                "bonup_product_slug": item["product_slug"],
+                "bonup_product_kind": item["kind"],
+            },
+        },
+    }
+    if item.get("charge_type") == "recurring":
+        interval = "year" if item["billing_interval"] == "annual" else "month"
+        price_data["recurring"] = {"interval": interval}
+    return {"price_data": price_data, "quantity": 1}
+
+
+def _safe_checkout_id(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def get_or_create_store_stripe_customer(user):
+    try:
+        sub = UserSubscription.objects.get(user=user)
+        if sub.stripe_customer_id:
+            return sub.stripe_customer_id
+    except UserSubscription.DoesNotExist:
+        pass
+
+    prior = StoreCheckout.objects.filter(user=user).exclude(stripe_customer_id="").order_by("-created_at", "-id").first()
+    if prior is not None:
+        return prior.stripe_customer_id
+
+    stripe = get_stripe()
+    customer = stripe.Customer.create(
+        email=user.email,
+        metadata={"bonup_user_id": str(user.id)},
+    )
+    return customer["id"]
+
+
+def create_store_checkout_session(user, selection):
+    quote = build_store_quote(user=user, selection=selection)
+    if not quote["items"] or _money(quote["totals"]["due_today"]) <= Decimal("0.00"):
+        raise ValidationError({"selection": "Select at least one payable Store product."})
+
+    mode = _checkout_mode_for_quote(quote)
+    customer_id = get_or_create_store_stripe_customer(user)
+    checkout = StoreCheckout.objects.create(
+        user=user,
+        status=StoreCheckoutStatus.PENDING,
+        currency=quote["currency"],
+        recurring_amount_snapshot=_quote_recurring_amount(quote),
+        one_time_amount_snapshot=_money(quote["totals"]["one_time"]),
+        due_today_snapshot=_money(quote["totals"]["due_today"]),
+        selection_snapshot=selection,
+        quote_snapshot=quote,
+        stripe_customer_id=customer_id,
+    )
+
+    success_url = f"{_frontend_base_url()}/store/payment/success?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{_frontend_base_url()}/store/review"
+    metadata = {"bonup_checkout_id": str(checkout.id)}
+    session_kwargs = {
+        "customer": customer_id,
+        "mode": mode,
+        "line_items": [_line_item_for_quote_item(item) for item in quote["items"]],
+        "success_url": success_url,
+        "cancel_url": cancel_url,
+        "client_reference_id": str(checkout.id),
+        "metadata": metadata,
+        "payment_method_types": ["card"],
+    }
+    if mode == "subscription":
+        session_kwargs["subscription_data"] = {"metadata": metadata}
+    else:
+        session_kwargs["payment_intent_data"] = {"metadata": metadata}
+
+    stripe = get_stripe()
+    session = stripe.checkout.Session.create(
+        **session_kwargs,
+        idempotency_key=f"store_checkout_{checkout.id}",
+    )
+    checkout.stripe_checkout_session_id = session["id"]
+    checkout.status = StoreCheckoutStatus.CHECKOUT_CREATED
+    checkout.save(update_fields=["stripe_checkout_session_id", "status", "updated_at"])
+    return checkout, session
+
+
+def _retrieve_checkout_session(session_id):
+    stripe = get_stripe()
+    return stripe.checkout.Session.retrieve(session_id, expand=["subscription"])
+
+
+def _session_payment_is_complete(session):
+    return session.get("payment_status") == "paid"
+
+
+def _session_is_expired(session):
+    return session.get("status") == "expired"
+
+
+def _subscription_period_value(stripe_sub, key):
+    import datetime
+    if not stripe_sub or not stripe_sub.get(key):
+        return None
+    return datetime.datetime.fromtimestamp(stripe_sub[key], tz=datetime.timezone.utc)
+
+
+def _billing_period_for_quote(quote):
+    for item in quote["items"]:
+        if item.get("kind") == "tool" and item.get("billing_interval") == "annual":
+            return "yearly"
+    return "monthly"
+
+
+def _fulfill_blackbod_from_checkout(checkout, session, now):
+    tool_items = [item for item in checkout.quote_snapshot.get("items", []) if item.get("kind") == "tool"]
+    if not tool_items:
+        return None
+
+    product = Product.objects.select_for_update(of=("self",)).get(slug="blackbod", product_type=Product.ProductType.TOOL)
+    stripe_subscription = session.get("subscription")
+    if isinstance(stripe_subscription, str):
+        stripe_subscription_id = stripe_subscription
+        stripe_sub = get_stripe().Subscription.retrieve(stripe_subscription_id)
+    else:
+        stripe_sub = stripe_subscription or {}
+        stripe_subscription_id = stripe_sub.get("id", "")
+
+    stripe_customer_id = session.get("customer") or checkout.stripe_customer_id
+    starts_at = _subscription_period_value(stripe_sub, "current_period_start") or now
+    ends_at = _subscription_period_value(stripe_sub, "current_period_end")
+    billing_period = _billing_period_for_quote(checkout.quote_snapshot)
+
+    plan = SubscriptionPlan.objects.get(slug="advanced")
+    UserSubscription.objects.update_or_create(
+        user=checkout.user,
+        defaults={
+            "plan": plan,
+            "status": "active",
+            "billing_period": billing_period,
+            "current_period_start": starts_at,
+            "current_period_end": ends_at,
+            "stripe_customer_id": stripe_customer_id or "",
+            "stripe_subscription_id": stripe_subscription_id or "",
+        },
+    )
+
+    entitlement = ToolEntitlement.objects.filter(
+        user=checkout.user,
+        product=product,
+        status=CommercialEntitlementStatus.ACTIVE,
+        starts_at__lte=now,
+    ).filter(models.Q(ends_at__isnull=True) | models.Q(ends_at__gt=now)).order_by("starts_at", "id").first()
+    if entitlement is None:
+        entitlement = ToolEntitlement.objects.create(
+            user=checkout.user,
+            product=product,
+            status=CommercialEntitlementStatus.ACTIVE,
+            origin=ToolEntitlementOrigin.LEGACY_SUBSCRIPTION,
+            starts_at=starts_at,
+            ends_at=ends_at,
+        )
+    checkout.tool_entitlement = entitlement
+    checkout.stripe_subscription_id = stripe_subscription_id or checkout.stripe_subscription_id
+    checkout.stripe_customer_id = stripe_customer_id or checkout.stripe_customer_id
+    return entitlement
+
+
+def _fulfill_storage_from_checkout(checkout, session, now):
+    storage_items = [item for item in checkout.quote_snapshot.get("items", []) if item.get("kind") == "storage"]
+    if not storage_items:
+        return None
+    if checkout.storage_purchase_id:
+        from .storage_commerce import complete_storage_purchase
+        return complete_storage_purchase(checkout.storage_purchase, now=now)
+
+    item = storage_items[0]
+    product = Product.objects.select_for_update(of=("self",)).get(slug=item["product_slug"], product_type=Product.ProductType.STORAGE)
+    payment_reference = session.get("payment_intent") or session.get("id") or ""
+    purchase = StoragePurchase.objects.create(
+        user=checkout.user,
+        product=product,
+        product_price=None,
+        capacity_bytes_snapshot=item["capacity_bytes"],
+        capacity_label_snapshot=item["name"],
+        price_amount_snapshot=_money(item["amount"]),
+        currency_snapshot=item["currency"],
+        status=StoragePurchaseStatus.PENDING,
+        purchased_at=now,
+        payment_reference=payment_reference,
+        metadata={"store_checkout_id": checkout.id, "stripe_checkout_session_id": session.get("id")},
+    )
+    from .storage_commerce import complete_storage_purchase
+    completed = complete_storage_purchase(purchase, now=now)
+    checkout.storage_purchase = completed
+    checkout.stripe_payment_intent_id = session.get("payment_intent") or checkout.stripe_payment_intent_id
+    return completed
+
+
+def fulfill_store_checkout_session(session_or_id):
+    session_id = session_or_id if isinstance(session_or_id, str) else session_or_id.get("id")
+    if not session_id:
+        logger.warning("Store checkout webhook missing Checkout Session id.")
+        return None
+    session = _retrieve_checkout_session(session_id)
+    metadata = session.get("metadata") or {}
+    checkout_id = _safe_checkout_id(metadata.get("bonup_checkout_id"))
+
+    with transaction.atomic():
+        qs = StoreCheckout.objects.select_for_update(of=("self",)).select_related("user", "storage_purchase")
+        checkout = qs.filter(stripe_checkout_session_id=session_id).first()
+        if checkout is None and checkout_id is not None:
+            checkout = qs.filter(id=checkout_id).first()
+        if checkout is None:
+            logger.warning("Store checkout webhook for unknown session %s.", session_id)
+            return None
+        if checkout.stripe_checkout_session_id and checkout.stripe_checkout_session_id != session_id:
+            logger.warning("Store checkout session mismatch for checkout %s.", checkout.id)
+            return checkout
+        if checkout.status == StoreCheckoutStatus.FULFILLED:
+            return checkout
+        if _session_is_expired(session):
+            checkout.status = StoreCheckoutStatus.EXPIRED
+            checkout.save(update_fields=["status", "updated_at"])
+            return checkout
+        if not _session_payment_is_complete(session):
+            checkout.status = StoreCheckoutStatus.FAILED if session.get("payment_status") == "unpaid" else StoreCheckoutStatus.CHECKOUT_CREATED
+            checkout.save(update_fields=["status", "updated_at"])
+            return checkout
+
+        now = timezone.now()
+        checkout.status = StoreCheckoutStatus.PAID
+        checkout.stripe_checkout_session_id = session_id
+        checkout.stripe_customer_id = session.get("customer") or checkout.stripe_customer_id
+        _fulfill_blackbod_from_checkout(checkout, session, now)
+        _fulfill_storage_from_checkout(checkout, session, now)
+        checkout.status = StoreCheckoutStatus.FULFILLED
+        checkout.fulfilled_at = checkout.fulfilled_at or now
+        checkout.save(update_fields=[
+            "status",
+            "stripe_checkout_session_id",
+            "stripe_customer_id",
+            "stripe_subscription_id",
+            "stripe_payment_intent_id",
+            "tool_entitlement",
+            "storage_purchase",
+            "fulfilled_at",
+            "updated_at",
+        ])
+        return checkout
+
+
+def mark_store_checkout_failed(session_or_id):
+    session_id = session_or_id if isinstance(session_or_id, str) else session_or_id.get("id")
+    if not session_id:
+        return None
+    with transaction.atomic():
+        checkout = StoreCheckout.objects.select_for_update(of=("self",)).filter(stripe_checkout_session_id=session_id).first()
+        if checkout is None or checkout.status == StoreCheckoutStatus.FULFILLED:
+            return checkout
+        checkout.status = StoreCheckoutStatus.EXPIRED if (not isinstance(session_or_id, str) and session_or_id.get("status") == "expired") else StoreCheckoutStatus.FAILED
+        checkout.save(update_fields=["status", "updated_at"])
+        return checkout
+
+
+def safe_store_checkout_status(user, session_id):
+    checkout = StoreCheckout.objects.filter(user=user, stripe_checkout_session_id=session_id).first()
+    if checkout is None:
+        return None
+    items = []
+    for item in checkout.quote_snapshot.get("items", []):
+        if item.get("kind") in {"tool", "storage"}:
+            items.append({
+                "kind": item["kind"],
+                "product_slug": item["product_slug"],
+                "name": item["name"],
+                "capacity_gib": item.get("capacity_gib"),
+                "billing_interval": item.get("billing_interval"),
+            })
+    return {
+        "status": checkout.status,
+        "currency": checkout.currency,
+        "due_today": str(checkout.due_today_snapshot),
+        "fulfilled": checkout.status == StoreCheckoutStatus.FULFILLED,
+        "items": items,
+        "created_at": checkout.created_at,
+        "fulfilled_at": checkout.fulfilled_at,
+    }
 
 
 def create_portal_session(user, return_url):

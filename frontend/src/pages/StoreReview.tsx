@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import api from '@/api/client'
-import type { BillingInterval, PackageDraft, StoreQuote, StoreQuoteError, StoreQuoteItem, StoreQuoteRequest, StoreReviewLocationState } from '@/types/subscriptionCatalog'
+import type { BillingInterval, PackageDraft, StoreCheckoutCreateResponse, StoreQuote, StoreQuoteError, StoreQuoteItem, StoreQuoteRequest, StoreReviewLocationState } from '@/types/subscriptionCatalog'
 
 type QuoteState =
   | { status: 'idle'; quote: null; error: null }
@@ -68,6 +68,8 @@ export default function StoreReview() {
   }, [location.state])
   const [quoteState, setQuoteState] = useState<QuoteState>({ status: draft ? 'loading' : 'idle', quote: null, error: null })
   const [quoteLoadKey, setQuoteLoadKey] = useState(0)
+  const [checkoutPending, setCheckoutPending] = useState(false)
+  const [checkoutError, setCheckoutError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!draft) return
@@ -94,6 +96,20 @@ export default function StoreReview() {
 
   function editStore() {
     navigate('/store', draft ? { state: { draft } } : undefined)
+  }
+
+  async function continueToPayment() {
+    if (!draft || quoteState.status !== 'success' || checkoutPending || quoteState.quote.items.length === 0) return
+    setCheckoutPending(true)
+    setCheckoutError(null)
+    try {
+      const response = await api.post<StoreCheckoutCreateResponse>('/billing/checkout/', buildQuoteRequest(draft))
+      window.location.assign(response.data.checkout_url)
+    } catch (error) {
+      const quoteError = quoteErrorFrom(error)
+      setCheckoutError(quoteErrorMessage(quoteError) || 'Payment could not be started.')
+      setCheckoutPending(false)
+    }
   }
 
   if (!draft) {
@@ -174,10 +190,24 @@ export default function StoreReview() {
               <SummaryGroup label="One-time charge" value={formatMoney(quoteState.quote.totals.one_time, quoteState.quote.currency)} />
               <SummaryGroup label="Due today" value={formatMoney(quoteState.quote.totals.due_today, quoteState.quote.currency)} />
             </div>
-            <button type="button" disabled className="mt-6 h-11 w-full rounded-lg bg-slate-900 px-5 text-sm font-bold text-white opacity-50">
-              Continue to payment
+            <button
+              type="button"
+              onClick={continueToPayment}
+              disabled={checkoutPending || quoteState.quote.items.length === 0}
+              className="mt-6 h-11 w-full rounded-lg bg-slate-900 px-5 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {checkoutPending ? 'Starting payment...' : 'Continue to payment'}
             </button>
-            <p className="mt-3 text-xs leading-5 text-slate-500">Payment is not connected yet.</p>
+            {checkoutError ? (
+              <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3">
+                <p className="text-xs font-semibold leading-5 text-red-700">{checkoutError}</p>
+                <button type="button" onClick={editStore} className="mt-2 text-xs font-bold text-red-700 underline">
+                  Return to Store
+                </button>
+              </div>
+            ) : (
+              <p className="mt-3 text-xs leading-5 text-slate-500">You will complete payment in Stripe Checkout.</p>
+            )}
           </section>
         </aside>
       </div>

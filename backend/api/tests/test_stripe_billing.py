@@ -20,9 +20,20 @@ from unittest.mock import MagicMock, patch
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
+from rest_framework import status
 from rest_framework.test import APIClient
 
-from backend.billing.models import Invoice, SubscriptionPlan, UserSubscription
+from backend.billing.models import (
+    Invoice,
+    Product,
+    StoreCheckout,
+    StoreCheckoutStatus,
+    StorageCapacityGrant,
+    StoragePurchase,
+    SubscriptionPlan,
+    ToolEntitlement,
+    UserSubscription,
+)
 
 User = get_user_model()
 
@@ -202,7 +213,7 @@ class StripeServicesTests(TestCase):
         })
 
         sub = UserSubscription.objects.get(user=self.user)
-        self.assertEqual(sub.plan.slug, "starter")
+        self.assertEqual(sub.plan.slug, "basic")
         self.assertEqual(sub.status, "active")
         self.assertEqual(sub.stripe_subscription_id, "sub_abc")
 
@@ -281,53 +292,175 @@ class CheckoutAPITests(TestCase):
     def setUp(self):
         self.user = _make_user("checkout_user")
         self.client = _authed_client(self.user)
-        _make_plan("starter")
-        _make_plan("professional")
-        _make_plan("business")
-        _make_plan("anchor")
+
+    def payload(self, tool_interval=None, storage_slug=None, **extra):
+        tools = []
+        if tool_interval:
+            tools.append({"slug": "blackbod", "billing_interval": tool_interval})
+        data = {"tools": tools, "storage_product_slug": storage_slug, "ai_product_slug": None}
+        data.update(extra)
+        return data
+
+    def assert_checkout_line_item(self, stripe, index, *, recurring=False, amount=None):
+        kwargs = stripe.checkout.Session.create.call_args.kwargs
+        line = kwargs["line_items"][index]
+        price_data = line["price_data"]
+        if amount is not None:
+            self.assertEqual(price_data["unit_amount"], amount)
+        if recurring:
+            self.assertIn("recurring", price_data)
+        else:
+            self.assertNotIn("recurring", price_data)
+
+    def test_authentication_required(self):
+        response = APIClient().post("/api/billing/checkout/", self.payload(tool_interval="monthly"), format="json")
+        self.assertIn(response.status_code, {status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN})
 
     @override_settings(**STRIPE_SETTINGS)
-    @patch("backend.billing.services.get_or_create_stripe_customer", return_value="cus_co")
+    def test_empty_selection_rejected(self):
+        response = self.client.post("/api/billing/checkout/", self.payload(), format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "empty_selection")
+
+    @override_settings(**STRIPE_SETTINGS, FRONTEND_URL="https://app.example.com")
+    @patch("backend.billing.services.get_or_create_store_stripe_customer", return_value="cus_store")
     @patch("backend.billing.services.get_stripe")
-    def test_checkout_returns_checkout_url(self, mock_get_stripe, _cust):
+    def test_checkout_requotes_and_returns_checkout_url(self, mock_get_stripe, _mock_customer):
         stripe = MagicMock()
-        stripe.checkout.Session.create.return_value = {"url": "https://checkout.stripe.com/go"}
+        stripe.checkout.Session.create.return_value = {"id": "cs_store", "url": "https://checkout.stripe.com/go"}
         mock_get_stripe.return_value = stripe
 
-        resp = self.client.post("/api/billing/checkout/", {
-            "plan_slug": "starter",
-            "success_url": "https://app.example.com/success",
-            "cancel_url": "https://app.example.com/cancel",
-        }, format="json")
+        response = self.client.post("/api/billing/checkout/", self.payload(tool_interval="monthly"), format="json")
 
-        self.assertEqual(resp.status_code, 201)
-        self.assertIn("checkout_url", resp.data)
-
-    @override_settings(**STRIPE_SETTINGS)
-    def test_checkout_rejects_missing_plan(self):
-        resp = self.client.post("/api/billing/checkout/", {
-            "success_url": "https://x.com/s",
-            "cancel_url": "https://x.com/c",
-        }, format="json")
-        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["checkout_url"], "https://checkout.stripe.com/go")
+        checkout = StoreCheckout.objects.get(stripe_checkout_session_id="cs_store")
+        self.assertEqual(checkout.quote_snapshot["totals"]["due_today"], "49.00")
+        kwargs = stripe.checkout.Session.create.call_args.kwargs
+        self.assertEqual(kwargs["success_url"], "https://app.example.com/store/payment/success?session_id={CHECKOUT_SESSION_ID}")
+        self.assertEqual(kwargs["metadata"], {"bonup_checkout_id": str(checkout.id)})
 
     @override_settings(**STRIPE_SETTINGS)
-    def test_checkout_rejects_invalid_plan(self):
-        resp = self.client.post("/api/billing/checkout/", {
-            "plan_slug": "sol_member",
-            "success_url": "https://x.com/s",
-            "cancel_url": "https://x.com/c",
-        }, format="json")
-        self.assertEqual(resp.status_code, 400)
+    @patch("backend.billing.services.get_or_create_store_stripe_customer", return_value="cus_store")
+    @patch("backend.billing.services.get_stripe")
+    def test_client_supplied_prices_cannot_influence_stripe_amount(self, mock_get_stripe, _mock_customer):
+        stripe = MagicMock()
+        stripe.checkout.Session.create.return_value = {"id": "cs_amount", "url": "https://checkout.stripe.com/go"}
+        mock_get_stripe.return_value = stripe
+        payload = self.payload(storage_slug="storage-8gb", totals={"due_today": "0.01"})
+
+        response = self.client.post("/api/billing/checkout/", payload, format="json")
+
+        self.assertEqual(response.status_code, 400)
+        stripe.checkout.Session.create.assert_not_called()
+
+    @override_settings(**STRIPE_SETTINGS)
+    @patch("backend.billing.services.get_or_create_store_stripe_customer", return_value="cus_store")
+    @patch("backend.billing.services.get_stripe")
+    def test_storage_only_creates_payment_mode_checkout(self, mock_get_stripe, _mock_customer):
+        stripe = MagicMock()
+        stripe.checkout.Session.create.return_value = {"id": "cs_storage", "url": "https://checkout.stripe.com/go"}
+        mock_get_stripe.return_value = stripe
+
+        response = self.client.post("/api/billing/checkout/", self.payload(storage_slug="storage-8gb"), format="json")
+
+        self.assertEqual(response.status_code, 201)
+        kwargs = stripe.checkout.Session.create.call_args.kwargs
+        self.assertEqual(kwargs["mode"], "payment")
+        self.assertIn("payment_intent_data", kwargs)
+        self.assert_checkout_line_item(stripe, 0, recurring=False, amount=1800)
+
+    @override_settings(**STRIPE_SETTINGS)
+    @patch("backend.billing.services.get_or_create_store_stripe_customer", return_value="cus_store")
+    @patch("backend.billing.services.get_stripe")
+    def test_blackbod_monthly_creates_subscription_mode_checkout(self, mock_get_stripe, _mock_customer):
+        stripe = MagicMock()
+        stripe.checkout.Session.create.return_value = {"id": "cs_monthly", "url": "https://checkout.stripe.com/go"}
+        mock_get_stripe.return_value = stripe
+
+        response = self.client.post("/api/billing/checkout/", self.payload(tool_interval="monthly"), format="json")
+
+        self.assertEqual(response.status_code, 201)
+        kwargs = stripe.checkout.Session.create.call_args.kwargs
+        self.assertEqual(kwargs["mode"], "subscription")
+        self.assertEqual(kwargs["line_items"][0]["price_data"]["recurring"], {"interval": "month"})
+        self.assert_checkout_line_item(stripe, 0, recurring=True, amount=4900)
+
+    @override_settings(**STRIPE_SETTINGS)
+    @patch("backend.billing.services.get_or_create_store_stripe_customer", return_value="cus_store")
+    @patch("backend.billing.services.get_stripe")
+    def test_blackbod_annual_creates_subscription_mode_checkout(self, mock_get_stripe, _mock_customer):
+        stripe = MagicMock()
+        stripe.checkout.Session.create.return_value = {"id": "cs_annual", "url": "https://checkout.stripe.com/go"}
+        mock_get_stripe.return_value = stripe
+
+        response = self.client.post("/api/billing/checkout/", self.payload(tool_interval="annual"), format="json")
+
+        self.assertEqual(response.status_code, 201)
+        kwargs = stripe.checkout.Session.create.call_args.kwargs
+        self.assertEqual(kwargs["mode"], "subscription")
+        self.assertEqual(kwargs["line_items"][0]["price_data"]["recurring"], {"interval": "year"})
+        self.assert_checkout_line_item(stripe, 0, recurring=True, amount=49000)
+
+    @override_settings(**STRIPE_SETTINGS)
+    @patch("backend.billing.services.get_or_create_store_stripe_customer", return_value="cus_store")
+    @patch("backend.billing.services.get_stripe")
+    def test_blackbod_plus_storage_creates_subscription_mode_mixed_cart(self, mock_get_stripe, _mock_customer):
+        stripe = MagicMock()
+        stripe.checkout.Session.create.return_value = {"id": "cs_mixed", "url": "https://checkout.stripe.com/go"}
+        mock_get_stripe.return_value = stripe
+
+        response = self.client.post("/api/billing/checkout/", self.payload(tool_interval="monthly", storage_slug="storage-8gb"), format="json")
+
+        self.assertEqual(response.status_code, 201)
+        kwargs = stripe.checkout.Session.create.call_args.kwargs
+        self.assertEqual(kwargs["mode"], "subscription")
+        self.assertEqual(len(kwargs["line_items"]), 2)
+        self.assert_checkout_line_item(stripe, 0, recurring=True, amount=4900)
+        self.assert_checkout_line_item(stripe, 1, recurring=False, amount=1800)
+
+    @override_settings(**STRIPE_SETTINGS)
+    @patch("backend.billing.services.get_stripe")
+    def test_already_active_blackbod_rejected(self, mock_get_stripe):
+        ToolEntitlement.objects.create(user=self.user, product=Product.objects.get(slug="blackbod"))
+        response = self.client.post("/api/billing/checkout/", self.payload(tool_interval="monthly"), format="json")
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["code"], "tool_already_active")
+        mock_get_stripe.assert_not_called()
+
+    @override_settings(**STRIPE_SETTINGS)
+    @patch("backend.billing.services.get_stripe")
+    def test_ineligible_protected_storage_rejected(self, mock_get_stripe):
+        ToolEntitlement.objects.create(user=self.user, product=Product.objects.get(slug="blackbod"))
+        response = self.client.post("/api/billing/checkout/", self.payload(storage_slug="storage-288gb"), format="json")
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["code"], "storage_ineligible")
+        mock_get_stripe.assert_not_called()
 
     @override_settings(STRIPE_SECRET_KEY="")
     def test_checkout_503_when_stripe_not_configured(self):
-        resp = self.client.post("/api/billing/checkout/", {
-            "plan_slug": "starter",
-            "success_url": "https://x.com/s",
-            "cancel_url": "https://x.com/c",
-        }, format="json")
-        self.assertEqual(resp.status_code, 503)
+        response = self.client.post("/api/billing/checkout/", self.payload(tool_interval="monthly"), format="json")
+        self.assertEqual(response.status_code, 503)
+
+    @override_settings(STRIPE_SECRET_KEY="sk_live_never_for_store_checkout")
+    def test_checkout_rejects_live_secret_key(self):
+        response = self.client.post("/api/billing/checkout/", self.payload(tool_interval="monthly"), format="json")
+        self.assertEqual(response.status_code, 503)
+
+    @override_settings(**STRIPE_SETTINGS)
+    @patch("backend.billing.services.get_or_create_store_stripe_customer", return_value="cus_store")
+    @patch("backend.billing.services.get_stripe")
+    def test_checkout_creation_does_not_fulfill_commercial_resources(self, mock_get_stripe, _mock_customer):
+        stripe = MagicMock()
+        stripe.checkout.Session.create.return_value = {"id": "cs_no_fulfill", "url": "https://checkout.stripe.com/go"}
+        mock_get_stripe.return_value = stripe
+
+        response = self.client.post("/api/billing/checkout/", self.payload(tool_interval="monthly", storage_slug="storage-8gb"), format="json")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(ToolEntitlement.objects.filter(user=self.user).count(), 0)
+        self.assertEqual(StoragePurchase.objects.filter(user=self.user).count(), 0)
+        self.assertEqual(StorageCapacityGrant.objects.filter(user=self.user).count(), 0)
 
 
 # ---------------------------------------------------------------------------
@@ -370,65 +503,209 @@ class PortalAPITests(TestCase):
 
 
 # ---------------------------------------------------------------------------
-# WebhookAPIView
+# WebhookAPIView and Store checkout fulfillment
 # ---------------------------------------------------------------------------
 
 class WebhookAPITests(TestCase):
 
     def setUp(self):
-        self.client = APIClient()  # unauthenticated — webhook is public
+        self.client = APIClient()
+        self.user = _make_user("wh_store_user")
 
-    def _post_event(self, event_type, data_object, settings_override=None):
-        payload = json.dumps({"type": event_type, "data": {"object": data_object}})
-        override = settings_override or {**STRIPE_SETTINGS, "STRIPE_WEBHOOK_SECRET": ""}
-        with self.settings(**override):
-            return self.client.post(
-                "/api/billing/webhook/",
-                data=payload,
-                content_type="application/json",
-            )
+    def payload(self, tool_interval=None, storage_slug=None):
+        tools = []
+        if tool_interval:
+            tools.append({"slug": "blackbod", "billing_interval": tool_interval})
+        return {"tools": tools, "storage_product_slug": storage_slug, "ai_product_slug": None}
 
-    def test_webhook_returns_200_for_known_event(self):
-        user = _make_user("wh_user")
-        plan = _make_plan("starter")
-        _make_sub(user, plan, stripe_customer_id="cus_wh")
+    def make_checkout(self, selection, session_id="cs_paid", customer_id="cus_paid"):
+        from backend.billing.store_quote import build_store_quote
+        quote = build_store_quote(user=self.user, selection=selection)
+        return StoreCheckout.objects.create(
+            user=self.user,
+            status=StoreCheckoutStatus.CHECKOUT_CREATED,
+            currency=quote["currency"],
+            recurring_amount_snapshot=Decimal(quote["totals"]["recurring"]["monthly"]) + Decimal(quote["totals"]["recurring"]["annual"]),
+            one_time_amount_snapshot=Decimal(quote["totals"]["one_time"]),
+            due_today_snapshot=Decimal(quote["totals"]["due_today"]),
+            selection_snapshot=selection,
+            quote_snapshot=quote,
+            stripe_checkout_session_id=session_id,
+            stripe_customer_id=customer_id,
+        )
 
-        resp = self._post_event("invoice.payment_failed", {
-            "id": "in_wh", "customer": "cus_wh",
-        })
-        self.assertEqual(resp.status_code, 200)
-
-    def test_webhook_returns_200_for_unknown_event(self):
-        resp = self._post_event("payment_intent.created", {})
-        self.assertEqual(resp.status_code, 200)
-
-    def test_webhook_400_for_invalid_json(self):
-        with self.settings(**{**STRIPE_SETTINGS, "STRIPE_WEBHOOK_SECRET": ""}):
-            resp = self.client.post(
-                "/api/billing/webhook/",
-                data="not-json",
-                content_type="application/json",
-            )
-        self.assertEqual(resp.status_code, 400)
+    def stripe_session(self, checkout, *, payment_status="paid", mode="payment", subscription=None, payment_intent="pi_paid"):
+        return {
+            "id": checkout.stripe_checkout_session_id,
+            "status": "complete",
+            "mode": mode,
+            "payment_status": payment_status,
+            "customer": checkout.stripe_customer_id,
+            "payment_intent": payment_intent,
+            "subscription": subscription,
+            "metadata": {"bonup_checkout_id": str(checkout.id)},
+        }
 
     @override_settings(**STRIPE_SETTINGS)
     @patch("backend.billing.services.get_stripe")
-    def test_webhook_validates_signature_when_secret_set(self, mock_get_stripe):
+    def test_invalid_signature_rejected(self, mock_get_stripe):
         stripe = MagicMock()
-        # Simulate signature failure
         import stripe as real_stripe
-        stripe.Webhook.construct_event.side_effect = real_stripe.error.SignatureVerificationError(
-            "bad sig", "fake_sig"
-        )
+        stripe.Webhook.construct_event.side_effect = real_stripe.error.SignatureVerificationError("bad sig", "fake_sig")
         mock_get_stripe.return_value = stripe
 
-        resp = self.client.post(
+        response = self.client.post(
             "/api/billing/webhook/",
             data=json.dumps({"type": "checkout.session.completed", "data": {"object": {}}}),
             content_type="application/json",
             HTTP_STRIPE_SIGNATURE="t=fake,v1=fake",
         )
-        self.assertEqual(resp.status_code, 400)
+
+        self.assertEqual(response.status_code, 400)
+
+    @override_settings(**STRIPE_SETTINGS)
+    @patch("backend.billing.services.get_stripe")
+    def test_valid_stripe_event_accepted(self, mock_get_stripe):
+        stripe = MagicMock()
+        stripe.Webhook.construct_event.return_value = {"type": "payment_intent.created", "data": {"object": {"id": "pi_x"}}}
+        mock_get_stripe.return_value = stripe
+
+        response = self.client.post(
+            "/api/billing/webhook/",
+            data=json.dumps({}),
+            content_type="application/json",
+            HTTP_STRIPE_SIGNATURE="t=1,v1=abc",
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+    @override_settings(**STRIPE_SETTINGS)
+    @patch("backend.billing.services.get_stripe")
+    def test_missing_webhook_secret_rejected(self, mock_get_stripe):
+        with self.settings(STRIPE_WEBHOOK_SECRET=""):
+            response = self.client.post(
+                "/api/billing/webhook/",
+                data=json.dumps({"type": "payment_intent.created", "data": {"object": {}}}),
+                content_type="application/json",
+            )
+        self.assertEqual(response.status_code, 503)
+        mock_get_stripe.assert_not_called()
+
+    @override_settings(**STRIPE_SETTINGS)
+    @patch("backend.billing.services.get_stripe")
+    def test_unpaid_state_does_not_fulfill(self, mock_get_stripe):
+        checkout = self.make_checkout(self.payload(storage_slug="storage-8gb"), session_id="cs_unpaid")
+        stripe = MagicMock()
+        stripe.checkout.Session.retrieve.return_value = self.stripe_session(checkout, payment_status="unpaid")
+        mock_get_stripe.return_value = stripe
+
+        from backend.billing.services import fulfill_store_checkout_session
+        fulfill_store_checkout_session("cs_unpaid")
+
+        checkout.refresh_from_db()
+        self.assertEqual(checkout.status, StoreCheckoutStatus.FAILED)
+        self.assertEqual(StoragePurchase.objects.filter(user=self.user).count(), 0)
+        self.assertEqual(StorageCapacityGrant.objects.filter(user=self.user).count(), 0)
+
+    @override_settings(**STRIPE_SETTINGS)
+    @patch("backend.billing.services.get_stripe")
+    def test_successful_blackbod_payment_creates_one_canonical_entitlement(self, mock_get_stripe):
+        checkout = self.make_checkout(self.payload(tool_interval="monthly"), session_id="cs_tool")
+        stripe = MagicMock()
+        stripe.checkout.Session.retrieve.return_value = self.stripe_session(
+            checkout,
+            mode="subscription",
+            subscription={"id": "sub_tool", "status": "active", "current_period_start": int(time.time()), "current_period_end": int(time.time()) + 2592000},
+        )
+        mock_get_stripe.return_value = stripe
+
+        from backend.billing.services import fulfill_store_checkout_session
+        fulfill_store_checkout_session("cs_tool")
+        fulfill_store_checkout_session("cs_tool")
+
+        checkout.refresh_from_db()
+        self.assertEqual(checkout.status, StoreCheckoutStatus.FULFILLED)
+        self.assertEqual(ToolEntitlement.objects.filter(user=self.user, product__slug="blackbod").count(), 1)
+        self.assertEqual(UserSubscription.objects.get(user=self.user).stripe_subscription_id, "sub_tool")
+
+    @override_settings(**STRIPE_SETTINGS)
+    @patch("backend.billing.services.get_stripe")
+    def test_successful_storage_payment_creates_exactly_one_purchase_and_grant(self, mock_get_stripe):
+        checkout = self.make_checkout(self.payload(storage_slug="storage-8gb"), session_id="cs_storage_paid")
+        stripe = MagicMock()
+        stripe.checkout.Session.retrieve.return_value = self.stripe_session(checkout)
+        mock_get_stripe.return_value = stripe
+
+        from backend.billing.services import fulfill_store_checkout_session
+        fulfill_store_checkout_session("cs_storage_paid")
+        fulfill_store_checkout_session("cs_storage_paid")
+
+        checkout.refresh_from_db()
+        self.assertEqual(checkout.status, StoreCheckoutStatus.FULFILLED)
+        self.assertEqual(StoragePurchase.objects.filter(user=self.user).count(), 1)
+        self.assertEqual(StorageCapacityGrant.objects.filter(user=self.user).count(), 1)
+        purchase = StoragePurchase.objects.get(user=self.user)
+        self.assertEqual(purchase.capacity_grant_id, StorageCapacityGrant.objects.get(user=self.user).id)
+
+    @override_settings(**STRIPE_SETTINGS)
+    @patch("backend.billing.services.get_stripe")
+    def test_mixed_checkout_fulfills_tool_and_storage_once(self, mock_get_stripe):
+        checkout = self.make_checkout(self.payload(tool_interval="annual", storage_slug="storage-8gb"), session_id="cs_mixed_paid")
+        stripe = MagicMock()
+        stripe.checkout.Session.retrieve.return_value = self.stripe_session(
+            checkout,
+            mode="subscription",
+            subscription={"id": "sub_mixed", "status": "active", "current_period_start": int(time.time()), "current_period_end": int(time.time()) + 31536000},
+        )
+        mock_get_stripe.return_value = stripe
+
+        from backend.billing.services import fulfill_store_checkout_session
+        fulfill_store_checkout_session("cs_mixed_paid")
+        fulfill_store_checkout_session("cs_mixed_paid")
+
+        self.assertEqual(ToolEntitlement.objects.filter(user=self.user, product__slug="blackbod").count(), 1)
+        self.assertEqual(StoragePurchase.objects.filter(user=self.user).count(), 1)
+        self.assertEqual(StorageCapacityGrant.objects.filter(user=self.user).count(), 1)
+        self.assertEqual(UserSubscription.objects.get(user=self.user).billing_period, "yearly")
+
+    @override_settings(**STRIPE_SETTINGS)
+    @patch("backend.billing.services.get_stripe")
+    def test_webhook_for_unknown_checkout_is_safe(self, mock_get_stripe):
+        stripe = MagicMock()
+        stripe.checkout.Session.retrieve.return_value = {
+            "id": "cs_unknown",
+            "status": "complete",
+            "payment_status": "paid",
+            "customer": "cus_unknown",
+            "metadata": {"bonup_checkout_id": "999999"},
+        }
+        mock_get_stripe.return_value = stripe
+
+        from backend.billing.services import fulfill_store_checkout_session
+        result = fulfill_store_checkout_session("cs_unknown")
+
+        self.assertIsNone(result)
+        self.assertEqual(StoreCheckout.objects.count(), 0)
+
+    @override_settings(**STRIPE_SETTINGS)
+    @patch("backend.billing.services.get_stripe")
+    def test_webhook_dispatches_store_checkout_completed(self, mock_get_stripe):
+        checkout = self.make_checkout(self.payload(storage_slug="storage-8gb"), session_id="cs_dispatch")
+        session = self.stripe_session(checkout)
+        stripe = MagicMock()
+        stripe.Webhook.construct_event.return_value = {"type": "checkout.session.completed", "data": {"object": session}}
+        stripe.checkout.Session.retrieve.return_value = session
+        mock_get_stripe.return_value = stripe
+
+        response = self.client.post(
+            "/api/billing/webhook/",
+            data=json.dumps({}),
+            content_type="application/json",
+            HTTP_STRIPE_SIGNATURE="t=1,v1=abc",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(StoragePurchase.objects.filter(user=self.user).count(), 1)
 
     @override_settings(**STRIPE_SETTINGS)
     @patch("backend.billing.services.get_stripe")
@@ -441,14 +718,53 @@ class WebhookAPITests(TestCase):
         }
         mock_get_stripe.return_value = stripe
 
-        resp = self.client.post(
+        response = self.client.post(
             "/api/billing/webhook/",
             data=json.dumps({}),
             content_type="application/json",
             HTTP_STRIPE_SIGNATURE="t=1,v1=abc",
         )
-        self.assertEqual(resp.status_code, 200)
+
+        self.assertEqual(response.status_code, 200)
         mock_handler.assert_called_once()
+
+
+class CheckoutStatusAPITests(TestCase):
+    def setUp(self):
+        self.user = _make_user("status_user")
+        self.other = _make_user("status_other")
+        self.client = _authed_client(self.user)
+        from backend.billing.store_quote import build_store_quote
+        selection = {"tools": [], "storage_product_slug": "storage-8gb", "ai_product_slug": None}
+        quote = build_store_quote(user=self.user, selection=selection)
+        self.checkout = StoreCheckout.objects.create(
+            user=self.user,
+            status=StoreCheckoutStatus.FULFILLED,
+            currency="USD",
+            one_time_amount_snapshot=Decimal("18.00"),
+            due_today_snapshot=Decimal("18.00"),
+            selection_snapshot=selection,
+            quote_snapshot=quote,
+            stripe_checkout_session_id="cs_status",
+            stripe_customer_id="cus_secretish",
+        )
+
+    def test_checkout_owner_can_retrieve_safe_status(self):
+        response = self.client.get("/api/billing/checkout/cs_status/status/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "fulfilled")
+        self.assertEqual(response.data["items"][0]["kind"], "storage")
+
+    def test_other_customer_cannot_retrieve_status(self):
+        client = _authed_client(self.other)
+        response = client.get("/api/billing/checkout/cs_status/status/")
+        self.assertEqual(response.status_code, 404)
+
+    def test_status_response_contains_no_secret_or_raw_stripe_data(self):
+        response = self.client.get("/api/billing/checkout/cs_status/status/")
+        payload = json.dumps(response.data, default=str)
+        self.assertNotIn("cus_secretish", payload)
+        self.assertNotIn("stripe", payload.lower())
 
 
 # ---------------------------------------------------------------------------
@@ -460,12 +776,12 @@ class SubscriptionGateLockTests(TestCase):
     def setUp(self):
         self.user = _make_user("gate_user")
         self.client = _authed_client(self.user)
-        _make_plan("starter")
+        _make_plan("basic")
 
     @override_settings(**STRIPE_SETTINGS)
     def test_subscription_post_blocked_when_stripe_configured(self):
         resp = self.client.post("/api/billing/subscription/", {
-            "plan_slug": "starter",
+            "plan_slug": "basic",
             "billing_period": "monthly",
         }, format="json")
         self.assertEqual(resp.status_code, 403)
@@ -474,7 +790,7 @@ class SubscriptionGateLockTests(TestCase):
     @override_settings(STRIPE_SECRET_KEY="")
     def test_subscription_post_allowed_when_stripe_not_configured(self):
         resp = self.client.post("/api/billing/subscription/", {
-            "plan_slug": "starter",
+            "plan_slug": "basic",
             "billing_period": "monthly",
         }, format="json")
         self.assertEqual(resp.status_code, 201)

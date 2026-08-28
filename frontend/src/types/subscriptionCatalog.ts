@@ -161,3 +161,27 @@ export type CustomerStoreState = {
   tools: Record<string, StoreToolState>
   storage: StoreStorageState
 }
+
+export type StoreCheckoutCreateResponse = {
+  checkout_url: string
+  session_id: string
+  status: string
+}
+
+export type StoreCheckoutStatusItem = {
+  kind: 'tool' | 'storage'
+  product_slug: string
+  name: string
+  capacity_gib?: number | null
+  billing_interval?: BillingInterval | null
+}
+
+export type StoreCheckoutStatus = {
+  status: 'pending' | 'checkout_created' | 'paid' | 'fulfilled' | 'failed' | 'expired' | string
+  currency: string
+  due_today: string
+  fulfilled: boolean
+  items: StoreCheckoutStatusItem[]
+  created_at: string
+  fulfilled_at: string | null
+}

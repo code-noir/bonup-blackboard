@@ -18,3 +18,9 @@ def stripe_configured():
     """Return True if a real Stripe secret key is present (not empty, not a test stub)."""
     key = getattr(settings, "STRIPE_SECRET_KEY", "")
     return bool(key)
+
+
+def stripe_test_mode_configured():
+    """Return True only when Stripe is configured with a test secret key."""
+    key = getattr(settings, "STRIPE_SECRET_KEY", "")
+    return key.startswith("sk_test_")

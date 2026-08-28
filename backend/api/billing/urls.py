@@ -5,6 +5,7 @@ from django.urls import path
 from .views import (
     BillingPortalAPIView,
     CheckoutSessionAPIView,
+    CheckoutStatusAPIView,
     InvoiceListAPIView,
     PlanListAPIView,
     StoreEligibilityAPIView,
@@ -28,6 +29,7 @@ urlpatterns = [
     path("usage/",        UsageAPIView.as_view(),         name="billing-usage"),
     path("trial/",        TrialStatusAPIView.as_view(),   name="billing-trial"),
     path("checkout/",     CheckoutSessionAPIView.as_view(), name="billing-checkout"),
+    path("checkout/<str:session_id>/status/", CheckoutStatusAPIView.as_view(), name="billing-checkout-status"),
     path("portal/",       BillingPortalAPIView.as_view(), name="billing-portal"),
     path("webhook/",      WebhookAPIView.as_view(),       name="billing-webhook"),
 ]

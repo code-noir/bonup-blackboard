@@ -11,6 +11,7 @@
 #   GET /api/search/sol/?q=             Sol groups + filters
 
 import uuid
+from unittest.mock import patch
 from decimal import Decimal
 
 from django.test import TestCase
@@ -86,7 +87,7 @@ def make_upload(user, file_name="report.pdf", file_type="pdf"):
     return Upload.objects.create(
         user=user, file_url="https://example.com/file.pdf",
         file_name=file_name, file_type=file_type, file_size=1024,
-        storage_key="uploads/test/file.pdf",
+        storage_key="",
     )
 
 
@@ -164,6 +165,23 @@ class GlobalSearchTests(TestCase):
         make_upload(self.user, file_name="uniquefilexyz.pdf")
         r = self.client.get(f"{GLOBAL_URL}?q=uniquefilexyz")
         self.assertEqual(len(r.data["uploads"]), 1)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_global_upload_result_uses_dynamic_url_when_storage_key_exists(self, mock_storage):
+        mock_storage.url.return_value = "https://current-provider.example/uploads/example/file.pdf"
+        upload = make_upload(self.user, file_name="uniquefilexyz.pdf")
+        upload.storage_key = "uploads/example/file.pdf"
+        upload.file_url = "https://old-provider.example/stale.pdf"
+        upload.save(update_fields=["storage_key", "file_url"])
+
+        r = self.client.get(f"{GLOBAL_URL}?q=uniquefilexyz")
+
+        self.assertEqual(len(r.data["uploads"]), 1)
+        self.assertEqual(
+            r.data["uploads"][0]["file_url"],
+            "https://current-provider.example/uploads/example/file.pdf",
+        )
+        mock_storage.url.assert_called_once_with("uploads/example/file.pdf")
 
     def test_global_excludes_others_upload(self):
         make_upload(self.other, file_name="secretfile.pdf")
@@ -608,6 +626,23 @@ class DocumentSearchTests(TestCase):
         for field in ("id", "contract_id", "title", "description",
                       "file_name", "file_url", "is_proof", "attached_at"):
             self.assertIn(field, item)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_document_result_uses_dynamic_upload_url_when_storage_key_exists(self, mock_storage):
+        mock_storage.url.return_value = "https://current-provider.example/uploads/example/file.pdf"
+        self.upload.storage_key = "uploads/example/file.pdf"
+        self.upload.file_url = "https://old-provider.example/stale.pdf"
+        self.upload.save(update_fields=["storage_key", "file_url"])
+        make_document(self.contract, self.upload, self.user, "Dynamic URL Doc")
+
+        r = self.client.get(DOCUMENT_URL)
+
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r.data[0]["file_url"],
+            "https://current-provider.example/uploads/example/file.pdf",
+        )
+        mock_storage.url.assert_called_once_with("uploads/example/file.pdf")
 
     def test_unauthenticated_returns_401(self):
         from rest_framework.test import APIClient

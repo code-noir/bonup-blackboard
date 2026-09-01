@@ -17,7 +17,7 @@ from .helpers import authed_client, make_contract, make_user
 UPLOAD_URL = "/api/uploads/"
 
 _MOCK_KEY = "uploads/1/abc/test.pdf"
-_MOCK_FILE_URL = "https://bonup-storage.nyc3.digitaloceanspaces.com/uploads/1/abc/test.pdf"
+_MOCK_FILE_URL = "https://current-provider.example/uploads/1/abc/test.pdf"
 
 
 def _patched_storage(save_key=_MOCK_KEY, file_url=_MOCK_FILE_URL):
@@ -37,6 +37,10 @@ class UploadCreateTests(TestCase):
     def setUp(self):
         self.user = make_user("uploader", "uploader@example.com")
         self.client = authed_client(self.user)
+        self.service_storage_patcher = patch("backend.uploads.services.default_storage")
+        self.mock_service_storage = self.service_storage_patcher.start()
+        self.addCleanup(self.service_storage_patcher.stop)
+        self.mock_service_storage.url.return_value = _MOCK_FILE_URL
 
     @patch("backend.api.uploads.views.default_storage")
     def test_upload_creates_record(self, mock_storage):
@@ -147,7 +151,7 @@ class UploadListTests(TestCase):
             file_name="file.pdf",
             file_type="pdf",
             file_size=1024,
-            storage_key="uploads/1/abc/file.pdf",
+            storage_key="",
         )
         defaults.update(kwargs)
         return Upload.objects.create(user=u, **defaults)
@@ -190,6 +194,36 @@ class UploadListTests(TestCase):
                       "related_contract", "related_session", "is_prep_material",
                       "is_draft_document", "uploaded_at"):
             self.assertIn(field, item, f"Missing field: {field}")
+
+    @patch("backend.uploads.services.default_storage")
+    def test_list_uses_dynamic_url_when_storage_key_exists(self, mock_storage):
+        mock_storage.url.return_value = "https://current-provider.example/uploads/example/file.pdf"
+        self._make_upload(
+            storage_key="uploads/example/file.pdf",
+            file_url="https://old-provider.example/stale.pdf",
+        )
+
+        r = self.client.get(UPLOAD_URL)
+
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r.data[0]["file_url"],
+            "https://current-provider.example/uploads/example/file.pdf",
+        )
+        mock_storage.url.assert_called_once_with("uploads/example/file.pdf")
+
+    @patch("backend.uploads.services.default_storage")
+    def test_list_falls_back_to_legacy_file_url_without_storage_key(self, mock_storage):
+        self._make_upload(
+            storage_key="",
+            file_url="https://legacy-provider.example/file.pdf",
+        )
+
+        r = self.client.get(UPLOAD_URL)
+
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data[0]["file_url"], "https://legacy-provider.example/file.pdf")
+        mock_storage.url.assert_not_called()
 
     def test_list_filter_by_is_draft_document_true(self):
         self._make_upload(is_draft_document=True)

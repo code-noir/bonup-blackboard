@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
 
 from backend.uploads.models import Upload
+from backend.uploads.services import get_upload_url
 
 VALID_FILE_TYPES = {"pdf", "image", "video", "slides", "document"}
 
@@ -16,7 +17,7 @@ VALID_FILE_TYPES = {"pdf", "image", "video", "slides", "document"}
 def _serialize(upload):
     return {
         "id": str(upload.id),
-        "file_url": upload.file_url,
+        "file_url": get_upload_url(upload),
         "file_name": upload.file_name,
         "file_type": upload.file_type,
         "file_size": upload.file_size,

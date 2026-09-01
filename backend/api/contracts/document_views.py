@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 from backend.contracts.models import Contract
 from backend.documents.models import ContractDocument
 from backend.uploads.models import Upload
+from backend.uploads.services import get_upload_url
 from .permissions import contract_party_response, is_party
 
 
@@ -16,7 +17,7 @@ def _serialize(doc):
         "id": str(doc.id),
         "contract_id": str(doc.contract_id),
         "upload_id": str(doc.upload_id),
-        "file_url": doc.upload.file_url,
+        "file_url": get_upload_url(doc.upload),
         "file_name": doc.upload.file_name,
         "file_type": doc.upload.file_type,
         "attached_by_id": doc.attached_by_id,

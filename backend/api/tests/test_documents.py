@@ -6,6 +6,7 @@
 #   DELETE /api/contracts/<id>/documents/<doc>/  detach (upload untouched)
 
 import uuid
+from unittest.mock import patch
 
 from django.test import TestCase
 
@@ -25,7 +26,7 @@ def make_upload(user, file_type="pdf"):
         file_name="file.pdf",
         file_type=file_type,
         file_size=1024,
-        storage_key="uploads/1/abc/file.pdf",
+        storage_key="",
     )
 
 
@@ -242,6 +243,23 @@ class ListDocumentsTests(TestCase):
                       "file_type", "attached_by_id", "title", "description",
                       "is_proof", "attached_at"):
             self.assertIn(field, item, f"Missing field: {field}")
+
+    def test_list_uses_dynamic_upload_url_when_storage_key_exists(self):
+        self.upload.storage_key = "uploads/example/file.pdf"
+        self.upload.file_url = "https://old-provider.example/stale.pdf"
+        self.upload.save(update_fields=["storage_key", "file_url"])
+        attach_doc(self.contract, self.upload, self.initiator, "Dynamic URL")
+
+        with patch("backend.uploads.services.default_storage") as mock_storage:
+            mock_storage.url.return_value = "https://current-provider.example/uploads/example/file.pdf"
+            r = self.client.get(doc_url(self.contract.id))
+
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r.data[0]["file_url"],
+            "https://current-provider.example/uploads/example/file.pdf",
+        )
+        mock_storage.url.assert_called_once_with("uploads/example/file.pdf")
 
     def test_list_nonexistent_contract_returns_404(self):
         r = self.client.get(doc_url(uuid.uuid4()))

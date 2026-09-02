@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowDownTrayIcon,
   ClipboardDocumentIcon,
-  DocumentDuplicateIcon,
   DocumentIcon,
   MagnifyingGlassIcon,
   MusicalNoteIcon,
@@ -66,6 +65,17 @@ type VaultShare = {
   content_type: string
   file_size: number
 }
+
+type NativeShareDiagnosticReason =
+  | 'insecure_context'
+  | 'navigator_share_unavailable'
+  | 'navigator_canShare_unavailable'
+  | 'file_too_large'
+  | 'delivery_failure'
+  | 'canShare_files_false'
+  | 'canShare_files_error'
+  | 'share_cancelled'
+  | 'share_error'
 
 // Native file sharing constructs a browser File in memory. Keep this conservative until Vault has a documented upload cap.
 const NATIVE_SHARE_PREPARATION_LIMIT_BYTES = 25 * 1024 * 1024
@@ -160,6 +170,35 @@ function isQuotaError(error: unknown) {
     'response' in error &&
     (error as { response?: { data?: { code?: string } } }).response?.data?.code === 'storage_capacity_exceeded',
   )
+}
+
+function responseStatus(error: unknown) {
+  if (typeof error === 'object' && error !== null && 'response' in error) {
+    return (error as { response?: { status?: number } }).response?.status
+  }
+  return undefined
+}
+
+function logNativeShareDiagnostic(
+  reason: NativeShareDiagnosticReason,
+  file: Pick<VaultFile, 'file_size' | 'content_type' | 'file_type'>,
+  details: Record<string, unknown> = {},
+) {
+  if (!import.meta.env.DEV) return
+
+  const nativeNavigator = navigator as NativeShareNavigator
+  console.info('bonUP Vault Share File diagnostic', {
+    reason,
+    isSecureContext: window.isSecureContext,
+    protocol: window.location.protocol,
+    hostname: window.location.hostname,
+    navigatorShareType: typeof nativeNavigator.share,
+    navigatorCanShareType: typeof nativeNavigator.canShare,
+    fileSize: file.file_size,
+    fileType: file.file_type,
+    contentType: file.content_type || '',
+    ...details,
+  })
 }
 
 export default function Vault() {
@@ -287,32 +326,85 @@ export default function Vault() {
     setNativeShareFallbackFile(null)
 
     if (file.file_size > NATIVE_SHARE_PREPARATION_LIMIT_BYTES) {
+      logNativeShareDiagnostic('file_too_large', file, { limitBytes: NATIVE_SHARE_PREPARATION_LIMIT_BYTES })
       showNativeShareFallback(file, `Direct sharing is limited to files up to ${formatBytes(NATIVE_SHARE_PREPARATION_LIMIT_BYTES)}.`)
       return
     }
 
+    if (!window.isSecureContext) {
+      logNativeShareDiagnostic('insecure_context', file)
+      showNativeShareFallback(file)
+      return
+    }
+
     const nativeNavigator = navigator as NativeShareNavigator
-    if (!nativeNavigator.share || !nativeNavigator.canShare) {
+    if (!nativeNavigator.share) {
+      logNativeShareDiagnostic('navigator_share_unavailable', file)
+      showNativeShareFallback(file)
+      return
+    }
+    if (!nativeNavigator.canShare) {
+      logNativeShareDiagnostic('navigator_canShare_unavailable', file)
       showNativeShareFallback(file)
       return
     }
 
     setWorkingFileId(file.id)
     try {
-      const response = await api.get<Blob>(`/uploads/${file.id}/delivery/`, { responseType: 'blob' })
+      let response
+      try {
+        response = await api.get<Blob>(`/uploads/${file.id}/delivery/`, { responseType: 'blob' })
+      } catch (error) {
+        logNativeShareDiagnostic('delivery_failure', file, {
+          status: responseStatus(error),
+          errorName: (error as { name?: string })?.name,
+        })
+        showNativeShareFallback(file, "This file couldn't be prepared for sharing.")
+        return
+      }
+
       const contentType = response.data.type || file.content_type || 'application/octet-stream'
       const nativeFile = new File([response.data], file.file_name, { type: contentType })
       const shareData = { files: [nativeFile], title: file.file_name }
 
-      if (!nativeNavigator.canShare(shareData)) {
+      let canShareFiles = false
+      try {
+        canShareFiles = nativeNavigator.canShare(shareData)
+      } catch (error) {
+        logNativeShareDiagnostic('canShare_files_error', file, {
+          errorName: (error as { name?: string })?.name,
+        })
         showNativeShareFallback(file)
         return
       }
 
-      await nativeNavigator.share(shareData)
+      if (!canShareFiles) {
+        logNativeShareDiagnostic('canShare_files_false', file, {
+          preparedContentType: contentType,
+          preparedSize: response.data.size,
+        })
+        showNativeShareFallback(file)
+        return
+      }
+
+      try {
+        await nativeNavigator.share(shareData)
+      } catch (error) {
+        if ((error as { name?: string })?.name === 'AbortError') {
+          logNativeShareDiagnostic('share_cancelled', file)
+          return
+        }
+        logNativeShareDiagnostic('share_error', file, {
+          errorName: (error as { name?: string })?.name,
+        })
+        showNativeShareFallback(file, "This browser couldn't share this file directly.")
+        return
+      }
       setToast({ tone: 'success', message: `${file.file_name} shared.` })
     } catch (error) {
-      if ((error as { name?: string })?.name === 'AbortError') return
+      logNativeShareDiagnostic('share_error', file, {
+        errorName: (error as { name?: string })?.name,
+      })
       showNativeShareFallback(file, "This browser couldn't share this file directly.")
     } finally {
       setWorkingFileId(null)
@@ -352,24 +444,6 @@ export default function Vault() {
     }
   }
 
-
-  async function handleDuplicate(file: VaultFile) {
-    setWorkingFileId(file.id)
-    setToast(null)
-    try {
-      const response = await api.post<VaultFile>(`/uploads/${file.id}/duplicate/`)
-      setSelectedFile(response.data)
-      setToast({ tone: 'success', message: `${response.data.file_name} added to Vault.` })
-      await refreshVault()
-    } catch (error) {
-      setToast({
-        tone: 'error',
-        message: isQuotaError(error) ? 'Duplicate needs more available storage.' : 'Could not duplicate this file.',
-      })
-    } finally {
-      setWorkingFileId(null)
-    }
-  }
 
   async function handleRemove(file: VaultFile) {
     const confirmed = window.confirm('Remove this file from your active Vault? Shared links will stop working, but this does not permanently destroy the stored object.')
@@ -526,7 +600,6 @@ export default function Vault() {
                 onDownload={() => handleDownload(file)}
                 onShareFile={() => void handleShareFile(file)}
                 onShareLink={() => openShareLink(file)}
-                onDuplicate={() => void handleDuplicate(file)}
                 onRemove={() => void handleRemove(file)}
               />
             ))}
@@ -542,7 +615,6 @@ export default function Vault() {
           onDownload={() => handleDownload(selectedFile)}
           onShareFile={() => void handleShareFile(selectedFile)}
           onShareLink={() => openShareLink(selectedFile)}
-          onDuplicate={() => void handleDuplicate(selectedFile)}
           onRemove={() => void handleRemove(selectedFile)}
         />
       )}
@@ -658,7 +730,6 @@ function FileTile({
   onDownload,
   onShareFile,
   onShareLink,
-  onDuplicate,
   onRemove,
 }: {
   file: VaultFile
@@ -668,7 +739,6 @@ function FileTile({
   onDownload: () => void
   onShareFile: () => void
   onShareLink: () => void
-  onDuplicate: () => void
   onRemove: () => void
 }) {
   const category = categoryForFile(file)
@@ -687,7 +757,7 @@ function FileTile({
             <p className="mt-1 text-xs text-slate-500">{typeLabel(file)} · {formatBytes(file.file_size)} · {formatDate(file.uploaded_at)}</p>
           </div>
         </button>
-        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onShareFile={onShareFile} onShareLink={onShareLink} onDuplicate={onDuplicate} onRemove={onRemove} />
+        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onShareFile={onShareFile} onShareLink={onShareLink} onRemove={onRemove} />
       </div>
     )
   }
@@ -711,7 +781,7 @@ function FileTile({
         </div>
       </button>
       <div className="border-t border-slate-100 px-3 py-2">
-        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onShareFile={onShareFile} onShareLink={onShareLink} onDuplicate={onDuplicate} onRemove={onRemove} />
+        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onShareFile={onShareFile} onShareLink={onShareLink} onRemove={onRemove} />
       </div>
     </div>
   )
@@ -723,7 +793,6 @@ function FileActions({
   onDownload,
   onShareFile,
   onShareLink,
-  onDuplicate,
   onRemove,
 }: {
   working: boolean
@@ -731,7 +800,6 @@ function FileActions({
   onDownload: () => void
   onShareFile: () => void
   onShareLink: () => void
-  onDuplicate: () => void
   onRemove: () => void
 }) {
   return (
@@ -746,9 +814,6 @@ function FileActions({
       </button>
       <button type="button" onClick={onShareLink} disabled={working} className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Share Link">
         Share Link
-      </button>
-      <button type="button" onClick={onDuplicate} disabled={working} className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Duplicate">
-        <DocumentDuplicateIcon className="h-4 w-4" />
       </button>
       <button type="button" onClick={onRemove} disabled={working} className="rounded-lg border border-red-200 p-1.5 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50" title="Remove from Vault">
         <TrashIcon className="h-4 w-4" />
@@ -875,7 +940,6 @@ function FileDetailsModal({
   onDownload,
   onShareFile,
   onShareLink,
-  onDuplicate,
   onRemove,
 }: {
   file: VaultFile
@@ -884,7 +948,6 @@ function FileDetailsModal({
   onDownload: () => void
   onShareFile: () => void
   onShareLink: () => void
-  onDuplicate: () => void
   onRemove: () => void
 }) {
   const category = categoryForFile(file)
@@ -928,7 +991,6 @@ function FileDetailsModal({
               <button type="button" onClick={onDownload} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50">Download</button>
               <button type="button" onClick={onShareFile} disabled={working} className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400">Share File</button>
               <button type="button" onClick={onShareLink} disabled={working} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Share Link</button>
-              <button type="button" onClick={onDuplicate} disabled={working} className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400">Duplicate</button>
               <button type="button" onClick={onRemove} disabled={working} className="h-10 rounded-lg border border-red-200 px-4 text-sm font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50">Remove from Vault</button>
             </div>
           </aside>

@@ -11,7 +11,7 @@ from django.core.exceptions import ValidationError
 from django.core.files.base import File
 from django.core.files.storage import default_storage
 from django.db import IntegrityError, models, transaction
-from django.http import HttpResponseRedirect
+from django.http import FileResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -293,6 +293,18 @@ class UploadsViewSet(ViewSet):
             "used_bytes": snapshot.used_bytes,
             "available_bytes": snapshot.remaining_bytes,
         })
+
+    @action(detail=True, methods=["get"], url_path="delivery")
+    def delivery(self, request, pk=None):
+        upload = get_object_or_404(_active_canonical_uploads_for_user(request.user), pk=pk)
+        storage = get_storage_backend(upload.stored_object.backend)
+        content_type = upload.stored_object.content_type or "application/octet-stream"
+        return FileResponse(
+            storage.open(upload.stored_object.object_key, "rb"),
+            as_attachment=True,
+            filename=upload.file_name,
+            content_type=content_type,
+        )
 
     @action(detail=True, methods=["get", "post"], url_path="shares")
     def shares(self, request, pk=None):

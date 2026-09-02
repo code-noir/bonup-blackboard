@@ -622,6 +622,85 @@ class UploadShareTests(TestCase):
         self.assertIsNotNone(VaultShare.objects.get(pk=share_id).revoked_at)
 
 
+class UploadShareFileDeliveryTests(TestCase):
+
+    def setUp(self):
+        self.user = make_user("share_file", "share_file@example.com")
+        self.other = make_user("share_file_other", "share_file_other@example.com")
+        self.client = authed_client(self.user)
+        self.upload = _managed_upload(self.user, name="contract.pdf", key="uploads/share-file/contract.pdf", size=4477)
+        _grant_capacity(self.user, 10000)
+
+    def test_authenticated_owner_can_retrieve_existing_file_for_native_share(self):
+        before_quota = get_storage_capacity_snapshot(self.user)
+        before_uploads = Upload.objects.count()
+        before_objects = StoredObject.objects.count()
+        before_access = UserObjectAccess.objects.count()
+
+        with patch("backend.uploads.services.default_storage") as mock_storage:
+            mock_storage.open.return_value = ContentFile(b"%PDF-1.4 real bytes", name="contract.pdf")
+
+            response = self.client.get(f"{UPLOAD_URL}{self.upload.id}/delivery/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertIn("attachment", response["Content-Disposition"])
+        self.assertIn("contract.pdf", response["Content-Disposition"])
+        self.assertEqual(b"".join(response.streaming_content), b"%PDF-1.4 real bytes")
+        mock_storage.open.assert_called_once_with(self.upload.stored_object.object_key, "rb")
+        self.assertEqual(VaultShare.objects.count(), 0)
+        self.assertEqual(Upload.objects.count(), before_uploads)
+        self.assertEqual(StoredObject.objects.count(), before_objects)
+        self.assertEqual(UserObjectAccess.objects.count(), before_access)
+        self.assertEqual(get_storage_capacity_snapshot(self.user).used_bytes, before_quota.used_bytes)
+
+    def test_share_file_delivery_requires_authentication(self):
+        response = APIClient().get(f"{UPLOAD_URL}{self.upload.id}/delivery/")
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_another_user_cannot_retrieve_file_for_native_share(self):
+        client = authed_client(self.other)
+
+        with patch("backend.uploads.services.default_storage") as mock_storage:
+            response = client.get(f"{UPLOAD_URL}{self.upload.id}/delivery/")
+
+        self.assertEqual(response.status_code, 404)
+        mock_storage.open.assert_not_called()
+        self.assertEqual(VaultShare.objects.count(), 0)
+
+    def test_removed_access_cannot_retrieve_file_for_native_share(self):
+        UserObjectAccess.objects.filter(user=self.user, stored_object=self.upload.stored_object).update(
+            is_active=False,
+            is_visible=False,
+            removed_at=timezone.now(),
+        )
+
+        with patch("backend.uploads.services.default_storage") as mock_storage:
+            response = self.client.get(f"{UPLOAD_URL}{self.upload.id}/delivery/")
+
+        self.assertEqual(response.status_code, 404)
+        mock_storage.open.assert_not_called()
+        self.assertEqual(VaultShare.objects.count(), 0)
+
+    def test_delivery_response_does_not_expose_provider_internals(self):
+        with patch("backend.uploads.services.default_storage") as mock_storage:
+            mock_storage.open.return_value = ContentFile(b"bytes", name="contract.pdf")
+            response = self.client.get(f"{UPLOAD_URL}{self.upload.id}/delivery/")
+
+        self.assertEqual(response.status_code, 200)
+        forbidden_values = [
+            self.upload.stored_object.object_key,
+            self.upload.stored_object.bucket,
+            str(self.upload.stored_object_id),
+        ]
+        exposed_headers = "\n".join(f"{key}: {value}" for key, value in response.items())
+        for value in forbidden_values:
+            if value:
+                self.assertNotIn(value, exposed_headers)
+
+
+
 class UploadDuplicateTests(TestCase):
 
     def setUp(self):

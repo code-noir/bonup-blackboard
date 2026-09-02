@@ -32,6 +32,14 @@ class Upload(models.Model):
     # Storage key — the path within the bucket (used for deletion)
     storage_key = models.CharField(max_length=1024, blank=True)
 
+    stored_object = models.ForeignKey(
+        "uploads.StoredObject",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="uploads",
+    )
+
     related_contract = models.ForeignKey(
         "contracts.Contract",
         on_delete=models.SET_NULL,

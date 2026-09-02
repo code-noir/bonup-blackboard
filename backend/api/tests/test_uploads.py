@@ -6,17 +6,23 @@
 #   - DELETE /api/uploads/<id>/   removes the record (and would delete from storage)
 
 import uuid
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
+from urllib.parse import urlparse
 
+from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from django.utils import timezone
+from rest_framework.test import APIClient
 
 from backend.billing.models import StorageCapacityGrantOrigin, StorageEntitlement
 from backend.billing.storage import (
     create_storage_capacity_grant,
+    get_storage_capacity_snapshot,
     get_user_active_storage_usage_bytes,
 )
-from backend.uploads.models import StoredObject, Upload, UserObjectAccess
+from backend.uploads.models import StoredObject, Upload, UserObjectAccess, VaultShare
 from backend.uploads.services import create_stored_object_metadata, grant_user_object_access
 from .helpers import authed_client, make_contract, make_user
 
@@ -476,6 +482,300 @@ class UploadListTests(TestCase):
         self.assertEqual(len(r.data), 2)
 
 
+class UploadShareTests(TestCase):
+
+    def setUp(self):
+        self.user = make_user("sharer", "sharer@example.com")
+        self.other = make_user("share_other", "share_other@example.com")
+        self.client = authed_client(self.user)
+        self.upload = _managed_upload(self.user, name="contract.pdf", key="uploads/share/contract.pdf", size=4477)
+        _grant_capacity(self.user, 10000)
+
+    def _create_share(self, expiration="7d"):
+        response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/shares/", {"expiration": expiration}, format="json")
+        self.assertEqual(response.status_code, 201)
+        token = urlparse(response.data["share_url"]).path.rsplit("/", 1)[-1]
+        return response, token
+
+    def test_authenticated_owner_can_create_share(self):
+        response, token = self._create_share()
+
+        self.assertTrue(token)
+        self.assertEqual(VaultShare.objects.count(), 1)
+        share = VaultShare.objects.get()
+        self.assertEqual(share.owner, self.user)
+        self.assertEqual(share.stored_object, self.upload.stored_object)
+        self.assertNotEqual(share.token_hash, token)
+        self.assertIsNotNone(share.expires_at)
+        self.assertEqual(response.data["file_name"], "contract.pdf")
+        self.assertEqual(response.data["content_type"], "application/pdf")
+
+    def test_random_public_token_resolves_valid_share(self):
+        _, token = self._create_share()
+
+        response = APIClient().get(f"{UPLOAD_URL}shares/{token}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["file_name"], "contract.pdf")
+        self.assertEqual(response.data["file_size"], 4477)
+        self.assertEqual(response.data["delivery_url"], f"/api/uploads/shares/{token}/delivery/")
+
+    def test_another_user_cannot_create_share_for_inaccessible_object(self):
+        client = authed_client(self.other)
+
+        response = client.post(f"{UPLOAD_URL}{self.upload.id}/shares/", {"expiration": "7d"}, format="json")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(VaultShare.objects.count(), 0)
+
+    def test_expired_share_rejected(self):
+        _, token = self._create_share()
+        VaultShare.objects.update(expires_at=timezone.now() - timedelta(seconds=1))
+
+        response = APIClient().get(f"{UPLOAD_URL}shares/{token}/")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data, {"detail": "Share is unavailable."})
+
+    def test_revoked_share_rejected(self):
+        _, token = self._create_share()
+        share = VaultShare.objects.get()
+        share.revoked_at = timezone.now()
+        share.save(update_fields=["revoked_at"])
+
+        response = APIClient().get(f"{UPLOAD_URL}shares/{token}/")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data, {"detail": "Share is unavailable."})
+
+    def test_removed_owner_access_invalidates_share(self):
+        _, token = self._create_share()
+        UserObjectAccess.objects.filter(user=self.user, stored_object=self.upload.stored_object).update(
+            is_active=False,
+            is_visible=False,
+            removed_at=timezone.now(),
+        )
+
+        response = APIClient().get(f"{UPLOAD_URL}shares/{token}/")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data, {"detail": "Share is unavailable."})
+
+    def test_share_does_not_change_quota_usage(self):
+        before = get_storage_capacity_snapshot(self.user)
+
+        self._create_share()
+
+        after = get_storage_capacity_snapshot(self.user)
+        self.assertEqual(before.used_bytes, 4477)
+        self.assertEqual(after.used_bytes, 4477)
+
+    def test_multiple_shares_do_not_change_quota(self):
+        before = get_storage_capacity_snapshot(self.user)
+
+        self._create_share("1d")
+        self._create_share("7d")
+        self._create_share("30d")
+        self._create_share("none")
+
+        after = get_storage_capacity_snapshot(self.user)
+        self.assertEqual(VaultShare.objects.count(), 4)
+        self.assertEqual(before.used_bytes, after.used_bytes)
+
+    def test_public_response_does_not_expose_provider_internals(self):
+        _, token = self._create_share()
+
+        response = APIClient().get(f"{UPLOAD_URL}shares/{token}/")
+
+        self.assertEqual(response.status_code, 200)
+        forbidden = {"stored_object", "stored_object_id", "backend", "bucket", "object_key", "file_url", "storage_key"}
+        self.assertFalse(forbidden.intersection(response.data.keys()))
+
+    def test_invalid_token_does_not_leak_object_existence(self):
+        response = APIClient().get(f"{UPLOAD_URL}shares/not-a-real-token/")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data, {"detail": "Share is unavailable."})
+
+    @patch("backend.uploads.services.default_storage")
+    def test_controlled_delivery_requires_valid_share(self, mock_storage):
+        _, token = self._create_share()
+        mock_storage.url.return_value = "https://provider.example/temp-signed-url"
+
+        valid = APIClient().get(f"{UPLOAD_URL}shares/{token}/delivery/")
+        invalid = APIClient().get(f"{UPLOAD_URL}shares/not-real/delivery/")
+
+        self.assertEqual(valid.status_code, 302)
+        self.assertEqual(valid["Location"], "https://provider.example/temp-signed-url")
+        mock_storage.url.assert_called_once_with(self.upload.stored_object.object_key)
+        self.assertEqual(invalid.status_code, 404)
+        self.assertEqual(invalid.data, {"detail": "Share is unavailable."})
+
+    def test_owner_can_revoke_share(self):
+        create_response, _ = self._create_share()
+        share_id = create_response.data["id"]
+
+        response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/shares/{share_id}/revoke/", {}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNotNone(response.data["revoked_at"])
+        self.assertIsNotNone(VaultShare.objects.get(pk=share_id).revoked_at)
+
+
+class UploadDuplicateTests(TestCase):
+
+    def setUp(self):
+        self.user = make_user("duplicator", "duplicator@example.com")
+        self.client = authed_client(self.user)
+        _grant_capacity(self.user, 2048)
+        self.upload = _managed_upload(self.user, name="receipt.pdf", key="uploads/source/receipt.pdf", size=512)
+
+    def _mock_copy_storage(self, mock_storage, saved_key="uploads/copy/receipt-copy.pdf"):
+        source = ContentFile(b"source bytes", name="receipt.pdf")
+        mock_storage.open.return_value.__enter__.return_value = source
+        mock_storage.save.return_value = saved_key
+        mock_storage.url.return_value = "https://current-provider.example/uploads/copy/receipt-copy.pdf"
+
+    @patch("backend.uploads.services.default_storage")
+    def test_duplicate_creates_new_upload(self, mock_storage):
+        self._mock_copy_storage(mock_storage)
+
+        response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/duplicate/")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Upload.objects.filter(user=self.user).count(), 2)
+        self.assertEqual(response.data["file_name"], "receipt copy.pdf")
+
+    @patch("backend.uploads.services.default_storage")
+    def test_duplicate_creates_new_stored_object(self, mock_storage):
+        self._mock_copy_storage(mock_storage)
+
+        response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/duplicate/")
+
+        self.assertEqual(response.status_code, 201)
+        duplicate = Upload.objects.get(pk=response.data["id"])
+        self.assertNotEqual(duplicate.stored_object_id, self.upload.stored_object_id)
+        self.assertEqual(StoredObject.objects.count(), 2)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_duplicate_creates_new_user_object_access(self, mock_storage):
+        self._mock_copy_storage(mock_storage)
+
+        response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/duplicate/")
+
+        self.assertEqual(response.status_code, 201)
+        duplicate = Upload.objects.get(pk=response.data["id"])
+        self.assertTrue(UserObjectAccess.objects.filter(user=self.user, stored_object=duplicate.stored_object, is_active=True).exists())
+        self.assertEqual(UserObjectAccess.objects.filter(user=self.user, is_active=True).count(), 2)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_duplicate_new_object_key_differs_from_original(self, mock_storage):
+        self._mock_copy_storage(mock_storage)
+
+        response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/duplicate/")
+
+        duplicate = Upload.objects.get(pk=response.data["id"])
+        self.assertNotEqual(duplicate.storage_key, self.upload.storage_key)
+        self.assertNotEqual(duplicate.stored_object.object_key, self.upload.stored_object.object_key)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_duplicate_increases_quota_by_exact_object_size(self, mock_storage):
+        self._mock_copy_storage(mock_storage)
+        before = get_storage_capacity_snapshot(self.user)
+
+        response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/duplicate/")
+
+        self.assertEqual(response.status_code, 201)
+        after = get_storage_capacity_snapshot(self.user)
+        self.assertEqual(after.used_bytes, before.used_bytes + self.upload.stored_object.size_bytes)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_duplicate_leaves_original_unchanged(self, mock_storage):
+        self._mock_copy_storage(mock_storage)
+        original_object_id = self.upload.stored_object_id
+        original_key = self.upload.storage_key
+
+        response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/duplicate/")
+
+        self.assertEqual(response.status_code, 201)
+        self.upload.refresh_from_db()
+        self.assertEqual(self.upload.stored_object_id, original_object_id)
+        self.assertEqual(self.upload.storage_key, original_key)
+        self.assertTrue(UserObjectAccess.objects.filter(user=self.user, stored_object_id=original_object_id, is_active=True).exists())
+
+    @patch("backend.uploads.services.default_storage")
+    def test_duplicate_exact_remaining_capacity_succeeds(self, mock_storage):
+        exact_user = make_user("duplicator_exact", "duplicator_exact@example.com")
+        client = authed_client(exact_user)
+        _grant_capacity(exact_user, 1024)
+        upload = _managed_upload(exact_user, key="uploads/source/exact.pdf", size=512)
+        self._mock_copy_storage(mock_storage)
+
+        response = client.post(f"{UPLOAD_URL}{upload.id}/duplicate/")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(get_storage_capacity_snapshot(exact_user).used_bytes, 1024)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_duplicate_one_byte_over_capacity_fails_before_copy(self, mock_storage):
+        limited_user = make_user("duplicator_limited", "duplicator_limited@example.com")
+        client = authed_client(limited_user)
+        _grant_capacity(limited_user, 1023)
+        upload = _managed_upload(limited_user, key="uploads/source/limited.pdf", size=512)
+
+        response = client.post(f"{UPLOAD_URL}{upload.id}/duplicate/")
+
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.data["code"], "storage_capacity_exceeded")
+        mock_storage.open.assert_not_called()
+        mock_storage.save.assert_not_called()
+        self.assertEqual(Upload.objects.filter(user=limited_user).count(), 1)
+        self.assertEqual(StoredObject.objects.filter(user_accesses__user=limited_user).distinct().count(), 1)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_duplicate_provider_failure_creates_no_canonical_duplicate(self, mock_storage):
+        mock_storage.open.side_effect = RuntimeError("copy failed")
+
+        with self.assertRaisesMessage(RuntimeError, "copy failed"):
+            self.client.post(f"{UPLOAD_URL}{self.upload.id}/duplicate/")
+
+        self.assertEqual(Upload.objects.filter(user=self.user).count(), 1)
+        self.assertEqual(StoredObject.objects.filter(user_accesses__user=self.user).distinct().count(), 1)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_duplicate_database_failure_compensates_new_physical_duplicate(self, mock_storage):
+        self._mock_copy_storage(mock_storage)
+
+        with patch("backend.api.uploads.views.Upload.objects.create", side_effect=RuntimeError("db failed")):
+            with self.assertRaisesMessage(RuntimeError, "db failed"):
+                self.client.post(f"{UPLOAD_URL}{self.upload.id}/duplicate/")
+
+        mock_storage.delete.assert_called_once_with("uploads/copy/receipt-copy.pdf")
+        self.assertEqual(Upload.objects.filter(user=self.user).count(), 1)
+        self.assertEqual(StoredObject.objects.filter(user_accesses__user=self.user).distinct().count(), 1)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_duplicate_cleanup_failure_does_not_mask_original_error(self, mock_storage):
+        self._mock_copy_storage(mock_storage)
+        mock_storage.delete.side_effect = RuntimeError("cleanup failed")
+
+        with patch("backend.api.uploads.views.Upload.objects.create", side_effect=RuntimeError("db failed")):
+            with self.assertRaisesMessage(RuntimeError, "db failed"):
+                self.client.post(f"{UPLOAD_URL}{self.upload.id}/duplicate/")
+
+        mock_storage.delete.assert_called_once_with("uploads/copy/receipt-copy.pdf")
+        self.assertEqual(Upload.objects.filter(user=self.user).count(), 1)
+
+    def test_upload_view_does_not_introduce_digitalocean_specific_api(self):
+        from pathlib import Path
+
+        source = Path("backend/api/uploads/views.py").read_text()
+
+        self.assertNotIn("boto3", source)
+        self.assertNotIn("digitalocean", source.lower())
+        self.assertNotIn("S3Boto3Storage", source)
+
+
 class UploadDeleteTests(TestCase):
 
     def setUp(self):
@@ -537,6 +837,24 @@ class UploadDeleteTests(TestCase):
         self.assertIsNotNone(access.removed_at)
         self.assertTrue(StoredObject.objects.filter(pk=stored_object.pk).exists())
         self.assertFalse(Upload.objects.filter(pk=upload.id).exists())
+        mock_storage.delete.assert_not_called()
+
+
+
+    @patch("backend.api.uploads.views.default_storage")
+    def test_delete_canonical_upload_revokes_active_public_shares(self, mock_storage):
+        upload = _managed_upload(self.user, key="uploads/delete/share.pdf")
+        create_response = self.client.post(f"{UPLOAD_URL}{upload.id}/shares/", {"expiration": "7d"}, format="json")
+        self.assertEqual(create_response.status_code, 201)
+        token = urlparse(create_response.data["share_url"]).path.rsplit("/", 1)[-1]
+
+        response = self.client.delete(f"{UPLOAD_URL}{upload.id}/")
+        public_response = APIClient().get(f"{UPLOAD_URL}shares/{token}/")
+
+        self.assertEqual(response.status_code, 204)
+        share = VaultShare.objects.get()
+        self.assertIsNotNone(share.revoked_at)
+        self.assertEqual(public_response.status_code, 404)
         mock_storage.delete.assert_not_called()
 
     def test_delete_other_users_upload_returns_404(self):

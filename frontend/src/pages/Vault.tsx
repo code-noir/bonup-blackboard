@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowDownTrayIcon,
+  ChatBubbleLeftRightIcon,
+  ClipboardDocumentIcon,
+  DocumentDuplicateIcon,
+  EnvelopeIcon,
   DocumentIcon,
   MagnifyingGlassIcon,
   MusicalNoteIcon,
   PhotoIcon,
   PlusIcon,
+  ShareIcon,
   RectangleStackIcon,
   TrashIcon,
   VideoCameraIcon,
@@ -34,6 +39,7 @@ type VaultFile = {
 type Category = 'all' | 'images' | 'videos' | 'audio' | 'documents' | 'other'
 type SortKey = 'newest' | 'oldest' | 'name' | 'size'
 type ViewMode = 'grid' | 'list'
+type ShareExpiration = '1d' | '7d' | '30d' | 'none'
 
 type LoadState = 'loading' | 'success' | 'error'
 
@@ -41,6 +47,17 @@ type Toast = {
   tone: 'success' | 'error' | 'info'
   message: string
 } | null
+
+type VaultShare = {
+  id: string
+  share_url: string
+  expires_at: string | null
+  revoked_at: string | null
+  file_name: string
+  file_type: string
+  content_type: string
+  file_size: number
+}
 
 const CATEGORIES: Array<{ key: Category; label: string }> = [
   { key: 'all', label: 'All Files' },
@@ -145,6 +162,10 @@ export default function Vault() {
   const [sortKey, setSortKey] = useState<SortKey>('newest')
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [selectedFile, setSelectedFile] = useState<VaultFile | null>(null)
+  const [shareFile, setShareFile] = useState<VaultFile | null>(null)
+  const [shareExpiration, setShareExpiration] = useState<ShareExpiration>('7d')
+  const [shareResult, setShareResult] = useState<VaultShare | null>(null)
+  const [sharing, setSharing] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [workingFileId, setWorkingFileId] = useState<string | null>(null)
   const [toast, setToast] = useState<Toast>(null)
@@ -237,12 +258,96 @@ export default function Vault() {
     link.remove()
   }
 
+  function openShare(file: VaultFile) {
+    setShareFile(file)
+    setShareResult(null)
+    setShareExpiration('7d')
+    setToast(null)
+  }
+
+  async function handleCreateShare() {
+    if (!shareFile) return
+    setSharing(true)
+    setToast(null)
+    try {
+      const response = await api.post<VaultShare>(`/uploads/${shareFile.id}/shares/`, { expiration: shareExpiration })
+      setShareResult(response.data)
+      setToast({ tone: 'success', message: 'Share link created.' })
+    } catch {
+      setToast({ tone: 'error', message: 'Could not create a share link for this file.' })
+    } finally {
+      setSharing(false)
+    }
+  }
+
+  async function copyShareLink(link: string) {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(link)
+      } else {
+        const input = document.createElement('input')
+        input.value = link
+        document.body.appendChild(input)
+        input.select()
+        document.execCommand('copy')
+        input.remove()
+      }
+      setToast({ tone: 'success', message: 'Share link copied.' })
+    } catch {
+      setToast({ tone: 'error', message: 'Could not copy the share link.' })
+    }
+  }
+
+  function handleEmailShare(link: string, fileName: string) {
+    const subject = encodeURIComponent(`bonUP Vault file: ${fileName}`)
+    const body = encodeURIComponent(`Open this bonUP Vault file: ${link}`)
+    window.location.href = `mailto:?subject=${subject}&body=${body}`
+  }
+
+  function handleTextShare(link: string) {
+    const body = encodeURIComponent(`Open this bonUP Vault file: ${link}`)
+    window.location.href = `sms:?&body=${body}`
+  }
+
+  async function handleNativeShare(link: string, fileName: string) {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: fileName, text: 'Open this bonUP Vault file.', url: link })
+        return
+      } catch (error) {
+        if ((error as { name?: string })?.name === 'AbortError') return
+      }
+    }
+    await copyShareLink(link)
+  }
+
+  async function handleDuplicate(file: VaultFile) {
+    setWorkingFileId(file.id)
+    setToast(null)
+    try {
+      const response = await api.post<VaultFile>(`/uploads/${file.id}/duplicate/`)
+      setSelectedFile(response.data)
+      setToast({ tone: 'success', message: `${response.data.file_name} added to Vault.` })
+      await refreshVault()
+    } catch (error) {
+      setToast({
+        tone: 'error',
+        message: isQuotaError(error) ? 'Duplicate needs more available storage.' : 'Could not duplicate this file.',
+      })
+    } finally {
+      setWorkingFileId(null)
+    }
+  }
+
   async function handleRemove(file: VaultFile) {
+    const confirmed = window.confirm('Remove this file from your active Vault? Shared links will stop working, but this does not permanently destroy the stored object.')
+    if (!confirmed) return
     setWorkingFileId(file.id)
     setToast(null)
     try {
       await api.delete(`/uploads/${file.id}/`)
       setSelectedFile((current) => (current?.id === file.id ? null : current))
+      setShareFile((current) => (current?.id === file.id ? null : current))
       setToast({ tone: 'success', message: `${file.file_name} removed from Vault.` })
       await refreshVault()
     } catch {
@@ -387,6 +492,8 @@ export default function Vault() {
                 working={workingFileId === file.id}
                 onOpen={() => setSelectedFile(file)}
                 onDownload={() => handleDownload(file)}
+                onShare={() => openShare(file)}
+                onDuplicate={() => void handleDuplicate(file)}
                 onRemove={() => void handleRemove(file)}
               />
             ))}
@@ -400,7 +507,25 @@ export default function Vault() {
           working={workingFileId === selectedFile.id}
           onClose={() => setSelectedFile(null)}
           onDownload={() => handleDownload(selectedFile)}
+          onShare={() => openShare(selectedFile)}
+          onDuplicate={() => void handleDuplicate(selectedFile)}
           onRemove={() => void handleRemove(selectedFile)}
+        />
+      )}
+
+      {shareFile && (
+        <ShareModal
+          file={shareFile}
+          expiration={shareExpiration}
+          share={shareResult}
+          sharing={sharing}
+          onExpirationChange={setShareExpiration}
+          onCreateShare={() => void handleCreateShare()}
+          onCopy={(link) => void copyShareLink(link)}
+          onEmail={handleEmailShare}
+          onText={handleTextShare}
+          onNativeShare={(link, fileName) => void handleNativeShare(link, fileName)}
+          onClose={() => setShareFile(null)}
         />
       )}
 
@@ -488,6 +613,8 @@ function FileTile({
   working,
   onOpen,
   onDownload,
+  onShare,
+  onDuplicate,
   onRemove,
 }: {
   file: VaultFile
@@ -495,6 +622,8 @@ function FileTile({
   working: boolean
   onOpen: () => void
   onDownload: () => void
+  onShare: () => void
+  onDuplicate: () => void
   onRemove: () => void
 }) {
   const category = categoryForFile(file)
@@ -513,7 +642,7 @@ function FileTile({
             <p className="mt-1 text-xs text-slate-500">{typeLabel(file)} · {formatBytes(file.file_size)} · {formatDate(file.uploaded_at)}</p>
           </div>
         </button>
-        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onRemove={onRemove} />
+        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onShare={onShare} onDuplicate={onDuplicate} onRemove={onRemove} />
       </div>
     )
   }
@@ -537,7 +666,7 @@ function FileTile({
         </div>
       </button>
       <div className="border-t border-slate-100 px-3 py-2">
-        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onRemove={onRemove} />
+        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onShare={onShare} onDuplicate={onDuplicate} onRemove={onRemove} />
       </div>
     </div>
   )
@@ -547,11 +676,15 @@ function FileActions({
   working,
   onOpen,
   onDownload,
+  onShare,
+  onDuplicate,
   onRemove,
 }: {
   working: boolean
   onOpen: () => void
   onDownload: () => void
+  onShare: () => void
+  onDuplicate: () => void
   onRemove: () => void
 }) {
   return (
@@ -560,9 +693,104 @@ function FileActions({
       <button type="button" onClick={onDownload} className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50" title="Download">
         <ArrowDownTrayIcon className="h-4 w-4" />
       </button>
+      <button type="button" onClick={onShare} disabled={working} className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Share">
+        <ShareIcon className="h-4 w-4" />
+      </button>
+      <button type="button" onClick={onDuplicate} disabled={working} className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Duplicate">
+        <DocumentDuplicateIcon className="h-4 w-4" />
+      </button>
       <button type="button" onClick={onRemove} disabled={working} className="rounded-lg border border-red-200 p-1.5 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50" title="Remove from Vault">
         <TrashIcon className="h-4 w-4" />
       </button>
+    </div>
+  )
+}
+
+
+function ShareModal({
+  file,
+  expiration,
+  share,
+  sharing,
+  onExpirationChange,
+  onCreateShare,
+  onCopy,
+  onEmail,
+  onText,
+  onNativeShare,
+  onClose,
+}: {
+  file: VaultFile
+  expiration: ShareExpiration
+  share: VaultShare | null
+  sharing: boolean
+  onExpirationChange: (value: ShareExpiration) => void
+  onCreateShare: () => void
+  onCopy: (link: string) => void
+  onEmail: (link: string, fileName: string) => void
+  onText: (link: string) => void
+  onNativeShare: (link: string, fileName: string) => void
+  onClose: () => void
+}) {
+  const shareLink = share?.share_url || ''
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+      <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase text-[#D4900A]">bonUP Vault</p>
+            <h2 className="mt-1 truncate text-lg font-bold text-slate-900">Share {file.file_name}</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Create a bonUP-controlled link for this file.</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <label className="mt-5 block text-sm font-bold text-slate-700">
+          Expiration
+          <select
+            value={expiration}
+            onChange={(event) => onExpirationChange(event.target.value as ShareExpiration)}
+            className="mt-2 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-100"
+          >
+            <option value="1d">1 day</option>
+            <option value="7d">7 days</option>
+            <option value="30d">30 days</option>
+            <option value="none">No expiration</option>
+          </select>
+        </label>
+
+        <button type="button" onClick={onCreateShare} disabled={sharing} className="mt-4 h-10 w-full rounded-lg bg-slate-900 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400">
+          {sharing ? 'Creating...' : 'Create Share Link'}
+        </button>
+
+        {share && (
+          <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-bold uppercase text-slate-400">Share link</p>
+            <p className="mt-2 break-all text-sm font-semibold text-slate-800">{shareLink}</p>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <button type="button" onClick={() => onCopy(shareLink)} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                <ClipboardDocumentIcon className="h-4 w-4" />
+                Copy Link
+              </button>
+              <button type="button" onClick={() => onText(shareLink)} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                <ChatBubbleLeftRightIcon className="h-4 w-4" />
+                Text Message
+              </button>
+              <button type="button" onClick={() => onEmail(shareLink, file.file_name)} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                <EnvelopeIcon className="h-4 w-4" />
+                Email
+              </button>
+              <button type="button" onClick={() => onNativeShare(shareLink, file.file_name)} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                <ShareIcon className="h-4 w-4" />
+                More...
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -572,12 +800,16 @@ function FileDetailsModal({
   working,
   onClose,
   onDownload,
+  onShare,
+  onDuplicate,
   onRemove,
 }: {
   file: VaultFile
   working: boolean
   onClose: () => void
   onDownload: () => void
+  onShare: () => void
+  onDuplicate: () => void
   onRemove: () => void
 }) {
   const category = categoryForFile(file)
@@ -619,6 +851,8 @@ function FileDetailsModal({
             </dl>
             <div className="mt-6 flex flex-col gap-2">
               <button type="button" onClick={onDownload} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50">Download</button>
+              <button type="button" onClick={onShare} disabled={working} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Share</button>
+              <button type="button" onClick={onDuplicate} disabled={working} className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400">Duplicate</button>
               <button type="button" onClick={onRemove} disabled={working} className="h-10 rounded-lg border border-red-200 px-4 text-sm font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50">Remove from Vault</button>
             </div>
           </aside>

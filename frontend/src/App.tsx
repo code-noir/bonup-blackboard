@@ -34,6 +34,7 @@ import Store from '@/pages/Store'
 import StoreReview from '@/pages/StoreReview'
 import StorePaymentSuccess from '@/pages/StorePaymentSuccess'
 import Vault from '@/pages/Vault'
+import VaultShare from '@/pages/VaultShare'
 import LifecycleManagement from '@/pages/LifecycleManagement'
 import AgreementPerformance from '@/pages/AgreementPerformance'
 import Negotiation from '@/pages/Negotiation'
@@ -141,6 +142,7 @@ export default function App() {
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/workflow/invite/:token" element={<WorkflowInvite />} />
+          <Route path="/share/:token" element={<VaultShare />} />
           <Route path="/" element={<RootRedirect />} />
 
           {/* bonUP Platform — authenticated platform shell */}

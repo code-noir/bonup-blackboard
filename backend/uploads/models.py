@@ -159,3 +159,31 @@ class UserObjectAccess(models.Model):
     def __str__(self):
         return f"{self.user_id}: {self.stored_object_id} ({'active' if self.is_active else 'removed'})"
 
+class VaultShare(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="vault_shares",
+    )
+    stored_object = models.ForeignKey(
+        StoredObject,
+        on_delete=models.PROTECT,
+        related_name="vault_shares",
+    )
+    token_hash = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["owner", "revoked_at"], name="vault_share_owner_revoked_idx"),
+            models.Index(fields=["stored_object", "revoked_at"], name="vault_share_obj_revoked_idx"),
+            models.Index(fields=["expires_at"], name="vault_share_expires_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.owner_id}: {self.stored_object_id}"
+

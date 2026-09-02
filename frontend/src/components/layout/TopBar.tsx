@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 
 const SLOGANS = [
   'Keeping the world together through clear contracting',
-  'The #1 peer-to-peer contract platform',
+  'The #1 peer-to-peer contract workspace',
 ]
 
 type Ad = { title: string; sub: string }

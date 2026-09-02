@@ -1,51 +1,638 @@
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  ArrowDownTrayIcon,
+  DocumentIcon,
+  MagnifyingGlassIcon,
+  MusicalNoteIcon,
+  PhotoIcon,
+  PlusIcon,
+  RectangleStackIcon,
+  TrashIcon,
+  VideoCameraIcon,
+  XMarkIcon,
+} from '@heroicons/react/24/outline'
+import api from '@/api/client'
 
-const STORAGE_ROWS = [
-  { label: 'Capacity', value: 'Unavailable' },
-  { label: 'Used', value: 'Unavailable' },
-  { label: 'Remaining', value: 'Unavailable' },
+type StorageSummary = {
+  capacity_bytes: number
+  used_bytes: number
+  available_bytes: number
+}
+
+type VaultFile = {
+  id: string
+  file_url: string | null
+  file_name: string
+  file_type: string
+  content_type?: string
+  file_size: number
+  uploaded_at: string
+  is_prep_material?: boolean
+  is_draft_document?: boolean
+}
+
+type Category = 'all' | 'images' | 'videos' | 'audio' | 'documents' | 'other'
+type SortKey = 'newest' | 'oldest' | 'name' | 'size'
+type ViewMode = 'grid' | 'list'
+
+type LoadState = 'loading' | 'success' | 'error'
+
+type Toast = {
+  tone: 'success' | 'error' | 'info'
+  message: string
+} | null
+
+const CATEGORIES: Array<{ key: Category; label: string }> = [
+  { key: 'all', label: 'All Files' },
+  { key: 'images', label: 'Images' },
+  { key: 'videos', label: 'Videos' },
+  { key: 'audio', label: 'Audio' },
+  { key: 'documents', label: 'Documents' },
+  { key: 'other', label: 'Other' },
 ]
 
+function categoryForFile(file: Pick<VaultFile, 'file_name' | 'file_type' | 'content_type'>): Category {
+  const contentType = (file.content_type || '').toLowerCase()
+  const fileType = (file.file_type || '').toLowerCase()
+  const extension = file.file_name.split('.').pop()?.toLowerCase() || ''
+
+  if (contentType.startsWith('image/') || fileType === 'image') return 'images'
+  if (contentType.startsWith('video/') || fileType === 'video') return 'videos'
+  if (contentType.startsWith('audio/') || fileType === 'audio') return 'audio'
+  if (
+    fileType === 'pdf' ||
+    fileType === 'document' ||
+    fileType === 'slides' ||
+    contentType.includes('pdf') ||
+    contentType.includes('document') ||
+    contentType.includes('presentation') ||
+    ['pdf', 'doc', 'docx', 'txt', 'rtf', 'ppt', 'pptx', 'xls', 'xlsx', 'csv'].includes(extension)
+  ) {
+    return 'documents'
+  }
+  return 'other'
+}
+
+function uploadTypeForFile(file: File): string {
+  const contentType = file.type.toLowerCase()
+  const extension = file.name.split('.').pop()?.toLowerCase() || ''
+  if (contentType === 'application/pdf' || extension === 'pdf') return 'pdf'
+  if (contentType.startsWith('image/')) return 'image'
+  if (contentType.startsWith('video/')) return 'video'
+  if (contentType.startsWith('audio/')) return 'audio'
+  if (['ppt', 'pptx', 'key'].includes(extension)) return 'slides'
+  if (['doc', 'docx', 'txt', 'rtf', 'xls', 'xlsx', 'csv'].includes(extension) || contentType.includes('document')) return 'document'
+  return 'other'
+}
+
+function formatBytes(bytes: number | null | undefined) {
+  const value = Number(bytes ?? 0)
+  if (value <= 0) return '0 B'
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
+  let size = value
+  let unit = 0
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024
+    unit += 1
+  }
+  return `${size >= 10 || unit === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[unit]}`
+}
+
+function formatDate(value: string) {
+  if (!value) return 'Unknown date'
+  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value))
+}
+
+function fileIcon(category: Category) {
+  if (category === 'images') return PhotoIcon
+  if (category === 'videos') return VideoCameraIcon
+  if (category === 'audio') return MusicalNoteIcon
+  if (category === 'documents') return DocumentIcon
+  return RectangleStackIcon
+}
+
+function typeLabel(file: VaultFile) {
+  const category = categoryForFile(file)
+  if (category === 'images') return 'Image'
+  if (category === 'videos') return 'Video'
+  if (category === 'audio') return 'Audio'
+  if (category === 'documents') return file.file_type === 'pdf' ? 'PDF' : 'Document'
+  return 'File'
+}
+
+function storagePercent(summary: StorageSummary | null) {
+  if (!summary || summary.capacity_bytes <= 0) return 0
+  return Math.min(100, Math.round((summary.used_bytes / summary.capacity_bytes) * 100))
+}
+
+function isQuotaError(error: unknown) {
+  return Boolean(
+    typeof error === 'object' &&
+    error !== null &&
+    'response' in error &&
+    (error as { response?: { data?: { code?: string } } }).response?.data?.code === 'storage_capacity_exceeded',
+  )
+}
+
 export default function Vault() {
-  const navigate = useNavigate()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [storage, setStorage] = useState<StorageSummary | null>(null)
+  const [files, setFiles] = useState<VaultFile[]>([])
+  const [storageState, setStorageState] = useState<LoadState>('loading')
+  const [filesState, setFilesState] = useState<LoadState>('loading')
+  const [category, setCategory] = useState<Category>('all')
+  const [search, setSearch] = useState('')
+  const [sortKey, setSortKey] = useState<SortKey>('newest')
+  const [viewMode, setViewMode] = useState<ViewMode>('grid')
+  const [selectedFile, setSelectedFile] = useState<VaultFile | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [workingFileId, setWorkingFileId] = useState<string | null>(null)
+  const [toast, setToast] = useState<Toast>(null)
+  const [addStorageOpen, setAddStorageOpen] = useState(false)
+
+  async function loadStorage() {
+    setStorageState('loading')
+    try {
+      const response = await api.get<StorageSummary>('/uploads/storage/')
+      setStorage(response.data)
+      setStorageState('success')
+    } catch {
+      setStorageState('error')
+    }
+  }
+
+  async function loadFiles() {
+    setFilesState('loading')
+    try {
+      const response = await api.get<VaultFile[]>('/uploads/')
+      setFiles(response.data)
+      setFilesState('success')
+    } catch {
+      setFilesState('error')
+    }
+  }
+
+  async function refreshVault() {
+    await Promise.all([loadStorage(), loadFiles()])
+  }
+
+  useEffect(() => {
+    void refreshVault()
+  }, [])
+
+  const filteredFiles = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return files
+      .filter((file) => category === 'all' || categoryForFile(file) === category)
+      .filter((file) => !query || file.file_name.toLowerCase().includes(query))
+      .sort((a, b) => {
+        if (sortKey === 'name') return a.file_name.localeCompare(b.file_name)
+        if (sortKey === 'size') return b.file_size - a.file_size
+        const aTime = new Date(a.uploaded_at).getTime()
+        const bTime = new Date(b.uploaded_at).getTime()
+        return sortKey === 'oldest' ? aTime - bTime : bTime - aTime
+      })
+  }, [category, files, search, sortKey])
+
+  const countsByCategory = useMemo(() => {
+    return CATEGORIES.reduce<Record<Category, number>>((acc, item) => {
+      acc[item.key] = item.key === 'all' ? files.length : files.filter((file) => categoryForFile(file) === item.key).length
+      return acc
+    }, { all: 0, images: 0, videos: 0, audio: 0, documents: 0, other: 0 })
+  }, [files])
+
+  async function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    setUploading(true)
+    setToast(null)
+    const form = new FormData()
+    form.append('file', file)
+    form.append('file_type', uploadTypeForFile(file))
+
+    try {
+      await api.post('/uploads/', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+      setToast({ tone: 'success', message: `${file.name} uploaded to Vault.` })
+      await refreshVault()
+    } catch (error) {
+      setToast({
+        tone: 'error',
+        message: isQuotaError(error) ? 'This file is larger than your available storage.' : 'Upload failed. Please try again.',
+      })
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  function handleDownload(file: VaultFile) {
+    if (!file.file_url) return
+    const link = document.createElement('a')
+    link.href = file.file_url
+    link.download = file.file_name
+    link.rel = 'noopener noreferrer'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  }
+
+  async function handleRemove(file: VaultFile) {
+    setWorkingFileId(file.id)
+    setToast(null)
+    try {
+      await api.delete(`/uploads/${file.id}/`)
+      setSelectedFile((current) => (current?.id === file.id ? null : current))
+      setToast({ tone: 'success', message: `${file.file_name} removed from Vault.` })
+      await refreshVault()
+    } catch {
+      setToast({ tone: 'error', message: 'Could not remove this file.' })
+    } finally {
+      setWorkingFileId(null)
+    }
+  }
+
+  const percent = storagePercent(storage)
 
   return (
-    <div className="mx-auto max-w-4xl py-8">
-      <header className="mb-8">
-        <p className="mb-2 text-xs font-bold uppercase text-[#D4900A]">bonUP</p>
-        <h1 className="text-3xl font-bold text-slate-900">Vault</h1>
-        <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          Storage and durable resources in bonUP.
-        </p>
-      </header>
-
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase text-slate-400">Storage</p>
-            <h2 className="mt-1 text-2xl font-bold text-slate-900">Storage</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-              Storage capacity details are not available in this interface yet.
-            </p>
-          </div>
+    <div className="mx-auto flex max-w-7xl flex-col gap-6 py-8">
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="mb-2 text-xs font-bold uppercase text-[#D4900A]">bonUP</p>
+          <h1 className="text-3xl font-bold text-slate-900">Vault</h1>
+          <p className="mt-2 max-w-2xl text-sm text-slate-600">Your files and storage in bonUP.</p>
+        </div>
+        <div className="flex flex-wrap gap-3">
           <button
             type="button"
-            onClick={() => navigate('/store')}
-            className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800"
+            onClick={() => setAddStorageOpen(true)}
+            className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50"
           >
             Add Storage
           </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+          >
+            <PlusIcon className="h-4 w-4" />
+            {uploading ? 'Uploading...' : 'Upload File'}
+          </button>
+          <input ref={fileInputRef} type="file" className="hidden" onChange={handleUpload} />
+        </div>
+      </header>
+
+      {toast && (
+        <div className={`rounded-lg border px-4 py-3 text-sm font-semibold ${toast.tone === 'error' ? 'border-red-200 bg-red-50 text-red-700' : toast.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-700'}`}>
+          {toast.message}
+        </div>
+      )}
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase text-slate-400">Storage</p>
+            <h2 className="mt-1 text-xl font-bold text-slate-900">Capacity overview</h2>
+            <p className="mt-1 text-sm text-slate-500">Active Vault usage is calculated from your managed files.</p>
+          </div>
+          <button type="button" onClick={loadStorage} className="h-9 rounded-lg border border-slate-300 px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
+            Refresh
+          </button>
         </div>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          {STORAGE_ROWS.map((row) => (
-            <div key={row.label} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-bold uppercase text-slate-400">{row.label}</p>
-              <p className="mt-2 text-sm font-semibold text-slate-900">{row.value}</p>
+        {storageState === 'loading' && <p className="mt-5 text-sm font-semibold text-slate-600">Loading storage...</p>}
+        {storageState === 'error' && (
+          <div className="mt-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            Storage details could not be loaded. Files can still be browsed below.
+          </div>
+        )}
+        {storageState === 'success' && storage && (
+          <div className="mt-5">
+            <div className="grid gap-3 md:grid-cols-3">
+              <Metric label="Capacity" value={formatBytes(storage.capacity_bytes)} />
+              <Metric label="Used" value={formatBytes(storage.used_bytes)} />
+              <Metric label="Available" value={formatBytes(storage.available_bytes)} />
             </div>
-          ))}
-        </div>
+            <div className="mt-5">
+              <div className="mb-2 flex items-center justify-between text-xs font-bold uppercase text-slate-400">
+                <span>{percent}% used</span>
+                <span>{formatBytes(storage.available_bytes)} available</span>
+              </div>
+              <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full rounded-full bg-[#F5A623] transition-all" style={{ width: `${percent}%` }} />
+              </div>
+              {storage.capacity_bytes === 0 && (
+                <p className="mt-3 text-sm text-slate-500">No storage capacity is active on this account yet.</p>
+              )}
+            </div>
+          </div>
+        )}
       </section>
+
+      <section className="min-h-[520px] rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 p-4 lg:p-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {CATEGORIES.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setCategory(item.key)}
+                  className={`rounded-lg border px-3 py-2 text-sm font-bold ${category === item.key ? 'border-[#F5A623] bg-[#FFF7E8] text-slate-900' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                >
+                  {item.label} <span className="ml-1 text-xs text-slate-400">{countsByCategory[item.key]}</span>
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <label className="relative block min-w-[240px]">
+                <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search files"
+                  className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-100"
+                />
+              </label>
+              <select
+                value={sortKey}
+                onChange={(event) => setSortKey(event.target.value as SortKey)}
+                className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-100"
+              >
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="name">Name</option>
+                <option value="size">Size</option>
+              </select>
+              <div className="flex h-10 rounded-lg border border-slate-300 bg-white p-1">
+                <button type="button" onClick={() => setViewMode('grid')} className={`rounded-md px-3 text-xs font-bold ${viewMode === 'grid' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>Grid</button>
+                <button type="button" onClick={() => setViewMode('list')} className={`rounded-md px-3 text-xs font-bold ${viewMode === 'list' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>List</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {filesState === 'loading' && <FileLoadingState />}
+        {filesState === 'error' && <FileErrorState onRetry={loadFiles} />}
+        {filesState === 'success' && files.length === 0 && <EmptyState onUpload={() => fileInputRef.current?.click()} />}
+        {filesState === 'success' && files.length > 0 && filteredFiles.length === 0 && <NoMatchesState />}
+        {filesState === 'success' && filteredFiles.length > 0 && (
+          <div className={viewMode === 'grid' ? 'grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4' : 'divide-y divide-slate-100'}>
+            {filteredFiles.map((file) => (
+              <FileTile
+                key={file.id}
+                file={file}
+                mode={viewMode}
+                working={workingFileId === file.id}
+                onOpen={() => setSelectedFile(file)}
+                onDownload={() => handleDownload(file)}
+                onRemove={() => void handleRemove(file)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {selectedFile && (
+        <FileDetailsModal
+          file={selectedFile}
+          working={workingFileId === selectedFile.id}
+          onClose={() => setSelectedFile(null)}
+          onDownload={() => handleDownload(selectedFile)}
+          onRemove={() => void handleRemove(selectedFile)}
+        />
+      )}
+
+      {addStorageOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Add Storage</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">Additional storage plans are being updated for recurring billing. Purchasing is not available from Vault yet.</p>
+              </div>
+              <button type="button" onClick={() => setAddStorageOpen(false)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+            <button type="button" onClick={() => setAddStorageOpen(false)} className="mt-5 h-10 w-full rounded-lg bg-slate-900 text-sm font-bold text-white hover:bg-slate-800">
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <p className="text-xs font-bold uppercase text-slate-400">{label}</p>
+      <p className="mt-2 text-xl font-bold text-slate-900">{value}</p>
+    </div>
+  )
+}
+
+function FileLoadingState() {
+  return (
+    <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      {Array.from({ length: 8 }).map((_, index) => (
+        <div key={index} className="h-44 animate-pulse rounded-lg border border-slate-200 bg-slate-50" />
+      ))}
+    </div>
+  )
+}
+
+function FileErrorState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="p-5">
+      <div className="rounded-lg border border-red-200 bg-red-50 p-5">
+        <p className="text-sm font-bold text-red-700">Files could not be loaded.</p>
+        <p className="mt-1 text-sm text-red-700">Please try again. Storage details may still be available above.</p>
+        <button type="button" onClick={onRetry} className="mt-4 h-10 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white">Retry</button>
+      </div>
+    </div>
+  )
+}
+
+function EmptyState({ onUpload }: { onUpload: () => void }) {
+  return (
+    <div className="flex min-h-[420px] flex-col items-center justify-center p-8 text-center">
+      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+        <RectangleStackIcon className="h-8 w-8" />
+      </div>
+      <h2 className="mt-5 text-xl font-bold text-slate-900">No files yet</h2>
+      <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">Upload files to keep them organized in your bonUP Vault.</p>
+      <button type="button" onClick={onUpload} className="mt-5 inline-flex h-10 items-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800">
+        <PlusIcon className="h-4 w-4" />
+        Upload File
+      </button>
+    </div>
+  )
+}
+
+function NoMatchesState() {
+  return (
+    <div className="flex min-h-[320px] flex-col items-center justify-center p-8 text-center">
+      <h2 className="text-lg font-bold text-slate-900">No matching files</h2>
+      <p className="mt-2 text-sm text-slate-500">Adjust the category, search, or sort options.</p>
+    </div>
+  )
+}
+
+function FileTile({
+  file,
+  mode,
+  working,
+  onOpen,
+  onDownload,
+  onRemove,
+}: {
+  file: VaultFile
+  mode: ViewMode
+  working: boolean
+  onOpen: () => void
+  onDownload: () => void
+  onRemove: () => void
+}) {
+  const category = categoryForFile(file)
+  const Icon = fileIcon(category)
+  const isImage = category === 'images' && Boolean(file.file_url)
+
+  if (mode === 'list') {
+    return (
+      <div className="flex flex-col gap-3 p-4 hover:bg-slate-50 lg:flex-row lg:items-center lg:justify-between">
+        <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+            <Icon className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold text-slate-900">{file.file_name}</p>
+            <p className="mt-1 text-xs text-slate-500">{typeLabel(file)} · {formatBytes(file.file_size)} · {formatDate(file.uploaded_at)}</p>
+          </div>
+        </button>
+        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onRemove={onRemove} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="group overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-slate-300 hover:shadow-md">
+      <button type="button" onClick={onOpen} className="block w-full text-left">
+        <div className="flex aspect-[4/3] items-center justify-center bg-slate-50">
+          {isImage ? (
+            <img src={file.file_url || ''} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm">
+              <Icon className="h-8 w-8" />
+            </div>
+          )}
+        </div>
+        <div className="p-4">
+          <p className="truncate text-sm font-bold text-slate-900">{file.file_name}</p>
+          <p className="mt-1 text-xs text-slate-500">{typeLabel(file)} · {formatBytes(file.file_size)}</p>
+          <p className="mt-2 text-xs text-slate-400">{formatDate(file.uploaded_at)}</p>
+        </div>
+      </button>
+      <div className="border-t border-slate-100 px-3 py-2">
+        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onRemove={onRemove} />
+      </div>
+    </div>
+  )
+}
+
+function FileActions({
+  working,
+  onOpen,
+  onDownload,
+  onRemove,
+}: {
+  working: boolean
+  onOpen: () => void
+  onDownload: () => void
+  onRemove: () => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button type="button" onClick={onOpen} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">View</button>
+      <button type="button" onClick={onDownload} className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50" title="Download">
+        <ArrowDownTrayIcon className="h-4 w-4" />
+      </button>
+      <button type="button" onClick={onRemove} disabled={working} className="rounded-lg border border-red-200 p-1.5 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50" title="Remove from Vault">
+        <TrashIcon className="h-4 w-4" />
+      </button>
+    </div>
+  )
+}
+
+function FileDetailsModal({
+  file,
+  working,
+  onClose,
+  onDownload,
+  onRemove,
+}: {
+  file: VaultFile
+  working: boolean
+  onClose: () => void
+  onDownload: () => void
+  onRemove: () => void
+}) {
+  const category = categoryForFile(file)
+  const Icon = fileIcon(category)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-lg bg-white shadow-xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5">
+          <div className="min-w-0">
+            <h2 className="truncate text-lg font-bold text-slate-900">{file.file_name}</h2>
+            <p className="mt-1 text-sm text-slate-500">{typeLabel(file)} · {formatBytes(file.file_size)} · {formatDate(file.uploaded_at)}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="grid max-h-[calc(90vh-78px)] overflow-y-auto lg:grid-cols-[1.5fr_1fr]">
+          <div className="flex min-h-[320px] items-center justify-center bg-slate-50 p-5">
+            {category === 'images' && file.file_url ? <img src={file.file_url} alt="" className="max-h-[560px] max-w-full rounded-lg object-contain" /> : null}
+            {category === 'videos' && file.file_url ? <video src={file.file_url} controls className="max-h-[560px] max-w-full rounded-lg" /> : null}
+            {category === 'audio' && file.file_url ? <audio src={file.file_url} controls className="w-full max-w-md" /> : null}
+            {category === 'documents' && file.file_url ? <iframe src={file.file_url} title={file.file_name} className="h-[560px] w-full rounded-lg border border-slate-200 bg-white" /> : null}
+            {(!file.file_url || category === 'other') && (
+              <div className="text-center text-slate-500">
+                <Icon className="mx-auto h-14 w-14" />
+                <p className="mt-3 text-sm font-semibold">Preview is not available for this file.</p>
+              </div>
+            )}
+          </div>
+          <aside className="border-t border-slate-200 p-5 lg:border-l lg:border-t-0">
+            <h3 className="text-sm font-bold uppercase text-slate-400">Details</h3>
+            <dl className="mt-4 space-y-4 text-sm">
+              <Detail label="Filename" value={file.file_name} />
+              <Detail label="Type" value={typeLabel(file)} />
+              <Detail label="Content type" value={file.content_type || 'Not available'} />
+              <Detail label="Size" value={formatBytes(file.file_size)} />
+              <Detail label="Uploaded" value={formatDate(file.uploaded_at)} />
+            </dl>
+            <div className="mt-6 flex flex-col gap-2">
+              <button type="button" onClick={onDownload} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50">Download</button>
+              <button type="button" onClick={onRemove} disabled={working} className="h-10 rounded-lg border border-red-200 px-4 text-sm font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50">Remove from Vault</button>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs font-bold uppercase text-slate-400">{label}</dt>
+      <dd className="mt-1 break-words font-semibold text-slate-800">{value}</dd>
     </div>
   )
 }

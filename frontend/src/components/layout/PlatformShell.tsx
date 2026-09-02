@@ -102,7 +102,7 @@ export default function PlatformShell() {
             <span style={{ color: 'rgba(255,255,255,0.45)' }}>bon</span>
             <span style={{ color: '#F5A623' }}>UP</span>
           </div>
-          {!compact && <div style={{ fontSize: 24, fontWeight: 800, color: '#FFFFFF', lineHeight: 1 }}>Platform</div>}
+          {!compact && <div style={{ fontSize: 24, fontWeight: 800, color: '#FFFFFF', lineHeight: 1 }}>World</div>}
         </div>
 
         <nav className={`flex-1 overflow-y-auto ${compact ? 'px-2 py-3' : 'px-3 py-3'}`}>

@@ -6,13 +6,14 @@ import uuid
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage
-from django.db import transaction
+from django.db import models, transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.response import Response
+from rest_framework.decorators import action
 from rest_framework.viewsets import ViewSet
 
-from backend.billing.storage import check_storage_write_admission
+from backend.billing.storage import check_storage_write_admission, get_storage_capacity_snapshot
 from backend.uploads.models import Upload
 from backend.uploads.services import (
     DEFAULT_STORAGE_BACKEND_ALIAS,
@@ -22,7 +23,7 @@ from backend.uploads.services import (
     remove_user_object_access,
 )
 
-VALID_FILE_TYPES = {"pdf", "image", "video", "slides", "document"}
+VALID_FILE_TYPES = {"pdf", "image", "video", "audio", "slides", "document", "other"}
 logger = logging.getLogger(__name__)
 
 
@@ -47,12 +48,23 @@ def _cleanup_saved_object(saved_key):
         logger.exception("Failed to clean up saved upload object after database failure.")
 
 
+def _active_uploads_for_user(user):
+    return Upload.objects.filter(user=user).filter(
+        models.Q(stored_object__isnull=True)
+        | models.Q(
+            stored_object__user_accesses__user=user,
+            stored_object__user_accesses__is_active=True,
+        )
+    ).distinct()
+
+
 def _serialize(upload):
     return {
         "id": str(upload.id),
         "file_url": get_upload_url(upload),
         "file_name": upload.file_name,
         "file_type": upload.file_type,
+        "content_type": upload.stored_object.content_type if upload.stored_object_id else "",
         "file_size": upload.file_size,
         "related_contract": str(upload.related_contract_id) if upload.related_contract_id else None,
         "related_session": str(upload.related_session_id) if upload.related_session_id else None,
@@ -65,7 +77,7 @@ def _serialize(upload):
 class UploadsViewSet(ViewSet):
 
     def list(self, request):
-        qs = Upload.objects.filter(user=request.user)
+        qs = _active_uploads_for_user(request.user)
 
         contract_id = request.query_params.get("contract_id")
         if contract_id:
@@ -148,8 +160,17 @@ class UploadsViewSet(ViewSet):
 
         return Response(_serialize(upload), status=status.HTTP_201_CREATED)
 
+    @action(detail=False, methods=["get"], url_path="storage")
+    def storage(self, request):
+        snapshot = get_storage_capacity_snapshot(request.user)
+        return Response({
+            "capacity_bytes": snapshot.entitled_bytes,
+            "used_bytes": snapshot.used_bytes,
+            "available_bytes": snapshot.remaining_bytes,
+        })
+
     def destroy(self, request, pk=None):
-        upload = get_object_or_404(Upload, pk=pk, user=request.user)
+        upload = get_object_or_404(_active_uploads_for_user(request.user), pk=pk)
 
         if upload.stored_object_id:
             remove_user_object_access(request.user, upload.stored_object)

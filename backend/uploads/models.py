@@ -12,8 +12,10 @@ class Upload(models.Model):
         ("pdf", "PDF"),
         ("image", "Image"),
         ("video", "Video"),
+        ("audio", "Audio"),
         ("slides", "Slides"),
         ("document", "Document"),
+        ("other", "Other"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

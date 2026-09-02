@@ -47,6 +47,53 @@ def _grant_capacity(user, capacity_bytes):
     )
 
 
+def _managed_upload(
+    user,
+    *,
+    name="file.pdf",
+    key="uploads/managed/file.pdf",
+    size=1024,
+    file_type="pdf",
+    content_type="application/pdf",
+):
+    stored_object = create_stored_object_metadata(
+        backend="default",
+        bucket="test-bucket",
+        object_key=key,
+        size_bytes=size,
+        content_type=content_type,
+    )
+    grant_user_object_access(user, stored_object)
+    return Upload.objects.create(
+        user=user,
+        file_url="https://example.com/file.pdf",
+        file_name=name,
+        file_type=file_type,
+        file_size=size,
+        storage_key=key,
+        stored_object=stored_object,
+    )
+
+
+class UploadStorageSummaryTests(TestCase):
+    def setUp(self):
+        self.user = make_user("vault_summary", "vault_summary@example.com")
+        self.client = authed_client(self.user)
+
+    def test_authenticated_storage_summary_returns_authoritative_values(self):
+        _grant_capacity(self.user, 10)
+        _managed_upload(self.user, size=4)
+
+        r = self.client.get(f"{UPLOAD_URL}storage/")
+
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data, {
+            "capacity_bytes": 10,
+            "used_bytes": 4,
+            "available_bytes": 6,
+        })
+
+
 class UploadCreateTests(TestCase):
 
     def setUp(self):
@@ -157,10 +204,10 @@ class UploadCreateTests(TestCase):
 
     @patch("backend.api.uploads.views.default_storage")
     def test_upload_all_valid_file_types(self, mock_storage):
-        mock_storage.save.side_effect = [f"uploads/1/abc/file.{ft}" for ft in ("pdf", "image", "video", "slides", "document")]
+        mock_storage.save.side_effect = [f"uploads/1/abc/file.{ft}" for ft in ("pdf", "image", "video", "audio", "slides", "document", "other")]
         mock_storage.url.return_value = _MOCK_FILE_URL
 
-        for ft in ("pdf", "image", "video", "slides", "document"):
+        for ft in ("pdf", "image", "video", "audio", "slides", "document", "other"):
             r = self.client.post(
                 UPLOAD_URL,
                 {"file": _pdf(f"file.{ft}"), "file_type": ft},
@@ -379,6 +426,32 @@ class UploadListTests(TestCase):
         self.assertEqual(r.data[0]["file_url"], "https://legacy-provider.example/file.pdf")
         mock_storage.url.assert_not_called()
 
+    def test_list_includes_active_canonical_uploads_for_user(self):
+        upload = _managed_upload(self.user, key="uploads/list/active.pdf")
+
+        r = self.client.get(UPLOAD_URL)
+
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual([item["id"] for item in r.data], [str(upload.id)])
+        self.assertEqual(r.data[0]["content_type"], "application/pdf")
+
+    def test_list_excludes_another_users_canonical_upload(self):
+        _managed_upload(self.other, key="uploads/list/other.pdf")
+
+        r = self.client.get(UPLOAD_URL)
+
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data, [])
+
+    def test_list_excludes_removed_canonical_upload(self):
+        upload = _managed_upload(self.user, key="uploads/list/removed.pdf")
+        upload.stored_object.user_accesses.filter(user=self.user).update(is_active=False, is_visible=False)
+
+        r = self.client.get(UPLOAD_URL)
+
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data, [])
+
     def test_list_filter_by_is_draft_document_true(self):
         self._make_upload(is_draft_document=True)
         self._make_upload(is_draft_document=False)
@@ -452,10 +525,12 @@ class UploadDeleteTests(TestCase):
             storage_key=stored_object.object_key,
             stored_object=stored_object,
         )
+        self.assertEqual(get_user_active_storage_usage_bytes(self.user), 1024)
 
         r = self.client.delete(f"{UPLOAD_URL}{upload.id}/")
 
         self.assertEqual(r.status_code, 204)
+        self.assertEqual(get_user_active_storage_usage_bytes(self.user), 0)
         access.refresh_from_db()
         self.assertFalse(access.is_active)
         self.assertFalse(access.is_visible)

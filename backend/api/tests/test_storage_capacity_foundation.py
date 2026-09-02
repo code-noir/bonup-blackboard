@@ -1,6 +1,7 @@
 # backend/api/tests/test_storage_capacity_foundation.py
 
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
@@ -20,6 +21,13 @@ from backend.billing.models import (
     ToolEntitlementOrigin,
     UserSubscription,
 )
+from backend.uploads.models import StoredObject
+from backend.uploads.services import (
+    create_stored_object_metadata,
+    grant_user_object_access,
+    remove_user_object_access,
+)
+
 from backend.billing.storage import (
     BLACKBOD_INCLUDED_AI_ALLOWANCE,
     BLACKBOD_INCLUDED_STORAGE_BYTES,
@@ -28,6 +36,7 @@ from backend.billing.storage import (
     can_store_bytes,
     create_storage_capacity_grant,
     evaluate_storage_purchase_eligibility,
+    get_user_active_storage_usage_bytes,
     get_entitled_storage_bytes,
     get_launch_storage_products,
     get_platform_storage_capacity_report,
@@ -386,3 +395,169 @@ class StorageCapacityFoundationTests(TestCase):
         self.assertEqual(snapshot.entitled_bytes, 0)
         self.assertEqual(snapshot.used_bytes, 1 * GIB)
         self.assertEqual(snapshot.remaining_bytes, 0)
+
+
+class AuthoritativeActiveStorageUsageTests(TestCase):
+    MIB = 1024 ** 2
+
+    def make_object(self, key, size_bytes):
+        return create_stored_object_metadata(
+            backend="default",
+            bucket="test-bucket",
+            object_key=key,
+            size_bytes=size_bytes,
+        )
+
+    def test_no_canonical_objects_reports_zero_usage_under_compatibility_rule(self):
+        user = make_user("usage_none", "usage_none@example.com")
+
+        snapshot = get_storage_capacity_snapshot(user)
+
+        self.assertEqual(get_user_active_storage_usage_bytes(user), 0)
+        self.assertEqual(snapshot.used_bytes, 0)
+
+    def test_one_quota_counting_object_reports_correct_usage(self):
+        user = make_user("usage_one", "usage_one@example.com")
+        obj = self.make_object("uploads/usage/one.pdf", 100 * self.MIB)
+        grant_user_object_access(user, obj)
+
+        self.assertEqual(get_user_active_storage_usage_bytes(user), 100 * self.MIB)
+
+    def test_multiple_quota_counting_objects_sum_correctly(self):
+        user = make_user("usage_many", "usage_many@example.com")
+        first = self.make_object("uploads/usage/first.pdf", 100 * self.MIB)
+        second = self.make_object("uploads/usage/second.pdf", 250 * self.MIB)
+        grant_user_object_access(user, first)
+        grant_user_object_access(user, second)
+
+        self.assertEqual(get_user_active_storage_usage_bytes(user), 350 * self.MIB)
+
+    def test_non_quota_reference_is_excluded_from_usage(self):
+        user = make_user("usage_non_quota", "usage_non_quota@example.com")
+        counted = self.make_object("uploads/usage/counted.pdf", 100 * self.MIB)
+        free = self.make_object("uploads/usage/free.pdf", 500 * self.MIB)
+        grant_user_object_access(user, counted, counts_toward_quota=True)
+        grant_user_object_access(user, free, counts_toward_quota=False)
+
+        self.assertEqual(get_user_active_storage_usage_bytes(user), 100 * self.MIB)
+
+    def test_inactive_removed_access_is_excluded_from_usage(self):
+        user = make_user("usage_removed", "usage_removed@example.com")
+        obj = self.make_object("uploads/usage/removed.pdf", 100 * self.MIB)
+        grant_user_object_access(user, obj)
+        remove_user_object_access(user, obj)
+
+        self.assertEqual(get_user_active_storage_usage_bytes(user), 0)
+
+    def test_invisible_active_quota_reference_still_counts(self):
+        user = make_user("usage_invisible", "usage_invisible@example.com")
+        obj = self.make_object("uploads/usage/invisible.pdf", 100 * self.MIB)
+        grant_user_object_access(user, obj, is_visible=False, counts_toward_quota=True)
+
+        self.assertEqual(get_user_active_storage_usage_bytes(user), 100 * self.MIB)
+
+    def test_shared_object_counts_once_for_each_user(self):
+        first_user = make_user("usage_shared_a", "usage_shared_a@example.com")
+        second_user = make_user("usage_shared_b", "usage_shared_b@example.com")
+        obj = self.make_object("uploads/usage/shared.pdf", 100 * self.MIB)
+        grant_user_object_access(first_user, obj)
+        grant_user_object_access(second_user, obj)
+
+        self.assertEqual(StoredObject.objects.count(), 1)
+        self.assertEqual(get_user_active_storage_usage_bytes(first_user), 100 * self.MIB)
+        self.assertEqual(get_user_active_storage_usage_bytes(second_user), 100 * self.MIB)
+
+    def test_duplicate_user_grant_does_not_double_count_usage(self):
+        user = make_user("usage_duplicate", "usage_duplicate@example.com")
+        obj = self.make_object("uploads/usage/duplicate.pdf", 100 * self.MIB)
+        first = grant_user_object_access(user, obj)
+        second = grant_user_object_access(user, obj)
+
+        self.assertEqual(first.id, second.id)
+        self.assertEqual(get_user_active_storage_usage_bytes(user), 100 * self.MIB)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_removal_frees_logical_quota_and_preserves_physical_object(self, mock_storage):
+        user = make_user("usage_freed", "usage_freed@example.com")
+        create_tool_entitlement(user=user, product=blackbod_product())
+        obj = self.make_object("uploads/usage/freed.pdf", 100 * self.MIB)
+        grant_user_object_access(user, obj)
+
+        before = get_storage_capacity_snapshot(user)
+        remove_user_object_access(user, obj)
+        after = get_storage_capacity_snapshot(user)
+
+        self.assertEqual(before.entitled_bytes, 8 * GIB)
+        self.assertEqual(before.used_bytes, 100 * self.MIB)
+        self.assertEqual(after.entitled_bytes, 8 * GIB)
+        self.assertEqual(after.used_bytes, 0)
+        self.assertTrue(StoredObject.objects.filter(pk=obj.pk).exists())
+        mock_storage.delete.assert_not_called()
+
+    def test_can_store_bytes_allows_exact_remaining_capacity_with_canonical_usage(self):
+        user = make_user("usage_exact", "usage_exact@example.com")
+        grant(user, 8)
+        obj = self.make_object("uploads/usage/exact.pdf", 3 * GIB)
+        grant_user_object_access(user, obj)
+
+        result = can_store_bytes(user, 5 * GIB)
+
+        self.assertTrue(result.allowed)
+        self.assertEqual(result.reason, "within_entitlement")
+        self.assertEqual(result.used_bytes, 3 * GIB)
+
+    def test_can_store_bytes_rejects_one_byte_over_capacity_with_canonical_usage(self):
+        user = make_user("usage_over", "usage_over@example.com")
+        grant(user, 8)
+        obj = self.make_object("uploads/usage/over.pdf", 3 * GIB)
+        grant_user_object_access(user, obj)
+
+        result = can_store_bytes(user, 5 * GIB + 1)
+
+        self.assertFalse(result.allowed)
+        self.assertEqual(result.reason, "exceeds_entitlement")
+        self.assertEqual(result.used_bytes, 3 * GIB)
+
+    def test_purchased_storage_plus_later_blackbod_included_storage_are_cumulative(self):
+        user = make_user("usage_purchase_then_tool", "usage_purchase_then_tool@example.com")
+        grant(user, 8)
+        create_tool_entitlement(user=user, product=blackbod_product())
+
+        self.assertEqual(get_entitled_storage_bytes(user), 16 * GIB)
+
+    def test_legacy_usage_bytes_remain_compatibility_fallback_without_canonical_records(self):
+        user = make_user("usage_legacy", "usage_legacy@example.com")
+        create_tool_entitlement(user=user, product=blackbod_product())
+        StorageEntitlement.objects.create(user=user, capacity_bytes=8 * GIB, usage_bytes=3 * GIB)
+
+        snapshot = get_storage_capacity_snapshot(user)
+
+        self.assertEqual(snapshot.entitled_bytes, 8 * GIB)
+        self.assertEqual(snapshot.used_bytes, 3 * GIB)
+        self.assertEqual(snapshot.remaining_bytes, 5 * GIB)
+
+    def test_canonical_quota_records_prevent_legacy_double_counting(self):
+        user = make_user("usage_no_double", "usage_no_double@example.com")
+        create_tool_entitlement(user=user, product=blackbod_product())
+        StorageEntitlement.objects.create(user=user, capacity_bytes=8 * GIB, usage_bytes=3 * GIB)
+        obj = self.make_object("uploads/usage/no-double.pdf", 1 * GIB)
+        grant_user_object_access(user, obj)
+
+        snapshot = get_storage_capacity_snapshot(user)
+
+        self.assertEqual(snapshot.used_bytes, 1 * GIB)
+        self.assertEqual(snapshot.remaining_bytes, 7 * GIB)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_usage_calculation_does_not_call_storage_provider(self, mock_storage):
+        user = make_user("usage_no_provider", "usage_no_provider@example.com")
+        obj = self.make_object("uploads/usage/no-provider.pdf", 100 * self.MIB)
+        grant_user_object_access(user, obj)
+
+        self.assertEqual(get_user_active_storage_usage_bytes(user), 100 * self.MIB)
+
+        mock_storage.delete.assert_not_called()
+        mock_storage.save.assert_not_called()
+        mock_storage.open.assert_not_called()
+        mock_storage.url.assert_not_called()
+

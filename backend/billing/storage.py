@@ -10,6 +10,8 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
+from backend.uploads.models import StoredObject, UserObjectAccess
+
 from .commercial import has_tool, validate_storage_product
 from .models import (
     CommercialEntitlementStatus,
@@ -114,7 +116,23 @@ def get_entitled_storage_bytes(user, now=None):
     return get_active_tool_included_storage_bytes(user, now=now) + get_granted_storage_capacity_bytes(user, now=now)
 
 
-def get_used_storage_bytes(user, now=None):
+def get_user_active_storage_usage_bytes(user):
+    result = StoredObject.objects.filter(
+        user_accesses__user=user,
+        user_accesses__is_active=True,
+        user_accesses__counts_toward_quota=True,
+    ).distinct().aggregate(total=models.Sum("size_bytes"))
+    return result["total"] or 0
+
+
+def user_has_canonical_quota_usage_records(user):
+    return UserObjectAccess.objects.filter(
+        user=user,
+        counts_toward_quota=True,
+    ).exists()
+
+
+def get_legacy_used_storage_bytes(user, now=None):
     now = now or timezone.now()
     entitlement = StorageEntitlement.objects.filter(
         user=user,
@@ -124,6 +142,17 @@ def get_used_storage_bytes(user, now=None):
         models.Q(ends_at__isnull=True) | models.Q(ends_at__gt=now)
     ).order_by("-starts_at").first()
     return entitlement.usage_bytes if entitlement else 0
+
+
+def get_used_storage_bytes(user, now=None):
+    """Return canonical quota usage when quota records exist, otherwise legacy usage.
+
+    Legacy StorageEntitlement.usage_bytes remains a transitional fallback until
+    existing Upload rows are migrated into StoredObject/UserObjectAccess.
+    """
+    if user_has_canonical_quota_usage_records(user):
+        return get_user_active_storage_usage_bytes(user)
+    return get_legacy_used_storage_bytes(user, now=now)
 
 
 def get_storage_capacity_snapshot(user, now=None):
@@ -148,6 +177,11 @@ def can_store_bytes(user, incoming_bytes, now=None):
         remaining_bytes=snapshot.remaining_bytes,
         incoming_bytes=incoming_bytes,
     )
+
+
+def check_storage_write_admission(user, incoming_bytes, now=None):
+    """Preflight write admission boundary; not a concurrency-safe reservation."""
+    return can_store_bytes(user, incoming_bytes, now=now)
 
 
 def evaluate_storage_purchase_eligibility(

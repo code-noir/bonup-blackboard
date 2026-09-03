@@ -31,13 +31,14 @@ from backend.emailing.services import (
 )
 from backend.uploads.models import Upload, VaultEmailDelivery, VaultShare
 from backend.uploads.services import (
-    DEFAULT_STORAGE_BACKEND_ALIAS,
+    create_managed_upload,
     create_stored_object_metadata,
     get_storage_backend,
     get_stored_object_url,
     get_upload_url,
     grant_user_object_access,
     remove_user_object_access,
+    StorageAdmissionRejected,
 )
 
 VALID_FILE_TYPES = {"pdf", "image", "video", "audio", "slides", "document", "other"}
@@ -274,58 +275,28 @@ class UploadsViewSet(ViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        incoming_size = file.size
+        contract_id = request.data.get("contract_id") or None
+        session_id = request.data.get("session_id") or None
+        is_prep = request.data.get("is_prep_material", "false")
+        if isinstance(is_prep, str):
+            is_prep = is_prep.lower() in ("true", "1", "yes")
+
         try:
-            storage_check = check_storage_write_admission(request.user, incoming_size)
+            upload = create_managed_upload(
+                user=request.user,
+                file=file,
+                file_type=file_type,
+                related_contract_id=contract_id,
+                related_session_id=session_id,
+                is_prep_material=is_prep,
+            )
         except ValidationError:
             return Response(
                 {"error": "Invalid file size.", "code": "invalid_file_size"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if not storage_check.allowed:
-            return _storage_capacity_response(storage_check)
-
-        original_name = file.name
-        storage_key = f"uploads/{request.user.id}/{uuid.uuid4().hex}/{original_name}"
-        saved_key = default_storage.save(storage_key, file)
-
-        try:
-            file_url = default_storage.url(saved_key)
-            contract_id = request.data.get("contract_id") or None
-            session_id = request.data.get("session_id") or None
-            is_prep = request.data.get("is_prep_material", "false")
-            if isinstance(is_prep, str):
-                is_prep = is_prep.lower() in ("true", "1", "yes")
-
-            with transaction.atomic():
-                stored_object = create_stored_object_metadata(
-                    backend=DEFAULT_STORAGE_BACKEND_ALIAS,
-                    bucket=getattr(settings, "AWS_STORAGE_BUCKET_NAME", ""),
-                    object_key=saved_key,
-                    size_bytes=incoming_size,
-                    content_type=getattr(file, "content_type", "") or "",
-                )
-                grant_user_object_access(
-                    request.user,
-                    stored_object,
-                    is_visible=True,
-                    counts_toward_quota=True,
-                )
-                upload = Upload.objects.create(
-                    user=request.user,
-                    file_url=file_url,
-                    file_name=original_name,
-                    file_type=file_type,
-                    file_size=incoming_size,
-                    storage_key=saved_key,
-                    stored_object=stored_object,
-                    related_contract_id=contract_id,
-                    related_session_id=session_id,
-                    is_prep_material=bool(is_prep),
-                )
-        except Exception:
-            _cleanup_saved_object(saved_key)
-            raise
+        except StorageAdmissionRejected as exc:
+            return _storage_capacity_response(exc.check)
 
         return Response(_serialize(upload), status=status.HTTP_201_CREATED)
 

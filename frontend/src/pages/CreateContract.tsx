@@ -266,6 +266,9 @@ interface AttachmentFile {
   type: AttachFileType
   uploading?: boolean
   progress?: number
+  uploadId?: string
+  documentId?: string
+  error?: string
 }
 
 function getFileType(name: string): AttachFileType {
@@ -645,6 +648,7 @@ export default function CreateContract() {
   const [attachFiles, setAttachFiles] = useState<AttachmentFile[]>(ATTACH_PLACEHOLDER)
   const [attachFilter, setAttachFilter] = useState<AttachFilter>('all')
   const [attachDragOver, setAttachDragOver] = useState(false)
+  const [attachError, setAttachError] = useState('')
   const attachInputRef = useRef<HTMLInputElement>(null)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -3559,31 +3563,57 @@ export default function CreateContract() {
                         </div>
                       )
                     })() : activeTool === 'Attachments' ? (() => {
-                      function processFiles(rawFiles: FileList | File[]) {
+                      function uploadTypeForAttachment(type: AttachFileType) {
+                        if (type === 'docx' || type === 'xlsx') return 'document'
+                        return type
+                      }
+
+                      async function processFiles(rawFiles: FileList | File[]) {
+                        if (!currentContractId) {
+                          setAttachError('Save the contract before adding documents.')
+                          return
+                        }
+
+                        setAttachError('')
                         const arr = Array.from(rawFiles)
                         arr.forEach((raw) => {
                           const id = `${Date.now()}-${Math.random()}`
+                          const type = getFileType(raw.name)
                           const newFile: AttachmentFile = {
                             id,
                             name: raw.name,
                             sizeStr: formatBytes(raw.size),
                             sizeBytes: raw.size,
                             date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-                            type: getFileType(raw.name),
+                            type,
                             uploading: true,
                             progress: 0,
                           }
                           setAttachFiles((prev) => [newFile, ...prev])
-                          let pct = 0
-                          const iv = setInterval(() => {
-                            pct = Math.min(100, pct + 15 + Math.random() * 20)
-                            if (pct >= 100) {
-                              clearInterval(iv)
-                              setAttachFiles((prev) => prev.map((f) => f.id === id ? { ...f, uploading: false, progress: 100 } : f))
-                            } else {
-                              setAttachFiles((prev) => prev.map((f) => f.id === id ? { ...f, progress: pct } : f))
-                            }
-                          }, 140)
+
+                          const form = new FormData()
+                          form.append('file', raw)
+                          form.append('file_type', uploadTypeForAttachment(type))
+                          form.append('title', raw.name)
+
+                          api.post(`/contracts/${currentContractId}/documents/`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
+                            .then(({ data }) => {
+                              setAttachFiles((prev) => prev.map((f) => f.id === id ? {
+                                ...f,
+                                uploading: false,
+                                progress: 100,
+                                uploadId: data.upload_id,
+                                documentId: data.id,
+                              } : f))
+                            })
+                            .catch((error) => {
+                              const code = error?.response?.data?.code
+                              const message = code === 'storage_capacity_exceeded'
+                                ? 'Storage capacity exceeded.'
+                                : 'Upload failed.'
+                              setAttachFiles((prev) => prev.map((f) => f.id === id ? { ...f, uploading: false, progress: 0, error: message } : f))
+                              setAttachError(message)
+                            })
                         })
                       }
 
@@ -3620,6 +3650,11 @@ export default function CreateContract() {
                           />
 
                           {/* Drop zone */}
+                          {attachError && (
+                            <p style={{ fontSize: 12, color: '#FCA5A5', margin: '0 0 10px', lineHeight: 1.4 }}>
+                              {attachError}
+                            </p>
+                          )}
                           <div
                             onClick={() => attachInputRef.current?.click()}
                             onDragOver={(e) => { e.preventDefault(); setAttachDragOver(true) }}
@@ -3705,12 +3740,12 @@ export default function CreateContract() {
                                     <div style={{
                                       height: '100%', borderRadius: 2,
                                       background: '#243447',
-                                      width: `${file.progress ?? 0}%`,
+                                      width: '66%',
                                       transition: 'width 0.14s linear',
                                     }} />
                                   </div>
                                   <p style={{ fontSize: 11, color: '#6B7280', textAlign: 'right', margin: '4px 0 0' }}>
-                                    {Math.round(file.progress ?? 0)}%
+                                    Uploading
                                   </p>
                                 </>
                               ) : (
@@ -3733,8 +3768,8 @@ export default function CreateContract() {
                                     }}>
                                       {file.name}
                                     </p>
-                                    <p style={{ fontSize: 11, color: '#9CA3AF', margin: '2px 0 0' }}>
-                                      {file.sizeStr} · {file.date}
+                                    <p style={{ fontSize: 11, color: file.error ? '#DC2626' : '#9CA3AF', margin: '2px 0 0' }}>
+                                      {file.error || `${file.sizeStr} · ${file.date}`}
                                     </p>
                                   </div>
                                   {/* Actions */}

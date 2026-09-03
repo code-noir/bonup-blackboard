@@ -111,10 +111,9 @@ class UploadCreateTests(TestCase):
         self.addCleanup(self.service_storage_patcher.stop)
         self.mock_service_storage.url.return_value = _MOCK_FILE_URL
 
-    @patch("backend.api.uploads.views.default_storage")
-    def test_upload_creates_record(self, mock_storage):
-        mock_storage.save.return_value = _MOCK_KEY
-        mock_storage.url.return_value = _MOCK_FILE_URL
+    def test_upload_creates_record(self):
+        self.mock_service_storage.save.return_value = _MOCK_KEY
+        self.mock_service_storage.url.return_value = _MOCK_FILE_URL
 
         r = self.client.post(
             UPLOAD_URL,
@@ -143,10 +142,9 @@ class UploadCreateTests(TestCase):
             ).exists()
         )
 
-    @patch("backend.api.uploads.views.default_storage")
-    def test_upload_stores_correct_file_size(self, mock_storage):
-        mock_storage.save.return_value = _MOCK_KEY
-        mock_storage.url.return_value = _MOCK_FILE_URL
+    def test_upload_stores_correct_file_size(self):
+        self.mock_service_storage.save.return_value = _MOCK_KEY
+        self.mock_service_storage.url.return_value = _MOCK_FILE_URL
 
         r = self.client.post(
             UPLOAD_URL,
@@ -158,10 +156,9 @@ class UploadCreateTests(TestCase):
         self.assertEqual(r.data["file_size"], upload.file_size)
         self.assertEqual(upload.stored_object.size_bytes, upload.file_size)
 
-    @patch("backend.api.uploads.views.default_storage")
-    def test_upload_with_prep_material_flag(self, mock_storage):
-        mock_storage.save.return_value = _MOCK_KEY
-        mock_storage.url.return_value = _MOCK_FILE_URL
+    def test_upload_with_prep_material_flag(self):
+        self.mock_service_storage.save.return_value = _MOCK_KEY
+        self.mock_service_storage.url.return_value = _MOCK_FILE_URL
 
         r = self.client.post(
             UPLOAD_URL,
@@ -173,10 +170,9 @@ class UploadCreateTests(TestCase):
         upload = Upload.objects.get(user=self.user)
         self.assertTrue(upload.is_prep_material)
 
-    @patch("backend.api.uploads.views.default_storage")
-    def test_upload_with_contract_id(self, mock_storage):
-        mock_storage.save.return_value = _MOCK_KEY
-        mock_storage.url.return_value = _MOCK_FILE_URL
+    def test_upload_with_contract_id(self):
+        self.mock_service_storage.save.return_value = _MOCK_KEY
+        self.mock_service_storage.url.return_value = _MOCK_FILE_URL
         other = make_user("other_uc", "other_uc@example.com")
         contract = make_contract(self.user, other.email)
 
@@ -208,10 +204,9 @@ class UploadCreateTests(TestCase):
         r = self.client.post(UPLOAD_URL, {"file": _pdf()}, format="multipart")
         self.assertEqual(r.status_code, 400)
 
-    @patch("backend.api.uploads.views.default_storage")
-    def test_upload_all_valid_file_types(self, mock_storage):
-        mock_storage.save.side_effect = [f"uploads/1/abc/file.{ft}" for ft in ("pdf", "image", "video", "audio", "slides", "document", "other")]
-        mock_storage.url.return_value = _MOCK_FILE_URL
+    def test_upload_all_valid_file_types(self):
+        self.mock_service_storage.save.side_effect = [f"uploads/1/abc/file.{ft}" for ft in ("pdf", "image", "video", "audio", "slides", "document", "other")]
+        self.mock_service_storage.url.return_value = _MOCK_FILE_URL
 
         for ft in ("pdf", "image", "video", "audio", "slides", "document", "other"):
             r = self.client.post(
@@ -221,22 +216,20 @@ class UploadCreateTests(TestCase):
             )
             self.assertEqual(r.status_code, 201, f"Expected 201 for file_type={ft}")
 
-    @patch("backend.api.uploads.views.default_storage")
-    def test_upload_exactly_filling_remaining_capacity_succeeds(self, mock_storage):
+    def test_upload_exactly_filling_remaining_capacity_succeeds(self):
         exact_user = make_user("uploader_exact", "uploader_exact@example.com")
         client = authed_client(exact_user)
         content = b"12345"
         _grant_capacity(exact_user, len(content))
-        mock_storage.save.return_value = "uploads/exact/file.pdf"
-        mock_storage.url.return_value = _MOCK_FILE_URL
+        self.mock_service_storage.save.return_value = "uploads/exact/file.pdf"
+        self.mock_service_storage.url.return_value = _MOCK_FILE_URL
 
         r = client.post(UPLOAD_URL, {"file": _pdf(content=content), "file_type": "pdf"}, format="multipart")
 
         self.assertEqual(r.status_code, 201)
         self.assertEqual(get_user_active_storage_usage_bytes(exact_user), len(content))
 
-    @patch("backend.api.uploads.views.default_storage")
-    def test_upload_one_byte_over_remaining_capacity_is_rejected_before_storage(self, mock_storage):
+    def test_upload_one_byte_over_remaining_capacity_is_rejected_before_storage(self):
         limited_user = make_user("uploader_limited", "uploader_limited@example.com")
         client = authed_client(limited_user)
         _grant_capacity(limited_user, 4)
@@ -249,15 +242,14 @@ class UploadCreateTests(TestCase):
         self.assertEqual(r.data["used_bytes"], 0)
         self.assertEqual(r.data["available_bytes"], 4)
         self.assertEqual(r.data["incoming_bytes"], 5)
-        mock_storage.save.assert_not_called()
+        self.mock_service_storage.save.assert_not_called()
         self.assertFalse(StoredObject.objects.filter(user_accesses__user=limited_user).exists())
         self.assertFalse(UserObjectAccess.objects.filter(user=limited_user).exists())
         self.assertFalse(Upload.objects.filter(user=limited_user).exists())
 
-    @patch("backend.api.uploads.views.default_storage")
-    def test_server_side_uploaded_size_is_used_instead_of_client_file_size(self, mock_storage):
-        mock_storage.save.return_value = _MOCK_KEY
-        mock_storage.url.return_value = _MOCK_FILE_URL
+    def test_server_side_uploaded_size_is_used_instead_of_client_file_size(self):
+        self.mock_service_storage.save.return_value = _MOCK_KEY
+        self.mock_service_storage.url.return_value = _MOCK_FILE_URL
 
         r = self.client.post(
             UPLOAD_URL,
@@ -270,11 +262,10 @@ class UploadCreateTests(TestCase):
         self.assertEqual(upload.file_size, len(b"trusted"))
         self.assertEqual(upload.stored_object.size_bytes, len(b"trusted"))
 
-    @patch("backend.api.uploads.views.default_storage")
-    def test_stored_object_uses_actual_key_returned_by_storage_save(self, mock_storage):
+    def test_stored_object_uses_actual_key_returned_by_storage_save(self):
         actual_key = "uploads/actual/renamed-by-storage.pdf"
-        mock_storage.save.return_value = actual_key
-        mock_storage.url.return_value = _MOCK_FILE_URL
+        self.mock_service_storage.save.return_value = actual_key
+        self.mock_service_storage.url.return_value = _MOCK_FILE_URL
 
         r = self.client.post(UPLOAD_URL, {"file": _pdf(), "file_type": "pdf"}, format="multipart")
 
@@ -283,51 +274,49 @@ class UploadCreateTests(TestCase):
         self.assertEqual(upload.storage_key, actual_key)
         self.assertEqual(upload.stored_object.object_key, actual_key)
 
-    @patch("backend.api.uploads.views.default_storage")
-    def test_upload_response_uses_dynamic_provider_independent_url(self, mock_storage):
-        mock_storage.save.return_value = _MOCK_KEY
-        mock_storage.url.return_value = "https://legacy-write-url.example/file.pdf"
-        self.mock_service_storage.url.return_value = "https://current-provider.example/dynamic/file.pdf"
+    def test_upload_response_uses_dynamic_provider_independent_url(self):
+        self.mock_service_storage.save.return_value = _MOCK_KEY
+        self.mock_service_storage.url.side_effect = [
+            "https://legacy-write-url.example/file.pdf",
+            "https://current-provider.example/dynamic/file.pdf",
+        ]
 
         r = self.client.post(UPLOAD_URL, {"file": _pdf(), "file_type": "pdf"}, format="multipart")
 
         self.assertEqual(r.status_code, 201)
         self.assertEqual(r.data["file_url"], "https://current-provider.example/dynamic/file.pdf")
-        self.mock_service_storage.url.assert_called_once_with(_MOCK_KEY)
+        self.assertEqual(self.mock_service_storage.url.call_count, 2)
 
-    @patch("backend.api.uploads.views.default_storage")
-    def test_database_failure_after_storage_save_cleans_up_new_object(self, mock_storage):
-        mock_storage.save.return_value = _MOCK_KEY
-        mock_storage.url.return_value = _MOCK_FILE_URL
-
-        with patch("backend.api.uploads.views.Upload.objects.create", side_effect=RuntimeError("db failed")):
-            with self.assertRaisesMessage(RuntimeError, "db failed"):
-                self.client.post(UPLOAD_URL, {"file": _pdf(), "file_type": "pdf"}, format="multipart")
-
-        mock_storage.delete.assert_called_once_with(_MOCK_KEY)
-        self.assertEqual(StoredObject.objects.count(), 0)
-        self.assertEqual(UserObjectAccess.objects.count(), 0)
-        self.assertEqual(Upload.objects.count(), 0)
-
-    @patch("backend.api.uploads.views.default_storage")
-    def test_cleanup_failure_does_not_mask_original_database_error(self, mock_storage):
-        mock_storage.save.return_value = _MOCK_KEY
-        mock_storage.url.return_value = _MOCK_FILE_URL
-        mock_storage.delete.side_effect = RuntimeError("cleanup failed")
+    def test_database_failure_after_storage_save_cleans_up_new_object(self):
+        self.mock_service_storage.save.return_value = _MOCK_KEY
+        self.mock_service_storage.url.return_value = _MOCK_FILE_URL
 
         with patch("backend.api.uploads.views.Upload.objects.create", side_effect=RuntimeError("db failed")):
             with self.assertRaisesMessage(RuntimeError, "db failed"):
                 self.client.post(UPLOAD_URL, {"file": _pdf(), "file_type": "pdf"}, format="multipart")
 
-        mock_storage.delete.assert_called_once_with(_MOCK_KEY)
+        self.mock_service_storage.delete.assert_called_once_with(_MOCK_KEY)
         self.assertEqual(StoredObject.objects.count(), 0)
         self.assertEqual(UserObjectAccess.objects.count(), 0)
         self.assertEqual(Upload.objects.count(), 0)
 
-    @patch("backend.api.uploads.views.default_storage")
-    def test_upload_does_not_manually_mutate_legacy_storage_usage_bytes(self, mock_storage):
-        mock_storage.save.return_value = _MOCK_KEY
-        mock_storage.url.return_value = _MOCK_FILE_URL
+    def test_cleanup_failure_does_not_mask_original_database_error(self):
+        self.mock_service_storage.save.return_value = _MOCK_KEY
+        self.mock_service_storage.url.return_value = _MOCK_FILE_URL
+        self.mock_service_storage.delete.side_effect = RuntimeError("cleanup failed")
+
+        with patch("backend.api.uploads.views.Upload.objects.create", side_effect=RuntimeError("db failed")):
+            with self.assertRaisesMessage(RuntimeError, "db failed"):
+                self.client.post(UPLOAD_URL, {"file": _pdf(), "file_type": "pdf"}, format="multipart")
+
+        self.mock_service_storage.delete.assert_called_once_with(_MOCK_KEY)
+        self.assertEqual(StoredObject.objects.count(), 0)
+        self.assertEqual(UserObjectAccess.objects.count(), 0)
+        self.assertEqual(Upload.objects.count(), 0)
+
+    def test_upload_does_not_manually_mutate_legacy_storage_usage_bytes(self):
+        self.mock_service_storage.save.return_value = _MOCK_KEY
+        self.mock_service_storage.url.return_value = _MOCK_FILE_URL
         StorageEntitlement.objects.create(user=self.user, capacity_bytes=1024 * 1024, usage_bytes=123)
 
         r = self.client.post(UPLOAD_URL, {"file": _pdf(), "file_type": "pdf"}, format="multipart")

@@ -8,16 +8,33 @@
 import uuid
 from unittest.mock import patch
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
+from backend.billing.models import StorageCapacityGrantOrigin
+from backend.billing.storage import create_storage_capacity_grant, get_storage_capacity_snapshot
 from backend.documents.models import ContractDocument
-from backend.uploads.models import Upload
+from backend.uploads.models import StoredObject, Upload, UserObjectAccess
 from .helpers import authed_client, make_contract, make_user
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+
+def grant_capacity(user, capacity_bytes):
+    return create_storage_capacity_grant(
+        user=user,
+        capacity_bytes=capacity_bytes,
+        origin=StorageCapacityGrantOrigin.OPERATOR_ADJUSTMENT,
+        reason="test capacity",
+    )
+
+
+def pdf_upload(name="contract-device.pdf", content=b"%PDF-1.4 test contract"):
+    return SimpleUploadedFile(name, content, content_type="application/pdf")
 
 def make_upload(user, file_type="pdf"):
     return Upload.objects.create(
@@ -322,3 +339,165 @@ class DetachDocumentTests(TestCase):
         doc = attach_doc(self.contract, self.upload, self.initiator, "Auth Check")
         r = APIClient().delete(doc_detail_url(self.contract.id, doc.id))
         self.assertEqual(r.status_code, 401)
+
+
+class ContractDocumentDeviceUploadVaultIntegrationTests(TestCase):
+
+    def setUp(self):
+        self.initiator = make_user("init_doc_device", "init_doc_device@example.com")
+        self.counterparty = make_user("cp_doc_device", "cp_doc_device@example.com")
+        self.stranger = make_user("stranger_doc_device", "stranger_doc_device@example.com")
+        self.contract = make_contract(self.initiator, self.counterparty.email)
+        self.client = authed_client(self.initiator)
+        grant_capacity(self.initiator, 1024 * 1024)
+
+    def _post_file(self, client=None, contract=None, uploaded_file=None, **data):
+        uploaded_file = uploaded_file or pdf_upload(content=b"device bytes")
+        payload = {
+            "file": uploaded_file,
+            "file_type": "pdf",
+            "title": uploaded_file.name,
+        }
+        payload.update(data)
+        return (client or self.client).post(
+            doc_url((contract or self.contract).id),
+            payload,
+            format="multipart",
+        )
+
+    @patch("backend.uploads.services.default_storage")
+    def test_authorized_device_upload_creates_one_canonical_vault_object(self, mock_storage):
+        content = b"device contract bytes"
+        mock_storage.save.return_value = "uploads/device/contract.pdf"
+        mock_storage.url.return_value = "https://current-provider.example/uploads/device/contract.pdf"
+        before = get_storage_capacity_snapshot(self.initiator)
+
+        response = self._post_file(uploaded_file=pdf_upload(content=content), is_proof="true", description="Device contract")
+
+        self.assertEqual(response.status_code, 201)
+        upload = Upload.objects.get(pk=response.data["upload_id"])
+        doc = ContractDocument.objects.get(pk=response.data["id"])
+        self.assertEqual(doc.upload, upload)
+        self.assertEqual(doc.contract, self.contract)
+        self.assertEqual(doc.attached_by, self.initiator)
+        self.assertTrue(doc.is_proof)
+        self.assertEqual(doc.description, "Device contract")
+        self.assertIsNotNone(upload.stored_object_id)
+        self.assertEqual(StoredObject.objects.count(), 1)
+        self.assertEqual(upload.stored_object.object_key, "uploads/device/contract.pdf")
+        self.assertEqual(upload.stored_object.size_bytes, len(content))
+        self.assertEqual(upload.related_contract_id, self.contract.id)
+        self.assertEqual(
+            UserObjectAccess.objects.filter(
+                user=self.initiator,
+                stored_object=upload.stored_object,
+                is_active=True,
+                is_visible=True,
+                counts_toward_quota=True,
+            ).count(),
+            1,
+        )
+        after = get_storage_capacity_snapshot(self.initiator)
+        self.assertEqual(after.used_bytes, before.used_bytes + len(content))
+        vault_response = self.client.get("/api/uploads/")
+        self.assertEqual(vault_response.status_code, 200)
+        self.assertIn(str(upload.id), [item["id"] for item in vault_response.data])
+        mock_storage.save.assert_called_once()
+        mock_storage.open.assert_not_called()
+        mock_storage.delete.assert_not_called()
+
+    @patch("backend.uploads.services.default_storage")
+    def test_unauthorized_contract_user_cannot_device_upload(self, mock_storage):
+        response = self._post_file(client=authed_client(self.stranger))
+
+        self.assertEqual(response.status_code, 403)
+        mock_storage.save.assert_not_called()
+        self.assertEqual(StoredObject.objects.count(), 0)
+        self.assertEqual(UserObjectAccess.objects.count(), 0)
+        self.assertEqual(Upload.objects.count(), 0)
+        self.assertEqual(ContractDocument.objects.count(), 0)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_cross_user_upload_id_attack_is_rejected_for_canonical_upload(self, mock_storage):
+        other_upload = make_upload(self.counterparty)
+        response = self.client.post(
+            doc_url(self.contract.id),
+            {"upload_id": str(other_upload.id), "title": "Wrong user"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+        mock_storage.save.assert_not_called()
+        self.assertEqual(ContractDocument.objects.count(), 0)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_quota_rejection_prevents_storage_write(self, mock_storage):
+        limited = make_user("limited_doc_device", "limited_doc_device@example.com")
+        contract = make_contract(limited, self.counterparty.email)
+        client = authed_client(limited)
+        grant_capacity(limited, 4)
+
+        response = self._post_file(
+            client=client,
+            contract=contract,
+            uploaded_file=pdf_upload(content=b"12345"),
+        )
+
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.data["code"], "storage_capacity_exceeded")
+        mock_storage.save.assert_not_called()
+        self.assertEqual(StoredObject.objects.count(), 0)
+        self.assertEqual(UserObjectAccess.objects.count(), 0)
+        self.assertEqual(Upload.objects.count(), 0)
+        self.assertEqual(ContractDocument.objects.count(), 0)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_canonical_upload_failure_cleans_provider_object_and_leaves_no_db_records(self, mock_storage):
+        mock_storage.save.return_value = "uploads/device/failure.pdf"
+        mock_storage.url.return_value = "https://current-provider.example/uploads/device/failure.pdf"
+
+        with patch("backend.uploads.services.Upload.objects.create", side_effect=RuntimeError("db failed")):
+            with self.assertRaisesMessage(RuntimeError, "db failed"):
+                self._post_file()
+
+        mock_storage.delete.assert_called_once_with("uploads/device/failure.pdf")
+        self.assertEqual(StoredObject.objects.count(), 0)
+        self.assertEqual(UserObjectAccess.objects.count(), 0)
+        self.assertEqual(Upload.objects.count(), 0)
+        self.assertEqual(ContractDocument.objects.count(), 0)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_contract_document_failure_preserves_committed_vault_upload(self, mock_storage):
+        mock_storage.save.return_value = "uploads/device/kept.pdf"
+        mock_storage.url.return_value = "https://current-provider.example/uploads/device/kept.pdf"
+
+        with patch("backend.api.contracts.document_views.ContractDocument.objects.create", side_effect=RuntimeError("document failed")):
+            with self.assertRaisesMessage(RuntimeError, "document failed"):
+                self._post_file()
+
+        upload = Upload.objects.get()
+        self.assertIsNotNone(upload.stored_object_id)
+        self.assertEqual(StoredObject.objects.count(), 1)
+        self.assertEqual(UserObjectAccess.objects.count(), 1)
+        mock_storage.delete.assert_not_called()
+        vault_response = self.client.get("/api/uploads/")
+        self.assertEqual(vault_response.status_code, 200)
+        self.assertEqual(vault_response.data[0]["id"], str(upload.id))
+        self.assertEqual(ContractDocument.objects.count(), 0)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_legacy_upload_id_attach_remains_compatible(self, mock_storage):
+        legacy_upload = make_upload(self.initiator)
+
+        response = self.client.post(
+            doc_url(self.contract.id),
+            {"upload_id": str(legacy_upload.id), "title": "Legacy attach"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        doc = ContractDocument.objects.get(pk=response.data["id"])
+        self.assertEqual(doc.upload, legacy_upload)
+        self.assertIsNone(legacy_upload.stored_object_id)
+        mock_storage.save.assert_not_called()
+        mock_storage.delete.assert_not_called()

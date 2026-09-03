@@ -10,7 +10,7 @@ from rest_framework.views import APIView
 from backend.contracts.models import Contract
 from backend.documents.models import ContractDocument
 from backend.uploads.models import Upload
-from backend.uploads.services import StorageAdmissionRejected, create_managed_upload, get_upload_url
+from backend.uploads.services import StorageAdmissionRejected, create_managed_upload, get_active_canonical_uploads_for_user, get_upload_url
 from .permissions import contract_party_response, is_party
 
 VALID_CONTRACT_DOCUMENT_FILE_TYPES = {choice[0] for choice in Upload.FILE_TYPE_CHOICES}
@@ -90,6 +90,7 @@ class ContractDocumentListCreateAPIView(APIView):
 
         upload_id = request.data.get("upload_id")
         file = request.FILES.get("file")
+        source = (request.data.get("source") or "").strip().lower()
         if upload_id and file:
             return Response({"error": "Provide either upload_id or file, not both."}, status=status.HTTP_400_BAD_REQUEST)
         if not upload_id and not file:
@@ -114,6 +115,8 @@ class ContractDocumentListCreateAPIView(APIView):
                 )
             except StorageAdmissionRejected as exc:
                 return _storage_capacity_response(exc.check)
+        elif source == "vault":
+            upload = get_object_or_404(get_active_canonical_uploads_for_user(request.user), pk=upload_id)
         else:
             upload = get_object_or_404(Upload, pk=upload_id, user=request.user)
 

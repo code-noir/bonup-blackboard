@@ -112,6 +112,15 @@ def create_managed_upload(
         raise
 
 
+def get_active_canonical_uploads_for_user(user):
+    return Upload.objects.filter(
+        user=user,
+        stored_object__isnull=False,
+        stored_object__user_accesses__user=user,
+        stored_object__user_accesses__is_active=True,
+    ).distinct()
+
+
 def get_stored_object_url(stored_object):
     storage = get_storage_backend(stored_object.backend)
     return storage.url(stored_object.object_key)

@@ -19,6 +19,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
+import { MagnifyingGlassIcon, PlusIcon, RectangleStackIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { useAuth } from '@/context/AuthContext'
 import api from '@/api/client'
 import {
@@ -271,6 +272,14 @@ interface AttachmentFile {
   error?: string
 }
 
+interface VaultSelectionFile {
+  id: string
+  file_name: string
+  file_type: string
+  file_size: number
+  uploaded_at: string
+}
+
 function getFileType(name: string): AttachFileType {
   const ext = name.split('.').pop()?.toLowerCase() ?? ''
   if (ext === 'pdf') return 'pdf'
@@ -285,6 +294,22 @@ function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatVaultDate(value: string) {
+  if (!value) return 'Unknown date'
+  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value))
+}
+
+function vaultFileTypeLabel(fileType: string) {
+  const normalized = fileType.toLowerCase()
+  if (normalized === 'pdf') return 'PDF'
+  if (normalized === 'image') return 'Image'
+  if (normalized === 'video') return 'Video'
+  if (normalized === 'audio') return 'Audio'
+  if (normalized === 'slides') return 'Slides'
+  if (normalized === 'document') return 'Document'
+  return 'File'
 }
 
 const FILE_TYPE_META: Record<AttachFileType, { bg: string; icon: string }> = {
@@ -649,6 +674,12 @@ export default function CreateContract() {
   const [attachFilter, setAttachFilter] = useState<AttachFilter>('all')
   const [attachDragOver, setAttachDragOver] = useState(false)
   const [attachError, setAttachError] = useState('')
+  const [vaultPickerOpen, setVaultPickerOpen] = useState(false)
+  const [vaultPickerFiles, setVaultPickerFiles] = useState<VaultSelectionFile[]>([])
+  const [vaultPickerLoading, setVaultPickerLoading] = useState(false)
+  const [vaultPickerError, setVaultPickerError] = useState('')
+  const [vaultPickerSearch, setVaultPickerSearch] = useState('')
+  const [vaultPickerAttachingId, setVaultPickerAttachingId] = useState('')
   const attachInputRef = useRef<HTMLInputElement>(null)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -3568,6 +3599,74 @@ export default function CreateContract() {
                         return type
                       }
 
+                      async function loadVaultFiles() {
+                        setVaultPickerLoading(true)
+                        setVaultPickerError('')
+                        try {
+                          const { data } = await api.get<VaultSelectionFile[]>('/uploads/?canonical=true')
+                          setVaultPickerFiles(data)
+                        } catch {
+                          setVaultPickerError('Could not load bonUP Vault files.')
+                        } finally {
+                          setVaultPickerLoading(false)
+                        }
+                      }
+
+                      function openVaultPicker() {
+                        if (!currentContractId) {
+                          setAttachError('Save the contract before adding documents.')
+                          return
+                        }
+                        setAttachError('')
+                        setVaultPickerSearch('')
+                        setVaultPickerError('')
+                        setVaultPickerOpen(true)
+                        void loadVaultFiles()
+                      }
+
+                      function closeVaultPicker() {
+                        setVaultPickerOpen(false)
+                        setVaultPickerSearch('')
+                        setVaultPickerError('')
+                      }
+
+                      async function attachVaultFile(file: VaultSelectionFile) {
+                        if (!currentContractId) {
+                          setVaultPickerError('Save the contract before adding documents.')
+                          return
+                        }
+                        if (vaultPickerAttachingId) return
+                        setVaultPickerAttachingId(file.id)
+                        setVaultPickerError('')
+                        try {
+                          const { data } = await api.post(`/contracts/${currentContractId}/documents/`, {
+                            upload_id: file.id,
+                            source: 'vault',
+                            title: file.file_name,
+                          })
+                          setAttachFiles((prev) => [
+                            {
+                              id: `${Date.now()}-${Math.random()}`,
+                              name: file.file_name,
+                              sizeStr: formatBytes(file.file_size),
+                              sizeBytes: file.file_size,
+                              date: formatVaultDate(file.uploaded_at),
+                              type: getFileType(file.file_name),
+                              uploading: false,
+                              progress: 100,
+                              uploadId: data.upload_id,
+                              documentId: data.id,
+                            },
+                            ...prev,
+                          ])
+                          closeVaultPicker()
+                        } catch {
+                          setVaultPickerError('Could not attach this bonUP Vault file.')
+                        } finally {
+                          setVaultPickerAttachingId('')
+                        }
+                      }
+
                       async function processFiles(rawFiles: FileList | File[]) {
                         if (!currentContractId) {
                           setAttachError('Save the contract before adding documents.')
@@ -3617,6 +3716,14 @@ export default function CreateContract() {
                         })
                       }
 
+                      const vaultSearch = vaultPickerSearch.trim().toLowerCase()
+                      const visibleVaultFiles = vaultPickerFiles
+                        .filter((file) => {
+                          if (!vaultSearch) return true
+                          return file.file_name.toLowerCase().includes(vaultSearch) || vaultFileTypeLabel(file.file_type).toLowerCase().includes(vaultSearch)
+                        })
+                        .sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime())
+
                       const FILTER_TYPES: Record<AttachFilter, AttachFileType[]> = {
                         all: ['pdf', 'docx', 'xlsx', 'image', 'video', 'other'],
                         documents: ['pdf', 'docx', 'xlsx'],
@@ -3637,7 +3744,51 @@ export default function CreateContract() {
 
                       return (
                         <>
-                          {/* Hidden file input */}
+                          {/* Action buttons */}
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                            <button
+                              type="button"
+                              onClick={() => attachInputRef.current?.click()}
+                              style={{
+                                height: 38,
+                                borderRadius: 8,
+                                border: '1px solid #243447',
+                                background: '#243447',
+                                color: 'white',
+                                fontSize: 13,
+                                fontWeight: 600,
+                                padding: '0 14px',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 8,
+                              }}
+                            >
+                              <PlusIcon className="h-4 w-4" />
+                              Upload from this device
+                            </button>
+                            <button
+                              type="button"
+                              onClick={openVaultPicker}
+                              style={{
+                                height: 38,
+                                borderRadius: 8,
+                                border: '1px solid #D1D5DB',
+                                background: 'white',
+                                color: '#243447',
+                                fontSize: 13,
+                                fontWeight: 600,
+                                padding: '0 14px',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 8,
+                              }}
+                            >
+                              <RectangleStackIcon className="h-4 w-4" />
+                              Choose from bonUP Vault
+                            </button>
+                          </div>
                           <input
                             ref={attachInputRef}
                             type="file"
@@ -3804,6 +3955,90 @@ export default function CreateContract() {
                               )}
                             </div>
                           ))}
+
+                          {vaultPickerOpen && (
+                            <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(15, 23, 42, 0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                              <div style={{ width: '100%', maxWidth: 760, maxHeight: '85vh', overflow: 'hidden', borderRadius: 12, background: 'white', boxShadow: '0 24px 60px rgba(15, 23, 42, 0.28)', display: 'flex', flexDirection: 'column' }}>
+                                <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', gap: 16, padding: '20px 20px 0' }}>
+                                  <div>
+                                    <p style={{ margin: 0, fontSize: 12, fontWeight: 700, letterSpacing: 0, textTransform: 'uppercase', color: '#D4900A' }}>bonUP Vault</p>
+                                    <h3 style={{ margin: '4px 0 0', fontSize: 20, lineHeight: 1.2, color: '#243447' }}>Choose a file</h3>
+                                    <p style={{ margin: '8px 0 0', fontSize: 13, color: '#6B7280' }}>Select an active Vault file to attach to this contract.</p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={closeVaultPicker}
+                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#6B7280', padding: 4 }}
+                                    aria-label="Close Vault picker"
+                                  >
+                                    <XMarkIcon className="h-5 w-5" />
+                                  </button>
+                                </div>
+                                <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12, overflow: 'hidden' }}>
+                                  <label style={{ position: 'relative', display: 'block' }}>
+                                    <MagnifyingGlassIcon style={{ position: 'absolute', left: 12, top: '50%', width: 16, height: 16, transform: 'translateY(-50%)', color: '#9CA3AF', pointerEvents: 'none' }} />
+                                    <input
+                                      value={vaultPickerSearch}
+                                      onChange={(e) => setVaultPickerSearch(e.target.value)}
+                                      placeholder="Search bonUP Vault"
+                                      style={{ width: '100%', height: 40, borderRadius: 8, border: '1px solid #D1D5DB', padding: '0 12px 0 36px', fontSize: 14, outline: 'none' }}
+                                    />
+                                  </label>
+                                  {vaultPickerError && (
+                                    <p style={{ margin: 0, fontSize: 12, color: '#DC2626' }}>{vaultPickerError}</p>
+                                  )}
+                                  <div style={{ border: '1px solid #E5E7EB', borderRadius: 10, overflow: 'hidden', maxHeight: 420, overflowY: 'auto', background: '#F9FAFB' }}>
+                                    {vaultPickerLoading && (
+                                      <div style={{ padding: 20, fontSize: 13, color: '#6B7280' }}>Loading bonUP Vault files...</div>
+                                    )}
+                                    {!vaultPickerLoading && visibleVaultFiles.length === 0 && (
+                                      <div style={{ padding: 20, fontSize: 13, color: '#6B7280' }}>No active bonUP Vault files are available.</div>
+                                    )}
+                                    {!vaultPickerLoading && visibleVaultFiles.map((file) => (
+                                      <button
+                                        key={file.id}
+                                        type="button"
+                                        onClick={() => void attachVaultFile(file)}
+                                        disabled={Boolean(vaultPickerAttachingId)}
+                                        style={{
+                                          width: '100%',
+                                          textAlign: 'left',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: 12,
+                                          padding: '14px 16px',
+                                          border: 'none',
+                                          borderBottom: '1px solid #E5E7EB',
+                                          background: 'white',
+                                          cursor: vaultPickerAttachingId ? 'not-allowed' : 'pointer',
+                                        }}
+                                      >
+                                        <div style={{ width: 42, height: 42, borderRadius: 8, background: '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#243447', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                                          {vaultFileTypeLabel(file.file_type)}
+                                        </div>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                          <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#243447', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.file_name}</p>
+                                          <p style={{ margin: '3px 0 0', fontSize: 12, color: '#6B7280' }}>{formatBytes(file.file_size)} · {formatVaultDate(file.uploaded_at)}</p>
+                                        </div>
+                                        <div style={{ flexShrink: 0, fontSize: 12, fontWeight: 700, color: '#243447' }}>
+                                          {vaultPickerAttachingId === file.id ? 'Attaching...' : 'Attach'}
+                                        </div>
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                    <button
+                                      type="button"
+                                      onClick={closeVaultPicker}
+                                      style={{ height: 38, borderRadius: 8, border: '1px solid #D1D5DB', background: 'white', color: '#243447', fontSize: 13, fontWeight: 600, padding: '0 14px', cursor: 'pointer' }}
+                                    >
+                                      Close
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </>
                       )
                     })() : activeTool === 'Contract Templates' ? (() => {

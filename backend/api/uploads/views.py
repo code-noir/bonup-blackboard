@@ -33,6 +33,7 @@ from backend.uploads.models import Upload, VaultEmailDelivery, VaultShare
 from backend.uploads.services import (
     create_managed_upload,
     create_stored_object_metadata,
+    get_active_canonical_uploads_for_user,
     get_storage_backend,
     get_stored_object_url,
     get_upload_url,
@@ -94,7 +95,7 @@ def _active_uploads_for_user(user):
 
 
 def _active_canonical_uploads_for_user(user):
-    return _active_uploads_for_user(user).filter(stored_object__isnull=False)
+    return get_active_canonical_uploads_for_user(user)
 
 
 def _serialize(upload):
@@ -248,6 +249,10 @@ class UploadsViewSet(ViewSet):
 
     def list(self, request):
         qs = _active_uploads_for_user(request.user)
+
+        canonical = request.query_params.get("canonical")
+        if canonical is not None and canonical.lower() in ("true", "1", "yes"):
+            qs = _active_canonical_uploads_for_user(request.user)
 
         contract_id = request.query_params.get("contract_id")
         if contract_id:

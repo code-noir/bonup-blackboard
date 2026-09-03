@@ -15,6 +15,7 @@ from backend.billing.models import StorageCapacityGrantOrigin
 from backend.billing.storage import create_storage_capacity_grant, get_storage_capacity_snapshot
 from backend.documents.models import ContractDocument
 from backend.uploads.models import StoredObject, Upload, UserObjectAccess
+from backend.uploads.services import create_stored_object_metadata, grant_user_object_access
 from .helpers import authed_client, make_contract, make_user
 
 
@@ -35,6 +36,36 @@ def grant_capacity(user, capacity_bytes):
 
 def pdf_upload(name="contract-device.pdf", content=b"%PDF-1.4 test contract"):
     return SimpleUploadedFile(name, content, content_type="application/pdf")
+
+
+def make_canonical_upload(
+    user,
+    *,
+    name="file.pdf",
+    key="uploads/canonical/file.pdf",
+    size=1024,
+    file_type="pdf",
+    content_type="application/pdf",
+    file_url="https://example.com/file.pdf",
+):
+    stored_object = create_stored_object_metadata(
+        backend="default",
+        bucket="test-bucket",
+        object_key=key,
+        size_bytes=size,
+        content_type=content_type,
+    )
+    grant_user_object_access(user, stored_object)
+    return Upload.objects.create(
+        user=user,
+        file_url=file_url,
+        file_name=name,
+        file_type=file_type,
+        file_size=size,
+        storage_key=key,
+        stored_object=stored_object,
+    )
+
 
 def make_upload(user, file_type="pdf"):
     return Upload.objects.create(
@@ -501,3 +532,135 @@ class ContractDocumentDeviceUploadVaultIntegrationTests(TestCase):
         self.assertIsNone(legacy_upload.stored_object_id)
         mock_storage.save.assert_not_called()
         mock_storage.delete.assert_not_called()
+
+
+class ContractDocumentVaultSelectionTests(TestCase):
+
+    def setUp(self):
+        self.initiator = make_user("init_doc_vault", "init_doc_vault@example.com")
+        self.counterparty = make_user("cp_doc_vault", "cp_doc_vault@example.com")
+        self.stranger = make_user("stranger_doc_vault", "stranger_doc_vault@example.com")
+        self.contract = make_contract(self.initiator, self.counterparty.email)
+        self.other_contract = make_contract(self.initiator, make_user("cp_doc_vault_other", "cp_doc_vault_other@example.com").email)
+        self.client = authed_client(self.initiator)
+        grant_capacity(self.initiator, 1024 * 1024)
+
+    def _post_vault_attachment(self, upload, *, client=None, contract=None, title="Vault Attachment", **data):
+        payload = {"upload_id": str(upload.id), "source": "vault", "title": title}
+        payload.update(data)
+        return (client or self.client).post(
+            doc_url((contract or self.contract).id),
+            payload,
+            format="json",
+        )
+
+    @patch("backend.uploads.services.default_storage")
+    def test_authorized_user_can_choose_active_canonical_vault_file(self, mock_storage):
+        upload = make_canonical_upload(
+            self.initiator,
+            name="vault-receipt.pdf",
+            key="uploads/canonical/vault-receipt.pdf",
+            size=5 * 1024 * 1024,
+            file_url="https://example.com/vault-receipt.pdf",
+        )
+        before = get_storage_capacity_snapshot(self.initiator)
+        mock_storage.url.return_value = "https://current-provider.example/uploads/canonical/vault-receipt.pdf"
+
+        with patch("backend.api.contracts.document_views.create_managed_upload", side_effect=AssertionError("vault selection must not create a managed upload")) as mock_create_managed_upload:
+            response = self._post_vault_attachment(upload, title="Vault Receipt")
+
+        self.assertEqual(response.status_code, 201)
+        mock_create_managed_upload.assert_not_called()
+        doc = ContractDocument.objects.get(pk=response.data["id"])
+        self.assertEqual(doc.upload, upload)
+        self.assertEqual(doc.contract, self.contract)
+        self.assertEqual(doc.title, "Vault Receipt")
+        self.assertEqual(StoredObject.objects.count(), 1)
+        self.assertEqual(UserObjectAccess.objects.count(), 1)
+        self.assertEqual(Upload.objects.count(), 1)
+        self.assertEqual(get_storage_capacity_snapshot(self.initiator).used_bytes, before.used_bytes)
+        self.assertEqual(upload.related_contract_id, None)
+        mock_storage.save.assert_not_called()
+        mock_storage.open.assert_not_called()
+        mock_storage.delete.assert_not_called()
+
+    @patch("backend.uploads.services.default_storage")
+    def test_same_vault_object_can_be_referenced_by_second_contract_zero_quota(self, mock_storage):
+        upload = make_canonical_upload(
+            self.initiator,
+            name="shared-vault.pdf",
+            key="uploads/canonical/shared-vault.pdf",
+            size=2048,
+            file_url="https://example.com/shared-vault.pdf",
+        )
+        other_contract = self.other_contract
+        before = get_storage_capacity_snapshot(self.initiator)
+        mock_storage.url.return_value = "https://current-provider.example/uploads/canonical/shared-vault.pdf"
+
+        with patch("backend.api.contracts.document_views.create_managed_upload", side_effect=AssertionError("vault selection must not create a managed upload")) as mock_create_managed_upload:
+            first = self._post_vault_attachment(upload, contract=self.contract, title="Shared One")
+            second = self._post_vault_attachment(upload, contract=other_contract, title="Shared Two")
+
+        self.assertEqual(first.status_code, 201)
+        mock_create_managed_upload.assert_not_called()
+        self.assertEqual(second.status_code, 201)
+        self.assertEqual(ContractDocument.objects.filter(upload=upload).count(), 2)
+        self.assertEqual(StoredObject.objects.count(), 1)
+        self.assertEqual(UserObjectAccess.objects.count(), 1)
+        self.assertEqual(Upload.objects.count(), 1)
+        self.assertEqual(get_storage_capacity_snapshot(self.initiator).used_bytes, before.used_bytes)
+        mock_storage.save.assert_not_called()
+        mock_storage.open.assert_not_called()
+        mock_storage.delete.assert_not_called()
+
+    @patch("backend.uploads.services.default_storage")
+    def test_cross_user_upload_id_attack_is_rejected_on_vault_path(self, mock_storage):
+        other_upload = make_canonical_upload(
+            self.counterparty,
+            name="other-user.pdf",
+            key="uploads/canonical/other-user.pdf",
+            size=1024,
+            file_url="https://example.com/other-user.pdf",
+        )
+
+        response = self._post_vault_attachment(other_upload)
+
+        self.assertEqual(response.status_code, 404)
+        mock_storage.save.assert_not_called()
+        mock_storage.url.assert_not_called()
+        self.assertEqual(ContractDocument.objects.count(), 0)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_inactive_user_object_access_cannot_be_selected_through_vault_path(self, mock_storage):
+        upload = make_canonical_upload(
+            self.initiator,
+            name="inactive-vault.pdf",
+            key="uploads/canonical/inactive-vault.pdf",
+            size=1024,
+            file_url="https://example.com/inactive-vault.pdf",
+        )
+        upload.stored_object.user_accesses.filter(user=self.initiator).update(is_active=False, is_visible=False)
+
+        response = self._post_vault_attachment(upload)
+
+        self.assertEqual(response.status_code, 404)
+        mock_storage.save.assert_not_called()
+        mock_storage.url.assert_not_called()
+        self.assertEqual(ContractDocument.objects.count(), 0)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_unauthorized_contract_user_cannot_attach_vault_file(self, mock_storage):
+        upload = make_canonical_upload(
+            self.initiator,
+            name="party-only.pdf",
+            key="uploads/canonical/party-only.pdf",
+            size=1024,
+            file_url="https://example.com/party-only.pdf",
+        )
+
+        response = self._post_vault_attachment(upload, client=authed_client(self.stranger))
+
+        self.assertEqual(response.status_code, 403)
+        mock_storage.save.assert_not_called()
+        mock_storage.url.assert_not_called()
+        self.assertEqual(ContractDocument.objects.count(), 0)

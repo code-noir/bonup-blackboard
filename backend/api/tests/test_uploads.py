@@ -430,6 +430,23 @@ class UploadListTests(TestCase):
         self.assertEqual([item["id"] for item in r.data], [str(upload.id)])
         self.assertEqual(r.data[0]["content_type"], "application/pdf")
 
+    @patch("backend.uploads.services.default_storage")
+    def test_list_canonical_filter_returns_only_active_canonical_uploads(self, mock_storage):
+        mock_storage.url.return_value = "https://current-provider.example/uploads/list/canonical.pdf"
+        canonical = _managed_upload(self.user, key="uploads/list/canonical.pdf")
+        _managed_upload(self.other, key="uploads/list/other.pdf")
+        legacy = self._make_upload(storage_key="", file_url="https://legacy-provider.example/file.pdf")
+        removed = _managed_upload(self.user, key="uploads/list/removed.pdf")
+        removed.stored_object.user_accesses.filter(user=self.user).update(is_active=False, is_visible=False)
+
+        r = self.client.get(f"{UPLOAD_URL}?canonical=true")
+
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual([item["id"] for item in r.data], [str(canonical.id)])
+        self.assertEqual(r.data[0]["file_name"], canonical.file_name)
+        self.assertNotIn(str(legacy.id), [item["id"] for item in r.data])
+        mock_storage.url.assert_called_once_with("uploads/list/canonical.pdf")
+
     def test_list_excludes_another_users_canonical_upload(self):
         _managed_upload(self.other, key="uploads/list/other.pdf")
 

@@ -8,6 +8,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.core.files.base import File
 from django.core.files.storage import default_storage
 from django.db import IntegrityError, models, transaction
@@ -21,7 +22,14 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
 
 from backend.billing.storage import check_storage_write_admission, get_storage_capacity_snapshot
-from backend.uploads.models import Upload, VaultShare
+from backend.emailing.services import (
+    EmailAttachment,
+    EmailMessage,
+    EmailProviderDeliveryError,
+    EmailServiceUnavailable,
+    send_email,
+)
+from backend.uploads.models import Upload, VaultEmailDelivery, VaultShare
 from backend.uploads.services import (
     DEFAULT_STORAGE_BACKEND_ALIAS,
     create_stored_object_metadata,
@@ -40,6 +48,8 @@ VALID_SHARE_EXPIRATIONS = {
     "none": None,
 }
 DEFAULT_SHARE_EXPIRATION = "7d"
+EMAIL_SUBJECT_MAX_LENGTH = 255
+EMAIL_MESSAGE_MAX_LENGTH = 4000
 SHARE_UNAVAILABLE_RESPONSE = {"detail": "Share is unavailable."}
 logger = logging.getLogger(__name__)
 
@@ -199,6 +209,40 @@ def _serialize_public_share(share, token):
     }
 
 
+def _validation_error(code, detail, *, status_code=status.HTTP_400_BAD_REQUEST):
+    return Response({"code": code, "detail": detail}, status=status_code)
+
+
+def _normalize_recipient(value):
+    recipient = (value or "").strip()
+    validate_email(recipient)
+    return recipient.lower()
+
+
+def _email_body(message, *, sender, filename):
+    parts = []
+    if message:
+        parts.append(message)
+    parts.append(f"Attached: {filename}")
+    parts.append(f"Sent by {sender} through bonUP Vault.")
+    return "\n\n".join(parts)
+
+
+def _recent_vault_email_count(user):
+    since = timezone.now() - timedelta(hours=1)
+    return VaultEmailDelivery.objects.filter(sender_user=user, created_at__gte=since).count()
+
+
+def _serialize_email_delivery(delivery, *, idempotent=False):
+    return {
+        "status": delivery.status,
+        "delivery_id": str(delivery.id),
+        "provider": delivery.provider,
+        "provider_message_id": delivery.provider_message_id,
+        "idempotent": idempotent,
+    }
+
+
 class UploadsViewSet(ViewSet):
 
     def list(self, request):
@@ -305,6 +349,107 @@ class UploadsViewSet(ViewSet):
             filename=upload.file_name,
             content_type=content_type,
         )
+
+    @action(detail=True, methods=["post"], url_path="email")
+    def email_file(self, request, pk=None):
+        upload = get_object_or_404(_active_canonical_uploads_for_user(request.user), pk=pk)
+
+        try:
+            recipient = _normalize_recipient(request.data.get("to", ""))
+        except ValidationError:
+            return _validation_error("invalid_recipient", "Enter one valid recipient email address.")
+
+        subject = (request.data.get("subject") or "").strip()
+        message = (request.data.get("message") or "").strip()
+        if not subject:
+            return _validation_error("subject_required", "Subject is required.")
+        if len(subject) > EMAIL_SUBJECT_MAX_LENGTH:
+            return _validation_error("subject_too_long", f"Subject must be {EMAIL_SUBJECT_MAX_LENGTH} characters or fewer.")
+        if len(message) > EMAIL_MESSAGE_MAX_LENGTH:
+            return _validation_error("message_too_long", f"Message must be {EMAIL_MESSAGE_MAX_LENGTH} characters or fewer.")
+
+        idempotency_key = (request.headers.get("Idempotency-Key") or "").strip()
+        if len(idempotency_key) > 256:
+            return _validation_error("invalid_idempotency_key", "Idempotency-Key must be 256 characters or fewer.")
+        if idempotency_key:
+            existing = VaultEmailDelivery.objects.filter(
+                sender_user=request.user,
+                idempotency_key=idempotency_key,
+            ).first()
+            if existing and existing.status == VaultEmailDelivery.Status.SENT:
+                return Response(_serialize_email_delivery(existing, idempotent=True))
+            if existing:
+                return _validation_error("duplicate_request", "Use a new idempotency key for a retry.", status_code=status.HTTP_409_CONFLICT)
+
+        max_attachment_bytes = getattr(settings, "BONUP_EMAIL_ATTACHMENT_MAX_BYTES", 0)
+        if max_attachment_bytes < 1:
+            return _validation_error("email_service_unavailable", "Email delivery is not configured.", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+        if upload.stored_object.size_bytes > max_attachment_bytes:
+            return _validation_error("attachment_too_large", "This file is too large to email as an attachment.", status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+
+        hourly_limit = getattr(settings, "BONUP_VAULT_EMAIL_RATE_LIMIT_PER_HOUR", 10)
+        if hourly_limit < 1:
+            return _validation_error("email_service_unavailable", "Email delivery is not configured.", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+        if _recent_vault_email_count(request.user) >= hourly_limit:
+            return _validation_error("rate_limited", "Too many email attempts. Please try again later.", status_code=status.HTTP_429_TOO_MANY_REQUESTS)
+
+        provider = getattr(settings, "BONUP_EMAIL_PROVIDER", "resend").strip().lower() or "resend"
+        delivery = VaultEmailDelivery.objects.create(
+            sender_user=request.user,
+            stored_object=upload.stored_object,
+            recipient_email=recipient,
+            subject=subject,
+            provider=provider,
+            idempotency_key=idempotency_key,
+        )
+
+        storage = get_storage_backend(upload.stored_object.backend)
+        try:
+            with storage.open(upload.stored_object.object_key, "rb") as source_file:
+                attachment_bytes = source_file.read()
+        except Exception:
+            delivery.status = VaultEmailDelivery.Status.FAILED
+            delivery.failure_code = "attachment_read_failed"
+            delivery.save(update_fields=["status", "failure_code"])
+            return _validation_error("attachment_unavailable", "This file could not be prepared for email.", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        if len(attachment_bytes) > max_attachment_bytes:
+            delivery.status = VaultEmailDelivery.Status.FAILED
+            delivery.failure_code = "attachment_too_large"
+            delivery.save(update_fields=["status", "failure_code"])
+            return _validation_error("attachment_too_large", "This file is too large to email as an attachment.", status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+
+        email_message = EmailMessage(
+            to=[recipient],
+            subject=subject,
+            text=_email_body(message, sender=getattr(request.user, "email", "") or "a bonUP user", filename=upload.file_name),
+            attachments=[
+                EmailAttachment(
+                    filename=upload.file_name,
+                    content=attachment_bytes,
+                    content_type=upload.stored_object.content_type or "application/octet-stream",
+                ),
+            ],
+        )
+
+        try:
+            result = send_email(email_message, idempotency_key=idempotency_key)
+        except EmailServiceUnavailable:
+            delivery.status = VaultEmailDelivery.Status.FAILED
+            delivery.failure_code = "email_service_unavailable"
+            delivery.save(update_fields=["status", "failure_code"])
+            return _validation_error("email_service_unavailable", "Email delivery is not configured.", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except EmailProviderDeliveryError:
+            delivery.status = VaultEmailDelivery.Status.FAILED
+            delivery.failure_code = "provider_delivery_failure"
+            delivery.save(update_fields=["status", "failure_code"])
+            return _validation_error("provider_delivery_failure", "Email provider delivery failed.", status_code=status.HTTP_502_BAD_GATEWAY)
+
+        delivery.status = VaultEmailDelivery.Status.SENT
+        delivery.provider = result.provider
+        delivery.provider_message_id = result.provider_message_id
+        delivery.sent_at = timezone.now()
+        delivery.save(update_fields=["status", "provider", "provider_message_id", "sent_at"])
+        return Response(_serialize_email_delivery(delivery), status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get", "post"], url_path="shares")
     def shares(self, request, pk=None):

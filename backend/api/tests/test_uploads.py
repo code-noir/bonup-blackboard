@@ -22,7 +22,7 @@ from backend.billing.storage import (
     get_storage_capacity_snapshot,
     get_user_active_storage_usage_bytes,
 )
-from backend.uploads.models import StoredObject, Upload, UserObjectAccess, VaultShare
+from backend.uploads.models import StoredObject, Upload, UserObjectAccess, VaultEmailDelivery, VaultShare
 from backend.uploads.services import create_stored_object_metadata, grant_user_object_access
 from .helpers import authed_client, make_contract, make_user
 
@@ -699,6 +699,261 @@ class UploadShareFileDeliveryTests(TestCase):
             if value:
                 self.assertNotIn(value, exposed_headers)
 
+
+
+
+class UploadEmailFileTests(TestCase):
+
+    def setUp(self):
+        self.user = make_user("email_file", "email_file@example.com")
+        self.other = make_user("email_file_other", "email_file_other@example.com")
+        self.client = authed_client(self.user)
+        self.upload = _managed_upload(self.user, name="contract.pdf", key="uploads/email-file/contract.pdf", size=4477)
+        _grant_capacity(self.user, 10000)
+
+    def _post_email(self, client=None, upload=None, data=None, **headers):
+        return (client or self.client).post(
+            f"{UPLOAD_URL}{(upload or self.upload).id}/email/",
+            data or {"to": "recipient@example.com", "subject": "contract.pdf from bonUP", "message": "Please review."},
+            format="json",
+            **headers,
+        )
+
+    def _mock_storage(self, mock_storage, content=b"%PDF-1.4 real bytes"):
+        mock_storage.open.return_value.__enter__.return_value = ContentFile(content, name="contract.pdf")
+
+    @patch("backend.api.uploads.views.send_email")
+    @patch("backend.uploads.services.default_storage")
+    def test_owner_can_email_active_vault_file(self, mock_storage, mock_send_email):
+        self._mock_storage(mock_storage)
+        mock_send_email.return_value.provider = "resend"
+        mock_send_email.return_value.provider_message_id = "em_123"
+
+        response = self._post_email()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["status"], "sent")
+        mock_send_email.assert_called_once()
+
+    @patch("backend.api.uploads.views.send_email")
+    @patch("backend.uploads.services.default_storage")
+    def test_actual_attachment_metadata_and_bytes_are_provided_to_email_service(self, mock_storage, mock_send_email):
+        self._mock_storage(mock_storage, content=b"trusted attachment bytes")
+        mock_send_email.return_value.provider = "resend"
+        mock_send_email.return_value.provider_message_id = "em_123"
+
+        response = self._post_email()
+
+        self.assertEqual(response.status_code, 201)
+        message = mock_send_email.call_args.args[0]
+        attachment = message.attachments[0]
+        self.assertEqual(attachment.filename, "contract.pdf")
+        self.assertEqual(attachment.content, b"trusted attachment bytes")
+        self.assertEqual(attachment.content_type, "application/pdf")
+        self.assertEqual(message.to, ["recipient@example.com"])
+        self.assertEqual(message.subject, "contract.pdf from bonUP")
+        self.assertNotIn("share/", message.text.lower())
+
+    @patch("backend.api.uploads.views.send_email")
+    @patch("backend.uploads.services.default_storage")
+    def test_email_file_does_not_create_vault_storage_or_share_records(self, mock_storage, mock_send_email):
+        before_objects = StoredObject.objects.count()
+        before_uploads = Upload.objects.count()
+        before_access = UserObjectAccess.objects.count()
+        before_shares = VaultShare.objects.count()
+        before_quota = get_storage_capacity_snapshot(self.user).used_bytes
+        self._mock_storage(mock_storage)
+        mock_send_email.return_value.provider = "resend"
+        mock_send_email.return_value.provider_message_id = "em_123"
+
+        response = self._post_email()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(StoredObject.objects.count(), before_objects)
+        self.assertEqual(Upload.objects.count(), before_uploads)
+        self.assertEqual(UserObjectAccess.objects.count(), before_access)
+        self.assertEqual(VaultShare.objects.count(), before_shares)
+        self.assertEqual(get_storage_capacity_snapshot(self.user).used_bytes, before_quota)
+
+    @patch("backend.api.uploads.views.send_email")
+    @patch("backend.uploads.services.default_storage")
+    def test_successful_send_records_delivery_metadata(self, mock_storage, mock_send_email):
+        self._mock_storage(mock_storage)
+        mock_send_email.return_value.provider = "resend"
+        mock_send_email.return_value.provider_message_id = "em_123"
+
+        response = self._post_email(data={"to": " Recipient@Example.COM ", "subject": " Subject ", "message": " Body "})
+
+        self.assertEqual(response.status_code, 201)
+        delivery = VaultEmailDelivery.objects.get()
+        self.assertEqual(delivery.sender_user, self.user)
+        self.assertEqual(delivery.stored_object, self.upload.stored_object)
+        self.assertEqual(delivery.recipient_email, "recipient@example.com")
+        self.assertEqual(delivery.subject, "Subject")
+        self.assertEqual(delivery.provider, "resend")
+        self.assertEqual(delivery.provider_message_id, "em_123")
+        self.assertEqual(delivery.status, VaultEmailDelivery.Status.SENT)
+        self.assertIsNotNone(delivery.sent_at)
+        self.assertEqual(delivery.failure_code, "")
+
+    @patch("backend.api.uploads.views.send_email")
+    @patch("backend.uploads.services.default_storage")
+    def test_sender_cannot_spoof_from(self, mock_storage, mock_send_email):
+        self._mock_storage(mock_storage)
+        mock_send_email.return_value.provider = "resend"
+        mock_send_email.return_value.provider_message_id = "em_123"
+
+        response = self._post_email(data={"to": "recipient@example.com", "subject": "Hi", "message": "Body", "from": "spoof@example.com"})
+
+        self.assertEqual(response.status_code, 201)
+        message = mock_send_email.call_args.args[0]
+        self.assertFalse(hasattr(message, "from_email"))
+        self.assertNotIn("spoof@example.com", message.text)
+
+    @patch("backend.api.uploads.views.send_email")
+    @patch("backend.uploads.services.default_storage")
+    def test_unauthorized_user_cannot_email_object(self, mock_storage, mock_send_email):
+        client = authed_client(self.other)
+
+        response = self._post_email(client=client)
+
+        self.assertEqual(response.status_code, 404)
+        mock_storage.open.assert_not_called()
+        mock_send_email.assert_not_called()
+        self.assertEqual(VaultEmailDelivery.objects.count(), 0)
+
+    @patch("backend.api.uploads.views.send_email")
+    @patch("backend.uploads.services.default_storage")
+    def test_removed_access_cannot_email_object(self, mock_storage, mock_send_email):
+        UserObjectAccess.objects.filter(user=self.user, stored_object=self.upload.stored_object).update(
+            is_active=False,
+            is_visible=False,
+            removed_at=timezone.now(),
+        )
+
+        response = self._post_email()
+
+        self.assertEqual(response.status_code, 404)
+        mock_storage.open.assert_not_called()
+        mock_send_email.assert_not_called()
+        self.assertEqual(VaultEmailDelivery.objects.count(), 0)
+
+    @patch("backend.api.uploads.views.send_email")
+    def test_malformed_recipient_rejected(self, mock_send_email):
+        response = self._post_email(data={"to": "not an email", "subject": "Hi", "message": ""})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "invalid_recipient")
+        mock_send_email.assert_not_called()
+
+    @patch("backend.api.uploads.views.send_email")
+    def test_missing_subject_rejected(self, mock_send_email):
+        response = self._post_email(data={"to": "recipient@example.com", "subject": "  ", "message": ""})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "subject_required")
+        mock_send_email.assert_not_called()
+
+    @patch("backend.api.uploads.views.send_email")
+    @patch("backend.uploads.services.default_storage")
+    def test_oversized_attachment_rejected_before_provider_call(self, mock_storage, mock_send_email):
+        self.upload.stored_object.size_bytes = 100
+        self.upload.stored_object.save(update_fields=["size_bytes"])
+
+        with self.settings(BONUP_EMAIL_ATTACHMENT_MAX_BYTES=99):
+            response = self._post_email()
+
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.data["code"], "attachment_too_large")
+        mock_storage.open.assert_not_called()
+        mock_send_email.assert_not_called()
+        self.assertEqual(VaultEmailDelivery.objects.count(), 0)
+
+    @patch("backend.api.uploads.views.send_email")
+    @patch("backend.uploads.services.default_storage")
+    def test_actual_bytes_over_limit_rejected_before_provider_call(self, mock_storage, mock_send_email):
+        self.upload.stored_object.size_bytes = 99
+        self.upload.stored_object.save(update_fields=["size_bytes"])
+        self._mock_storage(mock_storage, content=b"x" * 101)
+
+        with self.settings(BONUP_EMAIL_ATTACHMENT_MAX_BYTES=100):
+            response = self._post_email()
+
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.data["code"], "attachment_too_large")
+        mock_send_email.assert_not_called()
+        delivery = VaultEmailDelivery.objects.get()
+        self.assertEqual(delivery.status, VaultEmailDelivery.Status.FAILED)
+        self.assertEqual(delivery.failure_code, "attachment_too_large")
+
+    @patch("backend.uploads.services.default_storage")
+    def test_provider_unavailable_handled(self, mock_storage):
+        from backend.emailing.services import EmailServiceUnavailable
+
+        self._mock_storage(mock_storage)
+        with patch("backend.api.uploads.views.send_email", side_effect=EmailServiceUnavailable("missing config")) as mock_send_email:
+            response = self._post_email()
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.data["code"], "email_service_unavailable")
+        mock_send_email.assert_called_once()
+        delivery = VaultEmailDelivery.objects.get()
+        self.assertEqual(delivery.status, VaultEmailDelivery.Status.FAILED)
+        self.assertEqual(delivery.failure_code, "email_service_unavailable")
+
+    @patch("backend.uploads.services.default_storage")
+    def test_provider_failure_handled(self, mock_storage):
+        from backend.emailing.services import EmailProviderDeliveryError
+
+        self._mock_storage(mock_storage)
+        with patch("backend.api.uploads.views.send_email", side_effect=EmailProviderDeliveryError("provider failed")) as mock_send_email:
+            response = self._post_email()
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.data["code"], "provider_delivery_failure")
+        mock_send_email.assert_called_once()
+        delivery = VaultEmailDelivery.objects.get()
+        self.assertEqual(delivery.status, VaultEmailDelivery.Status.FAILED)
+        self.assertEqual(delivery.failure_code, "provider_delivery_failure")
+
+    @patch("backend.api.uploads.views.send_email")
+    @patch("backend.uploads.services.default_storage")
+    def test_repeated_idempotent_request_returns_existing_delivery_without_second_send(self, mock_storage, mock_send_email):
+        self._mock_storage(mock_storage)
+        mock_send_email.return_value.provider = "resend"
+        mock_send_email.return_value.provider_message_id = "em_123"
+        headers = {"HTTP_IDEMPOTENCY_KEY": "vault-email-once"}
+
+        first = self._post_email(**headers)
+        second = self._post_email(**headers)
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 200)
+        self.assertTrue(second.data["idempotent"])
+        self.assertEqual(VaultEmailDelivery.objects.count(), 1)
+        mock_send_email.assert_called_once()
+        mock_storage.open.assert_called_once_with(self.upload.stored_object.object_key, "rb")
+
+    @patch("backend.api.uploads.views.send_email")
+    @patch("backend.uploads.services.default_storage")
+    def test_rate_limit_rejects_before_provider_call(self, mock_storage, mock_send_email):
+        for index in range(2):
+            VaultEmailDelivery.objects.create(
+                sender_user=self.user,
+                stored_object=self.upload.stored_object,
+                recipient_email=f"recipient{index}@example.com",
+                subject="Existing",
+                provider="resend",
+                status=VaultEmailDelivery.Status.FAILED,
+            )
+
+        with self.settings(BONUP_VAULT_EMAIL_RATE_LIMIT_PER_HOUR=2):
+            response = self._post_email()
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.data["code"], "rate_limited")
+        mock_storage.open.assert_not_called()
+        mock_send_email.assert_not_called()
 
 
 class UploadDuplicateTests(TestCase):

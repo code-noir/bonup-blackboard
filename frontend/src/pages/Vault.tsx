@@ -3,6 +3,7 @@ import {
   ArrowDownTrayIcon,
   ClipboardDocumentIcon,
   DocumentIcon,
+  EnvelopeIcon,
   MagnifyingGlassIcon,
   MusicalNoteIcon,
   PhotoIcon,
@@ -37,6 +38,7 @@ type Category = 'all' | 'images' | 'videos' | 'audio' | 'documents' | 'other'
 type SortKey = 'newest' | 'oldest' | 'name' | 'size'
 type ViewMode = 'grid' | 'list'
 type ShareExpiration = '1d' | '7d' | '30d' | 'none'
+type EmailState = 'idle' | 'sending' | 'sent'
 
 type LoadState = 'loading' | 'success' | 'error'
 
@@ -64,6 +66,14 @@ type VaultShare = {
   file_type: string
   content_type: string
   file_size: number
+}
+
+type VaultEmailResponse = {
+  status: 'sent' | 'pending' | 'failed'
+  delivery_id: string
+  provider: string
+  provider_message_id: string
+  idempotent: boolean
 }
 
 type NativeShareDiagnosticReason =
@@ -201,6 +211,29 @@ function logNativeShareDiagnostic(
   })
 }
 
+function isValidEmailAddress(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
+function createIdempotencyKey() {
+  if (crypto.randomUUID) return crypto.randomUUID()
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function emailErrorMessage(error: unknown) {
+  const code = typeof error === 'object' && error !== null && 'response' in error
+    ? (error as { response?: { data?: { code?: string } } }).response?.data?.code
+    : undefined
+
+  if (code === 'attachment_too_large') return 'This file is too large to email as an attachment.'
+  if (code === 'email_service_unavailable') return "Email delivery isn't configured yet."
+  if (code === 'provider_delivery_failure') return 'Email delivery failed. Please try again.'
+  if (code === 'rate_limited') return 'Too many email attempts. Please try again later.'
+  if (code === 'invalid_recipient') return 'Enter one valid recipient email address.'
+  if (code === 'subject_required') return 'Subject is required.'
+  return 'Email could not be sent. Please try again.'
+}
+
 export default function Vault() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [storage, setStorage] = useState<StorageSummary | null>(null)
@@ -213,9 +246,16 @@ export default function Vault() {
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [selectedFile, setSelectedFile] = useState<VaultFile | null>(null)
   const [shareFile, setShareFile] = useState<VaultFile | null>(null)
+  const [emailFile, setEmailFile] = useState<VaultFile | null>(null)
   const [nativeShareFallbackFile, setNativeShareFallbackFile] = useState<VaultFile | null>(null)
   const [shareExpiration, setShareExpiration] = useState<ShareExpiration>('7d')
   const [shareResult, setShareResult] = useState<VaultShare | null>(null)
+  const [emailTo, setEmailTo] = useState('')
+  const [emailSubject, setEmailSubject] = useState('')
+  const [emailMessage, setEmailMessage] = useState('')
+  const [emailState, setEmailState] = useState<EmailState>('idle')
+  const [emailError, setEmailError] = useState('')
+  const [emailIdempotencyKey, setEmailIdempotencyKey] = useState('')
   const [sharing, setSharing] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [workingFileId, setWorkingFileId] = useState<string | null>(null)
@@ -307,6 +347,59 @@ export default function Vault() {
     document.body.appendChild(link)
     link.click()
     link.remove()
+  }
+
+  function openEmailFile(file: VaultFile) {
+    setEmailFile(file)
+    setEmailTo('')
+    setEmailSubject(`${file.file_name} from bonUP`)
+    setEmailMessage('')
+    setEmailState('idle')
+    setEmailError('')
+    setEmailIdempotencyKey(createIdempotencyKey())
+    setToast(null)
+  }
+
+  function closeEmailFile() {
+    setEmailFile(null)
+    setEmailError('')
+    setEmailState('idle')
+  }
+
+  async function handleEmailFile() {
+    if (!emailFile || emailState === 'sending') return
+
+    const to = emailTo.trim()
+    const subject = emailSubject.trim()
+    const message = emailMessage.trim()
+    if (!isValidEmailAddress(to)) {
+      setEmailError('Enter one valid recipient email address.')
+      return
+    }
+    if (!subject) {
+      setEmailError('Subject is required.')
+      return
+    }
+
+    setEmailState('sending')
+    setEmailError('')
+    try {
+      const response = await api.post<VaultEmailResponse>(
+        `/uploads/${emailFile.id}/email/`,
+        { to, subject, message },
+        { headers: { 'Idempotency-Key': emailIdempotencyKey || createIdempotencyKey() } },
+      )
+      if (response.data.status === 'sent') {
+        setEmailState('sent')
+        setToast({ tone: 'success', message: 'Email sent.' })
+        return
+      }
+      setEmailState('idle')
+      setEmailError('Email could not be sent. Please try again.')
+    } catch (error) {
+      setEmailState('idle')
+      setEmailError(emailErrorMessage(error))
+    }
   }
 
   function openShareLink(file: VaultFile) {
@@ -454,6 +547,7 @@ export default function Vault() {
       await api.delete(`/uploads/${file.id}/`)
       setSelectedFile((current) => (current?.id === file.id ? null : current))
       setShareFile((current) => (current?.id === file.id ? null : current))
+      setEmailFile((current) => (current?.id === file.id ? null : current))
       setToast({ tone: 'success', message: `${file.file_name} removed from Vault.` })
       await refreshVault()
     } catch {
@@ -598,6 +692,7 @@ export default function Vault() {
                 working={workingFileId === file.id}
                 onOpen={() => setSelectedFile(file)}
                 onDownload={() => handleDownload(file)}
+                onEmailFile={() => openEmailFile(file)}
                 onShareFile={() => void handleShareFile(file)}
                 onShareLink={() => openShareLink(file)}
                 onRemove={() => void handleRemove(file)}
@@ -613,9 +708,29 @@ export default function Vault() {
           working={workingFileId === selectedFile.id}
           onClose={() => setSelectedFile(null)}
           onDownload={() => handleDownload(selectedFile)}
+          onEmailFile={() => openEmailFile(selectedFile)}
           onShareFile={() => void handleShareFile(selectedFile)}
           onShareLink={() => openShareLink(selectedFile)}
           onRemove={() => void handleRemove(selectedFile)}
+        />
+      )}
+
+
+      {emailFile && (
+        <EmailFileModal
+          file={emailFile}
+          to={emailTo}
+          subject={emailSubject}
+          message={emailMessage}
+          emailState={emailState}
+          error={emailError}
+          onToChange={setEmailTo}
+          onSubjectChange={setEmailSubject}
+          onMessageChange={setEmailMessage}
+          onSend={() => void handleEmailFile()}
+          onDownload={() => handleDownload(emailFile)}
+          onShareLink={() => openShareLink(emailFile)}
+          onClose={closeEmailFile}
         />
       )}
 
@@ -728,6 +843,7 @@ function FileTile({
   working,
   onOpen,
   onDownload,
+  onEmailFile,
   onShareFile,
   onShareLink,
   onRemove,
@@ -737,6 +853,7 @@ function FileTile({
   working: boolean
   onOpen: () => void
   onDownload: () => void
+  onEmailFile: () => void
   onShareFile: () => void
   onShareLink: () => void
   onRemove: () => void
@@ -757,7 +874,7 @@ function FileTile({
             <p className="mt-1 text-xs text-slate-500">{typeLabel(file)} · {formatBytes(file.file_size)} · {formatDate(file.uploaded_at)}</p>
           </div>
         </button>
-        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onShareFile={onShareFile} onShareLink={onShareLink} onRemove={onRemove} />
+        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onEmailFile={onEmailFile} onShareFile={onShareFile} onShareLink={onShareLink} onRemove={onRemove} />
       </div>
     )
   }
@@ -781,7 +898,7 @@ function FileTile({
         </div>
       </button>
       <div className="border-t border-slate-100 px-3 py-2">
-        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onShareFile={onShareFile} onShareLink={onShareLink} onRemove={onRemove} />
+        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onEmailFile={onEmailFile} onShareFile={onShareFile} onShareLink={onShareLink} onRemove={onRemove} />
       </div>
     </div>
   )
@@ -791,6 +908,7 @@ function FileActions({
   working,
   onOpen,
   onDownload,
+  onEmailFile,
   onShareFile,
   onShareLink,
   onRemove,
@@ -798,6 +916,7 @@ function FileActions({
   working: boolean
   onOpen: () => void
   onDownload: () => void
+  onEmailFile: () => void
   onShareFile: () => void
   onShareLink: () => void
   onRemove: () => void
@@ -807,6 +926,10 @@ function FileActions({
       <button type="button" onClick={onOpen} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">View</button>
       <button type="button" onClick={onDownload} className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50" title="Download">
         <ArrowDownTrayIcon className="h-4 w-4" />
+      </button>
+      <button type="button" onClick={onEmailFile} disabled={working} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Email File">
+        <EnvelopeIcon className="h-4 w-4" />
+        Email File
       </button>
       <button type="button" onClick={onShareFile} disabled={working} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Share File">
         <ShareIcon className="h-4 w-4" />
@@ -822,6 +945,125 @@ function FileActions({
   )
 }
 
+
+
+function EmailFileModal({
+  file,
+  to,
+  subject,
+  message,
+  emailState,
+  error,
+  onToChange,
+  onSubjectChange,
+  onMessageChange,
+  onSend,
+  onDownload,
+  onShareLink,
+  onClose,
+}: {
+  file: VaultFile
+  to: string
+  subject: string
+  message: string
+  emailState: EmailState
+  error: string
+  onToChange: (value: string) => void
+  onSubjectChange: (value: string) => void
+  onMessageChange: (value: string) => void
+  onSend: () => void
+  onDownload: () => void
+  onShareLink: () => void
+  onClose: () => void
+}) {
+  const sending = emailState === 'sending'
+  const sent = emailState === 'sent'
+  const oversized = error === 'This file is too large to email as an attachment.'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+      <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-bold uppercase text-[#D4900A]">bonUP Vault</p>
+            <h2 className="mt-1 text-lg font-bold text-slate-900">Email File</h2>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-4">
+          <label className="block text-sm font-bold text-slate-700">
+            To
+            <input
+              type="email"
+              value={to}
+              onChange={(event) => onToChange(event.target.value)}
+              disabled={sending || sent}
+              placeholder="recipient@example.com"
+              className="mt-2 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-100 disabled:bg-slate-50"
+            />
+          </label>
+
+          <label className="block text-sm font-bold text-slate-700">
+            Subject
+            <input
+              value={subject}
+              onChange={(event) => onSubjectChange(event.target.value)}
+              disabled={sending || sent}
+              className="mt-2 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-100 disabled:bg-slate-50"
+            />
+          </label>
+
+          <label className="block text-sm font-bold text-slate-700">
+            Message
+            <textarea
+              value={message}
+              onChange={(event) => onMessageChange(event.target.value)}
+              disabled={sending || sent}
+              rows={4}
+              placeholder="Optional message"
+              className="mt-2 w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-100 disabled:bg-slate-50"
+            />
+          </label>
+
+          <div>
+            <p className="text-sm font-bold text-slate-700">Attachment</p>
+            <div className="mt-2 flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <DocumentIcon className="h-6 w-6 shrink-0 text-slate-500" />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-slate-900">{file.file_name}</p>
+                <p className="mt-1 text-xs font-semibold text-slate-500">{formatBytes(file.file_size)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {error && <p className="mt-4 text-sm font-semibold text-red-600">{error}</p>}
+        {sent && <p className="mt-4 text-sm font-semibold text-emerald-700">Email sent.</p>}
+
+        {oversized && (
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            <button type="button" onClick={onDownload} className="h-10 rounded-lg border border-slate-300 px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">Download</button>
+            <button type="button" onClick={onShareLink} className="h-10 rounded-lg border border-slate-300 px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">Share Link</button>
+          </div>
+        )}
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={onClose} disabled={sending} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+            {sent ? 'Done' : 'Cancel'}
+          </button>
+          {!sent && (
+            <button type="button" onClick={onSend} disabled={sending} className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400">
+              {sending ? 'Sending...' : 'Send Email'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function ShareModal({
   file,
@@ -938,6 +1180,7 @@ function FileDetailsModal({
   working,
   onClose,
   onDownload,
+  onEmailFile,
   onShareFile,
   onShareLink,
   onRemove,
@@ -946,6 +1189,7 @@ function FileDetailsModal({
   working: boolean
   onClose: () => void
   onDownload: () => void
+  onEmailFile: () => void
   onShareFile: () => void
   onShareLink: () => void
   onRemove: () => void
@@ -989,7 +1233,8 @@ function FileDetailsModal({
             </dl>
             <div className="mt-6 flex flex-col gap-2">
               <button type="button" onClick={onDownload} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50">Download</button>
-              <button type="button" onClick={onShareFile} disabled={working} className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400">Share File</button>
+              <button type="button" onClick={onEmailFile} disabled={working} className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400">Email File</button>
+              <button type="button" onClick={onShareFile} disabled={working} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Share File</button>
               <button type="button" onClick={onShareLink} disabled={working} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Share Link</button>
               <button type="button" onClick={onRemove} disabled={working} className="h-10 rounded-lg border border-red-200 px-4 text-sm font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50">Remove from Vault</button>
             </div>

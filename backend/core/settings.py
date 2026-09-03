@@ -209,6 +209,10 @@ DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@bonup.cloud")
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 RESEND_API_URL = os.environ.get("RESEND_API_URL", "https://api.resend.com/emails")
 RESEND_TIMEOUT = int(os.environ.get("RESEND_TIMEOUT", "10") or 10)
+BONUP_EMAIL_PROVIDER = os.environ.get("BONUP_EMAIL_PROVIDER", "resend")
+BONUP_EMAIL_FROM = os.environ.get("BONUP_EMAIL_FROM", "")
+BONUP_EMAIL_ATTACHMENT_MAX_BYTES = int(os.environ.get("BONUP_EMAIL_ATTACHMENT_MAX_BYTES", str(25 * 1024 * 1024)) or 0)
+BONUP_VAULT_EMAIL_RATE_LIMIT_PER_HOUR = int(os.environ.get("BONUP_VAULT_EMAIL_RATE_LIMIT_PER_HOUR", "10") or 0)
 
 # Base URL of the frontend — used to construct verification links in emails.
 # Override via FRONTEND_URL env var in production.

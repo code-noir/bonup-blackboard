@@ -159,6 +159,7 @@ class UserObjectAccess(models.Model):
     def __str__(self):
         return f"{self.user_id}: {self.stored_object_id} ({'active' if self.is_active else 'removed'})"
 
+
 class VaultShare(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = models.ForeignKey(
@@ -186,4 +187,50 @@ class VaultShare(models.Model):
 
     def __str__(self):
         return f"{self.owner_id}: {self.stored_object_id}"
+
+
+class VaultEmailDelivery(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        SENT = "sent", "Sent"
+        FAILED = "failed", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    sender_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="vault_email_deliveries",
+    )
+    stored_object = models.ForeignKey(
+        StoredObject,
+        on_delete=models.PROTECT,
+        related_name="email_deliveries",
+    )
+    recipient_email = models.EmailField()
+    subject = models.CharField(max_length=255)
+    provider = models.CharField(max_length=80)
+    provider_message_id = models.CharField(max_length=255, blank=True, default="")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    idempotency_key = models.CharField(max_length=256, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    failure_code = models.CharField(max_length=80, blank=True, default="")
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["sender_user", "idempotency_key"],
+                condition=~models.Q(idempotency_key=""),
+                name="vault_email_delivery_idempotent",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["sender_user", "created_at"], name="vault_email_sender_created_idx"),
+            models.Index(fields=["stored_object", "created_at"], name="vault_email_object_created_idx"),
+            models.Index(fields=["status", "created_at"], name="vault_email_status_created_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.sender_user_id}: {self.recipient_email} ({self.status})"
 

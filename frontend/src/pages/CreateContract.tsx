@@ -127,6 +127,17 @@ interface ContractRetrievePayload {
   latest_version?: ContractVersionPayload | null
 }
 
+interface ContractDocumentPayload {
+  id: string
+  upload_id: string
+  file_url: string | null
+  file_name: string
+  file_type: string
+  file_size?: number
+  title?: string
+  attached_at: string
+}
+
 interface PreparedTerm {
   description?: string
   amount?: string | null
@@ -269,6 +280,8 @@ interface AttachmentFile {
   progress?: number
   uploadId?: string
   documentId?: string
+  fileUrl?: string | null
+  deleting?: boolean
   error?: string
 }
 
@@ -310,6 +323,24 @@ function vaultFileTypeLabel(fileType: string) {
   if (normalized === 'slides') return 'Slides'
   if (normalized === 'document') return 'Document'
   return 'File'
+}
+
+function attachmentFromDocument(doc: ContractDocumentPayload): AttachmentFile {
+  const name = doc.file_name || doc.title || 'Attached file'
+  const sizeBytes = doc.file_size ?? 0
+  return {
+    id: doc.id,
+    name,
+    sizeStr: sizeBytes > 0 ? formatBytes(sizeBytes) : 'Unknown size',
+    sizeBytes,
+    date: formatVaultDate(doc.attached_at),
+    type: getFileType(name),
+    uploading: false,
+    progress: 100,
+    uploadId: doc.upload_id,
+    documentId: doc.id,
+    fileUrl: doc.file_url,
+  }
 }
 
 const FILE_TYPE_META: Record<AttachFileType, { bg: string; icon: string }> = {
@@ -781,9 +812,13 @@ export default function CreateContract() {
     if (stored) setCreatedContractTitle(stored)
     setContractTitle((prev) => prev || stored || '')
 
-    api.get<ContractRetrievePayload>(`/contracts/${contractIdParam}/`)
-      .then(({ data }) => {
+    Promise.all([
+      api.get<ContractRetrievePayload>(`/contracts/${contractIdParam}/`),
+      api.get<ContractDocumentPayload[]>(`/contracts/${contractIdParam}/documents/`),
+    ])
+      .then(([contractResponse, documentsResponse]) => {
         if (cancelled) return
+        const data = contractResponse.data
         applyContractMetadata(data, stored || '')
         lastSavedMetadataRef.current = JSON.stringify({
           title: data.title || stored || '',
@@ -811,6 +846,7 @@ export default function CreateContract() {
           lastSavedDraftRef.current = ''
           draftSnapshotBaseRef.current = {}
         }
+        setAttachFiles(documentsResponse.data.map(attachmentFromDocument))
         setContractLoaded(true)
       })
       .catch(() => {
@@ -3656,6 +3692,7 @@ export default function CreateContract() {
                               progress: 100,
                               uploadId: data.upload_id,
                               documentId: data.id,
+                              fileUrl: data.file_url,
                             },
                             ...prev,
                           ])
@@ -3703,6 +3740,7 @@ export default function CreateContract() {
                                 progress: 100,
                                 uploadId: data.upload_id,
                                 documentId: data.id,
+                                fileUrl: data.file_url,
                               } : f))
                             })
                             .catch((error) => {
@@ -3714,6 +3752,28 @@ export default function CreateContract() {
                               setAttachError(message)
                             })
                         })
+                      }
+
+                      function viewAttachment(file: AttachmentFile) {
+                        if (!file.fileUrl) {
+                          setAttachError('This attachment is not available for viewing.')
+                          return
+                        }
+                        setAttachError('')
+                        window.open(file.fileUrl, '_blank', 'noopener,noreferrer')
+                      }
+
+                      async function deleteAttachment(file: AttachmentFile) {
+                        if (!currentContractId || !file.documentId || file.deleting) return
+                        setAttachError('')
+                        setAttachFiles((prev) => prev.map((f) => f.id === file.id ? { ...f, deleting: true, error: undefined } : f))
+                        try {
+                          await api.delete(`/contracts/${currentContractId}/documents/${file.documentId}/`)
+                          setAttachFiles((prev) => prev.filter((f) => f.id !== file.id))
+                        } catch {
+                          setAttachFiles((prev) => prev.map((f) => f.id === file.id ? { ...f, deleting: false, error: 'Delete failed.' } : f))
+                          setAttachError('Could not remove this attachment from the contract.')
+                        }
                       }
 
                       const vaultSearch = vaultPickerSearch.trim().toLowerCase()
@@ -3926,29 +3986,34 @@ export default function CreateContract() {
                                   {/* Actions */}
                                   <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
                                     <button
+                                      type="button"
                                       title="View / Download"
+                                      onClick={() => viewAttachment(file)}
+                                      disabled={!file.fileUrl}
                                       style={{
                                         background: 'transparent', border: 'none',
-                                        cursor: 'pointer', fontSize: 14, padding: 4,
-                                        color: '#6B7280',
+                                        cursor: file.fileUrl ? 'pointer' : 'not-allowed', fontSize: 14, padding: 4,
+                                        color: '#6B7280', opacity: file.fileUrl ? 1 : 0.45,
                                       }}
-                                      onMouseEnter={(e) => (e.currentTarget.style.color = '#0F1F3D')}
+                                      onMouseEnter={(e) => { if (file.fileUrl) e.currentTarget.style.color = '#0F1F3D' }}
                                       onMouseLeave={(e) => (e.currentTarget.style.color = '#6B7280')}
                                     >
                                       👁
                                     </button>
                                     <button
+                                      type="button"
                                       title="Delete"
-                                      onClick={() => setAttachFiles((prev) => prev.filter((f) => f.id !== file.id))}
+                                      onClick={() => void deleteAttachment(file)}
+                                      disabled={file.deleting || !file.documentId}
                                       style={{
                                         background: 'transparent', border: 'none',
-                                        cursor: 'pointer', fontSize: 14, padding: 4,
-                                        color: '#6B7280',
+                                        cursor: file.deleting || !file.documentId ? 'not-allowed' : 'pointer', fontSize: 14, padding: 4,
+                                        color: '#6B7280', opacity: file.deleting || !file.documentId ? 0.45 : 1,
                                       }}
-                                      onMouseEnter={(e) => (e.currentTarget.style.color = '#DC2626')}
+                                      onMouseEnter={(e) => { if (!file.deleting && file.documentId) e.currentTarget.style.color = '#DC2626' }}
                                       onMouseLeave={(e) => (e.currentTarget.style.color = '#6B7280')}
                                     >
-                                      🗑
+                                      {file.deleting ? '...' : '🗑'}
                                     </button>
                                   </div>
                                 </div>

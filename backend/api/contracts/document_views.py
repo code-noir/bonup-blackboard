@@ -60,6 +60,7 @@ def _serialize(doc):
         "file_url": get_upload_url(doc.upload),
         "file_name": doc.upload.file_name,
         "file_type": doc.upload.file_type,
+        "file_size": doc.upload.file_size,
         "attached_by_id": doc.attached_by_id,
         "title": doc.title,
         "description": doc.description,

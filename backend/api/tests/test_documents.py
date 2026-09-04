@@ -212,6 +212,7 @@ class AttachDocumentTests(TestCase):
         self.assertIn("file_url", r.data)
         self.assertIn("file_name", r.data)
         self.assertIn("file_type", r.data)
+        self.assertEqual(r.data["file_size"], self.upload.file_size)
 
     def test_party_cannot_attach_upload_owned_by_other_user(self):
         # counterparty is a valid contract party but self.upload belongs to the initiator
@@ -288,7 +289,7 @@ class ListDocumentsTests(TestCase):
         r = self.client.get(doc_url(self.contract.id))
         item = r.data[0]
         for field in ("id", "contract_id", "upload_id", "file_url", "file_name",
-                      "file_type", "attached_by_id", "title", "description",
+                      "file_type", "file_size", "attached_by_id", "title", "description",
                       "is_proof", "attached_at"):
             self.assertIn(field, item, f"Missing field: {field}")
 

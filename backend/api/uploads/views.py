@@ -453,11 +453,13 @@ class UploadsViewSet(ViewSet):
             return Response([
                 {
                     "id": str(share.id),
+                    "created_at": share.created_at,
                     "expires_at": share.expires_at,
                     "revoked_at": share.revoked_at,
-                    "is_valid": _is_share_valid(share),
+                    "is_valid": True,
                 }
                 for share in shares
+                if _is_share_valid(share)
             ])
 
         expiration = request.data.get("expiration", DEFAULT_SHARE_EXPIRATION)

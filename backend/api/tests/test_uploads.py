@@ -628,6 +628,129 @@ class UploadShareTests(TestCase):
         self.assertIsNotNone(response.data["revoked_at"])
         self.assertIsNotNone(VaultShare.objects.get(pk=share_id).revoked_at)
 
+    def test_owner_can_list_active_shares_for_visible_canonical_file(self):
+        first, _ = self._create_share("1d")
+        second, _ = self._create_share("30d")
+
+        response = self.client.get(f"{UPLOAD_URL}{self.upload.id}/shares/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["id"] for item in response.data], [second.data["id"], first.data["id"]])
+        self.assertTrue(all(item["is_valid"] for item in response.data))
+        self.assertTrue(all(item["created_at"] for item in response.data))
+        self.assertTrue(all(item["expires_at"] for item in response.data))
+
+    def test_share_listing_never_exposes_token_or_provider_internals(self):
+        create_response, token = self._create_share()
+
+        response = self.client.get(f"{UPLOAD_URL}{self.upload.id}/shares/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data[0]["id"], create_response.data["id"])
+        forbidden = {"token", "token_hash", "share_url", "stored_object", "stored_object_id", "backend", "bucket", "object_key", "file_url", "storage_key"}
+        self.assertFalse(forbidden.intersection(response.data[0].keys()))
+        self.assertNotIn(token, str(response.data[0]))
+
+    def test_cross_user_cannot_list_another_users_shares(self):
+        self._create_share()
+
+        response = authed_client(self.other).get(f"{UPLOAD_URL}{self.upload.id}/shares/")
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_hidden_removed_upload_cannot_expose_share_management(self):
+        self._create_share()
+        UserObjectAccess.objects.filter(user=self.user, stored_object=self.upload.stored_object).update(
+            is_active=True,
+            is_visible=False,
+            removed_at=timezone.now(),
+        )
+
+        list_response = self.client.get(f"{UPLOAD_URL}{self.upload.id}/shares/")
+        create_response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/shares/", {"expiration": "7d"}, format="json")
+
+        self.assertEqual(list_response.status_code, 404)
+        self.assertEqual(create_response.status_code, 404)
+
+    def test_cross_user_cannot_revoke_another_users_share(self):
+        create_response, token = self._create_share()
+        share_id = create_response.data["id"]
+
+        response = authed_client(self.other).post(f"{UPLOAD_URL}{self.upload.id}/shares/{share_id}/revoke/", {}, format="json")
+        public_response = APIClient().get(f"{UPLOAD_URL}shares/{token}/")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(public_response.status_code, 200)
+        self.assertIsNone(VaultShare.objects.get(pk=share_id).revoked_at)
+
+    def test_revoked_public_token_no_longer_resolves_or_delivers(self):
+        create_response, token = self._create_share()
+        share_id = create_response.data["id"]
+
+        response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/shares/{share_id}/revoke/", {}, format="json")
+        public_response = APIClient().get(f"{UPLOAD_URL}shares/{token}/")
+        delivery_response = APIClient().get(f"{UPLOAD_URL}shares/{token}/delivery/")
+        list_response = self.client.get(f"{UPLOAD_URL}{self.upload.id}/shares/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(public_response.status_code, 404)
+        self.assertEqual(delivery_response.status_code, 404)
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.data, [])
+
+    @patch("backend.uploads.services.default_storage")
+    def test_share_operations_leave_storage_quota_and_contract_references_unchanged(self, mock_storage):
+        contract = make_contract(self.user, self.other.email)
+        doc = ContractDocument.objects.create(
+            contract=contract,
+            upload=self.upload,
+            attached_by=self.user,
+            title="Referenced Share Doc",
+        )
+        upload_count = Upload.objects.count()
+        object_count = StoredObject.objects.count()
+        access = UserObjectAccess.objects.get(user=self.user, stored_object=self.upload.stored_object)
+        access_snapshot = (access.id, access.is_active, access.is_visible, access.counts_toward_quota, access.removed_at)
+        object_key = self.upload.stored_object.object_key
+        quota_before = get_storage_capacity_snapshot(self.user).used_bytes
+
+        create_response, _ = self._create_share()
+        list_response = self.client.get(f"{UPLOAD_URL}{self.upload.id}/shares/")
+        revoke_response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/shares/{create_response.data['id']}/revoke/", {}, format="json")
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(revoke_response.status_code, 200)
+        self.upload.refresh_from_db()
+        self.upload.stored_object.refresh_from_db()
+        access.refresh_from_db()
+        self.assertEqual(Upload.objects.count(), upload_count)
+        self.assertEqual(StoredObject.objects.count(), object_count)
+        self.assertEqual(self.upload.stored_object.object_key, object_key)
+        self.assertEqual(
+            (access.id, access.is_active, access.is_visible, access.counts_toward_quota, access.removed_at),
+            access_snapshot,
+        )
+        self.assertEqual(get_storage_capacity_snapshot(self.user).used_bytes, quota_before)
+        self.assertTrue(ContractDocument.objects.filter(pk=doc.id, upload=self.upload).exists())
+        mock_storage.open.assert_not_called()
+        mock_storage.save.assert_not_called()
+        mock_storage.delete.assert_not_called()
+
+    def test_multiple_shares_can_be_revoked_independently(self):
+        first, first_token = self._create_share("1d")
+        second, second_token = self._create_share("30d")
+
+        first_revoke = self.client.post(f"{UPLOAD_URL}{self.upload.id}/shares/{first.data['id']}/revoke/", {}, format="json")
+        first_public = APIClient().get(f"{UPLOAD_URL}shares/{first_token}/")
+        second_public = APIClient().get(f"{UPLOAD_URL}shares/{second_token}/")
+        list_response = self.client.get(f"{UPLOAD_URL}{self.upload.id}/shares/")
+
+        self.assertEqual(first_revoke.status_code, 200)
+        self.assertEqual(first_public.status_code, 404)
+        self.assertEqual(second_public.status_code, 200)
+        self.assertEqual([item["id"] for item in list_response.data], [second.data["id"]])
+
 
 class UploadShareFileDeliveryTests(TestCase):
 

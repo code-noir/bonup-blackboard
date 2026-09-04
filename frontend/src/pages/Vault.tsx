@@ -61,13 +61,15 @@ type NativeShareNavigator = Navigator & {
 
 type VaultShare = {
   id: string
-  share_url: string
+  share_url?: string
+  created_at?: string
   expires_at: string | null
   revoked_at: string | null
-  file_name: string
-  file_type: string
-  content_type: string
-  file_size: number
+  is_valid?: boolean
+  file_name?: string
+  file_type?: string
+  content_type?: string
+  file_size?: number
 }
 
 type VaultEmailResponse = {
@@ -252,7 +254,10 @@ export default function Vault() {
   const [renameFile, setRenameFile] = useState<VaultFile | null>(null)
   const [nativeShareFallbackFile, setNativeShareFallbackFile] = useState<VaultFile | null>(null)
   const [shareExpiration, setShareExpiration] = useState<ShareExpiration>('7d')
-  const [shareResult, setShareResult] = useState<VaultShare | null>(null)
+  const [shareLinks, setShareLinks] = useState<VaultShare[]>([])
+  const [shareLinksLoading, setShareLinksLoading] = useState(false)
+  const [shareError, setShareError] = useState('')
+  const [revokingShareId, setRevokingShareId] = useState<string | null>(null)
   const [emailTo, setEmailTo] = useState('')
   const [emailSubject, setEmailSubject] = useState('')
   const [emailMessage, setEmailMessage] = useState('')
@@ -466,11 +471,26 @@ export default function Vault() {
     }
   }
 
+  async function loadShareLinks(file: VaultFile) {
+    setShareLinksLoading(true)
+    setShareError('')
+    try {
+      const response = await api.get<VaultShare[]>(`/uploads/${file.id}/shares/`)
+      setShareLinks(response.data)
+    } catch {
+      setShareError('Could not load active share links.')
+    } finally {
+      setShareLinksLoading(false)
+    }
+  }
+
   function openShareLink(file: VaultFile) {
     setShareFile(file)
-    setShareResult(null)
+    setShareLinks([])
     setShareExpiration('7d')
+    setShareError('')
     setToast(null)
+    void loadShareLinks(file)
   }
 
   function showNativeShareFallback(file: VaultFile, message = "This browser can't share this file directly.") {
@@ -571,15 +591,34 @@ export default function Vault() {
   async function handleCreateShare() {
     if (!shareFile) return
     setSharing(true)
+    setShareError('')
     setToast(null)
     try {
       const response = await api.post<VaultShare>(`/uploads/${shareFile.id}/shares/`, { expiration: shareExpiration })
-      setShareResult(response.data)
+      setShareLinks((current) => [response.data, ...current.filter((share) => share.id !== response.data.id)])
       setToast({ tone: 'success', message: 'Share link created.' })
     } catch {
-      setToast({ tone: 'error', message: 'Could not create a share link for this file.' })
+      setShareError('Could not create a share link for this file.')
     } finally {
       setSharing(false)
+    }
+  }
+
+  async function handleRevokeShare(share: VaultShare) {
+    if (!shareFile || revokingShareId) return
+    const confirmed = window.confirm('Revoke this Share Link? People with this link will no longer be able to access the file.')
+    if (!confirmed) return
+
+    setRevokingShareId(share.id)
+    setShareError('')
+    try {
+      await api.post(`/uploads/${shareFile.id}/shares/${share.id}/revoke/`, {})
+      setShareLinks((current) => current.filter((item) => item.id !== share.id))
+      setToast({ tone: 'success', message: 'Share link revoked.' })
+    } catch {
+      setShareError('Could not revoke this share link.')
+    } finally {
+      setRevokingShareId(null)
     }
   }
 
@@ -817,11 +856,15 @@ export default function Vault() {
         <ShareModal
           file={shareFile}
           expiration={shareExpiration}
-          share={shareResult}
+          shares={shareLinks}
+          sharesLoading={shareLinksLoading}
           sharing={sharing}
+          revokingShareId={revokingShareId}
+          error={shareError}
           onExpirationChange={setShareExpiration}
           onCreateShare={() => void handleCreateShare()}
           onCopy={(link) => void copyShareLink(link)}
+          onRevoke={(share) => void handleRevokeShare(share)}
           onClose={() => setShareFile(null)}
         />
       )}
@@ -1214,37 +1257,45 @@ function EmailFileModal({
 function ShareModal({
   file,
   expiration,
-  share,
+  shares,
+  sharesLoading,
   sharing,
+  revokingShareId,
+  error,
   onExpirationChange,
   onCreateShare,
   onCopy,
+  onRevoke,
   onClose,
 }: {
   file: VaultFile
   expiration: ShareExpiration
-  share: VaultShare | null
+  shares: VaultShare[]
+  sharesLoading: boolean
   sharing: boolean
+  revokingShareId: string | null
+  error: string
   onExpirationChange: (value: ShareExpiration) => void
   onCreateShare: () => void
   onCopy: (link: string) => void
+  onRevoke: (share: VaultShare) => void
   onClose: () => void
 }) {
-  const shareLink = share?.share_url || ''
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-      <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase text-[#D4900A]">bonUP Vault</p>
-            <h2 className="mt-1 truncate text-lg font-bold text-slate-900">Share Link for {file.file_name}</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">Create a bonUP-controlled link for this file when direct device sharing is not available or a remote link is needed.</p>
+            <h2 className="mt-1 truncate text-lg font-bold text-slate-900">Share Links</h2>
+            <p title={file.file_name} className="mt-2 truncate text-sm font-semibold text-slate-500">{file.file_name}</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
             <XMarkIcon className="h-5 w-5" />
           </button>
         </div>
+
+        <p className="mt-4 text-sm leading-6 text-slate-600">For security, existing share links can't be displayed again. Create a new link if you need another copy.</p>
 
         <label className="mt-5 block text-sm font-bold text-slate-700">
           Expiration
@@ -1264,18 +1315,50 @@ function ShareModal({
           {sharing ? 'Creating...' : 'Create Share Link'}
         </button>
 
-        {share && (
-          <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <p className="text-xs font-bold uppercase text-slate-400">Share link</p>
-            <p className="mt-2 break-all text-sm font-semibold text-slate-800">{shareLink}</p>
-            <div className="mt-4">
-              <button type="button" onClick={() => onCopy(shareLink)} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
-                <ClipboardDocumentIcon className="h-4 w-4" />
-                Copy Link
-              </button>
+        {error && <p className="mt-4 text-sm font-semibold text-red-600">{error}</p>}
+
+        <div className="mt-5">
+          <p className="text-xs font-bold uppercase text-slate-400">Active links</p>
+          {sharesLoading && <p className="mt-3 text-sm font-semibold text-slate-600">Loading share links...</p>}
+          {!sharesLoading && shares.length === 0 && (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+              No active Share Links for this file.
             </div>
-          </div>
-        )}
+          )}
+          {!sharesLoading && shares.length > 0 && (
+            <div className="mt-3 space-y-3">
+              {shares.map((share) => {
+                const shareLink = share.share_url || ''
+                const canCopy = Boolean(shareLink)
+                return (
+                  <div key={share.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-slate-900">Active Share Link</p>
+                        <p className="mt-1 text-xs text-slate-500">Created {share.created_at ? formatDate(share.created_at) : 'just now'}</p>
+                        <p className="mt-1 text-xs text-slate-500">Expires {share.expires_at ? formatDate(share.expires_at) : 'Never'}</p>
+                      </div>
+                      <button type="button" onClick={() => onRevoke(share)} disabled={revokingShareId === share.id} className="shrink-0 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50">
+                        {revokingShareId === share.id ? 'Revoking...' : 'Revoke'}
+                      </button>
+                    </div>
+                    {canCopy ? (
+                      <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
+                        <p className="break-all text-sm font-semibold text-slate-800">{shareLink}</p>
+                        <button type="button" onClick={() => onCopy(shareLink)} className="mt-3 inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                          <ClipboardDocumentIcon className="h-4 w-4" />
+                          Copy Link
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-xs leading-5 text-slate-500">Link URL is hidden after creation.</p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

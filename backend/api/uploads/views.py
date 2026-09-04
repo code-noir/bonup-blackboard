@@ -211,6 +211,17 @@ def _validation_error(code, detail, *, status_code=status.HTTP_400_BAD_REQUEST):
     return Response({"code": code, "detail": detail}, status=status_code)
 
 
+def _validate_file_name(value):
+    file_name = value.strip() if isinstance(value, str) else ""
+    if not file_name:
+        return None, _validation_error("file_name_required", "Filename is required.")
+    if len(file_name) > Upload._meta.get_field("file_name").max_length:
+        return None, _validation_error("file_name_too_long", "Filename must be 255 characters or fewer.")
+    if "/" in file_name or "\\" in file_name:
+        return None, _validation_error("invalid_file_name", "Filename cannot contain path separators.")
+    return file_name, None
+
+
 def _normalize_recipient(value):
     recipient = (value or "").strip()
     validate_email(recipient)
@@ -263,6 +274,16 @@ class UploadsViewSet(ViewSet):
             qs = qs.filter(is_draft_document=is_draft.lower() in ("true", "1", "yes"))
 
         return Response([_serialize(u) for u in qs])
+
+    def partial_update(self, request, pk=None):
+        upload = get_object_or_404(_active_canonical_uploads_for_user(request.user), pk=pk)
+        file_name, error = _validate_file_name(request.data.get("file_name"))
+        if error is not None:
+            return error
+
+        upload.file_name = file_name
+        upload.save(update_fields=["file_name"])
+        return Response(_serialize(upload))
 
     def create(self, request):
         file = request.FILES.get("file")

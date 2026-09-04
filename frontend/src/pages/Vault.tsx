@@ -6,6 +6,7 @@ import {
   EnvelopeIcon,
   MagnifyingGlassIcon,
   MusicalNoteIcon,
+  PencilSquareIcon,
   PhotoIcon,
   PlusIcon,
   ShareIcon,
@@ -39,6 +40,7 @@ type SortKey = 'newest' | 'oldest' | 'name' | 'size'
 type ViewMode = 'grid' | 'list'
 type ShareExpiration = '1d' | '7d' | '30d' | 'none'
 type EmailState = 'idle' | 'sending' | 'sent'
+type RenameState = 'idle' | 'saving'
 
 type LoadState = 'loading' | 'success' | 'error'
 
@@ -247,6 +249,7 @@ export default function Vault() {
   const [selectedFile, setSelectedFile] = useState<VaultFile | null>(null)
   const [shareFile, setShareFile] = useState<VaultFile | null>(null)
   const [emailFile, setEmailFile] = useState<VaultFile | null>(null)
+  const [renameFile, setRenameFile] = useState<VaultFile | null>(null)
   const [nativeShareFallbackFile, setNativeShareFallbackFile] = useState<VaultFile | null>(null)
   const [shareExpiration, setShareExpiration] = useState<ShareExpiration>('7d')
   const [shareResult, setShareResult] = useState<VaultShare | null>(null)
@@ -256,6 +259,9 @@ export default function Vault() {
   const [emailState, setEmailState] = useState<EmailState>('idle')
   const [emailError, setEmailError] = useState('')
   const [emailIdempotencyKey, setEmailIdempotencyKey] = useState('')
+  const [renameName, setRenameName] = useState('')
+  const [renameState, setRenameState] = useState<RenameState>('idle')
+  const [renameError, setRenameError] = useState('')
   const [sharing, setSharing] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [workingFileId, setWorkingFileId] = useState<string | null>(null)
@@ -364,6 +370,64 @@ export default function Vault() {
     setEmailFile(null)
     setEmailError('')
     setEmailState('idle')
+  }
+
+  function openRenameFile(file: VaultFile) {
+    setRenameFile(file)
+    setRenameName(file.file_name)
+    setRenameState('idle')
+    setRenameError('')
+    setToast(null)
+  }
+
+  function closeRenameFile() {
+    if (renameState === 'saving') return
+    setRenameFile(null)
+    setRenameName('')
+    setRenameError('')
+  }
+
+  async function handleRenameFile() {
+    if (!renameFile || renameState === 'saving') return
+
+    const fileName = renameName.trim()
+    if (!fileName) {
+      setRenameError('Filename is required.')
+      return
+    }
+    if (fileName.includes('/') || fileName.includes('\\')) {
+      setRenameError('Filename cannot contain path separators.')
+      return
+    }
+    if (fileName.length > 255) {
+      setRenameError('Filename must be 255 characters or fewer.')
+      return
+    }
+
+    setRenameState('saving')
+    setRenameError('')
+    try {
+      const response = await api.patch<VaultFile>(`/uploads/${renameFile.id}/`, { file_name: fileName })
+      const updated = response.data
+      setFiles((current) => current.map((file) => file.id === updated.id ? updated : file))
+      setSelectedFile((current) => current?.id === updated.id ? updated : current)
+      setShareFile((current) => current?.id === updated.id ? updated : current)
+      setEmailFile((current) => current?.id === updated.id ? updated : current)
+      setNativeShareFallbackFile((current) => current?.id === updated.id ? updated : current)
+      setRenameFile(null)
+      setRenameName('')
+      setToast({ tone: 'success', message: 'File renamed.' })
+    } catch (error) {
+      const code = typeof error === 'object' && error !== null && 'response' in error
+        ? (error as { response?: { data?: { code?: string } } }).response?.data?.code
+        : undefined
+      if (code === 'file_name_required') setRenameError('Filename is required.')
+      else if (code === 'file_name_too_long') setRenameError('Filename must be 255 characters or fewer.')
+      else if (code === 'invalid_file_name') setRenameError('Filename cannot contain path separators.')
+      else setRenameError('Could not rename this file.')
+    } finally {
+      setRenameState('idle')
+    }
   }
 
   async function handleEmailFile() {
@@ -548,6 +612,7 @@ export default function Vault() {
       setSelectedFile((current) => (current?.id === file.id ? null : current))
       setShareFile((current) => (current?.id === file.id ? null : current))
       setEmailFile((current) => (current?.id === file.id ? null : current))
+      setRenameFile((current) => (current?.id === file.id ? null : current))
       setToast({ tone: 'success', message: `${file.file_name} removed from Vault.` })
       await refreshVault()
     } catch {
@@ -695,6 +760,7 @@ export default function Vault() {
                 onEmailFile={() => openEmailFile(file)}
                 onShareFile={() => void handleShareFile(file)}
                 onShareLink={() => openShareLink(file)}
+                onRename={() => openRenameFile(file)}
                 onRemove={() => void handleRemove(file)}
               />
             ))}
@@ -711,10 +777,23 @@ export default function Vault() {
           onEmailFile={() => openEmailFile(selectedFile)}
           onShareFile={() => void handleShareFile(selectedFile)}
           onShareLink={() => openShareLink(selectedFile)}
+          onRename={() => openRenameFile(selectedFile)}
           onRemove={() => void handleRemove(selectedFile)}
         />
       )}
 
+
+      {renameFile && (
+        <RenameFileModal
+          file={renameFile}
+          value={renameName}
+          renameState={renameState}
+          error={renameError}
+          onChange={setRenameName}
+          onSave={() => void handleRenameFile()}
+          onClose={closeRenameFile}
+        />
+      )}
 
       {emailFile && (
         <EmailFileModal
@@ -846,6 +925,7 @@ function FileTile({
   onEmailFile,
   onShareFile,
   onShareLink,
+  onRename,
   onRemove,
 }: {
   file: VaultFile
@@ -856,6 +936,7 @@ function FileTile({
   onEmailFile: () => void
   onShareFile: () => void
   onShareLink: () => void
+  onRename: () => void
   onRemove: () => void
 }) {
   const category = categoryForFile(file)
@@ -874,7 +955,7 @@ function FileTile({
             <p className="mt-1 text-xs text-slate-500">{typeLabel(file)} · {formatBytes(file.file_size)} · {formatDate(file.uploaded_at)}</p>
           </div>
         </button>
-        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onEmailFile={onEmailFile} onShareFile={onShareFile} onShareLink={onShareLink} onRemove={onRemove} />
+        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onEmailFile={onEmailFile} onShareFile={onShareFile} onShareLink={onShareLink} onRename={onRename} onRemove={onRemove} />
       </div>
     )
   }
@@ -898,7 +979,7 @@ function FileTile({
         </div>
       </button>
       <div className="border-t border-slate-100 px-3 py-2">
-        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onEmailFile={onEmailFile} onShareFile={onShareFile} onShareLink={onShareLink} onRemove={onRemove} />
+        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onEmailFile={onEmailFile} onShareFile={onShareFile} onShareLink={onShareLink} onRename={onRename} onRemove={onRemove} />
       </div>
     </div>
   )
@@ -911,6 +992,7 @@ function FileActions({
   onEmailFile,
   onShareFile,
   onShareLink,
+  onRename,
   onRemove,
 }: {
   working: boolean
@@ -919,6 +1001,7 @@ function FileActions({
   onEmailFile: () => void
   onShareFile: () => void
   onShareLink: () => void
+  onRename: () => void
   onRemove: () => void
 }) {
   return (
@@ -938,6 +1021,9 @@ function FileActions({
       <button type="button" onClick={onShareLink} disabled={working} className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Share Link">
         Share Link
       </button>
+      <button type="button" onClick={onRename} disabled={working} className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Rename">
+        <PencilSquareIcon className="h-4 w-4" />
+      </button>
       <button type="button" onClick={onRemove} disabled={working} className="rounded-lg border border-red-200 p-1.5 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50" title="Remove from Vault">
         <TrashIcon className="h-4 w-4" />
       </button>
@@ -945,6 +1031,66 @@ function FileActions({
   )
 }
 
+
+
+function RenameFileModal({
+  file,
+  value,
+  renameState,
+  error,
+  onChange,
+  onSave,
+  onClose,
+}: {
+  file: VaultFile
+  value: string
+  renameState: RenameState
+  error: string
+  onChange: (value: string) => void
+  onSave: () => void
+  onClose: () => void
+}) {
+  const saving = renameState === 'saving'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase text-[#D4900A]">bonUP Vault</p>
+            <h2 className="mt-1 text-lg font-bold text-slate-900">Rename File</h2>
+            <p title={file.file_name} className="mt-2 truncate text-sm font-semibold text-slate-500">{file.file_name}</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={saving} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50">
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <label className="mt-5 block text-sm font-bold text-slate-700">
+          Filename
+          <input
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            disabled={saving}
+            autoFocus
+            className="mt-2 block h-11 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-100 disabled:bg-slate-50"
+          />
+        </label>
+
+        {error && <p className="mt-3 text-sm font-semibold text-red-600">{error}</p>}
+
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} disabled={saving} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+            Cancel
+          </button>
+          <button type="button" onClick={onSave} disabled={saving} className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400">
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 
 function EmailFileModal({
@@ -1183,6 +1329,7 @@ function FileDetailsModal({
   onEmailFile,
   onShareFile,
   onShareLink,
+  onRename,
   onRemove,
 }: {
   file: VaultFile
@@ -1192,6 +1339,7 @@ function FileDetailsModal({
   onEmailFile: () => void
   onShareFile: () => void
   onShareLink: () => void
+  onRename: () => void
   onRemove: () => void
 }) {
   const category = categoryForFile(file)
@@ -1236,6 +1384,7 @@ function FileDetailsModal({
               <button type="button" onClick={onEmailFile} disabled={working} className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400">Email File</button>
               <button type="button" onClick={onShareFile} disabled={working} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Share File</button>
               <button type="button" onClick={onShareLink} disabled={working} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Share Link</button>
+              <button type="button" onClick={onRename} disabled={working} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Rename</button>
               <button type="button" onClick={onRemove} disabled={working} className="h-10 rounded-lg border border-red-200 px-4 text-sm font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50">Remove from Vault</button>
             </div>
           </aside>

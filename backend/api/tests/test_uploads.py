@@ -1117,6 +1117,157 @@ class UploadDuplicateTests(TestCase):
         self.assertNotIn("S3Boto3Storage", source)
 
 
+class UploadRenameTests(TestCase):
+
+    def setUp(self):
+        self.user = make_user("renamer", "renamer@example.com")
+        self.other = make_user("renamer_other", "renamer_other@example.com")
+        self.client = authed_client(self.user)
+        _grant_capacity(self.user, 10000)
+        self.upload = _managed_upload(
+            self.user,
+            name="old-name.pdf",
+            key="uploads/rename/original.pdf",
+            size=2048,
+        )
+
+    def _rename(self, upload=None, file_name="New Name.pdf", client=None):
+        return (client or self.client).patch(
+            f"{UPLOAD_URL}{(upload or self.upload).id}/",
+            {"file_name": file_name},
+            format="json",
+        )
+
+    @patch("backend.uploads.services.default_storage")
+    def test_owner_can_rename_active_visible_canonical_upload(self, mock_storage):
+        mock_storage.url.return_value = "https://current-provider.example/uploads/rename/original.pdf"
+
+        response = self._rename(file_name=" Renamed File.pdf ")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["file_name"], "Renamed File.pdf")
+        self.upload.refresh_from_db()
+        self.assertEqual(self.upload.file_name, "Renamed File.pdf")
+
+    def test_cross_user_rename_is_rejected(self):
+        response = self._rename(client=authed_client(self.other))
+
+        self.assertEqual(response.status_code, 404)
+        self.upload.refresh_from_db()
+        self.assertEqual(self.upload.file_name, "old-name.pdf")
+
+    def test_inactive_removed_canonical_upload_cannot_be_renamed(self):
+        UserObjectAccess.objects.filter(user=self.user, stored_object=self.upload.stored_object).update(
+            is_active=False,
+            is_visible=False,
+            removed_at=timezone.now(),
+        )
+
+        response = self._rename()
+
+        self.assertEqual(response.status_code, 404)
+        self.upload.refresh_from_db()
+        self.assertEqual(self.upload.file_name, "old-name.pdf")
+
+    def test_active_hidden_canonical_upload_cannot_be_renamed(self):
+        UserObjectAccess.objects.filter(user=self.user, stored_object=self.upload.stored_object).update(
+            is_active=True,
+            is_visible=False,
+            removed_at=timezone.now(),
+        )
+
+        response = self._rename()
+
+        self.assertEqual(response.status_code, 404)
+        self.upload.refresh_from_db()
+        self.assertEqual(self.upload.file_name, "old-name.pdf")
+
+    def test_empty_filename_rejected(self):
+        response = self._rename(file_name="   ")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "file_name_required")
+        self.upload.refresh_from_db()
+        self.assertEqual(self.upload.file_name, "old-name.pdf")
+
+    def test_forward_slash_filename_rejected(self):
+        response = self._rename(file_name="folder/new-name.pdf")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "invalid_file_name")
+        self.upload.refresh_from_db()
+        self.assertEqual(self.upload.file_name, "old-name.pdf")
+
+    def test_backslash_filename_rejected(self):
+        response = self._rename(file_name=r"folder\new-name.pdf")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "invalid_file_name")
+        self.upload.refresh_from_db()
+        self.assertEqual(self.upload.file_name, "old-name.pdf")
+
+    def test_too_long_filename_rejected(self):
+        response = self._rename(file_name=f"{'a' * 252}.pdf")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "file_name_too_long")
+        self.upload.refresh_from_db()
+        self.assertEqual(self.upload.file_name, "old-name.pdf")
+
+    @patch("backend.uploads.services.default_storage")
+    def test_successful_rename_changes_upload_file_name_only(self, mock_storage):
+        mock_storage.url.return_value = "https://current-provider.example/uploads/rename/original.pdf"
+        stored_object_id = self.upload.stored_object_id
+        object_key = self.upload.stored_object.object_key
+        access = UserObjectAccess.objects.get(user=self.user, stored_object=self.upload.stored_object)
+        access_snapshot = (access.id, access.is_active, access.is_visible, access.counts_toward_quota, access.removed_at)
+        quota_before = get_storage_capacity_snapshot(self.user).used_bytes
+        upload_count = Upload.objects.count()
+        object_count = StoredObject.objects.count()
+        access_count = UserObjectAccess.objects.count()
+
+        response = self._rename(file_name="Renamed File.pdf")
+
+        self.assertEqual(response.status_code, 200)
+        self.upload.refresh_from_db()
+        self.upload.stored_object.refresh_from_db()
+        access.refresh_from_db()
+        self.assertEqual(self.upload.file_name, "Renamed File.pdf")
+        self.assertEqual(self.upload.stored_object_id, stored_object_id)
+        self.assertEqual(self.upload.stored_object.object_key, object_key)
+        self.assertEqual(Upload.objects.count(), upload_count)
+        self.assertEqual(StoredObject.objects.count(), object_count)
+        self.assertEqual(UserObjectAccess.objects.count(), access_count)
+        self.assertEqual(
+            (access.id, access.is_active, access.is_visible, access.counts_toward_quota, access.removed_at),
+            access_snapshot,
+        )
+        self.assertEqual(get_storage_capacity_snapshot(self.user).used_bytes, quota_before)
+        mock_storage.open.assert_not_called()
+        mock_storage.save.assert_not_called()
+        mock_storage.delete.assert_not_called()
+
+    @patch("backend.uploads.services.default_storage")
+    def test_contract_document_reference_survives_rename(self, mock_storage):
+        mock_storage.url.return_value = "https://current-provider.example/uploads/rename/original.pdf"
+        contract = make_contract(self.user, self.other.email)
+        doc = ContractDocument.objects.create(
+            contract=contract,
+            upload=self.upload,
+            attached_by=self.user,
+            title="Referenced Doc",
+        )
+
+        response = self._rename(file_name="Renamed Contract File.pdf")
+        doc_response = self.client.get(f"/api/contracts/{contract.id}/documents/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(ContractDocument.objects.filter(pk=doc.id, upload=self.upload).exists())
+        self.assertEqual(doc_response.status_code, 200)
+        self.assertEqual(doc_response.data[0]["upload_id"], str(self.upload.id))
+        self.assertEqual(doc_response.data[0]["file_name"], "Renamed Contract File.pdf")
+
+
 class UploadDeleteTests(TestCase):
 
     def setUp(self):

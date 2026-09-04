@@ -22,6 +22,7 @@ from backend.billing.storage import (
     get_storage_capacity_snapshot,
     get_user_active_storage_usage_bytes,
 )
+from backend.documents.models import ContractDocument
 from backend.uploads.models import StoredObject, Upload, UserObjectAccess, VaultEmailDelivery, VaultShare
 from backend.uploads.services import create_stored_object_metadata, grant_user_object_access
 from .helpers import authed_client, make_contract, make_user
@@ -1177,6 +1178,75 @@ class UploadDeleteTests(TestCase):
         self.assertIsNotNone(access.removed_at)
         self.assertTrue(StoredObject.objects.filter(pk=stored_object.pk).exists())
         self.assertFalse(Upload.objects.filter(pk=upload.id).exists())
+        mock_storage.delete.assert_not_called()
+
+    @patch("backend.api.uploads.views.default_storage")
+    def test_delete_referenced_canonical_upload_preserves_document_and_blocks_vault_actions(self, mock_storage):
+        stored_object = create_stored_object_metadata(
+            backend="default",
+            bucket="test-bucket",
+            object_key="uploads/1/abc/referenced.pdf",
+            size_bytes=5 * 1024 * 1024,
+            content_type="application/pdf",
+        )
+        access = grant_user_object_access(self.user, stored_object)
+        upload = Upload.objects.create(
+            user=self.user,
+            file_url="https://example.com/referenced.pdf",
+            file_name="referenced.pdf",
+            file_type="pdf",
+            file_size=5 * 1024 * 1024,
+            storage_key=stored_object.object_key,
+            stored_object=stored_object,
+        )
+        contract = make_contract(self.user, self.other.email)
+        doc = ContractDocument.objects.create(
+            contract=contract,
+            upload=upload,
+            attached_by=self.user,
+            title="Referenced Doc",
+        )
+        share_response = self.client.post(f"{UPLOAD_URL}{upload.id}/shares/", {"expiration": "7d"}, format="json")
+        self.assertEqual(share_response.status_code, 201)
+        share_token = urlparse(share_response.data["share_url"]).path.rsplit("/", 1)[-1]
+        before = get_user_active_storage_usage_bytes(self.user)
+
+        response = self.client.delete(f"{UPLOAD_URL}{upload.id}/")
+        public_response = APIClient().get(f"{UPLOAD_URL}shares/{share_token}/")
+        doc_list = self.client.get(f"/api/contracts/{contract.id}/documents/")
+        vault_list = self.client.get(f"{UPLOAD_URL}?canonical=true")
+        vault_attach = self.client.post(
+            f"/api/contracts/{contract.id}/documents/",
+            {"upload_id": str(upload.id), "source": "vault", "title": "Hidden Vault"},
+            format="json",
+        )
+        share_post = self.client.post(f"{UPLOAD_URL}{upload.id}/shares/", {"expiration": "7d"}, format="json")
+        email_post = self.client.post(
+            f"{UPLOAD_URL}{upload.id}/email/",
+            {"to": "recipient@example.com", "subject": "Hidden", "message": "Body"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(public_response.status_code, 404)
+        self.assertEqual(doc_list.status_code, 200)
+        self.assertEqual([item["id"] for item in doc_list.data], [str(doc.id)])
+        self.assertEqual(vault_list.status_code, 200)
+        self.assertEqual(vault_list.data, [])
+        self.assertEqual(vault_attach.status_code, 404)
+        self.assertEqual(share_post.status_code, 404)
+        self.assertEqual(email_post.status_code, 404)
+        self.assertEqual(get_user_active_storage_usage_bytes(self.user), before)
+
+        access.refresh_from_db()
+        self.assertTrue(access.is_active)
+        self.assertFalse(access.is_visible)
+        self.assertTrue(access.counts_toward_quota)
+        self.assertIsNotNone(access.removed_at)
+        self.assertTrue(StoredObject.objects.filter(pk=stored_object.pk).exists())
+        self.assertTrue(Upload.objects.filter(pk=upload.id).exists())
+        self.assertTrue(ContractDocument.objects.filter(pk=doc.id).exists())
+        self.assertIsNotNone(VaultShare.objects.get().revoked_at)
         mock_storage.delete.assert_not_called()
 
 

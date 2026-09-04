@@ -17,7 +17,7 @@ from backend.notifications.models import Notification
 from backend.payments.models import Payment
 from backend.sessions.models import LiveSession
 from backend.uploads.models import Upload
-from backend.uploads.services import get_upload_url
+from backend.uploads.services import get_active_uploads_for_user, get_upload_url
 from backend.users.models import BonUserProfile
 from backend.sol.models import Sol, SolMember
 
@@ -359,8 +359,7 @@ class GlobalSearchView(APIView):
 
         # Uploads
         uploads = (
-            Upload.objects
-            .filter(user=user)
+            get_active_uploads_for_user(user)
             .filter(
                 Q(file_name__icontains=q)
                 | Q(file_type__icontains=q)

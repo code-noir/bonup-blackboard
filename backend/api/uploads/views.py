@@ -11,7 +11,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.core.files.base import File
 from django.core.files.storage import default_storage
-from django.db import IntegrityError, models, transaction
+from django.db import IntegrityError, transaction
 from django.http import FileResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -31,8 +31,10 @@ from backend.emailing.services import (
 )
 from backend.uploads.models import Upload, VaultEmailDelivery, VaultShare
 from backend.uploads.services import (
+    archive_user_object_access,
     create_managed_upload,
     create_stored_object_metadata,
+    get_active_uploads_for_user,
     get_active_canonical_uploads_for_user,
     get_storage_backend,
     get_stored_object_url,
@@ -85,13 +87,7 @@ def _cleanup_saved_object_with_storage(storage, saved_key):
 
 
 def _active_uploads_for_user(user):
-    return Upload.objects.filter(user=user).filter(
-        models.Q(stored_object__isnull=True)
-        | models.Q(
-            stored_object__user_accesses__user=user,
-            stored_object__user_accesses__is_active=True,
-        )
-    ).distinct()
+    return get_active_uploads_for_user(user)
 
 
 def _active_canonical_uploads_for_user(user):
@@ -555,7 +551,19 @@ class UploadsViewSet(ViewSet):
                 stored_object=upload.stored_object,
                 revoked_at__isnull=True,
             ).update(revoked_at=now)
+
+            if upload.contract_documents.exists():
+                archive_user_object_access(
+                    request.user,
+                    upload.stored_object,
+                    is_active=True,
+                    counts_toward_quota=True,
+                )
+                return Response(status=status.HTTP_204_NO_CONTENT)
+
             remove_user_object_access(request.user, upload.stored_object)
+            upload.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
         elif upload.storage_key:
             default_storage.delete(upload.storage_key)
 

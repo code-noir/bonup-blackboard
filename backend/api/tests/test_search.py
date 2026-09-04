@@ -29,7 +29,8 @@ from backend.notifications.models import Notification
 from backend.payments.models import Payment
 from backend.sessions.models import LiveSession
 from backend.sol.models import Sol, SolMember
-from backend.uploads.models import Upload
+from backend.uploads.models import StoredObject, Upload
+from backend.uploads.services import create_stored_object_metadata, grant_user_object_access
 from .helpers import authed_client, make_contract, make_user, make_subscription, make_version
 
 GLOBAL_URL = "/api/search/"
@@ -88,6 +89,24 @@ def make_upload(user, file_name="report.pdf", file_type="pdf"):
         user=user, file_url="https://example.com/file.pdf",
         file_name=file_name, file_type=file_type, file_size=1024,
         storage_key="",
+    )
+
+
+def make_canonical_upload(user, file_name="report.pdf", file_type="pdf", size_bytes=1024):
+    stored_object = create_stored_object_metadata(
+        backend="default",
+        bucket="test-bucket",
+        object_key=f"uploads/search/{uuid.uuid4().hex}/{file_name}",
+        size_bytes=size_bytes,
+        content_type="application/pdf",
+    )
+    grant_user_object_access(user, stored_object)
+    return Upload.objects.create(
+        user=user,
+        file_url=f"https://example.com/{file_name}",
+        file_name=file_name, file_type=file_type, file_size=size_bytes,
+        storage_key=stored_object.object_key,
+        stored_object=stored_object,
     )
 
 
@@ -187,6 +206,22 @@ class GlobalSearchTests(TestCase):
         make_upload(self.other, file_name="secretfile.pdf")
         r = self.client.get(f"{GLOBAL_URL}?q=secretfile")
         self.assertEqual(r.data["uploads"], [])
+
+    @patch("backend.uploads.services.default_storage")
+    def test_global_upload_results_exclude_hidden_canonical_upload_while_documents_remain_visible(self, mock_storage):
+        mock_storage.url.return_value = "https://current-provider.example/uploads/search/hidden.pdf"
+        contract = make_contract(self.user, self.other.email)
+        upload = make_canonical_upload(self.user, file_name="hidden.pdf")
+        upload.stored_object.user_accesses.filter(user=self.user).update(is_visible=False)
+        make_document(contract, upload, self.user, title="Hidden Contract Doc")
+
+        r = self.client.get(f"{GLOBAL_URL}?q=hidden")
+
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["uploads"], [])
+        self.assertEqual(len(r.data["documents"]), 1)
+        self.assertEqual(r.data["documents"][0]["title"], "Hidden Contract Doc")
+        mock_storage.url.assert_called_once_with(upload.stored_object.object_key)
 
     # notifications
     def test_global_finds_own_notification(self):

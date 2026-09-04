@@ -4,7 +4,7 @@ import uuid
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 from backend.uploads.models import StoredObject, Upload, UserObjectAccess
@@ -112,13 +112,19 @@ def create_managed_upload(
         raise
 
 
-def get_active_canonical_uploads_for_user(user):
-    return Upload.objects.filter(
-        user=user,
-        stored_object__isnull=False,
-        stored_object__user_accesses__user=user,
-        stored_object__user_accesses__is_active=True,
+def get_active_uploads_for_user(user):
+    return Upload.objects.filter(user=user).filter(
+        models.Q(stored_object__isnull=True)
+        | models.Q(
+            stored_object__user_accesses__user=user,
+            stored_object__user_accesses__is_active=True,
+            stored_object__user_accesses__is_visible=True,
+        )
     ).distinct()
+
+
+def get_active_canonical_uploads_for_user(user):
+    return get_active_uploads_for_user(user).filter(stored_object__isnull=False)
 
 
 def get_stored_object_url(stored_object):
@@ -149,13 +155,27 @@ def grant_user_object_access(
     return access
 
 
-def remove_user_object_access(user, stored_object):
+def archive_user_object_access(
+    user,
+    stored_object,
+    *,
+    is_active,
+    counts_toward_quota=None,
+):
     access = UserObjectAccess.objects.get(user=user, stored_object=stored_object)
-    access.is_active = False
+    access.is_active = is_active
     access.is_visible = False
     access.removed_at = timezone.now()
-    access.save(update_fields=["is_active", "is_visible", "removed_at", "updated_at"])
+    update_fields = ["is_active", "is_visible", "removed_at", "updated_at"]
+    if counts_toward_quota is not None:
+        access.counts_toward_quota = counts_toward_quota
+        update_fields.insert(3, "counts_toward_quota")
+    access.save(update_fields=update_fields)
     return access
+
+
+def remove_user_object_access(user, stored_object):
+    return archive_user_object_access(user, stored_object, is_active=False)
 
 
 def reactivate_user_object_access(

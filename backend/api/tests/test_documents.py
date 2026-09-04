@@ -649,6 +649,43 @@ class ContractDocumentVaultSelectionTests(TestCase):
         self.assertEqual(ContractDocument.objects.count(), 0)
 
     @patch("backend.uploads.services.default_storage")
+    def test_reference_safe_removal_preserves_document_and_blocks_vault_selection(self, mock_storage):
+        mock_storage.url.return_value = "https://current-provider.example/uploads/canonical/referenced-vault.pdf"
+        upload = make_canonical_upload(
+            self.initiator,
+            name="referenced-vault.pdf",
+            key="uploads/canonical/referenced-vault.pdf",
+            size=5 * 1024 * 1024,
+            file_url="https://example.com/referenced-vault.pdf",
+        )
+        create_response = self._post_vault_attachment(upload, title="Referenced Vault")
+        self.assertEqual(create_response.status_code, 201)
+        before = get_storage_capacity_snapshot(self.initiator)
+
+        delete_response = self.client.delete(f"/api/uploads/{upload.id}/")
+        doc_list = self.client.get(doc_url(self.contract.id))
+        vault_list = self.client.get(f"/api/uploads/?canonical=true")
+        vault_attach = self._post_vault_attachment(upload, title="Hidden Vault")
+
+        self.assertEqual(delete_response.status_code, 204)
+        self.assertEqual(doc_list.status_code, 200)
+        self.assertEqual([item["id"] for item in doc_list.data], [create_response.data["id"]])
+        self.assertEqual(vault_list.status_code, 200)
+        self.assertEqual(vault_list.data, [])
+        self.assertEqual(vault_attach.status_code, 404)
+        self.assertEqual(get_storage_capacity_snapshot(self.initiator).used_bytes, before.used_bytes)
+        doc = ContractDocument.objects.get(pk=create_response.data["id"])
+        self.assertEqual(doc.upload_id, upload.id)
+        self.assertTrue(Upload.objects.filter(pk=upload.id).exists())
+        self.assertTrue(StoredObject.objects.filter(pk=upload.stored_object_id).exists())
+        access = upload.stored_object.user_accesses.get(user=self.initiator)
+        self.assertTrue(access.is_active)
+        self.assertFalse(access.is_visible)
+        self.assertTrue(access.counts_toward_quota)
+        self.assertIsNotNone(access.removed_at)
+        mock_storage.delete.assert_not_called()
+
+    @patch("backend.uploads.services.default_storage")
     def test_unauthorized_contract_user_cannot_attach_vault_file(self, mock_storage):
         upload = make_canonical_upload(
             self.initiator,

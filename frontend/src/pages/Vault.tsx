@@ -41,6 +41,7 @@ type ViewMode = 'grid' | 'list'
 type ShareExpiration = '1d' | '7d' | '30d' | 'none'
 type EmailState = 'idle' | 'sending' | 'sent'
 type RenameState = 'idle' | 'saving'
+type UploadQueueStatus = 'waiting' | 'uploading' | 'uploaded' | 'failed'
 
 type LoadState = 'loading' | 'success' | 'error'
 
@@ -80,6 +81,14 @@ type VaultEmailResponse = {
   idempotent: boolean
 }
 
+type UploadQueueItem = {
+  id: string
+  name: string
+  size: number
+  status: UploadQueueStatus
+  error?: string
+}
+
 type NativeShareDiagnosticReason =
   | 'insecure_context'
   | 'navigator_share_unavailable'
@@ -93,6 +102,7 @@ type NativeShareDiagnosticReason =
 
 // Native file sharing constructs a browser File in memory. Keep this conservative until Vault has a documented upload cap.
 const NATIVE_SHARE_PREPARATION_LIMIT_BYTES = 25 * 1024 * 1024
+const UPLOAD_CONCURRENCY_LIMIT = 2
 
 const CATEGORIES: Array<{ key: Category; label: string }> = [
   { key: 'all', label: 'All Files' },
@@ -177,13 +187,19 @@ function storagePercent(summary: StorageSummary | null) {
   return Math.min(100, Math.round((summary.used_bytes / summary.capacity_bytes) * 100))
 }
 
-function isQuotaError(error: unknown) {
-  return Boolean(
-    typeof error === 'object' &&
-    error !== null &&
-    'response' in error &&
-    (error as { response?: { data?: { code?: string } } }).response?.data?.code === 'storage_capacity_exceeded',
-  )
+function uploadErrorMessage(error: unknown) {
+  if (typeof error === 'object' && error !== null && 'response' in error) {
+    const data = (error as { response?: { data?: { code?: string; detail?: string; error?: string; available_bytes?: number } } }).response?.data
+    if (data?.code === 'storage_capacity_exceeded') {
+      if (typeof data.available_bytes === 'number') {
+        return `Not enough storage available. ${formatBytes(data.available_bytes)} available.`
+      }
+      return 'This file is larger than your available storage.'
+    }
+    if (typeof data?.detail === 'string' && data.detail) return data.detail
+    if (typeof data?.error === 'string' && data.error) return data.error
+  }
+  return 'Upload failed. Please try again.'
 }
 
 function responseStatus(error: unknown) {
@@ -269,6 +285,7 @@ export default function Vault() {
   const [renameError, setRenameError] = useState('')
   const [sharing, setSharing] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([])
   const [workingFileId, setWorkingFileId] = useState<string | null>(null)
   const [toast, setToast] = useState<Toast>(null)
   const [addStorageOpen, setAddStorageOpen] = useState(false)
@@ -324,29 +341,75 @@ export default function Vault() {
     }, { all: 0, images: 0, videos: 0, audio: 0, documents: 0, other: 0 })
   }, [files])
 
-  async function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
+  function updateUploadQueueItem(id: string, updates: Partial<UploadQueueItem>) {
+    setUploadQueue((current) => current.map((item) => item.id === id ? { ...item, ...updates } : item))
+  }
 
-    setUploading(true)
-    setToast(null)
+  async function uploadQueuedFile(file: File, itemId: string) {
+    updateUploadQueueItem(itemId, { status: 'uploading', error: undefined })
     const form = new FormData()
     form.append('file', file)
     form.append('file_type', uploadTypeForFile(file))
 
     try {
       await api.post('/uploads/', form, { headers: { 'Content-Type': 'multipart/form-data' } })
-      setToast({ tone: 'success', message: `${file.name} uploaded to Vault.` })
-      await refreshVault()
+      updateUploadQueueItem(itemId, { status: 'uploaded' })
+      return true
     } catch (error) {
-      setToast({
-        tone: 'error',
-        message: isQuotaError(error) ? 'This file is larger than your available storage.' : 'Upload failed. Please try again.',
-      })
+      updateUploadQueueItem(itemId, { status: 'failed', error: uploadErrorMessage(error) })
+      return false
+    }
+  }
+
+  async function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const selectedFiles = Array.from(event.target.files || [])
+    event.target.value = ''
+    if (selectedFiles.length === 0 || uploading) return
+
+    const queue = selectedFiles.map((file) => ({
+      id: createIdempotencyKey(),
+      name: file.name,
+      size: file.size,
+      status: 'waiting' as UploadQueueStatus,
+    }))
+
+    setUploading(true)
+    setUploadQueue(queue)
+    setToast(null)
+
+    let nextIndex = 0
+    let uploadedCount = 0
+    const workerCount = Math.min(UPLOAD_CONCURRENCY_LIMIT, selectedFiles.length)
+
+    async function uploadNext() {
+      while (nextIndex < selectedFiles.length) {
+        const currentIndex = nextIndex
+        nextIndex += 1
+        const uploaded = await uploadQueuedFile(selectedFiles[currentIndex], queue[currentIndex].id)
+        if (uploaded) uploadedCount += 1
+      }
+    }
+
+    try {
+      await Promise.all(Array.from({ length: workerCount }, uploadNext))
+      if (uploadedCount > 0) {
+        await refreshVault()
+      }
+      if (uploadedCount === selectedFiles.length) {
+        setToast({ tone: 'success', message: selectedFiles.length === 1 ? `${selectedFiles[0].name} uploaded to Vault.` : `${uploadedCount} files uploaded to Vault.` })
+      } else if (uploadedCount > 0) {
+        setToast({ tone: 'info', message: `${uploadedCount} of ${selectedFiles.length} files uploaded to Vault.` })
+      } else {
+        setToast({ tone: 'error', message: 'No files were uploaded.' })
+      }
     } finally {
       setUploading(false)
     }
+  }
+
+  function dismissUploadQueue() {
+    if (uploading) return
+    setUploadQueue([])
   }
 
   function handleDownload(file: VaultFile) {
@@ -686,9 +749,9 @@ export default function Vault() {
             className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
           >
             <PlusIcon className="h-4 w-4" />
-            {uploading ? 'Uploading...' : 'Upload File'}
+            {uploading ? 'Uploading...' : 'Upload Files'}
           </button>
-          <input ref={fileInputRef} type="file" className="hidden" onChange={handleUpload} />
+          <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleUpload} />
         </div>
       </header>
 
@@ -696,6 +759,14 @@ export default function Vault() {
         <div className={`rounded-lg border px-4 py-3 text-sm font-semibold ${toast.tone === 'error' ? 'border-red-200 bg-red-50 text-red-700' : toast.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-700'}`}>
           {toast.message}
         </div>
+      )}
+
+      {uploadQueue.length > 0 && (
+        <UploadQueuePanel
+          items={uploadQueue}
+          uploading={uploading}
+          onDismiss={dismissUploadQueue}
+        />
       )}
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -912,6 +983,62 @@ function Metric({ label, value }: { label: string; value: string }) {
   )
 }
 
+function uploadStatusTone(status: UploadQueueStatus) {
+  if (status === 'uploaded') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  if (status === 'failed') return 'border-red-200 bg-red-50 text-red-700'
+  if (status === 'uploading') return 'border-blue-200 bg-blue-50 text-blue-700'
+  return 'border-slate-200 bg-white text-slate-600'
+}
+
+function uploadStatusLabel(status: UploadQueueStatus) {
+  if (status === 'waiting') return 'Waiting'
+  if (status === 'uploading') return 'Uploading'
+  if (status === 'uploaded') return 'Uploaded'
+  return 'Failed'
+}
+
+function UploadQueuePanel({
+  items,
+  uploading,
+  onDismiss,
+}: {
+  items: UploadQueueItem[]
+  uploading: boolean
+  onDismiss: () => void
+}) {
+  const completed = items.every((item) => item.status === 'uploaded' || item.status === 'failed')
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase text-slate-400">Upload queue</p>
+          <p className="mt-1 text-sm font-semibold text-slate-700">{items.length} {items.length === 1 ? 'file' : 'files'} selected</p>
+        </div>
+        {completed && !uploading && (
+          <button type="button" onClick={onDismiss} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
+            Dismiss
+          </button>
+        )}
+      </div>
+      <div className="mt-3 divide-y divide-slate-100 rounded-lg border border-slate-200">
+        {items.map((item) => (
+          <div key={item.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p title={item.name} className="truncate text-sm font-bold text-slate-900">{item.name}</p>
+              <p className="mt-1 text-xs text-slate-500">{formatBytes(item.size)}</p>
+              {item.error && <p className="mt-1 text-xs font-semibold leading-5 text-red-600">{item.error}</p>}
+            </div>
+            <span className={`inline-flex w-fit shrink-0 rounded-full border px-2.5 py-1 text-xs font-bold ${uploadStatusTone(item.status)}`}>
+              {uploadStatusLabel(item.status)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function FileLoadingState() {
   return (
     <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
@@ -944,7 +1071,7 @@ function EmptyState({ onUpload }: { onUpload: () => void }) {
       <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">Upload files to keep them organized in your bonUP Vault.</p>
       <button type="button" onClick={onUpload} className="mt-5 inline-flex h-10 items-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800">
         <PlusIcon className="h-4 w-4" />
-        Upload File
+        Upload Files
       </button>
     </div>
   )

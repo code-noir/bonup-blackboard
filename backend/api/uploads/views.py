@@ -2,9 +2,13 @@
 
 import hashlib
 import logging
+import os
 import secrets
+import tempfile
 import uuid
+import zipfile
 from datetime import timedelta
+from pathlib import PurePosixPath
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -53,6 +57,9 @@ VALID_SHARE_EXPIRATIONS = {
 }
 DEFAULT_SHARE_EXPIRATION = "7d"
 BULK_REMOVE_MAX_UPLOADS = 100
+BULK_DOWNLOAD_MAX_UPLOADS = 25
+BULK_DOWNLOAD_DEFAULT_MAX_BYTES = 512 * 1024 * 1024
+BULK_DOWNLOAD_FILENAME = "bonUP-Vault-Download.zip"
 EMAIL_SUBJECT_MAX_LENGTH = 255
 EMAIL_MESSAGE_MAX_LENGTH = 4000
 SHARE_UNAVAILABLE_RESPONSE = {"detail": "Share is unavailable."}
@@ -249,6 +256,84 @@ def _serialize_public_share(share, token):
 
 def _validation_error(code, detail, *, status_code=status.HTTP_400_BAD_REQUEST):
     return Response({"code": code, "detail": detail}, status=status_code)
+
+
+def _normalize_upload_ids(upload_ids, *, max_count):
+    if not isinstance(upload_ids, list):
+        return None, _validation_error("invalid_upload_ids", "upload_ids must be a list.")
+    if not upload_ids:
+        return None, _validation_error("empty_upload_ids", "Select at least one file.")
+
+    normalized_ids = []
+    seen = set()
+    for raw_upload_id in upload_ids:
+        try:
+            normalized_id = str(uuid.UUID(str(raw_upload_id)))
+        except (TypeError, ValueError):
+            return None, _validation_error("invalid_upload_id", "Each upload_id must be a valid UUID.")
+        if normalized_id not in seen:
+            seen.add(normalized_id)
+            normalized_ids.append(normalized_id)
+
+    if len(normalized_ids) > max_count:
+        return None, _validation_error("too_many_upload_ids", f"Select up to {max_count} files.")
+    return normalized_ids, None
+
+
+def _bulk_download_max_bytes():
+    return int(getattr(settings, "BONUP_VAULT_BULK_DOWNLOAD_MAX_BYTES", BULK_DOWNLOAD_DEFAULT_MAX_BYTES) or 0)
+
+
+def _safe_zip_member_name(file_name, existing_names):
+    normalized = (file_name or "file").replace("\\", "/").replace("\x00", "")
+    candidate = PurePosixPath(normalized).name.strip()
+    if candidate in ("", ".", ".."):
+        candidate = "file"
+
+    if candidate not in existing_names:
+        existing_names.add(candidate)
+        return candidate
+
+    if "." in candidate.strip("."):
+        stem, extension = candidate.rsplit(".", 1)
+        extension = f".{extension}"
+    else:
+        stem = candidate
+        extension = ""
+
+    index = 2
+    while True:
+        disambiguated = f"{stem} ({index}){extension}"
+        if disambiguated not in existing_names:
+            existing_names.add(disambiguated)
+            return disambiguated
+        index += 1
+
+
+class TemporaryArchiveFile:
+    def __init__(self, path):
+        self.path = path
+        self.file = open(path, "rb")
+
+    def read(self, *args):
+        return self.file.read(*args)
+
+    def seek(self, *args):
+        return self.file.seek(*args)
+
+    def tell(self):
+        return self.file.tell()
+
+    def close(self):
+        try:
+            self.file.close()
+        finally:
+            try:
+                os.unlink(self.path)
+            except FileNotFoundError:
+                pass
+            except Exception:
+                logger.exception("Failed to clean up temporary Vault bulk-download archive.")
 
 
 def _remove_upload_from_vault(user, upload):
@@ -453,24 +538,9 @@ class UploadsViewSet(ViewSet):
 
     @action(detail=False, methods=["post"], url_path="bulk-remove")
     def bulk_remove(self, request):
-        upload_ids = request.data.get("upload_ids")
-        if not isinstance(upload_ids, list):
-            return _validation_error("invalid_upload_ids", "upload_ids must be a list.")
-        if not upload_ids:
-            return _validation_error("empty_upload_ids", "Select at least one file to remove.")
-        if len(upload_ids) > BULK_REMOVE_MAX_UPLOADS:
-            return _validation_error("too_many_upload_ids", f"Bulk remove supports up to {BULK_REMOVE_MAX_UPLOADS} files at a time.")
-
-        normalized_ids = []
-        seen = set()
-        for raw_upload_id in upload_ids:
-            try:
-                normalized_id = str(uuid.UUID(str(raw_upload_id)))
-            except (TypeError, ValueError):
-                return _validation_error("invalid_upload_id", "Each upload_id must be a valid UUID.")
-            if normalized_id not in seen:
-                seen.add(normalized_id)
-                normalized_ids.append(normalized_id)
+        normalized_ids, error = _normalize_upload_ids(request.data.get("upload_ids"), max_count=BULK_REMOVE_MAX_UPLOADS)
+        if error is not None:
+            return error
 
         accessible_uploads = {
             str(upload.id): upload
@@ -503,6 +573,67 @@ class UploadsViewSet(ViewSet):
             "removed_count": removed_count,
             "failed_count": failed_count,
         })
+
+    @action(detail=False, methods=["post"], url_path="bulk-download")
+    def bulk_download(self, request):
+        normalized_ids, error = _normalize_upload_ids(request.data.get("upload_ids"), max_count=BULK_DOWNLOAD_MAX_UPLOADS)
+        if error is not None:
+            return error
+
+        uploads_by_id = {
+            str(upload.id): upload
+            for upload in _active_canonical_uploads_for_user(request.user)
+            .filter(pk__in=normalized_ids)
+            .select_related("stored_object", "vault_folder")
+        }
+        if len(uploads_by_id) != len(normalized_ids):
+            return _validation_error("file_not_found", "One or more selected files could not be found.", status_code=status.HTTP_404_NOT_FOUND)
+
+        uploads = [uploads_by_id[upload_id] for upload_id in normalized_ids]
+        total_source_bytes = sum(upload.stored_object.size_bytes for upload in uploads)
+        max_bytes = _bulk_download_max_bytes()
+        if max_bytes < 1 or total_source_bytes > max_bytes:
+            return _validation_error(
+                "bulk_download_too_large",
+                "Selected files are too large to download together. Select fewer or smaller files.",
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            )
+
+        tmp = tempfile.NamedTemporaryFile(prefix="bonup-vault-", suffix=".zip", delete=False)
+        tmp_path = tmp.name
+        tmp.close()
+
+        try:
+            used_names = set()
+            with zipfile.ZipFile(tmp_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+                for upload in uploads:
+                    storage = get_storage_backend(upload.stored_object.backend)
+                    member_name = _safe_zip_member_name(upload.file_name, used_names)
+                    with storage.open(upload.stored_object.object_key, "rb") as source_file:
+                        with archive.open(member_name, "w") as target_file:
+                            for chunk in iter(lambda: source_file.read(1024 * 1024), b""):
+                                target_file.write(chunk)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except FileNotFoundError:
+                pass
+            except Exception:
+                logger.exception("Failed to clean up temporary Vault bulk-download archive after failure.")
+            logger.exception("Failed to prepare Vault bulk-download archive.")
+            return _validation_error(
+                "bulk_download_unavailable",
+                "One or more selected files could not be prepared for download.",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        response = FileResponse(
+            TemporaryArchiveFile(tmp_path),
+            as_attachment=True,
+            filename=BULK_DOWNLOAD_FILENAME,
+            content_type="application/zip",
+        )
+        return response
 
     @action(detail=True, methods=["post"], url_path="folder")
     def move_to_folder(self, request, pk=None):

@@ -5,7 +5,10 @@
 #   - GET  /api/uploads/    list own uploads, ?contract_id and ?session_id filters
 #   - DELETE /api/uploads/<id>/   removes the record (and would delete from storage)
 
+import io
+import os
 import uuid
+import zipfile
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 from urllib.parse import urlparse
@@ -1647,6 +1650,301 @@ class UploadRenameTests(TestCase):
         self.assertEqual(doc_response.status_code, 200)
         self.assertEqual(doc_response.data[0]["upload_id"], str(self.upload.id))
         self.assertEqual(doc_response.data[0]["file_name"], "Renamed Contract File.pdf")
+
+
+class UploadBulkDownloadTests(TestCase):
+
+    def setUp(self):
+        self.user = make_user("bulk_downloader", "bulk_downloader@example.com")
+        self.other = make_user("bulk_download_other", "bulk_download_other@example.com")
+        self.client = authed_client(self.user)
+        _grant_capacity(self.user, 100 * 1024 * 1024)
+
+    def _bulk_download(self, upload_ids):
+        return self.client.post(f"{UPLOAD_URL}bulk-download/", {"upload_ids": upload_ids}, format="json")
+
+    def _storage_for(self, files_by_key):
+        def open_file(key, mode="rb"):
+            if key not in files_by_key:
+                raise FileNotFoundError(key)
+            return ContentFile(files_by_key[key], name=key)
+
+        mock_storage = MagicMock()
+        mock_storage.open.side_effect = open_file
+        return mock_storage
+
+    def _zip_entries(self, response):
+        archive_bytes = b"".join(response.streaming_content)
+        if response.file_to_stream is not None:
+            response.file_to_stream.close()
+        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+            return {name: archive.read(name) for name in archive.namelist()}
+
+    @patch("backend.uploads.services.default_storage")
+    def test_bulk_download_one_selected_canonical_file_as_zip(self, mock_storage):
+        upload = _managed_upload(self.user, name="contract.pdf", key="uploads/bulk-download/contract.pdf", size=12)
+        mock_storage.open.side_effect = self._storage_for({upload.stored_object.object_key: b"contract pdf"}).open.side_effect
+
+        response = self._bulk_download([str(upload.id)])
+        entries = self._zip_entries(response)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/zip")
+        self.assertIn("bonUP-Vault-Download.zip", response["Content-Disposition"])
+        self.assertEqual(entries, {"contract.pdf": b"contract pdf"})
+        mock_storage.save.assert_not_called()
+        mock_storage.delete.assert_not_called()
+
+    @patch("backend.uploads.services.default_storage")
+    def test_bulk_download_multiple_files_uses_visible_filenames(self, mock_storage):
+        first = _managed_upload(self.user, name="First.pdf", key="uploads/bulk-download/first.pdf", size=5)
+        second = _managed_upload(self.user, name="Second.txt", key="uploads/bulk-download/second.txt", size=6, file_type="document", content_type="text/plain")
+        mock_storage.open.side_effect = self._storage_for({
+            first.stored_object.object_key: b"first",
+            second.stored_object.object_key: b"second",
+        }).open.side_effect
+
+        response = self._bulk_download([str(first.id), str(second.id)])
+        entries = self._zip_entries(response)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(entries, {"First.pdf": b"first", "Second.txt": b"second"})
+        self.assertEqual([call.args[0] for call in mock_storage.open.call_args_list], [first.stored_object.object_key, second.stored_object.object_key])
+
+    @patch("backend.uploads.services.default_storage")
+    def test_bulk_download_duplicate_visible_filenames_are_disambiguated(self, mock_storage):
+        first = _managed_upload(self.user, name="Receipt.pdf", key="uploads/bulk-download/r1.pdf", size=3)
+        second = _managed_upload(self.user, name="Receipt.pdf", key="uploads/bulk-download/r2.pdf", size=3)
+        third = _managed_upload(self.user, name="Receipt.pdf", key="uploads/bulk-download/r3.pdf", size=3)
+        mock_storage.open.side_effect = self._storage_for({
+            first.stored_object.object_key: b"one",
+            second.stored_object.object_key: b"two",
+            third.stored_object.object_key: b"tri",
+        }).open.side_effect
+
+        response = self._bulk_download([str(first.id), str(second.id), str(third.id)])
+        entries = self._zip_entries(response)
+
+        self.assertEqual(set(entries), {"Receipt.pdf", "Receipt (2).pdf", "Receipt (3).pdf"})
+        self.assertEqual(entries["Receipt.pdf"], b"one")
+        self.assertEqual(entries["Receipt (2).pdf"], b"two")
+        self.assertEqual(entries["Receipt (3).pdf"], b"tri")
+
+    @patch("backend.uploads.services.default_storage")
+    def test_bulk_download_duplicate_upload_ids_are_deduped(self, mock_storage):
+        upload = _managed_upload(self.user, name="single.pdf", key="uploads/bulk-download/single.pdf", size=6)
+        mock_storage.open.side_effect = self._storage_for({upload.stored_object.object_key: b"single"}).open.side_effect
+
+        response = self._bulk_download([str(upload.id), str(upload.id)])
+        entries = self._zip_entries(response)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(entries, {"single.pdf": b"single"})
+        mock_storage.open.assert_called_once_with(upload.stored_object.object_key, "rb")
+
+    def test_bulk_download_empty_upload_ids_rejected(self):
+        response = self._bulk_download([])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "empty_upload_ids")
+
+    def test_bulk_download_malformed_request_rejected(self):
+        response = self.client.post(f"{UPLOAD_URL}bulk-download/", {"upload_ids": "not-a-list"}, format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "invalid_upload_ids")
+
+    def test_bulk_download_malformed_uuid_rejected(self):
+        response = self._bulk_download(["not-a-uuid"])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "invalid_upload_id")
+
+    def test_bulk_download_more_than_25_unique_files_rejected(self):
+        response = self._bulk_download([str(uuid.uuid4()) for _ in range(26)])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "too_many_upload_ids")
+
+    def test_bulk_download_cross_user_file_rejected_without_disclosure(self):
+        other_upload = _managed_upload(self.other, name="other.pdf", key="uploads/bulk-download/other.pdf")
+
+        response = self._bulk_download([str(other_upload.id)])
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["code"], "file_not_found")
+        self.assertTrue(Upload.objects.filter(pk=other_upload.id).exists())
+
+    def test_bulk_download_hidden_removed_file_rejected(self):
+        upload = _managed_upload(self.user, name="hidden.pdf", key="uploads/bulk-download/hidden.pdf")
+        UserObjectAccess.objects.filter(user=self.user, stored_object=upload.stored_object).update(
+            is_active=True,
+            is_visible=False,
+            removed_at=timezone.now(),
+        )
+
+        response = self._bulk_download([str(upload.id)])
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["code"], "file_not_found")
+
+    @patch("backend.uploads.services.default_storage")
+    def test_bulk_download_missing_provider_object_fails_whole_request(self, mock_storage):
+        first = _managed_upload(self.user, name="first.pdf", key="uploads/bulk-download/first-missing.pdf", size=5)
+        second = _managed_upload(self.user, name="second.pdf", key="uploads/bulk-download/second-missing.pdf", size=6)
+        mock_storage.open.side_effect = FileNotFoundError("missing")
+
+        response = self._bulk_download([str(first.id), str(second.id)])
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.data["code"], "bulk_download_unavailable")
+        mock_storage.save.assert_not_called()
+        mock_storage.delete.assert_not_called()
+
+    @patch("backend.uploads.services.default_storage")
+    def test_bulk_download_total_byte_limit_rejected_before_zip_generation(self, mock_storage):
+        upload = _managed_upload(self.user, name="large.mp4", key="uploads/bulk-download/large.mp4", size=11)
+
+        with self.settings(BONUP_VAULT_BULK_DOWNLOAD_MAX_BYTES=10):
+            response = self._bulk_download([str(upload.id)])
+
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.data["code"], "bulk_download_too_large")
+        mock_storage.open.assert_not_called()
+
+    @patch("backend.uploads.services.default_storage")
+    def test_bulk_download_folder_contained_file_downloads_normally(self, mock_storage):
+        folder = VaultFolder.objects.create(user=self.user, name="Folder")
+        upload = _managed_upload(self.user, name="foldered.pdf", key="uploads/bulk-download/foldered.pdf", size=8)
+        upload.vault_folder = folder
+        upload.save(update_fields=["vault_folder"])
+        mock_storage.open.side_effect = self._storage_for({upload.stored_object.object_key: b"foldered"}).open.side_effect
+
+        response = self._bulk_download([str(upload.id)])
+        entries = self._zip_entries(response)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(entries, {"foldered.pdf": b"foldered"})
+        upload.refresh_from_db()
+        self.assertEqual(upload.vault_folder_id, folder.id)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_moving_file_into_folder_does_not_affect_bulk_download(self, mock_storage):
+        folder = VaultFolder.objects.create(user=self.user, name="Moved")
+        upload = _managed_upload(self.user, name="moved.pdf", key="uploads/bulk-download/moved.pdf", size=5)
+        mock_storage.url.return_value = "https://example.com/moved.pdf"
+        move_response = self.client.post(f"{UPLOAD_URL}{upload.id}/folder/", {"folder_id": str(folder.id)}, format="json")
+        self.assertEqual(move_response.status_code, 200)
+        mock_storage.open.side_effect = self._storage_for({upload.stored_object.object_key: b"moved"}).open.side_effect
+
+        response = self._bulk_download([str(upload.id)])
+        entries = self._zip_entries(response)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(entries, {"moved.pdf": b"moved"})
+
+    @patch("backend.uploads.services.default_storage")
+    def test_blackbod_referenced_visible_file_downloads_normally(self, mock_storage):
+        upload = _managed_upload(self.user, name="referenced.pdf", key="uploads/bulk-download/referenced.pdf", size=10)
+        contract = make_contract(self.user, self.other.email)
+        doc = ContractDocument.objects.create(contract=contract, upload=upload, attached_by=self.user, title="Referenced Doc")
+        mock_storage.open.side_effect = self._storage_for({upload.stored_object.object_key: b"referenced"}).open.side_effect
+
+        response = self._bulk_download([str(upload.id)])
+        entries = self._zip_entries(response)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(entries, {"referenced.pdf": b"referenced"})
+        self.assertTrue(ContractDocument.objects.filter(pk=doc.id, upload=upload).exists())
+
+    @patch("backend.uploads.services.default_storage")
+    def test_bulk_download_leaves_storage_quota_database_and_shares_unchanged(self, mock_storage):
+        folder = VaultFolder.objects.create(user=self.user, name="Stable")
+        upload = _managed_upload(self.user, name="stable.pdf", key="uploads/bulk-download/stable.pdf", size=1024)
+        upload.vault_folder = folder
+        upload.save(update_fields=["vault_folder"])
+        contract = make_contract(self.user, self.other.email)
+        doc = ContractDocument.objects.create(contract=contract, upload=upload, attached_by=self.user, title="Stable Doc")
+        share_response = self.client.post(f"{UPLOAD_URL}{upload.id}/shares/", {"expiration": "7d"}, format="json")
+        self.assertEqual(share_response.status_code, 201)
+        access = UserObjectAccess.objects.get(user=self.user, stored_object=upload.stored_object)
+        snapshot = {
+            "upload_count": Upload.objects.count(),
+            "object_count": StoredObject.objects.count(),
+            "access_count": UserObjectAccess.objects.count(),
+            "share_count": VaultShare.objects.count(),
+            "quota": get_user_active_storage_usage_bytes(self.user),
+            "folder_id": upload.vault_folder_id,
+            "object_key": upload.stored_object.object_key,
+            "access": (access.is_active, access.is_visible, access.counts_toward_quota, access.removed_at),
+            "share_revoked_at": VaultShare.objects.get().revoked_at,
+        }
+        mock_storage.open.side_effect = self._storage_for({upload.stored_object.object_key: b"stable"}).open.side_effect
+
+        response = self._bulk_download([str(upload.id)])
+        self._zip_entries(response)
+
+        upload.refresh_from_db()
+        access.refresh_from_db()
+        self.assertEqual(Upload.objects.count(), snapshot["upload_count"])
+        self.assertEqual(StoredObject.objects.count(), snapshot["object_count"])
+        self.assertEqual(UserObjectAccess.objects.count(), snapshot["access_count"])
+        self.assertEqual(VaultShare.objects.count(), snapshot["share_count"])
+        self.assertEqual(get_user_active_storage_usage_bytes(self.user), snapshot["quota"])
+        self.assertEqual(upload.vault_folder_id, snapshot["folder_id"])
+        self.assertEqual(upload.stored_object.object_key, snapshot["object_key"])
+        self.assertEqual((access.is_active, access.is_visible, access.counts_toward_quota, access.removed_at), snapshot["access"])
+        self.assertEqual(VaultShare.objects.get().revoked_at, snapshot["share_revoked_at"])
+        self.assertTrue(ContractDocument.objects.filter(pk=doc.id, upload=upload).exists())
+        mock_storage.save.assert_not_called()
+        mock_storage.delete.assert_not_called()
+
+    @patch("backend.uploads.services.default_storage")
+    def test_bulk_download_zip_entry_path_traversal_is_prevented(self, mock_storage):
+        first = _managed_upload(self.user, name="../secret.pdf", key="uploads/bulk-download/path1.pdf", size=6)
+        second = _managed_upload(self.user, name=r"folder\nested.txt", key="uploads/bulk-download/path2.txt", size=6)
+        mock_storage.open.side_effect = self._storage_for({
+            first.stored_object.object_key: b"secret",
+            second.stored_object.object_key: b"nested",
+        }).open.side_effect
+
+        response = self._bulk_download([str(first.id), str(second.id)])
+        entries = self._zip_entries(response)
+
+        self.assertEqual(entries, {"secret.pdf": b"secret", "nested.txt": b"nested"})
+        self.assertTrue(all(not name.startswith("/") and ".." not in name.split("/") and "/" not in name for name in entries))
+
+    @patch("backend.uploads.services.default_storage")
+    def test_bulk_download_temporary_archive_cleanup_after_success(self, mock_storage):
+        upload = _managed_upload(self.user, name="cleanup.pdf", key="uploads/bulk-download/cleanup.pdf", size=7)
+        mock_storage.open.side_effect = self._storage_for({upload.stored_object.object_key: b"cleanup"}).open.side_effect
+
+        response = self._bulk_download([str(upload.id)])
+        self.assertEqual(response.status_code, 200)
+        closer = response._resource_closers[0]
+        tmp_path = closer.__self__.path
+        self.assertTrue(os.path.exists(tmp_path))
+        b"".join(response.streaming_content)
+        closer()
+
+        self.assertFalse(os.path.exists(tmp_path))
+
+    @patch("backend.api.uploads.views.os.unlink")
+    @patch("backend.api.uploads.views.tempfile.NamedTemporaryFile")
+    @patch("backend.uploads.services.default_storage")
+    def test_bulk_download_failure_during_zip_generation_cleans_temp_archive(self, mock_storage, mock_tmp, mock_unlink):
+        upload = _managed_upload(self.user, name="failure.pdf", key="uploads/bulk-download/failure.pdf", size=7)
+        mock_file = MagicMock()
+        mock_file.name = "/tmp/bonup-vault-failure.zip"
+        mock_tmp.return_value = mock_file
+        mock_storage.open.side_effect = RuntimeError("storage failed")
+
+        response = self._bulk_download([str(upload.id)])
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.data["code"], "bulk_download_unavailable")
+        mock_file.close.assert_called_once()
+        mock_unlink.assert_called_once_with("/tmp/bonup-vault-failure.zip")
 
 
 class UploadBulkRemoveTests(TestCase):

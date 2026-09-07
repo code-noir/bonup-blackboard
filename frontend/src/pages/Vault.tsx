@@ -125,6 +125,8 @@ type NativeShareDiagnosticReason =
 // Native file sharing constructs a browser File in memory. Keep this conservative until Vault has a documented upload cap.
 const NATIVE_SHARE_PREPARATION_LIMIT_BYTES = 25 * 1024 * 1024
 const UPLOAD_CONCURRENCY_LIMIT = 2
+const BULK_DOWNLOAD_MAX_FILES = 25
+const BULK_DOWNLOAD_FILENAME = 'bonUP-Vault-Download.zip'
 
 const CATEGORIES: Array<{ key: Category; label: string }> = [
   { key: 'all', label: 'All Files' },
@@ -292,6 +294,19 @@ function createIdempotencyKey() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+function bulkDownloadErrorMessage(error: unknown) {
+  const code = typeof error === 'object' && error !== null && 'response' in error
+    ? (error as { response?: { data?: { code?: string; detail?: string } } }).response?.data?.code
+    : undefined
+
+  if (code === 'too_many_upload_ids') return `Download Selected supports up to ${BULK_DOWNLOAD_MAX_FILES} files.`
+  if (code === 'bulk_download_too_large') return 'Selected files are too large to download together. Select fewer or smaller files.'
+  if (code === 'file_not_found') return 'One or more selected files could not be found.'
+  if (code === 'bulk_download_unavailable') return 'One or more selected files could not be prepared for download.'
+  if (code === 'invalid_upload_ids' || code === 'empty_upload_ids' || code === 'invalid_upload_id') return 'Select valid files to download.'
+  return 'Selected files could not be downloaded. Please try again.'
+}
+
 function emailErrorMessage(error: unknown) {
   const code = typeof error === 'object' && error !== null && 'response' in error
     ? (error as { response?: { data?: { code?: string } } }).response?.data?.code
@@ -351,6 +366,7 @@ export default function Vault() {
   const [moveFolderParentId, setMoveFolderParentId] = useState<string>('')
   const [moveFolderError, setMoveFolderError] = useState('')
   const [bulkRemoving, setBulkRemoving] = useState(false)
+  const [bulkDownloading, setBulkDownloading] = useState(false)
   const [sharing, setSharing] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([])
@@ -533,22 +549,49 @@ export default function Vault() {
   }
 
   function toggleFileSelection(fileId: string) {
-    if (bulkRemoving) return
+    if (bulkRemoving || bulkDownloading) return
     setSelectedFileIds((current) => current.includes(fileId) ? current.filter((id) => id !== fileId) : [...current, fileId])
   }
 
   function selectAllDisplayedFiles() {
-    if (bulkRemoving) return
+    if (bulkRemoving || bulkDownloading) return
     setSelectedFileIds(displayedFileIds)
   }
 
   function clearSelection() {
-    if (bulkRemoving) return
+    if (bulkRemoving || bulkDownloading) return
     setSelectedFileIds([])
   }
 
+  async function handleBulkDownload() {
+    if (bulkDownloading || bulkRemoving || selectedFileIds.length === 0) return
+    if (selectedFileIds.length > BULK_DOWNLOAD_MAX_FILES) {
+      setToast({ tone: 'error', message: `Download Selected supports up to ${BULK_DOWNLOAD_MAX_FILES} files. Clear some selections and try again.` })
+      return
+    }
+
+    setBulkDownloading(true)
+    setToast(null)
+    try {
+      const response = await api.post<Blob>('/uploads/bulk-download/', { upload_ids: selectedFileIds }, { responseType: 'blob' })
+      const url = URL.createObjectURL(response.data)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = BULK_DOWNLOAD_FILENAME
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      setToast({ tone: 'success', message: `${selectedFileIds.length} ${selectedFileIds.length === 1 ? 'file' : 'files'} prepared for download.` })
+    } catch (error) {
+      setToast({ tone: 'error', message: bulkDownloadErrorMessage(error) })
+    } finally {
+      setBulkDownloading(false)
+    }
+  }
+
   async function handleBulkRemove() {
-    if (bulkRemoving || selectedFileIds.length === 0) return
+    if (bulkRemoving || bulkDownloading || selectedFileIds.length === 0) return
     const count = selectedFileIds.length
     const confirmed = window.confirm(`Remove ${count} ${count === 1 ? 'file' : 'files'} from Vault?`)
     if (!confirmed) return
@@ -1168,9 +1211,12 @@ export default function Vault() {
             selectedCount={selectedFileIds.length}
             displayedCount={filteredFiles.length}
             allDisplayedSelected={allDisplayedFilesSelected}
-            working={bulkRemoving}
+            working={bulkRemoving || bulkDownloading}
+            removing={bulkRemoving}
+            downloading={bulkDownloading}
             onSelectAll={selectAllDisplayedFiles}
             onClear={clearSelection}
+            onBulkDownload={() => void handleBulkDownload()}
             onBulkRemove={() => void handleBulkRemove()}
           />
         )}
@@ -1197,7 +1243,7 @@ export default function Vault() {
                 file={file}
                 mode={viewMode}
                 selected={selectedFileIdSet.has(file.id)}
-                working={workingFileId === file.id || bulkRemoving}
+                working={workingFileId === file.id || bulkRemoving || bulkDownloading}
                 onToggleSelected={() => toggleFileSelection(file.id)}
                 onOpen={() => setSelectedFile(file)}
                 onDownload={() => handleDownload(file)}
@@ -1420,16 +1466,22 @@ function BulkSelectionBar({
   displayedCount,
   allDisplayedSelected,
   working,
+  removing,
+  downloading,
   onSelectAll,
   onClear,
+  onBulkDownload,
   onBulkRemove,
 }: {
   selectedCount: number
   displayedCount: number
   allDisplayedSelected: boolean
   working: boolean
+  removing: boolean
+  downloading: boolean
   onSelectAll: () => void
   onClear: () => void
+  onBulkDownload: () => void
   onBulkRemove: () => void
 }) {
   return (
@@ -1439,9 +1491,15 @@ function BulkSelectionBar({
         <button type="button" onClick={onSelectAll} disabled={working || displayedCount === 0 || allDisplayedSelected} className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Select All</button>
         <button type="button" onClick={onClear} disabled={working || selectedCount === 0} className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Clear Selection</button>
         {selectedCount > 0 && (
-          <button type="button" onClick={onBulkRemove} disabled={working} className="h-9 rounded-lg border border-red-200 bg-white px-3 text-xs font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50">
-            {working ? 'Removing...' : 'Remove from Vault'}
-          </button>
+          <>
+            <button type="button" onClick={onBulkDownload} disabled={working} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+              <ArrowDownTrayIcon className="h-4 w-4" />
+              {downloading ? 'Downloading...' : 'Download Selected'}
+            </button>
+            <button type="button" onClick={onBulkRemove} disabled={working} className="h-9 rounded-lg border border-red-200 bg-white px-3 text-xs font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50">
+              {removing ? 'Removing...' : 'Remove from Vault'}
+            </button>
+          </>
         )}
       </div>
     </div>

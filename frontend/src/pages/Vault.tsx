@@ -91,6 +91,18 @@ type VaultEmailResponse = {
   idempotent: boolean
 }
 
+type BulkRemoveResult = {
+  upload_id: string
+  status: 'removed' | 'failed'
+  error?: string
+}
+
+type BulkRemoveResponse = {
+  results: BulkRemoveResult[]
+  removed_count: number
+  failed_count: number
+}
+
 type UploadQueueItem = {
   id: string
   name: string
@@ -299,6 +311,7 @@ export default function Vault() {
   const [storage, setStorage] = useState<StorageSummary | null>(null)
   const [files, setFiles] = useState<VaultFile[]>([])
   const [folders, setFolders] = useState<VaultFolder[]>([])
+  const [selectedFileIds, setSelectedFileIds] = useState<string[]>([])
   const [storageState, setStorageState] = useState<LoadState>('loading')
   const [filesState, setFilesState] = useState<LoadState>('loading')
   const [category, setCategory] = useState<Category>('all')
@@ -337,6 +350,7 @@ export default function Vault() {
   const [movingFolder, setMovingFolder] = useState(false)
   const [moveFolderParentId, setMoveFolderParentId] = useState<string>('')
   const [moveFolderError, setMoveFolderError] = useState('')
+  const [bulkRemoving, setBulkRemoving] = useState(false)
   const [sharing, setSharing] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([])
@@ -420,6 +434,18 @@ export default function Vault() {
       })
   }, [category, currentFolderFiles, search, sortKey])
 
+  const displayedFileIds = useMemo(() => filteredFiles.map((file) => file.id), [filteredFiles])
+  const selectedFileIdSet = useMemo(() => new Set(selectedFileIds), [selectedFileIds])
+  const allDisplayedFilesSelected = displayedFileIds.length > 0 && displayedFileIds.every((id) => selectedFileIdSet.has(id))
+
+  useEffect(() => {
+    const displayed = new Set(displayedFileIds)
+    setSelectedFileIds((current) => {
+      const next = current.filter((id) => displayed.has(id))
+      return next.length === current.length ? current : next
+    })
+  }, [displayedFileIds])
+
   const countsByCategory = useMemo(() => {
     return CATEGORIES.reduce<Record<Category, number>>((acc, item) => {
       acc[item.key] = item.key === 'all' ? currentFolderFiles.length : currentFolderFiles.filter((file) => categoryForFile(file) === item.key).length
@@ -499,6 +525,65 @@ export default function Vault() {
   function dismissUploadQueue() {
     if (uploading) return
     setUploadQueue([])
+  }
+
+  function openFolder(folderId: string | null) {
+    setCurrentFolderId(folderId)
+    setSelectedFileIds([])
+  }
+
+  function toggleFileSelection(fileId: string) {
+    if (bulkRemoving) return
+    setSelectedFileIds((current) => current.includes(fileId) ? current.filter((id) => id !== fileId) : [...current, fileId])
+  }
+
+  function selectAllDisplayedFiles() {
+    if (bulkRemoving) return
+    setSelectedFileIds(displayedFileIds)
+  }
+
+  function clearSelection() {
+    if (bulkRemoving) return
+    setSelectedFileIds([])
+  }
+
+  async function handleBulkRemove() {
+    if (bulkRemoving || selectedFileIds.length === 0) return
+    const count = selectedFileIds.length
+    const confirmed = window.confirm(`Remove ${count} ${count === 1 ? 'file' : 'files'} from Vault?`)
+    if (!confirmed) return
+
+    setBulkRemoving(true)
+    setToast(null)
+    try {
+      const response = await api.post<BulkRemoveResponse>('/uploads/bulk-remove/', { upload_ids: selectedFileIds })
+      const removedIds = new Set(response.data.results.filter((item) => item.status === 'removed').map((item) => item.upload_id))
+      const failedIds = response.data.results.filter((item) => item.status === 'failed').map((item) => item.upload_id)
+
+      if (removedIds.size > 0) {
+        setFiles((current) => current.filter((file) => !removedIds.has(file.id)))
+        setSelectedFile((current) => (current && removedIds.has(current.id) ? null : current))
+        setShareFile((current) => (current && removedIds.has(current.id) ? null : current))
+        setEmailFile((current) => (current && removedIds.has(current.id) ? null : current))
+        setRenameFile((current) => (current && removedIds.has(current.id) ? null : current))
+        setMoveFile((current) => (current && removedIds.has(current.id) ? null : current))
+      }
+
+      setSelectedFileIds(failedIds)
+      await refreshVault()
+
+      if (response.data.failed_count > 0 && response.data.removed_count > 0) {
+        setToast({ tone: 'info', message: `${response.data.removed_count} ${response.data.removed_count === 1 ? 'file' : 'files'} removed from Vault. ${response.data.failed_count} could not be removed.` })
+      } else if (response.data.failed_count > 0) {
+        setToast({ tone: 'error', message: 'No selected files could be removed from Vault.' })
+      } else {
+        setToast({ tone: 'success', message: `${response.data.removed_count} ${response.data.removed_count === 1 ? 'file' : 'files'} removed from Vault.` })
+      }
+    } catch (error) {
+      setToast({ tone: 'error', message: uploadErrorMessage(error) })
+    } finally {
+      setBulkRemoving(false)
+    }
   }
 
   function openFolderNameModal(mode: 'create' | 'rename', folder: VaultFolder | null = null) {
@@ -922,6 +1007,7 @@ export default function Vault() {
     setToast(null)
     try {
       await api.delete(`/uploads/${file.id}/`)
+      setSelectedFileIds((current) => current.filter((id) => id !== file.id))
       setSelectedFile((current) => (current?.id === file.id ? null : current))
       setShareFile((current) => (current?.id === file.id ? null : current))
       setEmailFile((current) => (current?.id === file.id ? null : current))
@@ -1027,8 +1113,8 @@ export default function Vault() {
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <FolderBreadcrumbs
                 breadcrumbs={folderBreadcrumbs}
-                onRoot={() => setCurrentFolderId(null)}
-                onOpen={(folder) => setCurrentFolderId(folder.id)}
+                onRoot={() => openFolder(null)}
+                onOpen={(folder) => openFolder(folder.id)}
               />
               <button type="button" onClick={() => openFolderNameModal('create')} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
                 <FolderIcon className="h-4 w-4" />
@@ -1077,6 +1163,17 @@ export default function Vault() {
           </div>
         </div>
 
+        {filesState === 'success' && (filteredFiles.length > 0 || selectedFileIds.length > 0) && (
+          <BulkSelectionBar
+            selectedCount={selectedFileIds.length}
+            displayedCount={filteredFiles.length}
+            allDisplayedSelected={allDisplayedFilesSelected}
+            working={bulkRemoving}
+            onSelectAll={selectAllDisplayedFiles}
+            onClear={clearSelection}
+            onBulkRemove={() => void handleBulkRemove()}
+          />
+        )}
         {filesState === 'loading' && <FileLoadingState />}
         {filesState === 'error' && <FileErrorState onRetry={refreshVault} />}
         {filesState === 'success' && visibleFolders.length === 0 && currentFolderFiles.length === 0 && <EmptyState onUpload={() => fileInputRef.current?.click()} />}
@@ -1088,7 +1185,7 @@ export default function Vault() {
                 key={folder.id}
                 folder={folder}
                 mode={viewMode}
-                onOpen={() => setCurrentFolderId(folder.id)}
+                onOpen={() => openFolder(folder.id)}
                 onRename={() => openFolderNameModal('rename', folder)}
                 onMove={() => openMoveFolder(folder)}
                 onDelete={() => void deleteFolder(folder)}
@@ -1099,7 +1196,9 @@ export default function Vault() {
                 key={file.id}
                 file={file}
                 mode={viewMode}
-                working={workingFileId === file.id}
+                selected={selectedFileIdSet.has(file.id)}
+                working={workingFileId === file.id || bulkRemoving}
+                onToggleSelected={() => toggleFileSelection(file.id)}
                 onOpen={() => setSelectedFile(file)}
                 onDownload={() => handleDownload(file)}
                 onEmailFile={() => openEmailFile(file)}
@@ -1313,6 +1412,39 @@ function UploadQueuePanel({
         ))}
       </div>
     </section>
+  )
+}
+
+function BulkSelectionBar({
+  selectedCount,
+  displayedCount,
+  allDisplayedSelected,
+  working,
+  onSelectAll,
+  onClear,
+  onBulkRemove,
+}: {
+  selectedCount: number
+  displayedCount: number
+  allDisplayedSelected: boolean
+  working: boolean
+  onSelectAll: () => void
+  onClear: () => void
+  onBulkRemove: () => void
+}) {
+  return (
+    <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-sm font-bold text-slate-700">{selectedCount} selected</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" onClick={onSelectAll} disabled={working || displayedCount === 0 || allDisplayedSelected} className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Select All</button>
+        <button type="button" onClick={onClear} disabled={working || selectedCount === 0} className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Clear Selection</button>
+        {selectedCount > 0 && (
+          <button type="button" onClick={onBulkRemove} disabled={working} className="h-9 rounded-lg border border-red-200 bg-white px-3 text-xs font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50">
+            {working ? 'Removing...' : 'Remove from Vault'}
+          </button>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -1648,7 +1780,9 @@ function NoMatchesState() {
 function FileTile({
   file,
   mode,
+  selected,
   working,
+  onToggleSelected,
   onOpen,
   onDownload,
   onEmailFile,
@@ -1660,7 +1794,9 @@ function FileTile({
 }: {
   file: VaultFile
   mode: ViewMode
+  selected: boolean
   working: boolean
+  onToggleSelected: () => void
   onOpen: () => void
   onDownload: () => void
   onEmailFile: () => void
@@ -1676,7 +1812,11 @@ function FileTile({
 
   if (mode === 'list') {
     return (
-      <div className="flex flex-col gap-3 p-4 hover:bg-slate-50 lg:flex-row lg:items-center lg:justify-between">
+      <div className={`flex flex-col gap-3 p-4 hover:bg-slate-50 lg:flex-row lg:items-center lg:justify-between ${selected ? 'bg-[#FFF7E8]' : ''}`}>
+        <label className="flex shrink-0 items-center gap-2 text-xs font-bold text-slate-600">
+          <input type="checkbox" checked={selected} onChange={onToggleSelected} disabled={working} className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900 disabled:cursor-not-allowed" />
+          Select
+        </label>
         <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 text-left">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
             <Icon className="h-5 w-5" />
@@ -1692,7 +1832,13 @@ function FileTile({
   }
 
   return (
-    <div className="group overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-slate-300 hover:shadow-md">
+    <div className={`group overflow-hidden rounded-lg border bg-white shadow-sm transition hover:border-slate-300 hover:shadow-md ${selected ? 'border-[#F5A623] ring-2 ring-[#F5A623]/20' : 'border-slate-200'}`}>
+      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2">
+        <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
+          <input type="checkbox" checked={selected} onChange={onToggleSelected} disabled={working} className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900 disabled:cursor-not-allowed" />
+          Select
+        </label>
+      </div>
       <button type="button" onClick={onOpen} className="block w-full text-left">
         <div className="flex aspect-[4/3] items-center justify-center bg-slate-50">
           {isImage ? (

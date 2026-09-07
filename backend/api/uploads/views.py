@@ -52,6 +52,7 @@ VALID_SHARE_EXPIRATIONS = {
     "none": None,
 }
 DEFAULT_SHARE_EXPIRATION = "7d"
+BULK_REMOVE_MAX_UPLOADS = 100
 EMAIL_SUBJECT_MAX_LENGTH = 255
 EMAIL_MESSAGE_MAX_LENGTH = 4000
 SHARE_UNAVAILABLE_RESPONSE = {"detail": "Share is unavailable."}
@@ -250,6 +251,34 @@ def _validation_error(code, detail, *, status_code=status.HTTP_400_BAD_REQUEST):
     return Response({"code": code, "detail": detail}, status=status_code)
 
 
+def _remove_upload_from_vault(user, upload):
+    if upload.stored_object_id:
+        now = timezone.now()
+        VaultShare.objects.filter(
+            owner=user,
+            stored_object=upload.stored_object,
+            revoked_at__isnull=True,
+        ).update(revoked_at=now)
+
+        if upload.contract_documents.exists():
+            archive_user_object_access(
+                user,
+                upload.stored_object,
+                is_active=True,
+                counts_toward_quota=True,
+            )
+            return
+
+        remove_user_object_access(user, upload.stored_object)
+        upload.delete()
+        return
+
+    if upload.storage_key:
+        default_storage.delete(upload.storage_key)
+
+    upload.delete()
+
+
 def _validate_file_name(value):
     file_name = value.strip() if isinstance(value, str) else ""
     if not file_name:
@@ -422,6 +451,58 @@ class UploadsViewSet(ViewSet):
             "available_bytes": snapshot.remaining_bytes,
         })
 
+    @action(detail=False, methods=["post"], url_path="bulk-remove")
+    def bulk_remove(self, request):
+        upload_ids = request.data.get("upload_ids")
+        if not isinstance(upload_ids, list):
+            return _validation_error("invalid_upload_ids", "upload_ids must be a list.")
+        if not upload_ids:
+            return _validation_error("empty_upload_ids", "Select at least one file to remove.")
+        if len(upload_ids) > BULK_REMOVE_MAX_UPLOADS:
+            return _validation_error("too_many_upload_ids", f"Bulk remove supports up to {BULK_REMOVE_MAX_UPLOADS} files at a time.")
+
+        normalized_ids = []
+        seen = set()
+        for raw_upload_id in upload_ids:
+            try:
+                normalized_id = str(uuid.UUID(str(raw_upload_id)))
+            except (TypeError, ValueError):
+                return _validation_error("invalid_upload_id", "Each upload_id must be a valid UUID.")
+            if normalized_id not in seen:
+                seen.add(normalized_id)
+                normalized_ids.append(normalized_id)
+
+        accessible_uploads = {
+            str(upload.id): upload
+            for upload in _active_uploads_for_user(request.user).filter(pk__in=normalized_ids)
+        }
+        results = []
+        removed_count = 0
+        failed_count = 0
+
+        for upload_id in normalized_ids:
+            upload = accessible_uploads.get(upload_id)
+            if upload is None:
+                failed_count += 1
+                results.append({
+                    "upload_id": upload_id,
+                    "status": "failed",
+                    "error": "File not found.",
+                })
+                continue
+
+            _remove_upload_from_vault(request.user, upload)
+            removed_count += 1
+            results.append({
+                "upload_id": upload_id,
+                "status": "removed",
+            })
+
+        return Response({
+            "results": results,
+            "removed_count": removed_count,
+            "failed_count": failed_count,
+        })
 
     @action(detail=True, methods=["post"], url_path="folder")
     def move_to_folder(self, request, pk=None):
@@ -667,29 +748,5 @@ class UploadsViewSet(ViewSet):
 
     def destroy(self, request, pk=None):
         upload = get_object_or_404(_active_uploads_for_user(request.user), pk=pk)
-
-        if upload.stored_object_id:
-            now = timezone.now()
-            VaultShare.objects.filter(
-                owner=request.user,
-                stored_object=upload.stored_object,
-                revoked_at__isnull=True,
-            ).update(revoked_at=now)
-
-            if upload.contract_documents.exists():
-                archive_user_object_access(
-                    request.user,
-                    upload.stored_object,
-                    is_active=True,
-                    counts_toward_quota=True,
-                )
-                return Response(status=status.HTTP_204_NO_CONTENT)
-
-            remove_user_object_access(request.user, upload.stored_object)
-            upload.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        elif upload.storage_key:
-            default_storage.delete(upload.storage_key)
-
-        upload.delete()
+        _remove_upload_from_vault(request.user, upload)
         return Response(status=status.HTTP_204_NO_CONTENT)

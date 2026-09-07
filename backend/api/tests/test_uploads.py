@@ -1649,6 +1649,188 @@ class UploadRenameTests(TestCase):
         self.assertEqual(doc_response.data[0]["file_name"], "Renamed Contract File.pdf")
 
 
+class UploadBulkRemoveTests(TestCase):
+
+    def setUp(self):
+        self.user = make_user("bulk_remover", "bulk_remover@example.com")
+        self.other = make_user("bulk_other", "bulk_other@example.com")
+        self.client = authed_client(self.user)
+        _grant_capacity(self.user, 100 * 1024 * 1024)
+
+    def _bulk_remove(self, upload_ids):
+        return self.client.post(f"{UPLOAD_URL}bulk-remove/", {"upload_ids": upload_ids}, format="json")
+
+    @patch("backend.api.uploads.views.default_storage")
+    def test_bulk_remove_two_owned_canonical_files_uses_existing_metadata_removal(self, mock_storage):
+        first = _managed_upload(self.user, name="first.pdf", key="uploads/bulk/first.pdf", size=1024)
+        second = _managed_upload(self.user, name="second.pdf", key="uploads/bulk/second.pdf", size=2048)
+        upload_count = Upload.objects.count()
+        object_count = StoredObject.objects.count()
+        access_count = UserObjectAccess.objects.count()
+        first_object_key = first.stored_object.object_key
+        second_object_key = second.stored_object.object_key
+        quota_before = get_user_active_storage_usage_bytes(self.user)
+
+        response = self._bulk_remove([str(first.id), str(second.id)])
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["removed_count"], 2)
+        self.assertEqual(response.data["failed_count"], 0)
+        self.assertEqual([item["status"] for item in response.data["results"]], ["removed", "removed"])
+        self.assertEqual(Upload.objects.count(), upload_count - 2)
+        self.assertEqual(StoredObject.objects.count(), object_count)
+        self.assertEqual(UserObjectAccess.objects.count(), access_count)
+        self.assertTrue(StoredObject.objects.filter(object_key=first_object_key).exists())
+        self.assertTrue(StoredObject.objects.filter(object_key=second_object_key).exists())
+        self.assertEqual(get_user_active_storage_usage_bytes(self.user), quota_before - first.file_size - second.file_size)
+        mock_storage.delete.assert_not_called()
+
+    def test_bulk_remove_duplicate_ids_processes_once(self):
+        upload = _managed_upload(self.user, name="duplicate.pdf", key="uploads/bulk/duplicate.pdf")
+
+        response = self._bulk_remove([str(upload.id), str(upload.id)])
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["removed_count"], 1)
+        self.assertEqual(response.data["failed_count"], 0)
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertFalse(Upload.objects.filter(pk=upload.id).exists())
+
+    def test_bulk_remove_rejects_empty_upload_ids(self):
+        response = self._bulk_remove([])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "empty_upload_ids")
+
+    def test_bulk_remove_rejects_malformed_request(self):
+        response = self.client.post(f"{UPLOAD_URL}bulk-remove/", {"upload_ids": "not-a-list"}, format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "invalid_upload_ids")
+
+    def test_bulk_remove_rejects_malformed_uuid(self):
+        response = self._bulk_remove(["not-a-uuid"])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "invalid_upload_id")
+
+    def test_bulk_remove_enforces_batch_limit(self):
+        response = self._bulk_remove([str(uuid.uuid4()) for _ in range(101)])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "too_many_upload_ids")
+
+    def test_bulk_remove_cross_user_upload_uses_safe_not_found_semantics(self):
+        other_upload = _managed_upload(self.other, name="other.pdf", key="uploads/bulk/other.pdf")
+
+        response = self._bulk_remove([str(other_upload.id)])
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["removed_count"], 0)
+        self.assertEqual(response.data["failed_count"], 1)
+        self.assertEqual(response.data["results"][0]["status"], "failed")
+        self.assertEqual(response.data["results"][0]["error"], "File not found.")
+        self.assertTrue(Upload.objects.filter(pk=other_upload.id).exists())
+
+    def test_bulk_remove_hidden_already_removed_upload_is_safe_not_found(self):
+        upload = _managed_upload(self.user, name="hidden.pdf", key="uploads/bulk/hidden.pdf")
+        UserObjectAccess.objects.filter(user=self.user, stored_object=upload.stored_object).update(
+            is_active=False,
+            is_visible=False,
+            removed_at=timezone.now(),
+        )
+
+        response = self._bulk_remove([str(upload.id)])
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["removed_count"], 0)
+        self.assertEqual(response.data["failed_count"], 1)
+        self.assertEqual(response.data["results"][0]["error"], "File not found.")
+        self.assertTrue(Upload.objects.filter(pk=upload.id).exists())
+
+    def test_bulk_remove_mixed_success_and_failure_keeps_successful_removal(self):
+        owned = _managed_upload(self.user, name="owned.pdf", key="uploads/bulk/owned.pdf")
+        other_upload = _managed_upload(self.other, name="other.pdf", key="uploads/bulk/mixed-other.pdf")
+
+        response = self._bulk_remove([str(owned.id), str(other_upload.id), str(uuid.uuid4())])
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["removed_count"], 1)
+        self.assertEqual(response.data["failed_count"], 2)
+        self.assertEqual([item["status"] for item in response.data["results"]], ["removed", "failed", "failed"])
+        self.assertFalse(Upload.objects.filter(pk=owned.id).exists())
+        self.assertTrue(Upload.objects.filter(pk=other_upload.id).exists())
+
+    @patch("backend.api.uploads.views.default_storage")
+    def test_bulk_remove_referenced_upload_preserves_blackbod_document_and_quota(self, mock_storage):
+        upload = _managed_upload(self.user, name="referenced.pdf", key="uploads/bulk/referenced.pdf", size=5 * 1024 * 1024)
+        access = UserObjectAccess.objects.get(user=self.user, stored_object=upload.stored_object)
+        contract = make_contract(self.user, self.other.email)
+        doc = ContractDocument.objects.create(
+            contract=contract,
+            upload=upload,
+            attached_by=self.user,
+            title="Referenced Doc",
+        )
+        before_quota = get_user_active_storage_usage_bytes(self.user)
+        object_id = upload.stored_object_id
+        object_key = upload.stored_object.object_key
+
+        response = self._bulk_remove([str(upload.id)])
+        vault_list = self.client.get(f"{UPLOAD_URL}?canonical=true")
+        doc_list = self.client.get(f"/api/contracts/{contract.id}/documents/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["removed_count"], 1)
+        self.assertTrue(Upload.objects.filter(pk=upload.id).exists())
+        self.assertTrue(StoredObject.objects.filter(pk=object_id, object_key=object_key).exists())
+        self.assertTrue(ContractDocument.objects.filter(pk=doc.id, upload=upload).exists())
+        self.assertEqual(vault_list.status_code, 200)
+        self.assertEqual(vault_list.data, [])
+        self.assertEqual(doc_list.status_code, 200)
+        self.assertEqual([item["id"] for item in doc_list.data], [str(doc.id)])
+        self.assertEqual(get_user_active_storage_usage_bytes(self.user), before_quota)
+        access.refresh_from_db()
+        self.assertTrue(access.is_active)
+        self.assertFalse(access.is_visible)
+        self.assertTrue(access.counts_toward_quota)
+        self.assertIsNotNone(access.removed_at)
+        mock_storage.delete.assert_not_called()
+
+    def test_bulk_remove_revokes_active_vault_shares_through_existing_policy(self):
+        upload = _managed_upload(self.user, name="shared.pdf", key="uploads/bulk/shared.pdf")
+        create_response = self.client.post(f"{UPLOAD_URL}{upload.id}/shares/", {"expiration": "7d"}, format="json")
+        self.assertEqual(create_response.status_code, 201)
+        token = urlparse(create_response.data["share_url"]).path.rsplit("/", 1)[-1]
+
+        response = self._bulk_remove([str(upload.id)])
+        public_response = APIClient().get(f"{UPLOAD_URL}shares/{token}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["removed_count"], 1)
+        self.assertIsNotNone(VaultShare.objects.get().revoked_at)
+        self.assertEqual(public_response.status_code, 404)
+
+    @patch("backend.api.uploads.views.default_storage")
+    def test_bulk_remove_folder_membership_does_not_change_removal_policy(self, mock_storage):
+        folder = VaultFolder.objects.create(user=self.user, name="Folder")
+        upload = _managed_upload(self.user, name="foldered.pdf", key="uploads/bulk/foldered.pdf", size=4096)
+        upload.vault_folder = folder
+        upload.save(update_fields=["vault_folder"])
+        stored_object_id = upload.stored_object_id
+        quota_before = get_user_active_storage_usage_bytes(self.user)
+
+        response = self._bulk_remove([str(upload.id)])
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["removed_count"], 1)
+        self.assertFalse(Upload.objects.filter(pk=upload.id).exists())
+        self.assertTrue(VaultFolder.objects.filter(pk=folder.id).exists())
+        self.assertTrue(StoredObject.objects.filter(pk=stored_object_id).exists())
+        self.assertEqual(get_user_active_storage_usage_bytes(self.user), quota_before - upload.file_size)
+        mock_storage.delete.assert_not_called()
+
+
 class UploadDeleteTests(TestCase):
 
     def setUp(self):

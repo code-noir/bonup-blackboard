@@ -750,6 +750,331 @@ class VaultFolderTests(TestCase):
 
 
 
+class UploadBulkMoveTests(TestCase):
+
+    def setUp(self):
+        self.user = make_user("bulk_mover", "bulk_mover@example.com")
+        self.other = make_user("bulk_move_other", "bulk_move_other@example.com")
+        self.client = authed_client(self.user)
+        _grant_capacity(self.user, 100 * 1024 * 1024)
+
+    def _bulk_move(self, upload_ids, folder_id=None, client=None):
+        return (client or self.client).post(
+            f"{UPLOAD_URL}bulk-move/",
+            {"upload_ids": upload_ids, "folder_id": folder_id},
+            format="json",
+        )
+
+    def test_bulk_move_one_file_into_folder(self):
+        folder = VaultFolder.objects.create(user=self.user, name="Projects")
+        upload = _managed_upload(self.user, name="one.pdf", key="uploads/bulk-move/one.pdf")
+
+        response = self._bulk_move([str(upload.id)], str(folder.id))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["moved_count"], 1)
+        self.assertEqual(response.data["failed_count"], 0)
+        self.assertEqual(response.data["results"], [{"upload_id": str(upload.id), "status": "moved"}])
+        upload.refresh_from_db()
+        self.assertEqual(upload.vault_folder_id, folder.id)
+
+    def test_bulk_move_multiple_files_into_folder(self):
+        folder = VaultFolder.objects.create(user=self.user, name="Destination")
+        first = _managed_upload(self.user, name="first.pdf", key="uploads/bulk-move/first.pdf")
+        second = _managed_upload(self.user, name="second.pdf", key="uploads/bulk-move/second.pdf")
+
+        response = self._bulk_move([str(first.id), str(second.id)], str(folder.id))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["moved_count"], 2)
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.vault_folder_id, folder.id)
+        self.assertEqual(second.vault_folder_id, folder.id)
+
+    def test_bulk_move_multiple_files_back_to_vault_root(self):
+        folder = VaultFolder.objects.create(user=self.user, name="Source")
+        first = _managed_upload(self.user, name="first.pdf", key="uploads/bulk-move/root-first.pdf")
+        second = _managed_upload(self.user, name="second.pdf", key="uploads/bulk-move/root-second.pdf")
+        Upload.objects.filter(pk__in=[first.id, second.id]).update(vault_folder=folder)
+
+        response = self._bulk_move([str(first.id), str(second.id)], None)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["moved_count"], 2)
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertIsNone(first.vault_folder_id)
+        self.assertIsNone(second.vault_folder_id)
+
+    def test_bulk_move_nested_destination_folder_works(self):
+        parent = VaultFolder.objects.create(user=self.user, name="Contracts")
+        child = VaultFolder.objects.create(user=self.user, name="Clients", parent=parent)
+        upload = _managed_upload(self.user, name="nested.pdf", key="uploads/bulk-move/nested.pdf")
+
+        response = self._bulk_move([str(upload.id)], str(child.id))
+
+        self.assertEqual(response.status_code, 200)
+        upload.refresh_from_db()
+        self.assertEqual(upload.vault_folder_id, child.id)
+
+    def test_bulk_move_duplicate_upload_ids_are_deduped(self):
+        folder = VaultFolder.objects.create(user=self.user, name="Deduped")
+        upload = _managed_upload(self.user, name="single.pdf", key="uploads/bulk-move/single.pdf")
+
+        response = self._bulk_move([str(upload.id), str(upload.id)], str(folder.id))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["moved_count"], 1)
+        self.assertEqual(len(response.data["results"]), 1)
+        upload.refresh_from_db()
+        self.assertEqual(upload.vault_folder_id, folder.id)
+
+    def test_bulk_move_empty_upload_ids_rejected(self):
+        response = self._bulk_move([])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "empty_upload_ids")
+
+    def test_bulk_move_malformed_upload_ids_rejected(self):
+        response = self.client.post(f"{UPLOAD_URL}bulk-move/", {"upload_ids": "not-a-list", "folder_id": None}, format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "invalid_upload_ids")
+
+    def test_bulk_move_malformed_upload_uuid_rejected(self):
+        response = self._bulk_move(["not-a-uuid"])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "invalid_upload_id")
+
+    def test_bulk_move_more_than_100_unique_files_rejected(self):
+        response = self._bulk_move([str(uuid.uuid4()) for _ in range(101)])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "too_many_upload_ids")
+
+    def test_bulk_move_invalid_folder_id_rejected_before_moving_any_file(self):
+        upload = _managed_upload(self.user, name="stable.pdf", key="uploads/bulk-move/invalid-folder.pdf")
+
+        response = self._bulk_move([str(upload.id)], "not-a-folder")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "invalid_folder_id")
+        upload.refresh_from_db()
+        self.assertIsNone(upload.vault_folder_id)
+
+    def test_bulk_move_cross_user_destination_folder_rejected_before_moving_any_file(self):
+        other_folder = VaultFolder.objects.create(user=self.other, name="Other Folder")
+        upload = _managed_upload(self.user, name="stable.pdf", key="uploads/bulk-move/cross-folder.pdf")
+
+        response = self._bulk_move([str(upload.id)], str(other_folder.id))
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["code"], "folder_not_found")
+        upload.refresh_from_db()
+        self.assertIsNone(upload.vault_folder_id)
+
+    def test_bulk_move_cross_user_upload_cannot_be_moved_or_discovered(self):
+        folder = VaultFolder.objects.create(user=self.user, name="Own Folder")
+        other_upload = _managed_upload(self.other, name="other.pdf", key="uploads/bulk-move/other.pdf")
+
+        response = self._bulk_move([str(other_upload.id)], str(folder.id))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["moved_count"], 0)
+        self.assertEqual(response.data["failed_count"], 1)
+        self.assertEqual(response.data["results"][0]["error"], "File not found.")
+        other_upload.refresh_from_db()
+        self.assertIsNone(other_upload.vault_folder_id)
+
+    def test_bulk_move_hidden_removed_upload_fails_safely(self):
+        folder = VaultFolder.objects.create(user=self.user, name="Folder")
+        upload = _managed_upload(self.user, name="hidden.pdf", key="uploads/bulk-move/hidden.pdf")
+        UserObjectAccess.objects.filter(user=self.user, stored_object=upload.stored_object).update(
+            is_active=False,
+            is_visible=False,
+            removed_at=timezone.now(),
+        )
+
+        response = self._bulk_move([str(upload.id)], str(folder.id))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["moved_count"], 0)
+        self.assertEqual(response.data["failed_count"], 1)
+        self.assertEqual(response.data["results"][0]["error"], "File not found.")
+        upload.refresh_from_db()
+        self.assertIsNone(upload.vault_folder_id)
+
+    def test_bulk_move_mixed_success_failure_returns_per_file_results(self):
+        folder = VaultFolder.objects.create(user=self.user, name="Destination")
+        owned = _managed_upload(self.user, name="owned.pdf", key="uploads/bulk-move/mixed-owned.pdf")
+        other_upload = _managed_upload(self.other, name="other.pdf", key="uploads/bulk-move/mixed-other.pdf")
+        missing_id = str(uuid.uuid4())
+
+        response = self._bulk_move([str(owned.id), str(other_upload.id), missing_id], str(folder.id))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["moved_count"], 1)
+        self.assertEqual(response.data["failed_count"], 2)
+        self.assertEqual([item["status"] for item in response.data["results"]], ["moved", "failed", "failed"])
+        self.assertEqual([item["upload_id"] for item in response.data["results"]], [str(owned.id), str(other_upload.id), missing_id])
+
+    def test_bulk_move_successful_files_remain_moved_when_another_file_fails(self):
+        folder = VaultFolder.objects.create(user=self.user, name="Destination")
+        owned = _managed_upload(self.user, name="owned.pdf", key="uploads/bulk-move/success-owned.pdf")
+        other_upload = _managed_upload(self.other, name="other.pdf", key="uploads/bulk-move/success-other.pdf")
+
+        response = self._bulk_move([str(owned.id), str(other_upload.id)], str(folder.id))
+
+        self.assertEqual(response.status_code, 200)
+        owned.refresh_from_db()
+        other_upload.refresh_from_db()
+        self.assertEqual(owned.vault_folder_id, folder.id)
+        self.assertIsNone(other_upload.vault_folder_id)
+
+    def test_bulk_move_to_current_folder_is_safe_noop(self):
+        folder = VaultFolder.objects.create(user=self.user, name="Current")
+        upload = _managed_upload(self.user, name="noop.pdf", key="uploads/bulk-move/noop.pdf")
+        upload.vault_folder = folder
+        upload.save(update_fields=["vault_folder"])
+        updated_before = upload.uploaded_at
+
+        response = self._bulk_move([str(upload.id)], str(folder.id))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["moved_count"], 1)
+        upload.refresh_from_db()
+        self.assertEqual(upload.vault_folder_id, folder.id)
+        self.assertEqual(upload.uploaded_at, updated_before)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_bulk_move_changes_only_folder_metadata_and_no_provider_operations(self, mock_storage):
+        source = VaultFolder.objects.create(user=self.user, name="Source")
+        destination = VaultFolder.objects.create(user=self.user, name="Destination")
+        upload = _managed_upload(self.user, name="stable.pdf", key="uploads/bulk-move/stable.pdf", size=2048)
+        upload.vault_folder = source
+        upload.save(update_fields=["vault_folder"])
+        access = UserObjectAccess.objects.get(user=self.user, stored_object=upload.stored_object)
+        snapshot = {
+            "upload_count": Upload.objects.count(),
+            "object_count": StoredObject.objects.count(),
+            "access_count": UserObjectAccess.objects.count(),
+            "share_count": VaultShare.objects.count(),
+            "quota": get_user_active_storage_usage_bytes(self.user),
+            "object_key": upload.stored_object.object_key,
+            "object_size": upload.stored_object.size_bytes,
+            "access": (access.is_active, access.is_visible, access.counts_toward_quota, access.removed_at),
+        }
+
+        response = self._bulk_move([str(upload.id)], str(destination.id))
+
+        self.assertEqual(response.status_code, 200)
+        upload.refresh_from_db()
+        upload.stored_object.refresh_from_db()
+        access.refresh_from_db()
+        self.assertEqual(upload.vault_folder_id, destination.id)
+        self.assertEqual(Upload.objects.count(), snapshot["upload_count"])
+        self.assertEqual(StoredObject.objects.count(), snapshot["object_count"])
+        self.assertEqual(UserObjectAccess.objects.count(), snapshot["access_count"])
+        self.assertEqual(VaultShare.objects.count(), snapshot["share_count"])
+        self.assertEqual(get_user_active_storage_usage_bytes(self.user), snapshot["quota"])
+        self.assertEqual(upload.stored_object.object_key, snapshot["object_key"])
+        self.assertEqual(upload.stored_object.size_bytes, snapshot["object_size"])
+        self.assertEqual((access.is_active, access.is_visible, access.counts_toward_quota, access.removed_at), snapshot["access"])
+        mock_storage.open.assert_not_called()
+        mock_storage.save.assert_not_called()
+        mock_storage.delete.assert_not_called()
+
+    @patch("backend.uploads.services.default_storage")
+    def test_bulk_move_contract_document_reference_survives(self, mock_storage):
+        folder = VaultFolder.objects.create(user=self.user, name="Contracts")
+        upload = _managed_upload(self.user, name="referenced.pdf", key="uploads/bulk-move/referenced.pdf", size=4096)
+        contract = make_contract(self.user, self.other.email)
+        doc = ContractDocument.objects.create(contract=contract, upload=upload, attached_by=self.user, title="Referenced Doc")
+        before_quota = get_user_active_storage_usage_bytes(self.user)
+        object_id = upload.stored_object_id
+
+        response = self._bulk_move([str(upload.id)], str(folder.id))
+
+        self.assertEqual(response.status_code, 200)
+        upload.refresh_from_db()
+        self.assertEqual(upload.vault_folder_id, folder.id)
+        self.assertTrue(Upload.objects.filter(pk=upload.id).exists())
+        self.assertTrue(StoredObject.objects.filter(pk=object_id).exists())
+        self.assertTrue(ContractDocument.objects.filter(pk=doc.id, upload=upload).exists())
+        self.assertEqual(get_user_active_storage_usage_bytes(self.user), before_quota)
+        mock_storage.open.assert_not_called()
+        mock_storage.save.assert_not_called()
+        mock_storage.delete.assert_not_called()
+
+    @patch("backend.uploads.services.default_storage")
+    def test_bulk_move_share_link_remains_valid(self, mock_storage):
+        folder = VaultFolder.objects.create(user=self.user, name="Shared")
+        upload = _managed_upload(self.user, name="shared.pdf", key="uploads/bulk-move/shared.pdf")
+        create_response = self.client.post(f"{UPLOAD_URL}{upload.id}/shares/", {"expiration": "7d"}, format="json")
+        self.assertEqual(create_response.status_code, 201)
+        token = urlparse(create_response.data["share_url"]).path.rsplit("/", 1)[-1]
+
+        response = self._bulk_move([str(upload.id)], str(folder.id))
+        public_response = APIClient().get(f"{UPLOAD_URL}shares/{token}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(VaultShare.objects.get().revoked_at)
+        self.assertEqual(public_response.status_code, 200)
+        upload.refresh_from_db()
+        self.assertEqual(upload.vault_folder_id, folder.id)
+        mock_storage.open.assert_not_called()
+        mock_storage.save.assert_not_called()
+        mock_storage.delete.assert_not_called()
+
+    @patch("backend.uploads.services.default_storage")
+    def test_bulk_move_folder_move_does_not_affect_file_contents_identity(self, mock_storage):
+        folder = VaultFolder.objects.create(user=self.user, name="Content Stable")
+        upload = _managed_upload(self.user, name="contents.pdf", key="uploads/bulk-move/contents.pdf", size=12345, content_type="application/pdf")
+        object_snapshot = (upload.stored_object_id, upload.storage_key, upload.stored_object.object_key, upload.stored_object.size_bytes, upload.stored_object.content_type)
+
+        response = self._bulk_move([str(upload.id)], str(folder.id))
+
+        self.assertEqual(response.status_code, 200)
+        upload.refresh_from_db()
+        upload.stored_object.refresh_from_db()
+        self.assertEqual((upload.stored_object_id, upload.storage_key, upload.stored_object.object_key, upload.stored_object.size_bytes, upload.stored_object.content_type), object_snapshot)
+        mock_storage.open.assert_not_called()
+        mock_storage.save.assert_not_called()
+        mock_storage.delete.assert_not_called()
+
+    @patch("backend.uploads.services.default_storage")
+    def test_existing_single_file_move_still_works_with_shared_policy(self, mock_storage):
+        mock_storage.url.return_value = "https://example.com/single.pdf"
+        folder = VaultFolder.objects.create(user=self.user, name="Single")
+        upload = _managed_upload(self.user, name="single.pdf", key="uploads/bulk-move/single-policy.pdf")
+
+        response = self.client.post(f"{UPLOAD_URL}{upload.id}/folder/", {"folder_id": str(folder.id)}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["folder_id"], str(folder.id))
+        upload.refresh_from_db()
+        self.assertEqual(upload.vault_folder_id, folder.id)
+        mock_storage.open.assert_not_called()
+        mock_storage.save.assert_not_called()
+        mock_storage.delete.assert_not_called()
+
+    def test_bulk_move_folder_membership_serialization_and_listing_remain_correct(self):
+        folder = VaultFolder.objects.create(user=self.user, name="Listed")
+        moved = _managed_upload(self.user, name="moved.pdf", key="uploads/bulk-move/listed-moved.pdf")
+        root = _managed_upload(self.user, name="root.pdf", key="uploads/bulk-move/listed-root.pdf")
+
+        response = self._bulk_move([str(moved.id)], str(folder.id))
+        list_response = self.client.get(f"{UPLOAD_URL}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(list_response.status_code, 200)
+        folder_ids = {item["file_name"]: item["folder_id"] for item in list_response.data}
+        self.assertEqual(folder_ids[moved.file_name], str(folder.id))
+        self.assertIsNone(folder_ids[root.file_name])
+
+
 class UploadShareTests(TestCase):
 
     def setUp(self):

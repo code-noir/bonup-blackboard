@@ -57,6 +57,7 @@ VALID_SHARE_EXPIRATIONS = {
 }
 DEFAULT_SHARE_EXPIRATION = "7d"
 BULK_REMOVE_MAX_UPLOADS = 100
+BULK_MOVE_MAX_UPLOADS = 100
 BULK_DOWNLOAD_MAX_UPLOADS = 25
 BULK_DOWNLOAD_DEFAULT_MAX_BYTES = 512 * 1024 * 1024
 BULK_DOWNLOAD_FILENAME = "bonUP-Vault-Download.zip"
@@ -144,6 +145,20 @@ def _folder_for_user(user, folder_id):
     if not folder_id:
         return None, None
     return get_object_or_404(VaultFolder, pk=folder_id, user=user), folder_id
+
+
+def _folder_destination_for_user(user, folder_id):
+    if folder_id in (None, ""):
+        return None, None
+    try:
+        normalized_id = uuid.UUID(str(folder_id))
+    except (TypeError, ValueError):
+        return None, _validation_error("invalid_folder_id", "folder_id must be null or a valid UUID.")
+
+    folder = VaultFolder.objects.filter(pk=normalized_id, user=user).first()
+    if folder is None:
+        return None, _validation_error("folder_not_found", "Destination folder could not be found.", status_code=status.HTTP_404_NOT_FOUND)
+    return folder, None
 
 
 def _folder_validation_response(exc):
@@ -334,6 +349,14 @@ class TemporaryArchiveFile:
                 pass
             except Exception:
                 logger.exception("Failed to clean up temporary Vault bulk-download archive.")
+
+
+def _move_upload_to_folder(upload, folder):
+    folder_id = folder.id if folder else None
+    if upload.vault_folder_id != folder_id:
+        upload.vault_folder = folder
+        upload.save(update_fields=["vault_folder"])
+    return upload
 
 
 def _remove_upload_from_vault(user, upload):
@@ -574,6 +597,48 @@ class UploadsViewSet(ViewSet):
             "failed_count": failed_count,
         })
 
+    @action(detail=False, methods=["post"], url_path="bulk-move")
+    def bulk_move(self, request):
+        normalized_ids, error = _normalize_upload_ids(request.data.get("upload_ids"), max_count=BULK_MOVE_MAX_UPLOADS)
+        if error is not None:
+            return error
+
+        folder, error = _folder_destination_for_user(request.user, request.data.get("folder_id"))
+        if error is not None:
+            return error
+
+        accessible_uploads = {
+            str(upload.id): upload
+            for upload in _active_canonical_uploads_for_user(request.user).filter(pk__in=normalized_ids)
+        }
+        results = []
+        moved_count = 0
+        failed_count = 0
+
+        for upload_id in normalized_ids:
+            upload = accessible_uploads.get(upload_id)
+            if upload is None:
+                failed_count += 1
+                results.append({
+                    "upload_id": upload_id,
+                    "status": "failed",
+                    "error": "File not found.",
+                })
+                continue
+
+            _move_upload_to_folder(upload, folder)
+            moved_count += 1
+            results.append({
+                "upload_id": upload_id,
+                "status": "moved",
+            })
+
+        return Response({
+            "results": results,
+            "moved_count": moved_count,
+            "failed_count": failed_count,
+        })
+
     @action(detail=False, methods=["post"], url_path="bulk-download")
     def bulk_download(self, request):
         normalized_ids, error = _normalize_upload_ids(request.data.get("upload_ids"), max_count=BULK_DOWNLOAD_MAX_UPLOADS)
@@ -638,10 +703,10 @@ class UploadsViewSet(ViewSet):
     @action(detail=True, methods=["post"], url_path="folder")
     def move_to_folder(self, request, pk=None):
         upload = get_object_or_404(_active_canonical_uploads_for_user(request.user), pk=pk)
-        folder_id = request.data.get("folder_id") or None
-        folder, _ = _folder_for_user(request.user, folder_id)
-        upload.vault_folder = folder
-        upload.save(update_fields=["vault_folder"])
+        folder, error = _folder_destination_for_user(request.user, request.data.get("folder_id"))
+        if error is not None:
+            return error
+        _move_upload_to_folder(upload, folder)
         return Response(_serialize(upload))
 
     @action(detail=True, methods=["get"], url_path="delivery")

@@ -103,6 +103,18 @@ type BulkRemoveResponse = {
   failed_count: number
 }
 
+type BulkMoveResult = {
+  upload_id: string
+  status: 'moved' | 'failed'
+  error?: string
+}
+
+type BulkMoveResponse = {
+  results: BulkMoveResult[]
+  moved_count: number
+  failed_count: number
+}
+
 type UploadQueueItem = {
   id: string
   name: string
@@ -126,6 +138,7 @@ type NativeShareDiagnosticReason =
 const NATIVE_SHARE_PREPARATION_LIMIT_BYTES = 25 * 1024 * 1024
 const UPLOAD_CONCURRENCY_LIMIT = 2
 const BULK_DOWNLOAD_MAX_FILES = 25
+const BULK_MOVE_MAX_FILES = 100
 const BULK_DOWNLOAD_FILENAME = 'bonUP-Vault-Download.zip'
 
 const CATEGORIES: Array<{ key: Category; label: string }> = [
@@ -307,6 +320,18 @@ function bulkDownloadErrorMessage(error: unknown) {
   return 'Selected files could not be downloaded. Please try again.'
 }
 
+function bulkMoveErrorMessage(error: unknown) {
+  const code = typeof error === 'object' && error !== null && 'response' in error
+    ? (error as { response?: { data?: { code?: string; detail?: string } } }).response?.data?.code
+    : undefined
+
+  if (code === 'too_many_upload_ids') return `Move Selected supports up to ${BULK_MOVE_MAX_FILES} files.`
+  if (code === 'folder_not_found') return 'Destination folder could not be found.'
+  if (code === 'invalid_folder_id') return 'Select a valid destination folder.'
+  if (code === 'invalid_upload_ids' || code === 'empty_upload_ids' || code === 'invalid_upload_id') return 'Select valid files to move.'
+  return 'Selected files could not be moved. Please try again.'
+}
+
 function emailErrorMessage(error: unknown) {
   const code = typeof error === 'object' && error !== null && 'response' in error
     ? (error as { response?: { data?: { code?: string } } }).response?.data?.code
@@ -339,6 +364,7 @@ export default function Vault() {
   const [emailFile, setEmailFile] = useState<VaultFile | null>(null)
   const [renameFile, setRenameFile] = useState<VaultFile | null>(null)
   const [moveFile, setMoveFile] = useState<VaultFile | null>(null)
+  const [bulkMoveOpen, setBulkMoveOpen] = useState(false)
   const [moveFolderModal, setMoveFolderModal] = useState<VaultFolder | null>(null)
   const [folderNameModal, setFolderNameModal] = useState<{ mode: 'create' | 'rename'; folder: VaultFolder | null } | null>(null)
   const [nativeShareFallbackFile, setNativeShareFallbackFile] = useState<VaultFile | null>(null)
@@ -362,11 +388,14 @@ export default function Vault() {
   const [movingFile, setMovingFile] = useState(false)
   const [moveFileFolderId, setMoveFileFolderId] = useState<string>('')
   const [moveFileError, setMoveFileError] = useState('')
+  const [bulkMoveFolderId, setBulkMoveFolderId] = useState<string>('')
+  const [bulkMoveError, setBulkMoveError] = useState('')
   const [movingFolder, setMovingFolder] = useState(false)
   const [moveFolderParentId, setMoveFolderParentId] = useState<string>('')
   const [moveFolderError, setMoveFolderError] = useState('')
   const [bulkRemoving, setBulkRemoving] = useState(false)
   const [bulkDownloading, setBulkDownloading] = useState(false)
+  const [bulkMoving, setBulkMoving] = useState(false)
   const [sharing, setSharing] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([])
@@ -549,22 +578,22 @@ export default function Vault() {
   }
 
   function toggleFileSelection(fileId: string) {
-    if (bulkRemoving || bulkDownloading) return
+    if (bulkRemoving || bulkDownloading || bulkMoving) return
     setSelectedFileIds((current) => current.includes(fileId) ? current.filter((id) => id !== fileId) : [...current, fileId])
   }
 
   function selectAllDisplayedFiles() {
-    if (bulkRemoving || bulkDownloading) return
+    if (bulkRemoving || bulkDownloading || bulkMoving) return
     setSelectedFileIds(displayedFileIds)
   }
 
   function clearSelection() {
-    if (bulkRemoving || bulkDownloading) return
+    if (bulkRemoving || bulkDownloading || bulkMoving) return
     setSelectedFileIds([])
   }
 
   async function handleBulkDownload() {
-    if (bulkDownloading || bulkRemoving || selectedFileIds.length === 0) return
+    if (bulkDownloading || bulkRemoving || bulkMoving || selectedFileIds.length === 0) return
     if (selectedFileIds.length > BULK_DOWNLOAD_MAX_FILES) {
       setToast({ tone: 'error', message: `Download Selected supports up to ${BULK_DOWNLOAD_MAX_FILES} files. Clear some selections and try again.` })
       return
@@ -590,8 +619,76 @@ export default function Vault() {
     }
   }
 
+  function openBulkMove() {
+    if (bulkDownloading || bulkRemoving || bulkMoving || selectedFileIds.length === 0) return
+    if (selectedFileIds.length > BULK_MOVE_MAX_FILES) {
+      setToast({ tone: 'error', message: `Move Selected supports up to ${BULK_MOVE_MAX_FILES} files. Clear some selections and try again.` })
+      return
+    }
+    setBulkMoveFolderId(currentFolderId || '')
+    setBulkMoveError('')
+    setBulkMoveOpen(true)
+    setToast(null)
+  }
+
+  function closeBulkMove() {
+    if (bulkMoving) return
+    setBulkMoveOpen(false)
+    setBulkMoveFolderId('')
+    setBulkMoveError('')
+  }
+
+  async function handleBulkMove() {
+    if (bulkMoving || selectedFileIds.length === 0) return
+    if (selectedFileIds.length > BULK_MOVE_MAX_FILES) {
+      setBulkMoveError(`Move Selected supports up to ${BULK_MOVE_MAX_FILES} files.`)
+      return
+    }
+
+    setBulkMoving(true)
+    setBulkMoveError('')
+    setToast(null)
+    try {
+      const destinationId = bulkMoveFolderId || null
+      const response = await api.post<BulkMoveResponse>('/uploads/bulk-move/', {
+        upload_ids: selectedFileIds,
+        folder_id: destinationId,
+      })
+      const movedIds = new Set(response.data.results.filter((item) => item.status === 'moved').map((item) => item.upload_id))
+      const failedIds = response.data.results.filter((item) => item.status === 'failed').map((item) => item.upload_id)
+
+      if (movedIds.size > 0) {
+        setFiles((current) => current.map((file) => movedIds.has(file.id) ? { ...file, folder_id: destinationId } : file))
+        setSelectedFile((current) => current && movedIds.has(current.id) ? { ...current, folder_id: destinationId } : current)
+        setShareFile((current) => current && movedIds.has(current.id) ? { ...current, folder_id: destinationId } : current)
+        setEmailFile((current) => current && movedIds.has(current.id) ? { ...current, folder_id: destinationId } : current)
+        setRenameFile((current) => current && movedIds.has(current.id) ? { ...current, folder_id: destinationId } : current)
+        setMoveFile((current) => current && movedIds.has(current.id) ? { ...current, folder_id: destinationId } : current)
+        setNativeShareFallbackFile((current) => current && movedIds.has(current.id) ? { ...current, folder_id: destinationId } : current)
+      }
+
+      setSelectedFileIds(failedIds)
+      await refreshVault()
+
+      if (response.data.failed_count > 0 && response.data.moved_count > 0) {
+        setToast({ tone: 'info', message: `${response.data.moved_count} ${response.data.moved_count === 1 ? 'file' : 'files'} moved. ${response.data.failed_count} could not be moved.` })
+      } else if (response.data.failed_count > 0) {
+        setToast({ tone: 'error', message: 'No selected files could be moved.' })
+      } else {
+        setToast({ tone: 'success', message: `${response.data.moved_count} ${response.data.moved_count === 1 ? 'file' : 'files'} moved.` })
+      }
+      setBulkMoveOpen(false)
+      setBulkMoveFolderId('')
+      setBulkMoveError('')
+    } catch (error) {
+      setBulkMoveError(bulkMoveErrorMessage(error))
+    } finally {
+      setBulkMoving(false)
+    }
+  }
+
   async function handleBulkRemove() {
-    if (bulkRemoving || bulkDownloading || selectedFileIds.length === 0) return
+    if (bulkRemoving || bulkDownloading || bulkMoving || selectedFileIds.length === 0) return
     const count = selectedFileIds.length
     const confirmed = window.confirm(`Remove ${count} ${count === 1 ? 'file' : 'files'} from Vault?`)
     if (!confirmed) return
@@ -1211,11 +1308,13 @@ export default function Vault() {
             selectedCount={selectedFileIds.length}
             displayedCount={filteredFiles.length}
             allDisplayedSelected={allDisplayedFilesSelected}
-            working={bulkRemoving || bulkDownloading}
+            working={bulkRemoving || bulkDownloading || bulkMoving}
             removing={bulkRemoving}
             downloading={bulkDownloading}
+            moving={bulkMoving}
             onSelectAll={selectAllDisplayedFiles}
             onClear={clearSelection}
+            onBulkMove={openBulkMove}
             onBulkDownload={() => void handleBulkDownload()}
             onBulkRemove={() => void handleBulkRemove()}
           />
@@ -1243,7 +1342,7 @@ export default function Vault() {
                 file={file}
                 mode={viewMode}
                 selected={selectedFileIdSet.has(file.id)}
-                working={workingFileId === file.id || bulkRemoving || bulkDownloading}
+                working={workingFileId === file.id || bulkRemoving || bulkDownloading || bulkMoving}
                 onToggleSelected={() => toggleFileSelection(file.id)}
                 onOpen={() => setSelectedFile(file)}
                 onDownload={() => handleDownload(file)}
@@ -1298,6 +1397,20 @@ export default function Vault() {
           onChange={setMoveFileFolderId}
           onMove={() => void handleMoveFile()}
           onClose={closeMoveFile}
+        />
+      )}
+
+      {bulkMoveOpen && (
+        <BulkMoveModal
+          selectedCount={selectedFileIds.length}
+          folders={folders}
+          folderById={folderById}
+          value={bulkMoveFolderId}
+          moving={bulkMoving}
+          error={bulkMoveError}
+          onChange={setBulkMoveFolderId}
+          onMove={() => void handleBulkMove()}
+          onClose={closeBulkMove}
         />
       )}
 
@@ -1468,8 +1581,10 @@ function BulkSelectionBar({
   working,
   removing,
   downloading,
+  moving,
   onSelectAll,
   onClear,
+  onBulkMove,
   onBulkDownload,
   onBulkRemove,
 }: {
@@ -1479,8 +1594,10 @@ function BulkSelectionBar({
   working: boolean
   removing: boolean
   downloading: boolean
+  moving: boolean
   onSelectAll: () => void
   onClear: () => void
+  onBulkMove: () => void
   onBulkDownload: () => void
   onBulkRemove: () => void
 }) {
@@ -1492,6 +1609,10 @@ function BulkSelectionBar({
         <button type="button" onClick={onClear} disabled={working || selectedCount === 0} className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Clear Selection</button>
         {selectedCount > 0 && (
           <>
+            <button type="button" onClick={onBulkMove} disabled={working} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+              <FolderIcon className="h-4 w-4" />
+              {moving ? 'Moving...' : 'Move Selected'}
+            </button>
             <button type="button" onClick={onBulkDownload} disabled={working} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
               <ArrowDownTrayIcon className="h-4 w-4" />
               {downloading ? 'Downloading...' : 'Download Selected'}
@@ -1716,6 +1837,70 @@ function MoveFileModal({
           <button type="button" onClick={onClose} disabled={moving} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Cancel</button>
           <button type="button" onClick={onMove} disabled={moving} className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400">
             {moving ? 'Moving...' : 'Move'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
+function BulkMoveModal({
+  selectedCount,
+  folders,
+  folderById,
+  value,
+  moving,
+  error,
+  onChange,
+  onMove,
+  onClose,
+}: {
+  selectedCount: number
+  folders: VaultFolder[]
+  folderById: Map<string, VaultFolder>
+  value: string
+  moving: boolean
+  error: string
+  onChange: (value: string) => void
+  onMove: () => void
+  onClose: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase text-[#D4900A]">bonUP Vault</p>
+            <h2 className="mt-1 text-lg font-bold text-slate-900">Move Selected</h2>
+            <p className="mt-2 text-sm font-semibold text-slate-500">{selectedCount} {selectedCount === 1 ? 'file' : 'files'} selected</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={moving} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50">
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <label className="mt-5 block text-sm font-bold text-slate-700">
+          Location
+          <select
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            disabled={moving}
+            className="mt-2 h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-100 disabled:bg-slate-50"
+          >
+            <option value="">Vault root</option>
+            {folders.map((folder) => (
+              <option key={folder.id} value={folder.id}>{folderPathLabel(folder, folderById)}</option>
+            ))}
+          </select>
+        </label>
+
+        {error && <p className="mt-3 text-sm font-semibold text-red-600">{error}</p>}
+
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} disabled={moving} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Cancel</button>
+          <button type="button" onClick={onMove} disabled={moving || selectedCount === 0} className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400">
+            {moving ? 'Moving...' : 'Move Selected'}
           </button>
         </div>
       </div>

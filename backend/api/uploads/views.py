@@ -29,7 +29,7 @@ from backend.emailing.services import (
     EmailServiceUnavailable,
     send_email,
 )
-from backend.uploads.models import Upload, VaultEmailDelivery, VaultShare
+from backend.uploads.models import Upload, VaultEmailDelivery, VaultFolder, VaultShare
 from backend.uploads.services import (
     archive_user_object_access,
     create_managed_upload,
@@ -102,12 +102,51 @@ def _serialize(upload):
         "file_type": upload.file_type,
         "content_type": upload.stored_object.content_type if upload.stored_object_id else "",
         "file_size": upload.file_size,
+        "folder_id": str(upload.vault_folder_id) if upload.vault_folder_id else None,
         "related_contract": str(upload.related_contract_id) if upload.related_contract_id else None,
         "related_session": str(upload.related_session_id) if upload.related_session_id else None,
         "is_prep_material": upload.is_prep_material,
         "is_draft_document": upload.is_draft_document,
         "uploaded_at": upload.uploaded_at,
     }
+
+
+def _serialize_folder(folder):
+    return {
+        "id": str(folder.id),
+        "name": folder.name,
+        "parent_id": str(folder.parent_id) if folder.parent_id else None,
+        "created_at": folder.created_at,
+        "updated_at": folder.updated_at,
+    }
+
+
+def _validate_folder_name(value):
+    name = value.strip() if isinstance(value, str) else ""
+    if not name:
+        return None, _validation_error("folder_name_required", "Folder name is required.")
+    if len(name) > VaultFolder._meta.get_field("name").max_length:
+        return None, _validation_error("folder_name_too_long", "Folder name must be 255 characters or fewer.")
+    if "/" in name or "\\" in name:
+        return None, _validation_error("invalid_folder_name", "Folder name cannot contain path separators.")
+    return name, None
+
+
+def _folder_for_user(user, folder_id):
+    if not folder_id:
+        return None, None
+    return get_object_or_404(VaultFolder, pk=folder_id, user=user), folder_id
+
+
+def _folder_validation_response(exc):
+    messages = []
+    if hasattr(exc, "message_dict"):
+        for values in exc.message_dict.values():
+            messages.extend(values)
+    elif hasattr(exc, "messages"):
+        messages.extend(exc.messages)
+    detail = messages[0] if messages else "Folder could not be saved."
+    return _validation_error("invalid_folder", detail)
 
 
 def _copy_name(file_name, existing_names):
@@ -299,6 +338,8 @@ class UploadsViewSet(ViewSet):
 
         contract_id = request.data.get("contract_id") or None
         session_id = request.data.get("session_id") or None
+        folder_id = request.data.get("folder_id") or None
+        folder, _ = _folder_for_user(request.user, folder_id)
         is_prep = request.data.get("is_prep_material", "false")
         if isinstance(is_prep, str):
             is_prep = is_prep.lower() in ("true", "1", "yes")
@@ -310,6 +351,7 @@ class UploadsViewSet(ViewSet):
                 file_type=file_type,
                 related_contract_id=contract_id,
                 related_session_id=session_id,
+                vault_folder_id=folder.id if folder else None,
                 is_prep_material=is_prep,
             )
         except ValidationError:
@@ -322,6 +364,55 @@ class UploadsViewSet(ViewSet):
 
         return Response(_serialize(upload), status=status.HTTP_201_CREATED)
 
+
+    @action(detail=False, methods=["get", "post"], url_path="folders")
+    def folders(self, request):
+        if request.method == "GET":
+            folders = VaultFolder.objects.filter(user=request.user).select_related("parent").order_by("name", "created_at")
+            return Response([_serialize_folder(folder) for folder in folders])
+
+        name, error = _validate_folder_name(request.data.get("name"))
+        if error is not None:
+            return error
+        parent_id = request.data.get("parent_id") or None
+        parent, _ = _folder_for_user(request.user, parent_id)
+        folder = VaultFolder(user=request.user, name=name, parent=parent)
+        try:
+            folder.save()
+        except ValidationError as exc:
+            return _folder_validation_response(exc)
+        except IntegrityError:
+            return _validation_error("duplicate_folder_name", "A folder with this name already exists in this location.", status_code=status.HTTP_409_CONFLICT)
+        return Response(_serialize_folder(folder), status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["patch", "delete"], url_path=r"folders/(?P<folder_id>[^/.]+)")
+    def folder_detail(self, request, folder_id=None):
+        folder = get_object_or_404(VaultFolder, pk=folder_id, user=request.user)
+
+        if request.method == "DELETE":
+            if folder.children.exists() or folder.uploads.exists():
+                return _validation_error("folder_not_empty", "Only empty folders can be deleted.", status_code=status.HTTP_409_CONFLICT)
+            folder.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        if "name" in request.data:
+            name, error = _validate_folder_name(request.data.get("name"))
+            if error is not None:
+                return error
+            folder.name = name
+        if "parent_id" in request.data:
+            parent_id = request.data.get("parent_id") or None
+            parent, _ = _folder_for_user(request.user, parent_id)
+            folder.parent = parent
+
+        try:
+            folder.save()
+        except ValidationError as exc:
+            return _folder_validation_response(exc)
+        except IntegrityError:
+            return _validation_error("duplicate_folder_name", "A folder with this name already exists in this location.", status_code=status.HTTP_409_CONFLICT)
+        return Response(_serialize_folder(folder))
+
     @action(detail=False, methods=["get"], url_path="storage")
     def storage(self, request):
         snapshot = get_storage_capacity_snapshot(request.user)
@@ -330,6 +421,16 @@ class UploadsViewSet(ViewSet):
             "used_bytes": snapshot.used_bytes,
             "available_bytes": snapshot.remaining_bytes,
         })
+
+
+    @action(detail=True, methods=["post"], url_path="folder")
+    def move_to_folder(self, request, pk=None):
+        upload = get_object_or_404(_active_canonical_uploads_for_user(request.user), pk=pk)
+        folder_id = request.data.get("folder_id") or None
+        folder, _ = _folder_for_user(request.user, folder_id)
+        upload.vault_folder = folder
+        upload.save(update_fields=["vault_folder"])
+        return Response(_serialize(upload))
 
     @action(detail=True, methods=["get"], url_path="delivery")
     def delivery(self, request, pk=None):

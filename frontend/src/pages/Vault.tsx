@@ -4,6 +4,7 @@ import {
   ClipboardDocumentIcon,
   DocumentIcon,
   EnvelopeIcon,
+  FolderIcon,
   MagnifyingGlassIcon,
   MusicalNoteIcon,
   PencilSquareIcon,
@@ -30,6 +31,7 @@ type VaultFile = {
   file_type: string
   content_type?: string
   file_size: number
+  folder_id: string | null
   uploaded_at: string
   is_prep_material?: boolean
   is_draft_document?: boolean
@@ -71,6 +73,14 @@ type VaultShare = {
   file_type?: string
   content_type?: string
   file_size?: number
+}
+
+type VaultFolder = {
+  id: string
+  name: string
+  parent_id: string | null
+  created_at: string
+  updated_at: string
 }
 
 type VaultEmailResponse = {
@@ -187,6 +197,36 @@ function storagePercent(summary: StorageSummary | null) {
   return Math.min(100, Math.round((summary.used_bytes / summary.capacity_bytes) * 100))
 }
 
+function folderErrorMessage(error: unknown) {
+  if (typeof error === 'object' && error !== null && 'response' in error) {
+    const data = (error as { response?: { data?: { code?: string; detail?: string; error?: string } } }).response?.data
+    if (typeof data?.detail === 'string' && data.detail) return data.detail
+    if (typeof data?.error === 'string' && data.error) return data.error
+  }
+  return 'Folder could not be updated.'
+}
+
+function isFolderDescendant(folder: VaultFolder, ancestorId: string, byId: Map<string, VaultFolder>) {
+  let parentId = folder.parent_id
+  while (parentId) {
+    if (parentId === ancestorId) return true
+    parentId = byId.get(parentId)?.parent_id || null
+  }
+  return false
+}
+
+function folderPathLabel(folder: VaultFolder, byId: Map<string, VaultFolder>) {
+  const names = [folder.name]
+  let parentId = folder.parent_id
+  while (parentId) {
+    const parent = byId.get(parentId)
+    if (!parent) break
+    names.unshift(parent.name)
+    parentId = parent.parent_id
+  }
+  return names.join(' / ')
+}
+
 function uploadErrorMessage(error: unknown) {
   if (typeof error === 'object' && error !== null && 'response' in error) {
     const data = (error as { response?: { data?: { code?: string; detail?: string; error?: string; available_bytes?: number } } }).response?.data
@@ -258,16 +298,21 @@ export default function Vault() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [storage, setStorage] = useState<StorageSummary | null>(null)
   const [files, setFiles] = useState<VaultFile[]>([])
+  const [folders, setFolders] = useState<VaultFolder[]>([])
   const [storageState, setStorageState] = useState<LoadState>('loading')
   const [filesState, setFilesState] = useState<LoadState>('loading')
   const [category, setCategory] = useState<Category>('all')
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('newest')
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<VaultFile | null>(null)
   const [shareFile, setShareFile] = useState<VaultFile | null>(null)
   const [emailFile, setEmailFile] = useState<VaultFile | null>(null)
   const [renameFile, setRenameFile] = useState<VaultFile | null>(null)
+  const [moveFile, setMoveFile] = useState<VaultFile | null>(null)
+  const [moveFolderModal, setMoveFolderModal] = useState<VaultFolder | null>(null)
+  const [folderNameModal, setFolderNameModal] = useState<{ mode: 'create' | 'rename'; folder: VaultFolder | null } | null>(null)
   const [nativeShareFallbackFile, setNativeShareFallbackFile] = useState<VaultFile | null>(null)
   const [shareExpiration, setShareExpiration] = useState<ShareExpiration>('7d')
   const [shareLinks, setShareLinks] = useState<VaultShare[]>([])
@@ -283,6 +328,15 @@ export default function Vault() {
   const [renameName, setRenameName] = useState('')
   const [renameState, setRenameState] = useState<RenameState>('idle')
   const [renameError, setRenameError] = useState('')
+  const [folderName, setFolderName] = useState('')
+  const [folderSaving, setFolderSaving] = useState(false)
+  const [folderError, setFolderError] = useState('')
+  const [movingFile, setMovingFile] = useState(false)
+  const [moveFileFolderId, setMoveFileFolderId] = useState<string>('')
+  const [moveFileError, setMoveFileError] = useState('')
+  const [movingFolder, setMovingFolder] = useState(false)
+  const [moveFolderParentId, setMoveFolderParentId] = useState<string>('')
+  const [moveFolderError, setMoveFolderError] = useState('')
   const [sharing, setSharing] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([])
@@ -312,17 +366,49 @@ export default function Vault() {
     }
   }
 
+  async function loadFolders() {
+    try {
+      const response = await api.get<VaultFolder[]>('/uploads/folders/')
+      setFolders(response.data)
+    } catch {
+      setToast({ tone: 'error', message: 'Folders could not be loaded.' })
+    }
+  }
+
   async function refreshVault() {
-    await Promise.all([loadStorage(), loadFiles()])
+    await Promise.all([loadStorage(), loadFiles(), loadFolders()])
   }
 
   useEffect(() => {
     void refreshVault()
   }, [])
 
+  const currentFolder = useMemo(() => folders.find((folder) => folder.id === currentFolderId) || null, [currentFolderId, folders])
+
+  const folderBreadcrumbs = useMemo(() => {
+    const byId = new Map(folders.map((folder) => [folder.id, folder]))
+    const path: VaultFolder[] = []
+    let folder = currentFolder
+    while (folder) {
+      path.unshift(folder)
+      folder = folder.parent_id ? byId.get(folder.parent_id) || null : null
+    }
+    return path
+  }, [currentFolder, folders])
+
+  const visibleFolders = useMemo(() => {
+    return folders.filter((folder) => folder.parent_id === currentFolderId)
+  }, [currentFolderId, folders])
+
+  const folderById = useMemo(() => new Map(folders.map((folder) => [folder.id, folder])), [folders])
+
+  const currentFolderFiles = useMemo(() => {
+    return files.filter((file) => file.folder_id === currentFolderId)
+  }, [currentFolderId, files])
+
   const filteredFiles = useMemo(() => {
     const query = search.trim().toLowerCase()
-    return files
+    return currentFolderFiles
       .filter((file) => category === 'all' || categoryForFile(file) === category)
       .filter((file) => !query || file.file_name.toLowerCase().includes(query))
       .sort((a, b) => {
@@ -332,14 +418,14 @@ export default function Vault() {
         const bTime = new Date(b.uploaded_at).getTime()
         return sortKey === 'oldest' ? aTime - bTime : bTime - aTime
       })
-  }, [category, files, search, sortKey])
+  }, [category, currentFolderFiles, search, sortKey])
 
   const countsByCategory = useMemo(() => {
     return CATEGORIES.reduce<Record<Category, number>>((acc, item) => {
-      acc[item.key] = item.key === 'all' ? files.length : files.filter((file) => categoryForFile(file) === item.key).length
+      acc[item.key] = item.key === 'all' ? currentFolderFiles.length : currentFolderFiles.filter((file) => categoryForFile(file) === item.key).length
       return acc
     }, { all: 0, images: 0, videos: 0, audio: 0, documents: 0, other: 0 })
-  }, [files])
+  }, [currentFolderFiles])
 
   function updateUploadQueueItem(id: string, updates: Partial<UploadQueueItem>) {
     setUploadQueue((current) => current.map((item) => item.id === id ? { ...item, ...updates } : item))
@@ -350,6 +436,9 @@ export default function Vault() {
     const form = new FormData()
     form.append('file', file)
     form.append('file_type', uploadTypeForFile(file))
+    if (currentFolderId) {
+      form.append('folder_id', currentFolderId)
+    }
 
     try {
       await api.post('/uploads/', form, { headers: { 'Content-Type': 'multipart/form-data' } })
@@ -410,6 +499,127 @@ export default function Vault() {
   function dismissUploadQueue() {
     if (uploading) return
     setUploadQueue([])
+  }
+
+  function openFolderNameModal(mode: 'create' | 'rename', folder: VaultFolder | null = null) {
+    setFolderNameModal({ mode, folder })
+    setFolderName(folder?.name || '')
+    setFolderError('')
+    setToast(null)
+  }
+
+  function closeFolderNameModal() {
+    if (folderSaving) return
+    setFolderNameModal(null)
+    setFolderName('')
+    setFolderError('')
+  }
+
+  async function saveFolderName() {
+    if (!folderNameModal || folderSaving) return
+    const name = folderName.trim()
+    if (!name) {
+      setFolderError('Folder name is required.')
+      return
+    }
+
+    setFolderSaving(true)
+    setFolderError('')
+    try {
+      if (folderNameModal.mode === 'create') {
+        const response = await api.post<VaultFolder>('/uploads/folders/', { name, parent_id: currentFolderId })
+        setFolders((current) => [...current, response.data].sort((a, b) => a.name.localeCompare(b.name)))
+        setToast({ tone: 'success', message: 'Folder created.' })
+      } else if (folderNameModal.folder) {
+        const response = await api.patch<VaultFolder>(`/uploads/folders/${folderNameModal.folder.id}/`, { name })
+        setFolders((current) => current.map((folder) => folder.id === response.data.id ? response.data : folder).sort((a, b) => a.name.localeCompare(b.name)))
+        setToast({ tone: 'success', message: 'Folder renamed.' })
+      }
+      closeFolderNameModal()
+    } catch (error) {
+      setFolderError(folderErrorMessage(error))
+    } finally {
+      setFolderSaving(false)
+    }
+  }
+
+  function openMoveFolder(folder: VaultFolder) {
+    setMoveFolderModal(folder)
+    setMoveFolderParentId(folder.parent_id || '')
+    setMoveFolderError('')
+    setToast(null)
+  }
+
+  function closeMoveFolder() {
+    if (movingFolder) return
+    setMoveFolderModal(null)
+    setMoveFolderParentId('')
+    setMoveFolderError('')
+  }
+
+  async function handleMoveFolder() {
+    if (!moveFolderModal || movingFolder) return
+    setMovingFolder(true)
+    setMoveFolderError('')
+    try {
+      const response = await api.patch<VaultFolder>(`/uploads/folders/${moveFolderModal.id}/`, { parent_id: moveFolderParentId || null })
+      setFolders((current) => current.map((item) => item.id === response.data.id ? response.data : item))
+      setToast({ tone: 'success', message: 'Folder moved.' })
+      closeMoveFolder()
+    } catch (error) {
+      setMoveFolderError(folderErrorMessage(error))
+    } finally {
+      setMovingFolder(false)
+    }
+  }
+
+  async function deleteFolder(folder: VaultFolder) {
+    const confirmed = window.confirm('Delete this empty folder? Files are not removed from Vault.')
+    if (!confirmed) return
+    setToast(null)
+    try {
+      await api.delete(`/uploads/folders/${folder.id}/`)
+      setFolders((current) => current.filter((item) => item.id !== folder.id))
+      if (currentFolderId === folder.id) setCurrentFolderId(folder.parent_id)
+      setToast({ tone: 'success', message: 'Folder deleted.' })
+    } catch (error) {
+      setToast({ tone: 'error', message: folderErrorMessage(error) })
+    }
+  }
+
+  function openMoveFile(file: VaultFile) {
+    setMoveFile(file)
+    setMoveFileFolderId(file.folder_id || '')
+    setMoveFileError('')
+    setToast(null)
+  }
+
+  function closeMoveFile() {
+    if (movingFile) return
+    setMoveFile(null)
+    setMoveFileFolderId('')
+    setMoveFileError('')
+  }
+
+  async function handleMoveFile() {
+    if (!moveFile || movingFile) return
+    setMovingFile(true)
+    setMoveFileError('')
+    try {
+      const response = await api.post<VaultFile>(`/uploads/${moveFile.id}/folder/`, { folder_id: moveFileFolderId || null })
+      const updated = response.data
+      setFiles((current) => current.map((file) => file.id === updated.id ? updated : file))
+      setSelectedFile((current) => current?.id === updated.id ? updated : current)
+      setShareFile((current) => current?.id === updated.id ? updated : current)
+      setEmailFile((current) => current?.id === updated.id ? updated : current)
+      setNativeShareFallbackFile((current) => current?.id === updated.id ? updated : current)
+      setToast({ tone: 'success', message: 'File moved.' })
+      closeMoveFile()
+    } catch (error) {
+      setMoveFileError(folderErrorMessage(error))
+    } finally {
+      setMovingFile(false)
+    }
   }
 
   function handleDownload(file: VaultFile) {
@@ -482,6 +692,7 @@ export default function Vault() {
       setShareFile((current) => current?.id === updated.id ? updated : current)
       setEmailFile((current) => current?.id === updated.id ? updated : current)
       setNativeShareFallbackFile((current) => current?.id === updated.id ? updated : current)
+      setMoveFile((current) => current?.id === updated.id ? updated : current)
       setRenameFile(null)
       setRenameName('')
       setToast({ tone: 'success', message: 'File renamed.' })
@@ -812,53 +1023,77 @@ export default function Vault() {
 
       <section className="min-h-[520px] rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 p-4 lg:p-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex flex-wrap gap-2">
-              {CATEGORIES.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => setCategory(item.key)}
-                  className={`rounded-lg border px-3 py-2 text-sm font-bold ${category === item.key ? 'border-[#F5A623] bg-[#FFF7E8] text-slate-900' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-                >
-                  {item.label} <span className="ml-1 text-xs text-slate-400">{countsByCategory[item.key]}</span>
-                </button>
-              ))}
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <FolderBreadcrumbs
+                breadcrumbs={folderBreadcrumbs}
+                onRoot={() => setCurrentFolderId(null)}
+                onOpen={(folder) => setCurrentFolderId(folder.id)}
+              />
+              <button type="button" onClick={() => openFolderNameModal('create')} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                <FolderIcon className="h-4 w-4" />
+                New Folder
+              </button>
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <label className="relative block min-w-[240px]">
-                <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search files"
-                  className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-100"
-                />
-              </label>
-              <select
-                value={sortKey}
-                onChange={(event) => setSortKey(event.target.value as SortKey)}
-                className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-100"
-              >
-                <option value="newest">Newest</option>
-                <option value="oldest">Oldest</option>
-                <option value="name">Name</option>
-                <option value="size">Size</option>
-              </select>
-              <div className="flex h-10 rounded-lg border border-slate-300 bg-white p-1">
-                <button type="button" onClick={() => setViewMode('grid')} className={`rounded-md px-3 text-xs font-bold ${viewMode === 'grid' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>Grid</button>
-                <button type="button" onClick={() => setViewMode('list')} className={`rounded-md px-3 text-xs font-bold ${viewMode === 'list' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>List</button>
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-wrap gap-2">
+                {CATEGORIES.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => setCategory(item.key)}
+                    className={`rounded-lg border px-3 py-2 text-sm font-bold ${category === item.key ? 'border-[#F5A623] bg-[#FFF7E8] text-slate-900' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    {item.label} <span className="ml-1 text-xs text-slate-400">{countsByCategory[item.key]}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <label className="relative block min-w-[240px]">
+                  <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Search files"
+                    className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-100"
+                  />
+                </label>
+                <select
+                  value={sortKey}
+                  onChange={(event) => setSortKey(event.target.value as SortKey)}
+                  className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-100"
+                >
+                  <option value="newest">Newest</option>
+                  <option value="oldest">Oldest</option>
+                  <option value="name">Name</option>
+                  <option value="size">Size</option>
+                </select>
+                <div className="flex h-10 rounded-lg border border-slate-300 bg-white p-1">
+                  <button type="button" onClick={() => setViewMode('grid')} className={`rounded-md px-3 text-xs font-bold ${viewMode === 'grid' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>Grid</button>
+                  <button type="button" onClick={() => setViewMode('list')} className={`rounded-md px-3 text-xs font-bold ${viewMode === 'list' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>List</button>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
         {filesState === 'loading' && <FileLoadingState />}
-        {filesState === 'error' && <FileErrorState onRetry={loadFiles} />}
-        {filesState === 'success' && files.length === 0 && <EmptyState onUpload={() => fileInputRef.current?.click()} />}
-        {filesState === 'success' && files.length > 0 && filteredFiles.length === 0 && <NoMatchesState />}
-        {filesState === 'success' && filteredFiles.length > 0 && (
+        {filesState === 'error' && <FileErrorState onRetry={refreshVault} />}
+        {filesState === 'success' && visibleFolders.length === 0 && currentFolderFiles.length === 0 && <EmptyState onUpload={() => fileInputRef.current?.click()} />}
+        {filesState === 'success' && visibleFolders.length === 0 && currentFolderFiles.length > 0 && filteredFiles.length === 0 && <NoMatchesState />}
+        {filesState === 'success' && (visibleFolders.length > 0 || filteredFiles.length > 0) && (
           <div className={viewMode === 'grid' ? 'grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4' : 'divide-y divide-slate-100'}>
+            {visibleFolders.map((folder) => (
+              <FolderTile
+                key={folder.id}
+                folder={folder}
+                mode={viewMode}
+                onOpen={() => setCurrentFolderId(folder.id)}
+                onRename={() => openFolderNameModal('rename', folder)}
+                onMove={() => openMoveFolder(folder)}
+                onDelete={() => void deleteFolder(folder)}
+              />
+            ))}
             {filteredFiles.map((file) => (
               <FileTile
                 key={file.id}
@@ -871,6 +1106,7 @@ export default function Vault() {
                 onShareFile={() => void handleShareFile(file)}
                 onShareLink={() => openShareLink(file)}
                 onRename={() => openRenameFile(file)}
+                onMove={() => openMoveFile(file)}
                 onRemove={() => void handleRemove(file)}
               />
             ))}
@@ -888,10 +1124,51 @@ export default function Vault() {
           onShareFile={() => void handleShareFile(selectedFile)}
           onShareLink={() => openShareLink(selectedFile)}
           onRename={() => openRenameFile(selectedFile)}
+          onMove={() => openMoveFile(selectedFile)}
           onRemove={() => void handleRemove(selectedFile)}
         />
       )}
 
+
+      {folderNameModal && (
+        <FolderNameModal
+          mode={folderNameModal.mode}
+          value={folderName}
+          saving={folderSaving}
+          error={folderError}
+          onChange={setFolderName}
+          onSave={() => void saveFolderName()}
+          onClose={closeFolderNameModal}
+        />
+      )}
+
+      {moveFile && (
+        <MoveFileModal
+          file={moveFile}
+          folders={folders}
+          folderById={folderById}
+          value={moveFileFolderId}
+          moving={movingFile}
+          error={moveFileError}
+          onChange={setMoveFileFolderId}
+          onMove={() => void handleMoveFile()}
+          onClose={closeMoveFile}
+        />
+      )}
+
+      {moveFolderModal && (
+        <MoveFolderModal
+          folder={moveFolderModal}
+          folders={folders}
+          folderById={folderById}
+          value={moveFolderParentId}
+          moving={movingFolder}
+          error={moveFolderError}
+          onChange={setMoveFolderParentId}
+          onMove={() => void handleMoveFolder()}
+          onClose={closeMoveFolder}
+        />
+      )}
 
       {renameFile && (
         <RenameFileModal
@@ -1039,6 +1316,288 @@ function UploadQueuePanel({
   )
 }
 
+function FolderBreadcrumbs({
+  breadcrumbs,
+  onRoot,
+  onOpen,
+}: {
+  breadcrumbs: VaultFolder[]
+  onRoot: () => void
+  onOpen: (folder: VaultFolder) => void
+}) {
+  return (
+    <nav className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-semibold text-slate-600">
+      <button type="button" onClick={onRoot} className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-700 hover:bg-slate-50">Vault root</button>
+      {breadcrumbs.map((folder) => (
+        <span key={folder.id} className="flex min-w-0 items-center gap-2">
+          <span className="text-slate-300">/</span>
+          <button type="button" onClick={() => onOpen(folder)} title={folder.name} className="max-w-[160px] truncate rounded-lg border border-slate-200 px-3 py-1.5 text-slate-700 hover:bg-slate-50">{folder.name}</button>
+        </span>
+      ))}
+    </nav>
+  )
+}
+
+function FolderTile({
+  folder,
+  mode,
+  onOpen,
+  onRename,
+  onMove,
+  onDelete,
+}: {
+  folder: VaultFolder
+  mode: ViewMode
+  onOpen: () => void
+  onRename: () => void
+  onMove: () => void
+  onDelete: () => void
+}) {
+  if (mode === 'list') {
+    return (
+      <div className="flex flex-col gap-3 p-4 hover:bg-slate-50 lg:flex-row lg:items-center lg:justify-between">
+        <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-[#D4900A]">
+            <FolderIcon className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <p title={folder.name} className="truncate text-sm font-bold text-slate-900">{folder.name}</p>
+            <p className="mt-1 text-xs text-slate-500">Folder</p>
+          </div>
+        </button>
+        <FolderActions onOpen={onOpen} onRename={onRename} onMove={onMove} onDelete={onDelete} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-slate-300 hover:shadow-md">
+      <button type="button" onClick={onOpen} className="block w-full text-left">
+        <div className="flex aspect-[4/3] items-center justify-center bg-amber-50 text-[#D4900A]">
+          <FolderIcon className="h-16 w-16" />
+        </div>
+        <div className="p-4">
+          <p title={folder.name} className="truncate text-sm font-bold text-slate-900">{folder.name}</p>
+          <p className="mt-1 text-xs text-slate-500">Folder</p>
+        </div>
+      </button>
+      <div className="border-t border-slate-100 px-3 py-2">
+        <FolderActions onOpen={onOpen} onRename={onRename} onMove={onMove} onDelete={onDelete} />
+      </div>
+    </div>
+  )
+}
+
+function FolderActions({
+  onOpen,
+  onRename,
+  onMove,
+  onDelete,
+}: {
+  onOpen: () => void
+  onRename: () => void
+  onMove: () => void
+  onDelete: () => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button type="button" onClick={onOpen} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">Open</button>
+      <button type="button" onClick={onMove} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50" title="Move Folder">
+        <FolderIcon className="h-4 w-4" />
+        Move
+      </button>
+      <button type="button" onClick={onRename} className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50" title="Rename Folder">
+        <PencilSquareIcon className="h-4 w-4" />
+      </button>
+      <button type="button" onClick={onDelete} className="rounded-lg border border-red-200 p-1.5 text-red-600 hover:bg-red-50" title="Delete Folder">
+        <TrashIcon className="h-4 w-4" />
+      </button>
+    </div>
+  )
+}
+
+function FolderNameModal({
+  mode,
+  value,
+  saving,
+  error,
+  onChange,
+  onSave,
+  onClose,
+}: {
+  mode: 'create' | 'rename'
+  value: string
+  saving: boolean
+  error: string
+  onChange: (value: string) => void
+  onSave: () => void
+  onClose: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-bold uppercase text-[#D4900A]">bonUP Vault</p>
+            <h2 className="mt-1 text-lg font-bold text-slate-900">{mode === 'create' ? 'New Folder' : 'Rename Folder'}</h2>
+          </div>
+          <button type="button" onClick={onClose} disabled={saving} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50">
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <label className="mt-5 block text-sm font-bold text-slate-700">
+          Folder name
+          <input
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            disabled={saving}
+            autoFocus
+            className="mt-2 block h-11 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-100 disabled:bg-slate-50"
+          />
+        </label>
+
+        {error && <p className="mt-3 text-sm font-semibold text-red-600">{error}</p>}
+
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} disabled={saving} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Cancel</button>
+          <button type="button" onClick={onSave} disabled={saving} className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400">
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MoveFileModal({
+  file,
+  folders,
+  folderById,
+  value,
+  moving,
+  error,
+  onChange,
+  onMove,
+  onClose,
+}: {
+  file: VaultFile
+  folders: VaultFolder[]
+  folderById: Map<string, VaultFolder>
+  value: string
+  moving: boolean
+  error: string
+  onChange: (value: string) => void
+  onMove: () => void
+  onClose: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase text-[#D4900A]">bonUP Vault</p>
+            <h2 className="mt-1 text-lg font-bold text-slate-900">Move File</h2>
+            <p title={file.file_name} className="mt-2 truncate text-sm font-semibold text-slate-500">{file.file_name}</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={moving} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50">
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <label className="mt-5 block text-sm font-bold text-slate-700">
+          Location
+          <select
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            disabled={moving}
+            className="mt-2 h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-100 disabled:bg-slate-50"
+          >
+            <option value="">Vault root</option>
+            {folders.map((folder) => (
+              <option key={folder.id} value={folder.id}>{folderPathLabel(folder, folderById)}</option>
+            ))}
+          </select>
+        </label>
+
+        {error && <p className="mt-3 text-sm font-semibold text-red-600">{error}</p>}
+
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} disabled={moving} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Cancel</button>
+          <button type="button" onClick={onMove} disabled={moving} className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400">
+            {moving ? 'Moving...' : 'Move'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MoveFolderModal({
+  folder,
+  folders,
+  folderById,
+  value,
+  moving,
+  error,
+  onChange,
+  onMove,
+  onClose,
+}: {
+  folder: VaultFolder
+  folders: VaultFolder[]
+  folderById: Map<string, VaultFolder>
+  value: string
+  moving: boolean
+  error: string
+  onChange: (value: string) => void
+  onMove: () => void
+  onClose: () => void
+}) {
+  const destinations = folders.filter((candidate) => candidate.id !== folder.id && !isFolderDescendant(candidate, folder.id, folderById))
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase text-[#D4900A]">bonUP Vault</p>
+            <h2 className="mt-1 text-lg font-bold text-slate-900">Move Folder</h2>
+            <p title={folder.name} className="mt-2 truncate text-sm font-semibold text-slate-500">{folder.name}</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={moving} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50">
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <label className="mt-5 block text-sm font-bold text-slate-700">
+          Location
+          <select
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            disabled={moving}
+            className="mt-2 h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-100 disabled:bg-slate-50"
+          >
+            <option value="">Vault root</option>
+            {destinations.map((candidate) => (
+              <option key={candidate.id} value={candidate.id}>{folderPathLabel(candidate, folderById)}</option>
+            ))}
+          </select>
+        </label>
+
+        {error && <p className="mt-3 text-sm font-semibold text-red-600">{error}</p>}
+
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} disabled={moving} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Cancel</button>
+          <button type="button" onClick={onMove} disabled={moving} className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400">
+            {moving ? 'Moving...' : 'Move'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function FileLoadingState() {
   return (
     <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
@@ -1096,6 +1655,7 @@ function FileTile({
   onShareFile,
   onShareLink,
   onRename,
+  onMove,
   onRemove,
 }: {
   file: VaultFile
@@ -1107,6 +1667,7 @@ function FileTile({
   onShareFile: () => void
   onShareLink: () => void
   onRename: () => void
+  onMove: () => void
   onRemove: () => void
 }) {
   const category = categoryForFile(file)
@@ -1125,7 +1686,7 @@ function FileTile({
             <p className="mt-1 text-xs text-slate-500">{typeLabel(file)} · {formatBytes(file.file_size)} · {formatDate(file.uploaded_at)}</p>
           </div>
         </button>
-        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onEmailFile={onEmailFile} onShareFile={onShareFile} onShareLink={onShareLink} onRename={onRename} onRemove={onRemove} />
+        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onEmailFile={onEmailFile} onShareFile={onShareFile} onShareLink={onShareLink} onRename={onRename} onMove={onMove} onRemove={onRemove} />
       </div>
     )
   }
@@ -1149,7 +1710,7 @@ function FileTile({
         </div>
       </button>
       <div className="border-t border-slate-100 px-3 py-2">
-        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onEmailFile={onEmailFile} onShareFile={onShareFile} onShareLink={onShareLink} onRename={onRename} onRemove={onRemove} />
+        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onEmailFile={onEmailFile} onShareFile={onShareFile} onShareLink={onShareLink} onRename={onRename} onMove={onMove} onRemove={onRemove} />
       </div>
     </div>
   )
@@ -1163,6 +1724,7 @@ function FileActions({
   onShareFile,
   onShareLink,
   onRename,
+  onMove,
   onRemove,
 }: {
   working: boolean
@@ -1172,6 +1734,7 @@ function FileActions({
   onShareFile: () => void
   onShareLink: () => void
   onRename: () => void
+  onMove: () => void
   onRemove: () => void
 }) {
   return (
@@ -1193,6 +1756,10 @@ function FileActions({
       </button>
       <button type="button" onClick={onRename} disabled={working} className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Rename">
         <PencilSquareIcon className="h-4 w-4" />
+      </button>
+      <button type="button" onClick={onMove} disabled={working} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Move File">
+        <FolderIcon className="h-4 w-4" />
+        Move
       </button>
       <button type="button" onClick={onRemove} disabled={working} className="rounded-lg border border-red-200 p-1.5 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50" title="Remove from Vault">
         <TrashIcon className="h-4 w-4" />
@@ -1540,6 +2107,7 @@ function FileDetailsModal({
   onShareFile,
   onShareLink,
   onRename,
+  onMove,
   onRemove,
 }: {
   file: VaultFile
@@ -1550,6 +2118,7 @@ function FileDetailsModal({
   onShareFile: () => void
   onShareLink: () => void
   onRename: () => void
+  onMove: () => void
   onRemove: () => void
 }) {
   const category = categoryForFile(file)
@@ -1595,6 +2164,7 @@ function FileDetailsModal({
               <button type="button" onClick={onShareFile} disabled={working} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Share File</button>
               <button type="button" onClick={onShareLink} disabled={working} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Share Link</button>
               <button type="button" onClick={onRename} disabled={working} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Rename</button>
+              <button type="button" onClick={onMove} disabled={working} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Move</button>
               <button type="button" onClick={onRemove} disabled={working} className="h-10 rounded-lg border border-red-200 px-4 text-sm font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50">Remove from Vault</button>
             </div>
           </aside>

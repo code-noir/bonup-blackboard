@@ -3,6 +3,7 @@
 import uuid
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -42,6 +43,14 @@ class Upload(models.Model):
         related_name="uploads",
     )
 
+    vault_folder = models.ForeignKey(
+        "uploads.VaultFolder",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="uploads",
+    )
+
     related_contract = models.ForeignKey(
         "contracts.Contract",
         on_delete=models.SET_NULL,
@@ -67,6 +76,71 @@ class Upload(models.Model):
 
     def __str__(self):
         return f"{self.file_name} ({self.user_id})"
+
+
+class VaultFolder(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="vault_folders",
+    )
+    name = models.CharField(max_length=255)
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="children",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name", "created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "parent", "name"],
+                condition=models.Q(parent__isnull=False),
+                name="vault_folder_user_parent_name_unique",
+            ),
+            models.UniqueConstraint(
+                fields=["user", "name"],
+                condition=models.Q(parent__isnull=True),
+                name="vault_folder_user_root_name_unique",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["user", "parent"], name="vault_folder_user_parent_idx"),
+            models.Index(fields=["parent"], name="vault_folder_parent_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        name = self.name.strip() if isinstance(self.name, str) else ""
+        if not name:
+            raise ValidationError({"name": "Folder name is required."})
+        self.name = name
+
+        if self.parent_id is None:
+            return
+        if self.pk is not None and self.parent_id == self.pk:
+            raise ValidationError({"parent": "Folder cannot be its own parent."})
+        if self.parent.user_id != self.user_id:
+            raise ValidationError({"parent": "Parent folder must belong to the same user."})
+
+        ancestor = self.parent
+        while ancestor is not None:
+            if self.pk is not None and ancestor.pk == self.pk:
+                raise ValidationError({"parent": "Folder cannot be moved inside one of its descendants."})
+            ancestor = ancestor.parent
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.name} ({self.user_id})"
 
 
 class StoredObject(models.Model):

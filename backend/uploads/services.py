@@ -64,6 +64,7 @@ def create_managed_upload(
     file_type,
     related_contract_id=None,
     related_session_id=None,
+    vault_folder_id=None,
     is_prep_material=False,
     is_draft_document=False,
 ):
@@ -104,6 +105,7 @@ def create_managed_upload(
                 stored_object=stored_object,
                 related_contract_id=related_contract_id,
                 related_session_id=related_session_id,
+                vault_folder_id=vault_folder_id,
                 is_prep_material=bool(is_prep_material),
                 is_draft_document=bool(is_draft_document),
             )

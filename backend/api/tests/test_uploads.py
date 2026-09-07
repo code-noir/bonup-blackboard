@@ -23,7 +23,7 @@ from backend.billing.storage import (
     get_user_active_storage_usage_bytes,
 )
 from backend.documents.models import ContractDocument
-from backend.uploads.models import StoredObject, Upload, UserObjectAccess, VaultEmailDelivery, VaultShare
+from backend.uploads.models import StoredObject, Upload, UserObjectAccess, VaultEmailDelivery, VaultFolder, VaultShare
 from backend.uploads.services import create_stored_object_metadata, grant_user_object_access
 from .helpers import authed_client, make_contract, make_user
 
@@ -487,6 +487,264 @@ class UploadListTests(TestCase):
         r = self.client.get(UPLOAD_URL)
         self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.data), 2)
+
+
+class VaultFolderTests(TestCase):
+
+    def setUp(self):
+        self.user = make_user("folder_owner", "folder_owner@example.com")
+        self.other = make_user("folder_other", "folder_other@example.com")
+        self.client = authed_client(self.user)
+        self.upload = _managed_upload(self.user, name="folder-file.pdf", key="uploads/folders/file.pdf", size=4096)
+        _grant_capacity(self.user, 10000)
+
+    def test_user_cannot_view_or_manage_other_users_folders(self):
+        other_folder = VaultFolder.objects.create(user=self.other, name="Other Folder")
+        own_folder = VaultFolder.objects.create(user=self.user, name="Own Folder")
+
+        list_response = self.client.get(f"{UPLOAD_URL}folders/")
+        rename_response = self.client.patch(f"{UPLOAD_URL}folders/{other_folder.id}/", {"name": "Renamed"}, format="json")
+        delete_response = self.client.delete(f"{UPLOAD_URL}folders/{other_folder.id}/")
+
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual([item["id"] for item in list_response.data], [str(own_folder.id)])
+        self.assertEqual(rename_response.status_code, 404)
+        self.assertEqual(delete_response.status_code, 404)
+        other_folder.refresh_from_db()
+        self.assertEqual(other_folder.name, "Other Folder")
+
+    def test_create_rename_and_move_nested_folders(self):
+        root_response = self.client.post(f"{UPLOAD_URL}folders/", {"name": "Projects"}, format="json")
+        child_response = self.client.post(
+            f"{UPLOAD_URL}folders/",
+            {"name": "Contracts", "parent_id": root_response.data["id"]},
+            format="json",
+        )
+        target_response = self.client.post(f"{UPLOAD_URL}folders/", {"name": "Archive"}, format="json")
+
+        rename_response = self.client.patch(
+            f"{UPLOAD_URL}folders/{child_response.data['id']}/",
+            {"name": "Signed Contracts"},
+            format="json",
+        )
+        move_response = self.client.patch(
+            f"{UPLOAD_URL}folders/{child_response.data['id']}/",
+            {"parent_id": target_response.data["id"]},
+            format="json",
+        )
+        list_response = self.client.get(f"{UPLOAD_URL}folders/")
+
+        self.assertEqual(root_response.status_code, 201)
+        self.assertIsNone(root_response.data["parent_id"])
+        self.assertEqual(child_response.status_code, 201)
+        self.assertEqual(child_response.data["parent_id"], root_response.data["id"])
+        self.assertEqual(rename_response.status_code, 200)
+        self.assertEqual(rename_response.data["name"], "Signed Contracts")
+        self.assertEqual(move_response.status_code, 200)
+        self.assertEqual(move_response.data["parent_id"], target_response.data["id"])
+        self.assertEqual(list_response.status_code, 200)
+        folders_by_id = {item["id"]: item for item in list_response.data}
+        self.assertEqual(folders_by_id[child_response.data["id"]]["name"], "Signed Contracts")
+        self.assertEqual(folders_by_id[child_response.data["id"]]["parent_id"], target_response.data["id"])
+
+    def test_user_cannot_create_or_move_into_other_users_parent_folder(self):
+        other_folder = VaultFolder.objects.create(user=self.other, name="Other Folder")
+
+        create_response = self.client.post(f"{UPLOAD_URL}folders/", {"name": "Child", "parent_id": str(other_folder.id)}, format="json")
+        move_folder_response = self.client.patch(f"{UPLOAD_URL}folders/{other_folder.id}/", {"parent_id": None}, format="json")
+
+        self.assertEqual(create_response.status_code, 404)
+        self.assertEqual(move_folder_response.status_code, 404)
+
+    def test_user_cannot_move_file_into_other_users_folder(self):
+        other_folder = VaultFolder.objects.create(user=self.other, name="Other Folder")
+
+        response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/folder/", {"folder_id": str(other_folder.id)}, format="json")
+
+        self.assertEqual(response.status_code, 404)
+        self.upload.refresh_from_db()
+        self.assertIsNone(self.upload.vault_folder_id)
+
+    @patch("backend.uploads.services.default_storage")
+    def test_moving_file_changes_only_folder_metadata(self, mock_storage):
+        mock_storage.url.return_value = "https://example.com/folder-file.pdf"
+        folder = VaultFolder.objects.create(user=self.user, name="Projects")
+        upload_count = Upload.objects.count()
+        object_count = StoredObject.objects.count()
+        access_count = UserObjectAccess.objects.count()
+        object_key = self.upload.stored_object.object_key
+        stored_object_id = self.upload.stored_object_id
+        quota_before = get_storage_capacity_snapshot(self.user).used_bytes
+
+        response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/folder/", {"folder_id": str(folder.id)}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["folder_id"], str(folder.id))
+        self.upload.refresh_from_db()
+        self.assertEqual(self.upload.vault_folder_id, folder.id)
+        self.assertEqual(self.upload.stored_object_id, stored_object_id)
+        self.assertEqual(self.upload.stored_object.object_key, object_key)
+        self.assertEqual(Upload.objects.count(), upload_count)
+        self.assertEqual(StoredObject.objects.count(), object_count)
+        self.assertEqual(UserObjectAccess.objects.count(), access_count)
+        self.assertEqual(get_storage_capacity_snapshot(self.user).used_bytes, quota_before)
+        mock_storage.open.assert_not_called()
+        mock_storage.save.assert_not_called()
+        mock_storage.delete.assert_not_called()
+
+    def test_moving_file_back_to_vault_root(self):
+        folder = VaultFolder.objects.create(user=self.user, name="Projects")
+        self.upload.vault_folder = folder
+        self.upload.save(update_fields=["vault_folder"])
+
+        response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/folder/", {"folder_id": None}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data["folder_id"])
+        self.upload.refresh_from_db()
+        self.assertIsNone(self.upload.vault_folder_id)
+
+    def test_upload_list_exposes_file_folder_metadata(self):
+        folder = VaultFolder.objects.create(user=self.user, name="Projects")
+        self.upload.vault_folder = folder
+        self.upload.save(update_fields=["vault_folder"])
+        root_upload = _managed_upload(self.user, name="root.pdf", key="uploads/folders/root.pdf")
+
+        response = self.client.get(f"{UPLOAD_URL}?canonical=true")
+
+        self.assertEqual(response.status_code, 200)
+        folder_ids = {item["file_name"]: item["folder_id"] for item in response.data}
+        self.assertEqual(folder_ids[self.upload.file_name], str(folder.id))
+        self.assertIsNone(folder_ids[root_upload.file_name])
+
+    def test_moving_blackbod_referenced_upload_preserves_contract_document(self):
+        folder = VaultFolder.objects.create(user=self.user, name="Contracts")
+        contract = make_contract(self.user, self.other.email)
+        doc = ContractDocument.objects.create(
+            contract=contract,
+            upload=self.upload,
+            attached_by=self.user,
+            title="Referenced Doc",
+        )
+
+        response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/folder/", {"folder_id": str(folder.id)}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        doc.refresh_from_db()
+        self.assertEqual(doc.upload_id, self.upload.id)
+        self.assertTrue(ContractDocument.objects.filter(pk=doc.id, upload=self.upload).exists())
+
+    def test_share_links_remain_valid_after_file_move(self):
+        folder = VaultFolder.objects.create(user=self.user, name="Shared")
+        share_response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/shares/", {"expiration": "7d"}, format="json")
+        self.assertEqual(share_response.status_code, 201)
+        token = urlparse(share_response.data["share_url"]).path.rsplit("/", 1)[-1]
+
+        move_response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/folder/", {"folder_id": str(folder.id)}, format="json")
+        public_response = APIClient().get(f"{UPLOAD_URL}shares/{token}/")
+
+        self.assertEqual(move_response.status_code, 200)
+        self.assertEqual(public_response.status_code, 200)
+        self.assertEqual(public_response.data["file_name"], self.upload.file_name)
+        self.assertIsNone(VaultShare.objects.get().revoked_at)
+
+    @patch("backend.api.uploads.views.default_storage")
+    def test_folder_delete_does_not_remove_vault_files_or_provider_bytes(self, mock_storage):
+        folder = VaultFolder.objects.create(user=self.user, name="Nonempty")
+        self.upload.vault_folder = folder
+        self.upload.save(update_fields=["vault_folder"])
+
+        response = self.client.delete(f"{UPLOAD_URL}folders/{folder.id}/")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(VaultFolder.objects.filter(pk=folder.id).exists())
+        self.assertTrue(Upload.objects.filter(pk=self.upload.id).exists())
+        self.upload.refresh_from_db()
+        self.assertEqual(self.upload.vault_folder_id, folder.id)
+        mock_storage.delete.assert_not_called()
+
+    def test_empty_folder_can_be_deleted(self):
+        folder = VaultFolder.objects.create(user=self.user, name="Empty")
+
+        response = self.client.delete(f"{UPLOAD_URL}folders/{folder.id}/")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(VaultFolder.objects.filter(pk=folder.id).exists())
+        self.assertTrue(Upload.objects.filter(pk=self.upload.id).exists())
+
+    def test_folder_with_child_folder_cannot_be_deleted(self):
+        folder = VaultFolder.objects.create(user=self.user, name="Parent")
+        child = VaultFolder.objects.create(user=self.user, name="Child", parent=folder)
+
+        response = self.client.delete(f"{UPLOAD_URL}folders/{folder.id}/")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["code"], "folder_not_empty")
+        self.assertTrue(VaultFolder.objects.filter(pk=folder.id).exists())
+        self.assertTrue(VaultFolder.objects.filter(pk=child.id).exists())
+
+    def test_hidden_removed_upload_cannot_be_moved_through_folder_endpoint(self):
+        folder = VaultFolder.objects.create(user=self.user, name="Projects")
+        UserObjectAccess.objects.filter(user=self.user, stored_object=self.upload.stored_object).update(
+            is_active=True,
+            is_visible=False,
+            removed_at=timezone.now(),
+        )
+
+        response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/folder/", {"folder_id": str(folder.id)}, format="json")
+
+        self.assertEqual(response.status_code, 404)
+        self.upload.refresh_from_db()
+        self.assertIsNone(self.upload.vault_folder_id)
+
+    def test_folder_hierarchy_cycles_are_rejected(self):
+        parent = VaultFolder.objects.create(user=self.user, name="Parent")
+        child = VaultFolder.objects.create(user=self.user, name="Child", parent=parent)
+
+        self_response = self.client.patch(f"{UPLOAD_URL}folders/{parent.id}/", {"parent_id": str(parent.id)}, format="json")
+        descendant_response = self.client.patch(f"{UPLOAD_URL}folders/{parent.id}/", {"parent_id": str(child.id)}, format="json")
+
+        self.assertEqual(self_response.status_code, 400)
+        self.assertEqual(self_response.data["code"], "invalid_folder")
+        self.assertEqual(descendant_response.status_code, 400)
+        self.assertEqual(descendant_response.data["code"], "invalid_folder")
+        parent.refresh_from_db()
+        self.assertIsNone(parent.parent_id)
+
+    def test_upload_create_can_assign_new_file_to_owned_folder(self):
+        folder = VaultFolder.objects.create(user=self.user, name="Uploads")
+        before_quota = get_storage_capacity_snapshot(self.user).used_bytes
+
+        with patch("backend.uploads.services.default_storage") as mock_storage:
+            mock_storage.save.return_value = "uploads/folders/new.pdf"
+            mock_storage.url.return_value = "https://example.com/new.pdf"
+            response = self.client.post(
+                UPLOAD_URL,
+                {"file": _pdf("new.pdf", b"%PDF folder content"), "file_type": "pdf", "folder_id": str(folder.id)},
+                format="multipart",
+            )
+
+        self.assertEqual(response.status_code, 201)
+        upload = Upload.objects.get(pk=response.data["id"])
+        self.assertEqual(upload.vault_folder_id, folder.id)
+        self.assertEqual(Upload.objects.filter(vault_folder=folder).count(), 1)
+        self.assertEqual(StoredObject.objects.filter(object_key="uploads/folders/new.pdf").count(), 1)
+        self.assertEqual(UserObjectAccess.objects.filter(user=self.user, stored_object=upload.stored_object).count(), 1)
+        self.assertEqual(get_storage_capacity_snapshot(self.user).used_bytes, before_quota + upload.file_size)
+
+    def test_upload_create_rejects_other_users_folder_before_storage(self):
+        other_folder = VaultFolder.objects.create(user=self.other, name="Other")
+
+        with patch("backend.uploads.services.default_storage") as mock_storage:
+            response = self.client.post(
+                UPLOAD_URL,
+                {"file": _pdf("blocked.pdf"), "file_type": "pdf", "folder_id": str(other_folder.id)},
+                format="multipart",
+            )
+
+        self.assertEqual(response.status_code, 404)
+        mock_storage.save.assert_not_called()
+
 
 
 class UploadShareTests(TestCase):

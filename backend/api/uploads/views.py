@@ -25,6 +25,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
 
+from backend.api.operator.permissions import file_content_prohibited, require_file_content_access
 from backend.billing.storage import check_storage_write_admission, get_storage_capacity_snapshot
 from backend.emailing.services import (
     EmailAttachment,
@@ -103,10 +104,10 @@ def _active_canonical_uploads_for_user(user):
     return get_active_canonical_uploads_for_user(user)
 
 
-def _serialize(upload):
+def _serialize(upload, request):
     return {
         "id": str(upload.id),
-        "file_url": get_upload_url(upload),
+        "file_url": None if file_content_prohibited(request) else get_upload_url(upload),
         "file_name": upload.file_name,
         "file_type": upload.file_type,
         "content_type": upload.stored_object.content_type if upload.stored_object_id else "",
@@ -449,7 +450,7 @@ class UploadsViewSet(ViewSet):
         if is_draft is not None:
             qs = qs.filter(is_draft_document=is_draft.lower() in ("true", "1", "yes"))
 
-        return Response([_serialize(u) for u in qs])
+        return Response([_serialize(u, request) for u in qs])
 
     def partial_update(self, request, pk=None):
         upload = get_object_or_404(_active_canonical_uploads_for_user(request.user), pk=pk)
@@ -459,7 +460,7 @@ class UploadsViewSet(ViewSet):
 
         upload.file_name = file_name
         upload.save(update_fields=["file_name"])
-        return Response(_serialize(upload))
+        return Response(_serialize(upload, request))
 
     def create(self, request):
         file = request.FILES.get("file")
@@ -499,7 +500,7 @@ class UploadsViewSet(ViewSet):
         except StorageAdmissionRejected as exc:
             return _storage_capacity_response(exc.check)
 
-        return Response(_serialize(upload), status=status.HTTP_201_CREATED)
+        return Response(_serialize(upload, request), status=status.HTTP_201_CREATED)
 
 
     @action(detail=False, methods=["get", "post"], url_path="folders")
@@ -641,6 +642,7 @@ class UploadsViewSet(ViewSet):
 
     @action(detail=False, methods=["post"], url_path="bulk-download")
     def bulk_download(self, request):
+        require_file_content_access(request)
         normalized_ids, error = _normalize_upload_ids(request.data.get("upload_ids"), max_count=BULK_DOWNLOAD_MAX_UPLOADS)
         if error is not None:
             return error
@@ -707,10 +709,11 @@ class UploadsViewSet(ViewSet):
         if error is not None:
             return error
         _move_upload_to_folder(upload, folder)
-        return Response(_serialize(upload))
+        return Response(_serialize(upload, request))
 
     @action(detail=True, methods=["get"], url_path="delivery")
-    def delivery(self, request, pk=None):
+    def delivery(self, request, pk=None, format=None):
+        require_file_content_access(request)
         upload = get_object_or_404(_active_canonical_uploads_for_user(request.user), pk=pk)
         storage = get_storage_backend(upload.stored_object.backend)
         content_type = upload.stored_object.content_type or "application/octet-stream"
@@ -723,6 +726,7 @@ class UploadsViewSet(ViewSet):
 
     @action(detail=True, methods=["post"], url_path="email")
     def email_file(self, request, pk=None):
+        require_file_content_access(request)
         upload = get_object_or_404(_active_canonical_uploads_for_user(request.user), pk=pk)
 
         try:
@@ -926,17 +930,19 @@ class UploadsViewSet(ViewSet):
                 _cleanup_saved_object_with_storage(storage, saved_key)
             raise
 
-        return Response(_serialize(upload), status=status.HTTP_201_CREATED)
+        return Response(_serialize(upload, request), status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=["get"], permission_classes=[AllowAny], url_path=r"shares/(?P<token>[^/.]+)")
-    def public_share(self, request, token=None):
+    def public_share(self, request, token=None, format=None):
+        require_file_content_access(request)
         share = _resolve_valid_share(token or "")
         if share is None:
             return Response(SHARE_UNAVAILABLE_RESPONSE, status=status.HTTP_404_NOT_FOUND)
         return Response(_serialize_public_share(share, token or ""))
 
     @action(detail=False, methods=["get"], permission_classes=[AllowAny], url_path=r"shares/(?P<token>[^/.]+)/delivery")
-    def public_share_delivery(self, request, token=None):
+    def public_share_delivery(self, request, token=None, format=None):
+        require_file_content_access(request)
         share = _resolve_valid_share(token or "")
         if share is None:
             return Response(SHARE_UNAVAILABLE_RESPONSE, status=status.HTTP_404_NOT_FOUND)

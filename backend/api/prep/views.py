@@ -11,6 +11,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from backend.api.operator.permissions import file_content_prohibited
 from backend.billing.gates import has_feature
 from backend.negotiation_prep.models import PrepDocument, PrepNote, PrepSession
 from backend.sessions.models import LiveSession
@@ -22,11 +23,11 @@ _PAYG_BLOCKED = {"error": "This feature requires a monthly plan. Upgrade to Blac
 # Serialisers
 # ---------------------------------------------------------------------------
 
-def _serialize_document(doc):
+def _serialize_document(doc, request):
     return {
         "id": str(doc.id),
         "title": doc.title,
-        "file_url": doc.file_url,
+        "file_url": None if file_content_prohibited(request) else doc.file_url,
         "file_type": doc.file_type,
         "uploaded_at": doc.uploaded_at,
     }
@@ -41,7 +42,7 @@ def _serialize_note(note):
     }
 
 
-def _serialize_prep(prep, include_children=False):
+def _serialize_prep(prep, request, include_children=False):
     data = {
         "id": str(prep.id),
         "live_session_id": str(prep.live_session_id) if prep.live_session_id else None,
@@ -52,7 +53,7 @@ def _serialize_prep(prep, include_children=False):
         "updated_at": prep.updated_at,
     }
     if include_children:
-        data["documents"] = [_serialize_document(d) for d in prep.documents.all()]
+        data["documents"] = [_serialize_document(d, request) for d in prep.documents.all()]
         data["notes_list"] = [_serialize_note(n) for n in prep.note_items.all()]
     return data
 
@@ -81,7 +82,7 @@ class PrepSessionListCreateAPIView(APIView):
         if not has_feature(request.user, "negotiation_prep"):
             return Response(_PAYG_BLOCKED, status=status.HTTP_403_FORBIDDEN)
         qs = PrepSession.objects.filter(owner=request.user)
-        return Response([_serialize_prep(p) for p in qs])
+        return Response([_serialize_prep(p, request) for p in qs])
 
     def post(self, request):
         if not has_feature(request.user, "negotiation_prep"):
@@ -104,7 +105,7 @@ class PrepSessionListCreateAPIView(APIView):
             notes=request.data.get("notes", ""),
             live_session=live_session,
         )
-        return Response(_serialize_prep(prep), status=status.HTTP_201_CREATED)
+        return Response(_serialize_prep(prep, request), status=status.HTTP_201_CREATED)
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +132,7 @@ class PrepSessionDetailAPIView(APIView):
         prep, err = self._get_owned(request, prep_id)
         if err:
             return err
-        return Response(_serialize_prep(prep, include_children=True))
+        return Response(_serialize_prep(prep, request, include_children=True))
 
     def patch(self, request, prep_id):
         prep, err = self._get_owned(request, prep_id)
@@ -153,7 +154,7 @@ class PrepSessionDetailAPIView(APIView):
             update_fields.append("notes")
 
         prep.save(update_fields=update_fields)
-        return Response(_serialize_prep(prep))
+        return Response(_serialize_prep(prep, request))
 
     def delete(self, request, prep_id):
         prep, err = self._get_owned(request, prep_id)
@@ -201,7 +202,7 @@ class PrepDocumentCreateAPIView(APIView):
             file_url=file_url,
             file_type=file_type,
         )
-        return Response(_serialize_document(doc), status=status.HTTP_201_CREATED)
+        return Response(_serialize_document(doc, request), status=status.HTTP_201_CREATED)
 
 
 # ---------------------------------------------------------------------------

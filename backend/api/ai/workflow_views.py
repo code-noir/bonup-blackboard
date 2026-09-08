@@ -9,6 +9,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from backend.api.operator.permissions import file_content_prohibited
 from backend.ai.models import (
     CounterDraft,
     NegotiationComment,
@@ -137,7 +138,7 @@ def _serialize_last_activity(workflow):
     }
 
 
-def _serialize_workflow(workflow):
+def _serialize_workflow(workflow, request):
     review = getattr(workflow, "review_result", None)
     return {
         "id": str(workflow.id),
@@ -151,12 +152,12 @@ def _serialize_workflow(workflow):
         "sent_to_counterparty_email": workflow.sent_to_counterparty_email,
         "counterparty_email": workflow.counterparty_email,
         "counterparty_user_id": str(workflow.counterparty_user_id) if workflow.counterparty_user_id else None,
-        "counterparty_requested_changes": workflow.counterparty_requested_changes or [],
+        "counterparty_requested_changes": [] if file_content_prohibited(request) else (workflow.counterparty_requested_changes or []),
         "last_activity": _serialize_last_activity(workflow),
         "created_at": workflow.created_at.isoformat() if workflow.created_at else None,
         "updated_at": workflow.updated_at.isoformat() if workflow.updated_at else None,
-        "review_result": _serialize_review_result(review),
-        "counter_drafts": [
+        "review_result": None if file_content_prohibited(request) else _serialize_review_result(review),
+        "counter_drafts": [] if file_content_prohibited(request) else [
             _serialize_counter_draft(counter_draft)
             for counter_draft in workflow.counter_drafts.order_by("-created_at")
         ],
@@ -287,7 +288,7 @@ class WorkflowListCreateAPIView(APIView):
             .prefetch_related("counter_drafts")
             .order_by("-updated_at")
         )
-        return Response({"results": [_serialize_workflow(workflow) for workflow in workflows]})
+        return Response({"results": [_serialize_workflow(workflow, request) for workflow in workflows]})
 
     def post(self, request):
         contract_id = request.data.get("contract_id")
@@ -298,7 +299,7 @@ class WorkflowListCreateAPIView(APIView):
             workflow, created, error_response = _get_or_create_workflow_for_contract(contract, request.user)
             if error_response:
                 return error_response
-            payload = _serialize_workflow(workflow)
+            payload = _serialize_workflow(workflow, request)
             payload["created"] = created
             payload.update(_workflow_urls(request, workflow))
             return Response(payload, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
@@ -309,7 +310,7 @@ class WorkflowListCreateAPIView(APIView):
             counterparty_email=request.data.get("counterparty_email") or "",
         ).initialize()
         workflow.save()
-        return Response(_serialize_workflow(workflow), status=status.HTTP_201_CREATED)
+        return Response(_serialize_workflow(workflow, request), status=status.HTTP_201_CREATED)
 
 
 class WorkflowForContractAPIView(APIView):
@@ -376,7 +377,7 @@ class WorkflowDetailAPIView(APIView):
 
     def get(self, request, workflow_id):
         workflow = _get_owner_workflow(request.user, workflow_id)
-        return Response(_serialize_workflow(workflow))
+        return Response(_serialize_workflow(workflow, request))
 
 
 class WorkflowAdvanceAPIView(APIView):
@@ -392,7 +393,7 @@ class WorkflowAdvanceAPIView(APIView):
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         workflow.save(update_fields=["current_state", "completed_states", "pending_states", "state_timestamps", "updated_at"])
-        return Response(_serialize_workflow(workflow))
+        return Response(_serialize_workflow(workflow, request))
 
 
 class WorkflowSendAPIView(APIView):
@@ -432,7 +433,7 @@ class WorkflowSendAPIView(APIView):
                 "updated_at",
             ]
         )
-        return Response(_serialize_workflow(workflow))
+        return Response(_serialize_workflow(workflow, request))
 
 
 class WorkflowShareLinkCreateAPIView(APIView):
@@ -587,7 +588,7 @@ class CounterpartyWorkflowDetailAPIView(APIView):
         workflow = _get_counterparty_workflow(request.user, workflow_id)
         if not workflow:
             return Response({"error": "You do not have access to this workflow."}, status=status.HTTP_403_FORBIDDEN)
-        return Response({"workflow": _serialize_workflow(workflow)})
+        return Response({"workflow": _serialize_workflow(workflow, request)})
 
 
 class CounterpartyWorkflowActionAPIView(APIView):
@@ -655,7 +656,7 @@ class CounterpartyWorkflowActionAPIView(APIView):
                 "updated_at",
             ]
         )
-        return Response({"workflow": _serialize_workflow(workflow)})
+        return Response({"workflow": _serialize_workflow(workflow, request)})
 
 
 class CounterDraftApproveAPIView(APIView):

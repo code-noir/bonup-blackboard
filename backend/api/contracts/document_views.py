@@ -7,6 +7,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from backend.api.operator.permissions import file_content_prohibited
 from backend.contracts.models import Contract
 from backend.documents.models import ContractDocument
 from backend.uploads.models import Upload
@@ -52,12 +53,12 @@ def _file_type_from_upload_request(request_file, raw_file_type):
     return "other"
 
 
-def _serialize(doc):
+def _serialize(doc, request):
     return {
         "id": str(doc.id),
         "contract_id": str(doc.contract_id),
         "upload_id": str(doc.upload_id),
-        "file_url": get_upload_url(doc.upload),
+        "file_url": None if file_content_prohibited(request) else get_upload_url(doc.upload),
         "file_name": doc.upload.file_name,
         "file_type": doc.upload.file_type,
         "file_size": doc.upload.file_size,
@@ -82,7 +83,7 @@ class ContractDocumentListCreateAPIView(APIView):
             return contract_party_response()
 
         docs = ContractDocument.objects.filter(contract=contract).select_related("upload")
-        return Response([_serialize(d) for d in docs])
+        return Response([_serialize(d, request) for d in docs])
 
     def post(self, request, contract_id):
         contract = get_object_or_404(Contract, pk=contract_id)
@@ -135,7 +136,7 @@ class ContractDocumentListCreateAPIView(APIView):
             is_proof=bool(is_proof),
         )
 
-        return Response(_serialize(doc), status=status.HTTP_201_CREATED)
+        return Response(_serialize(doc, request), status=status.HTTP_201_CREATED)
 
 
 class ContractDocumentDeleteAPIView(APIView):

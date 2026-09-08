@@ -6,6 +6,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from backend.api.operator.permissions import file_content_prohibited
 from backend.contracts.models import (
     Contract,
     ContractObligation,
@@ -113,25 +114,25 @@ def _serialize_session(s):
     }
 
 
-def _serialize_document(d):
+def _serialize_document(d, request):
     return {
         "id": str(d.id),
         "contract_id": str(d.contract_id),
         "title": d.title,
         "description": d.description,
         "file_name": d.upload.file_name,
-        "file_url": get_upload_url(d.upload),
+        "file_url": None if file_content_prohibited(request) else get_upload_url(d.upload),
         "is_proof": d.is_proof,
         "attached_at": d.attached_at,
     }
 
 
-def _serialize_upload(u):
+def _serialize_upload(u, request):
     return {
         "id": str(u.id),
         "file_name": u.file_name,
         "file_type": u.file_type,
-        "file_url": get_upload_url(u),
+        "file_url": None if file_content_prohibited(request) else get_upload_url(u),
         "file_size": u.file_size,
         "uploaded_at": u.uploaded_at,
     }
@@ -417,8 +418,8 @@ class GlobalSearchView(APIView):
             "obligations": obligations,
             "payments": [_serialize_payment(p) for p in payments],
             "sessions": [_serialize_session(s) for s in sessions],
-            "documents": [_serialize_document(d) for d in documents],
-            "uploads": [_serialize_upload(u) for u in uploads],
+            "documents": [_serialize_document(d, request) for d in documents],
+            "uploads": [_serialize_upload(u, request) for u in uploads],
             "notifications": [_serialize_notification(n) for n in notifications],
             "templates": [_serialize_template(t) for t in templates],
             "sol": [_serialize_sol(s) for s in sols],
@@ -588,7 +589,7 @@ class DocumentSearchView(APIView):
                 | Q(upload__file_name__icontains=q)
             )
 
-        return Response([_serialize_document(d) for d in qs.order_by("-attached_at")])
+        return Response([_serialize_document(d, request) for d in qs.order_by("-attached_at")])
 
 
 # ---------------------------------------------------------------------------

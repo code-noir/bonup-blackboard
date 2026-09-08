@@ -7,6 +7,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from backend.api.operator.permissions import file_content_prohibited
 from backend.api.contracts.permissions import contract_party_response, is_party
 from backend.contracts.models import (
     Contract,
@@ -78,9 +79,9 @@ def _party_summary(user):
     return {"id": str(user.id), "email": user.email, "name": name}
 
 
-def _attachment_summary(attachment):
+def _attachment_summary(attachment, request):
     file_url = ""
-    if attachment.file:
+    if not file_content_prohibited(request) and attachment.file:
         try:
             file_url = attachment.file.url
         except ValueError:
@@ -1125,7 +1126,7 @@ class LifecycleItemAttachmentAPIView(APIView):
         if error_response is not None:
             return error_response
         attachments = item.attachments.select_related("uploaded_by").order_by("-created_at")
-        return Response({"results": [_attachment_summary(attachment) for attachment in attachments]}, status=status.HTTP_200_OK)
+        return Response({"results": [_attachment_summary(attachment, request) for attachment in attachments]}, status=status.HTTP_200_OK)
 
     def post(self, request, item_id):
         item, error_response = self._get_item(request, item_id)
@@ -1140,7 +1141,7 @@ class LifecycleItemAttachmentAPIView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(_attachment_summary(attachment), status=status.HTTP_201_CREATED)
+        return Response(_attachment_summary(attachment, request), status=status.HTTP_201_CREATED)
 
 
 class LifecycleItemMessageAPIView(APIView):

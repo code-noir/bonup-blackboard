@@ -25,6 +25,7 @@ from reportlab.platypus import (
 )
 from rest_framework.views import APIView
 
+from backend.api.operator.permissions import require_file_content_access
 from backend.sol.models import Sol, SolMember, SolContribution, SolPayout
 
 from .views import _is_manager, _member_of_sol
@@ -179,6 +180,7 @@ class SolManagerExportView(APIView):
     """GET /api/sol/<sol_id>/export/pdf/"""
 
     def get(self, request, sol_id):
+        require_file_content_access(request)
         sol = get_object_or_404(Sol, pk=sol_id)
         if not _is_manager(request.user, sol):
             from rest_framework import status
@@ -365,6 +367,7 @@ class SolMemberExportView(APIView):
     """GET /api/sol/memberships/<sol_id>/export/pdf/"""
 
     def get(self, request, sol_id):
+        require_file_content_access(request)
         member, sol, err = _member_of_sol(request.user, sol_id)
         if err:
             return err

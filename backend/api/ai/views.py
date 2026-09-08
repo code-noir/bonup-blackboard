@@ -15,6 +15,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from backend.api.operator.permissions import file_content_prohibited
 from backend.ai.context import build_user_context
 from backend.ai.models import AIConversation, WorkflowState
 from backend.ai.prompts import BASIC_PROMPT, ADVANCED_PROMPT, FULL_PROMPT
@@ -216,7 +217,7 @@ def _build_generation_prompt(payload, missing_fields):
     return "\n".join(lines)
 
 
-def _serialize_conversation(conv, include_messages=False):
+def _serialize_conversation(conv, request, include_messages=False):
     data = {
         "id": str(conv.id),
         "conversation_type": conv.conversation_type,
@@ -226,7 +227,7 @@ def _serialize_conversation(conv, include_messages=False):
         "updated_at": conv.updated_at,
     }
     if include_messages:
-        data["messages"] = conv.messages
+        data["messages"] = [] if file_content_prohibited(request) else conv.messages
     return data
 
 
@@ -544,7 +545,7 @@ class AIConversationListView(APIView):
         return Response({
             "count": total,
             "page": page,
-            "results": [_serialize_conversation(c) for c in items],
+            "results": [_serialize_conversation(c, request) for c in items],
         })
 
 
@@ -556,7 +557,7 @@ class AIConversationDetailView(APIView):
 
     def get(self, request, conversation_id):
         conv = get_object_or_404(AIConversation, pk=conversation_id, user=request.user)
-        return Response(_serialize_conversation(conv, include_messages=True))
+        return Response(_serialize_conversation(conv, request, include_messages=True))
 
 
 # ---------------------------------------------------------------------------

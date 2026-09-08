@@ -1,3 +1,4 @@
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import BasePermission
 
 from backend.operator.services import OPERATOR_CONTEXT, has_view_as_permission, is_operator_eligible
@@ -26,3 +27,14 @@ class CanExitViewAs(BasePermission):
         if token and token.get("auth_context") == OPERATOR_CONTEXT and is_operator_eligible(administrator):
             return True
         return bool(getattr(request, "impersonation_session", None))
+
+
+def file_content_prohibited(request):
+    """Only authenticated View-As context prohibits customer content access."""
+    return getattr(request, "impersonation_session", None) is not None
+
+
+def require_file_content_access(request):
+    """Reject before opening storage, generating URLs, or producing content."""
+    if file_content_prohibited(request):
+        raise PermissionDenied("File content is unavailable during View-As.")

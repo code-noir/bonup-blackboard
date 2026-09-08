@@ -1708,18 +1708,17 @@ function FolderTile({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-slate-300 hover:shadow-md">
-      <button type="button" onClick={onOpen} className="block w-full text-left">
-        <div className="flex aspect-[4/3] items-center justify-center bg-amber-50 text-[#D4900A]">
+    <div className="group relative overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-slate-300 hover:shadow-md focus-within:border-slate-300 focus-within:shadow-md">
+      <button type="button" onClick={onOpen} className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">
+        <div className="relative flex aspect-[4/3] items-center justify-center bg-amber-50 text-[#D4900A]">
           <FolderIcon className="h-16 w-16" />
         </div>
-        <div className="p-4">
-          <p title={folder.name} className="[overflow-wrap:anywhere] text-base font-bold leading-6 text-slate-900">{folder.name}</p>
-          <p className="mt-1 text-sm text-slate-500">Folder</p>
+        <div className="border-t border-amber-100 p-3">
+          <p title={folder.name} className="line-clamp-2 min-h-[2.75rem] [overflow-wrap:anywhere] text-base font-bold leading-6 text-slate-900">{folder.name}</p>
         </div>
       </button>
-      <div className="border-t border-slate-100 px-3 py-2">
-        <FolderActions onOpen={onOpen} onRename={onRename} onMove={onMove} onDelete={onDelete} />
+      <div className="pointer-events-none absolute inset-x-2 bottom-[4.75rem] rounded-lg border border-slate-200 bg-white/95 p-2 opacity-0 shadow-lg backdrop-blur transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100">
+        <FolderActions onOpen={onOpen} onRename={onRename} onMove={onMove} onDelete={onDelete} compact />
       </div>
     </div>
   )
@@ -1730,23 +1729,35 @@ function FolderActions({
   onRename,
   onMove,
   onDelete,
+  compact = false,
 }: {
   onOpen: () => void
   onRename: () => void
   onMove: () => void
   onDelete: () => void
+  compact?: boolean
 }) {
+  const buttonClass = compact
+    ? 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-bold text-slate-700 hover:bg-slate-50'
+    : 'rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50'
+  const iconButtonClass = compact
+    ? 'rounded-lg border border-slate-200 bg-white p-1.5 text-slate-600 hover:bg-slate-50'
+    : 'rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50'
+  const dangerButtonClass = compact
+    ? 'rounded-lg border border-red-200 bg-white p-1.5 text-red-600 hover:bg-red-50'
+    : 'rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50'
+
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <button type="button" onClick={onOpen} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Open</button>
-      <button type="button" onClick={onMove} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50" title="Move Folder">
+      <button type="button" onClick={onOpen} className={buttonClass}>Open</button>
+      <button type="button" onClick={onMove} className={`inline-flex items-center gap-1 ${buttonClass}`} title="Move Folder">
         <FolderIcon className="h-4 w-4" />
         Move
       </button>
-      <button type="button" onClick={onRename} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" title="Rename Folder" aria-label="Rename Folder">
+      <button type="button" onClick={onRename} className={iconButtonClass} title="Rename Folder" aria-label="Rename Folder">
         <PencilSquareIcon className="h-4 w-4" />
       </button>
-      <button type="button" onClick={onDelete} className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" title="Delete empty folder" aria-label="Delete empty folder">
+      <button type="button" onClick={onDelete} className={dangerButtonClass} title="Delete empty folder" aria-label="Delete empty folder">
         <TrashIcon className="h-4 w-4" />
       </button>
     </div>
@@ -2099,15 +2110,13 @@ function FileTile({
   }
 
   return (
-    <div className={`group overflow-hidden rounded-lg border bg-white shadow-sm transition hover:border-slate-300 hover:shadow-md ${selected ? 'border-[#F5A623] ring-2 ring-[#F5A623]/20' : 'border-slate-200'}`}>
-      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2">
-        <label className="flex items-center gap-2 text-sm font-bold text-slate-600">
-          <input type="checkbox" checked={selected} onChange={onToggleSelected} disabled={working} className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900 disabled:cursor-not-allowed" />
-          Select
-        </label>
-      </div>
-      <button type="button" onClick={onOpen} className="block w-full text-left">
-        <div className="flex aspect-[4/3] items-center justify-center bg-slate-50">
+    <div className={`group relative overflow-hidden rounded-lg border bg-white shadow-sm transition hover:border-slate-300 hover:shadow-md focus-within:border-slate-300 focus-within:shadow-md ${selected ? 'border-[#F5A623] ring-2 ring-[#F5A623]/20' : 'border-slate-200'}`}>
+      <label className="absolute left-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-lg border border-white/80 bg-white/95 shadow-sm backdrop-blur" title={selected ? 'Deselect file' : 'Select file'}>
+        <span className="sr-only">{selected ? 'Deselect' : 'Select'} {file.file_name}</span>
+        <input type="checkbox" checked={selected} onChange={onToggleSelected} disabled={working} className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900 disabled:cursor-not-allowed" />
+      </label>
+      <button type="button" onClick={onOpen} className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">
+        <div className="relative flex aspect-[4/3] items-center justify-center bg-slate-50">
           {isImage ? (
             <img src={file.file_url || ''} alt="" className="h-full w-full object-cover" />
           ) : (
@@ -2116,14 +2125,12 @@ function FileTile({
             </div>
           )}
         </div>
-        <div className="p-4">
-          <p className="[overflow-wrap:anywhere] text-base font-bold leading-6 text-slate-900">{file.file_name}</p>
-          <p className="mt-1 text-sm text-slate-500">{typeLabel(file)} · {formatBytes(file.file_size)}</p>
-          <p className="mt-2 text-sm text-slate-400">{formatDate(file.uploaded_at)}</p>
+        <div className="border-t border-slate-100 p-3">
+          <p title={file.file_name} className="line-clamp-2 min-h-[2.75rem] [overflow-wrap:anywhere] text-base font-bold leading-6 text-slate-900">{file.file_name}</p>
         </div>
       </button>
-      <div className="border-t border-slate-100 px-3 py-2">
-        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onShareLink={onShareLink} onRename={onRename} onMove={onMove} onRemove={onRemove} />
+      <div className="pointer-events-none absolute inset-x-2 bottom-[4.75rem] z-10 rounded-lg border border-slate-200 bg-white/95 p-2 opacity-0 shadow-lg backdrop-blur transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100">
+        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onShareLink={onShareLink} onRename={onRename} onMove={onMove} onRemove={onRemove} compact />
       </div>
     </div>
   )
@@ -2137,6 +2144,7 @@ function FileActions({
   onRename,
   onMove,
   onRemove,
+  compact = false,
 }: {
   working: boolean
   onOpen: () => void
@@ -2145,24 +2153,38 @@ function FileActions({
   onRename: () => void
   onMove: () => void
   onRemove: () => void
+  compact?: boolean
 }) {
+  const buttonClass = compact
+    ? 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-bold text-slate-700 hover:bg-slate-50'
+    : 'rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50'
+  const secondaryButtonClass = compact
+    ? 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50'
+    : 'rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50'
+  const iconButtonClass = compact
+    ? 'rounded-lg border border-slate-200 bg-white p-1.5 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50'
+    : 'rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50'
+  const dangerButtonClass = compact
+    ? 'rounded-lg border border-red-200 bg-white p-1.5 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50'
+    : 'rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50'
+
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
-      <button type="button" onClick={onOpen} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Details</button>
-      <button type="button" onClick={onDownload} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" title="Download" aria-label="Download">
+      <button type="button" onClick={onOpen} className={buttonClass}>Details</button>
+      <button type="button" onClick={onDownload} className={iconButtonClass} title="Download" aria-label="Download">
         <ArrowDownTrayIcon className="h-4 w-4" />
       </button>
-      <button type="button" onClick={onShareLink} disabled={working} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Share Link">
+      <button type="button" onClick={onShareLink} disabled={working} className={secondaryButtonClass} title="Share Link">
         Share Link
       </button>
-      <button type="button" onClick={onRename} disabled={working} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Rename" aria-label="Rename">
+      <button type="button" onClick={onRename} disabled={working} className={iconButtonClass} title="Rename" aria-label="Rename">
         <PencilSquareIcon className="h-4 w-4" />
       </button>
-      <button type="button" onClick={onMove} disabled={working} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Move">
+      <button type="button" onClick={onMove} disabled={working} className={`inline-flex items-center gap-1 ${buttonClass} disabled:cursor-not-allowed disabled:opacity-50`} title="Move">
         <FolderIcon className="h-4 w-4" />
         Move
       </button>
-      <button type="button" onClick={onRemove} disabled={working} className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50" title="Remove from Vault" aria-label="Remove from Vault">
+      <button type="button" onClick={onRemove} disabled={working} className={dangerButtonClass} title="Remove from Vault" aria-label="Remove from Vault">
         <TrashIcon className="h-4 w-4" />
       </button>
     </div>

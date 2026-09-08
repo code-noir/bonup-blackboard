@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
 import { OperatorProvider } from '@/context/OperatorContext'
+import { NotificationProvider } from '@/context/NotificationContext'
 import RequireAuth from '@/components/RequireAuth'
 import RequireAdmin from '@/components/admin/RequireAdmin'
 import PlatformShell from '@/components/layout/PlatformShell'
@@ -133,6 +134,7 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <OperatorProvider>
+          <NotificationProvider>
         <Routes>
           {/* Public */}
           <Route path="/login" element={<Login />} />
@@ -297,6 +299,7 @@ export default function App() {
 
           <Route path="*" element={<NotFound />} />
         </Routes>
+          </NotificationProvider>
         </OperatorProvider>
       </AuthProvider>
     </BrowserRouter>

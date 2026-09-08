@@ -16,6 +16,7 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 import api from '@/api/client'
+import { useNotification } from '@/context/NotificationContext'
 
 type StorageSummary = {
   capacity_bytes: number
@@ -45,11 +46,6 @@ type RenameState = 'idle' | 'saving'
 type UploadQueueStatus = 'waiting' | 'uploading' | 'uploaded' | 'failed'
 
 type LoadState = 'loading' | 'success' | 'error'
-
-type Toast = {
-  tone: 'success' | 'error' | 'info'
-  message: string
-} | null
 
 type NativeFileShareData = {
   files: File[]
@@ -346,6 +342,7 @@ function emailErrorMessage(error: unknown) {
 }
 
 export default function Vault() {
+  const notify = useNotification()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [storage, setStorage] = useState<StorageSummary | null>(null)
   const [files, setFiles] = useState<VaultFile[]>([])
@@ -400,7 +397,6 @@ export default function Vault() {
   const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([])
   const [fileInputKey, setFileInputKey] = useState(0)
   const [workingFileId, setWorkingFileId] = useState<string | null>(null)
-  const [toast, setToast] = useState<Toast>(null)
 
   function reconcileActiveFileState(nextFiles: VaultFile[]) {
     const byId = new Map(nextFiles.map((file) => [file.id, file]))
@@ -448,7 +444,7 @@ export default function Vault() {
       const folderIds = new Set(response.data.map((folder) => folder.id))
       setCurrentFolderId((current) => current && !folderIds.has(current) ? null : current)
     } catch {
-      setToast({ tone: 'error', message: 'Folders could not be loaded.' })
+      notify.error('Folders could not be loaded.')
     }
   }
 
@@ -585,7 +581,7 @@ export default function Vault() {
 
     setUploading(true)
     setUploadQueue(queue)
-    setToast(null)
+    notify.dismiss()
 
     let nextIndex = 0
     let uploadedCount = 0
@@ -606,11 +602,11 @@ export default function Vault() {
         await refreshVault()
       }
       if (uploadedCount === selectedFiles.length) {
-        setToast({ tone: 'success', message: selectedFiles.length === 1 ? `${selectedFiles[0].name} uploaded to Vault.` : `${uploadedCount} files uploaded to Vault.` })
+        notify.success(selectedFiles.length === 1 ? `${selectedFiles[0].name} uploaded to Vault.` : `${uploadedCount} files uploaded to Vault.`)
       } else if (uploadedCount > 0) {
-        setToast({ tone: 'info', message: `${uploadedCount} of ${selectedFiles.length} files uploaded to Vault.` })
+        notify.info(`${uploadedCount} of ${selectedFiles.length} files uploaded to Vault.`)
       } else {
-        setToast({ tone: 'error', message: 'No files were uploaded.' })
+        notify.error('No files were uploaded.')
       }
     } finally {
       setUploading(false)
@@ -659,12 +655,12 @@ export default function Vault() {
   async function handleBulkDownload() {
     if (bulkDownloading || bulkRemoving || bulkMoving || selectedFileIds.length === 0) return
     if (selectedFileIds.length > BULK_DOWNLOAD_MAX_FILES) {
-      setToast({ tone: 'error', message: `Download Selected supports up to ${BULK_DOWNLOAD_MAX_FILES} files. Clear some selections and try again.` })
+      notify.error(`Download Selected supports up to ${BULK_DOWNLOAD_MAX_FILES} files. Clear some selections and try again.`)
       return
     }
 
     setBulkDownloading(true)
-    setToast(null)
+    notify.dismiss()
     try {
       const response = await api.post<Blob>('/uploads/bulk-download/', { upload_ids: selectedFileIds }, { responseType: 'blob' })
       const url = URL.createObjectURL(response.data)
@@ -675,9 +671,9 @@ export default function Vault() {
       link.click()
       link.remove()
       URL.revokeObjectURL(url)
-      setToast({ tone: 'success', message: `${selectedFileIds.length} ${selectedFileIds.length === 1 ? 'file' : 'files'} prepared for download.` })
+      notify.success(`${selectedFileIds.length} ${selectedFileIds.length === 1 ? 'file' : 'files'} prepared for download.`)
     } catch (error) {
-      setToast({ tone: 'error', message: bulkDownloadErrorMessage(error) })
+      notify.error(bulkDownloadErrorMessage(error))
     } finally {
       setBulkDownloading(false)
     }
@@ -686,13 +682,13 @@ export default function Vault() {
   function openBulkMove() {
     if (bulkDownloading || bulkRemoving || bulkMoving || selectedFileIds.length === 0) return
     if (selectedFileIds.length > BULK_MOVE_MAX_FILES) {
-      setToast({ tone: 'error', message: `Move Selected supports up to ${BULK_MOVE_MAX_FILES} files. Clear some selections and try again.` })
+      notify.error(`Move Selected supports up to ${BULK_MOVE_MAX_FILES} files. Clear some selections and try again.`)
       return
     }
     setBulkMoveFolderId(currentFolderId || '')
     setBulkMoveError('')
     setBulkMoveOpen(true)
-    setToast(null)
+    notify.dismiss()
   }
 
   function closeBulkMove() {
@@ -711,7 +707,7 @@ export default function Vault() {
 
     setBulkMoving(true)
     setBulkMoveError('')
-    setToast(null)
+    notify.dismiss()
     try {
       const destinationId = bulkMoveFolderId || null
       const response = await api.post<BulkMoveResponse>('/uploads/bulk-move/', {
@@ -735,11 +731,11 @@ export default function Vault() {
       await refreshVault()
 
       if (response.data.failed_count > 0 && response.data.moved_count > 0) {
-        setToast({ tone: 'info', message: `${response.data.moved_count} ${response.data.moved_count === 1 ? 'file' : 'files'} moved. ${response.data.failed_count} could not be moved.` })
+        notify.info(`${response.data.moved_count} ${response.data.moved_count === 1 ? 'file' : 'files'} moved. ${response.data.failed_count} could not be moved.`)
       } else if (response.data.failed_count > 0) {
-        setToast({ tone: 'error', message: 'No selected files could be moved.' })
+        notify.error('No selected files could be moved.')
       } else {
-        setToast({ tone: 'success', message: `${response.data.moved_count} ${response.data.moved_count === 1 ? 'file' : 'files'} moved.` })
+        notify.success(`${response.data.moved_count} ${response.data.moved_count === 1 ? 'file' : 'files'} moved.`)
       }
       setBulkMoveOpen(false)
       setBulkMoveFolderId('')
@@ -758,7 +754,7 @@ export default function Vault() {
     if (!confirmed) return
 
     setBulkRemoving(true)
-    setToast(null)
+    notify.dismiss()
     try {
       const response = await api.post<BulkRemoveResponse>('/uploads/bulk-remove/', { upload_ids: selectedFileIds })
       const removedIds = new Set(response.data.results.filter((item) => item.status === 'removed').map((item) => item.upload_id))
@@ -773,14 +769,14 @@ export default function Vault() {
       await refreshVault()
 
       if (response.data.failed_count > 0 && response.data.removed_count > 0) {
-        setToast({ tone: 'info', message: `${response.data.removed_count} ${response.data.removed_count === 1 ? 'file' : 'files'} removed from Vault. ${response.data.failed_count} could not be removed.` })
+        notify.info(`${response.data.removed_count} ${response.data.removed_count === 1 ? 'file' : 'files'} removed from Vault. ${response.data.failed_count} could not be removed.`)
       } else if (response.data.failed_count > 0) {
-        setToast({ tone: 'error', message: 'No selected files could be removed from Vault.' })
+        notify.error('No selected files could be removed from Vault.')
       } else {
-        setToast({ tone: 'success', message: `${response.data.removed_count} ${response.data.removed_count === 1 ? 'file' : 'files'} removed from Vault.` })
+        notify.success(`${response.data.removed_count} ${response.data.removed_count === 1 ? 'file' : 'files'} removed from Vault.`)
       }
     } catch (error) {
-      setToast({ tone: 'error', message: uploadErrorMessage(error) })
+      notify.error(uploadErrorMessage(error))
     } finally {
       setBulkRemoving(false)
     }
@@ -790,7 +786,7 @@ export default function Vault() {
     setFolderNameModal({ mode, folder })
     setFolderName(folder?.name || '')
     setFolderError('')
-    setToast(null)
+    notify.dismiss()
   }
 
   function closeFolderNameModal() {
@@ -814,11 +810,11 @@ export default function Vault() {
       if (folderNameModal.mode === 'create') {
         const response = await api.post<VaultFolder>('/uploads/folders/', { name, parent_id: currentFolderId })
         setFolders((current) => [...current, response.data].sort((a, b) => a.name.localeCompare(b.name)))
-        setToast({ tone: 'success', message: 'Folder created.' })
+        notify.success('Folder created.')
       } else if (folderNameModal.folder) {
         const response = await api.patch<VaultFolder>(`/uploads/folders/${folderNameModal.folder.id}/`, { name })
         setFolders((current) => current.map((folder) => folder.id === response.data.id ? response.data : folder).sort((a, b) => a.name.localeCompare(b.name)))
-        setToast({ tone: 'success', message: 'Folder renamed.' })
+        notify.success('Folder renamed.')
       }
       closeFolderNameModal()
     } catch (error) {
@@ -832,7 +828,7 @@ export default function Vault() {
     setMoveFolderModal(folder)
     setMoveFolderParentId(folder.parent_id || '')
     setMoveFolderError('')
-    setToast(null)
+    notify.dismiss()
   }
 
   function closeMoveFolder() {
@@ -849,7 +845,7 @@ export default function Vault() {
     try {
       const response = await api.patch<VaultFolder>(`/uploads/folders/${moveFolderModal.id}/`, { parent_id: moveFolderParentId || null })
       setFolders((current) => current.map((item) => item.id === response.data.id ? response.data : item))
-      setToast({ tone: 'success', message: 'Folder moved.' })
+      notify.success('Folder moved.')
       closeMoveFolder()
     } catch (error) {
       setMoveFolderError(folderErrorMessage(error))
@@ -861,14 +857,14 @@ export default function Vault() {
   async function deleteFolder(folder: VaultFolder) {
     const confirmed = window.confirm('Delete this empty folder? Files are not removed from Vault.')
     if (!confirmed) return
-    setToast(null)
+    notify.dismiss()
     try {
       await api.delete(`/uploads/folders/${folder.id}/`)
       setFolders((current) => current.filter((item) => item.id !== folder.id))
       if (currentFolderId === folder.id) setCurrentFolderId(folder.parent_id)
-      setToast({ tone: 'success', message: 'Folder deleted.' })
+      notify.success('Folder deleted.')
     } catch (error) {
-      setToast({ tone: 'error', message: folderErrorMessage(error) })
+      notify.error(folderErrorMessage(error))
     }
   }
 
@@ -876,7 +872,7 @@ export default function Vault() {
     setMoveFile(file)
     setMoveFileFolderId(file.folder_id || '')
     setMoveFileError('')
-    setToast(null)
+    notify.dismiss()
   }
 
   function closeMoveFile() {
@@ -898,7 +894,7 @@ export default function Vault() {
       setShareFile((current) => current?.id === updated.id ? updated : current)
       setEmailFile((current) => current?.id === updated.id ? updated : current)
       setNativeShareFallbackFile((current) => current?.id === updated.id ? updated : current)
-      setToast({ tone: 'success', message: 'File moved.' })
+      notify.success('File moved.')
       closeMoveFile()
     } catch (error) {
       setMoveFileError(folderErrorMessage(error))
@@ -926,7 +922,7 @@ export default function Vault() {
     setEmailState('idle')
     setEmailError('')
     setEmailIdempotencyKey(createIdempotencyKey())
-    setToast(null)
+    notify.dismiss()
   }
 
   function closeEmailFile() {
@@ -940,7 +936,7 @@ export default function Vault() {
     setRenameName(file.file_name)
     setRenameState('idle')
     setRenameError('')
-    setToast(null)
+    notify.dismiss()
   }
 
   function closeRenameFile() {
@@ -980,7 +976,7 @@ export default function Vault() {
       setMoveFile((current) => current?.id === updated.id ? updated : current)
       setRenameFile(null)
       setRenameName('')
-      setToast({ tone: 'success', message: 'File renamed.' })
+      notify.success('File renamed.')
     } catch (error) {
       const code = typeof error === 'object' && error !== null && 'response' in error
         ? (error as { response?: { data?: { code?: string } } }).response?.data?.code
@@ -1019,7 +1015,7 @@ export default function Vault() {
       )
       if (response.data.status === 'sent') {
         setEmailState('sent')
-        setToast({ tone: 'success', message: 'Email sent.' })
+        notify.success('Email sent.')
         return
       }
       setEmailState('idle')
@@ -1048,17 +1044,17 @@ export default function Vault() {
     setShareLinks([])
     setShareExpiration('7d')
     setShareError('')
-    setToast(null)
+    notify.dismiss()
     void loadShareLinks(file)
   }
 
   function showNativeShareFallback(file: VaultFile, message = "This browser can't share this file directly.") {
     setNativeShareFallbackFile(file)
-    setToast({ tone: 'info', message })
+    notify.info(message)
   }
 
   async function handleShareFile(file: VaultFile) {
-    setToast(null)
+    notify.dismiss()
     setNativeShareFallbackFile(null)
 
     if (file.file_size > NATIVE_SHARE_PREPARATION_LIMIT_BYTES) {
@@ -1136,7 +1132,7 @@ export default function Vault() {
         showNativeShareFallback(file, "This browser couldn't share this file directly.")
         return
       }
-      setToast({ tone: 'success', message: `${file.file_name} shared.` })
+      notify.success(`${file.file_name} shared.`)
     } catch (error) {
       logNativeShareDiagnostic('share_error', file, {
         errorName: (error as { name?: string })?.name,
@@ -1151,11 +1147,11 @@ export default function Vault() {
     if (!shareFile) return
     setSharing(true)
     setShareError('')
-    setToast(null)
+    notify.dismiss()
     try {
       const response = await api.post<VaultShare>(`/uploads/${shareFile.id}/shares/`, { expiration: shareExpiration })
       setShareLinks((current) => [response.data, ...current.filter((share) => share.id !== response.data.id)])
-      setToast({ tone: 'success', message: 'Share link created.' })
+      notify.success('Share link created.')
     } catch {
       setShareError('Could not create a share link for this file.')
     } finally {
@@ -1173,7 +1169,7 @@ export default function Vault() {
     try {
       await api.post(`/uploads/${shareFile.id}/shares/${share.id}/revoke/`, {})
       setShareLinks((current) => current.filter((item) => item.id !== share.id))
-      setToast({ tone: 'success', message: 'Share link revoked.' })
+      notify.success('Share link revoked.')
     } catch {
       setShareError('Could not revoke this share link.')
     } finally {
@@ -1193,9 +1189,9 @@ export default function Vault() {
         document.execCommand('copy')
         input.remove()
       }
-      setToast({ tone: 'success', message: 'Share link copied.' })
+      notify.success('Share link copied.')
     } catch {
-      setToast({ tone: 'error', message: 'Could not copy the share link.' })
+      notify.error('Could not copy the share link.')
     }
   }
 
@@ -1204,14 +1200,14 @@ export default function Vault() {
     const confirmed = window.confirm('Remove this file from your active Vault? Shared links will stop working, but this does not permanently destroy the stored object.')
     if (!confirmed) return
     setWorkingFileId(file.id)
-    setToast(null)
+    notify.dismiss()
     try {
       await api.delete(`/uploads/${file.id}/`)
       removeFilesFromVaultState(new Set([file.id]), new Set([file.file_name]))
-      setToast({ tone: 'success', message: `${file.file_name} removed from Vault.` })
+      notify.success(`${file.file_name} removed from Vault.`)
       await refreshVault()
     } catch {
-      setToast({ tone: 'error', message: 'Could not remove this file.' })
+      notify.error('Could not remove this file.')
     } finally {
       setWorkingFileId(null)
     }
@@ -1240,12 +1236,6 @@ export default function Vault() {
           <input key={fileInputKey} ref={fileInputRef} type="file" multiple aria-label="Upload files" className="sr-only" onChange={handleUpload} />
         </div>
       </header>
-
-      {toast && (
-        <div className={`rounded-lg border px-4 py-3 text-sm font-semibold ${toast.tone === 'error' ? 'border-red-200 bg-red-50 text-red-700' : toast.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-700'}`}>
-          {toast.message}
-        </div>
-      )}
 
       {uploadQueue.length > 0 && (
         <UploadQueuePanel
@@ -2335,7 +2325,6 @@ function EmailFileModal({
         </div>
 
         {error && <p className="mt-4 text-sm font-semibold leading-5 text-red-600">{error}</p>}
-        {sent && <p className="mt-4 text-sm font-semibold leading-5 text-emerald-700">Email sent.</p>}
 
         {oversized && (
           <div className="mt-4 grid min-w-0 gap-2 sm:grid-cols-2">

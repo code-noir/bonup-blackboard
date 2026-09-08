@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '@/api/client'
+import { useNotification } from '@/context/NotificationContext'
 import {
-  type ActionFeedback,
   formatDate,
   formatMoney,
   fromDateInputValue,
@@ -302,10 +302,10 @@ const BUTTON = {
 
 export default function SignedAgreementTimeline({ contractId }: { contractId: string }) {
   const navigate = useNavigate()
+  const notify = useNotification()
   const [data, setData] = useState<ContractScopedLifecycleResponse | null>(null)
   const [activeTab, setActiveTab] = useState<TimelineViewKey>('overview')
   const [isLoading, setIsLoading] = useState(true)
-  const [feedback, setFeedback] = useState<ActionFeedback>(null)
   const [draftType, setDraftType] = useState('responsibility')
   const [draftTitle, setDraftTitle] = useState('')
   const [showSignedAgreement, setShowSignedAgreement] = useState(false)
@@ -321,9 +321,8 @@ export default function SignedAgreementTimeline({ contractId }: { contractId: st
     try {
       const response = await api.get<ContractScopedLifecycleResponse>('/lifecycle/', { params: { contract: contractId } })
       setData(response.data)
-      setFeedback(null)
     } catch (error) {
-      setFeedback({ kind: 'error', message: getErrorMessage(error, 'Unable to load Agreement Timeline data for this contract.') })
+      notify.error(getErrorMessage(error, 'Unable to load Agreement Timeline data for this contract.'))
     } finally {
       setIsLoading(false)
     }
@@ -341,7 +340,7 @@ export default function SignedAgreementTimeline({ contractId }: { contractId: st
       setDraftTitle('')
       await loadLifecycle()
     } catch (error) {
-      setFeedback({ kind: 'error', message: getErrorMessage(error, 'Unable to add timeline item.') })
+      notify.error(getErrorMessage(error, 'Unable to add timeline item.'))
     }
   }
 
@@ -388,7 +387,7 @@ export default function SignedAgreementTimeline({ contractId }: { contractId: st
         payment_method: timelineItemDraft.payment_method,
         notes: timelineItemDraft.notes,
       })
-      setFeedback({ kind: 'success', message: 'Timeline item updated.' })
+      notify.success('Timeline item updated.')
       await loadLifecycle()
       closeTimelineItemDetail()
     } catch (error) {
@@ -401,13 +400,12 @@ export default function SignedAgreementTimeline({ contractId }: { contractId: st
   const prepareAgreementPerformance = async () => {
     if (!data?.lifecycle_agreement?.id) return
     setPerformancePreparing(true)
-    setFeedback(null)
     try {
       const response = await api.post<ContractScopedLifecycleResponse>(`/lifecycle/${data.lifecycle_agreement.id}/ready-for-performance/`, {})
       setData(response.data)
-      setFeedback({ kind: 'success', message: 'Agreement Performance is ready.' })
+      notify.success('Agreement Performance is ready.')
     } catch (error) {
-      setFeedback({ kind: 'error', message: getErrorMessage(error, 'Unable to prepare Agreement Performance.') })
+      notify.error(getErrorMessage(error, 'Unable to prepare Agreement Performance.'))
     } finally {
       setPerformancePreparing(false)
     }
@@ -418,7 +416,7 @@ export default function SignedAgreementTimeline({ contractId }: { contractId: st
   if (!data) {
     return (
       <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 14 }}>
-        <p style={{ fontSize: 13, color: '#B91C1C', margin: 0 }}>{feedback?.message || 'Agreement Timeline data is unavailable.'}</p>
+        <p style={{ fontSize: 13, color: '#B91C1C', margin: 0 }}>Agreement Timeline data is unavailable.</p>
       </div>
     )
   }
@@ -484,12 +482,6 @@ export default function SignedAgreementTimeline({ contractId }: { contractId: st
           </div>
         </div>
       </section>
-
-      {feedback && (
-        <div style={{ background: feedback.kind === 'success' ? '#ECFDF5' : '#FEF2F2', border: `1px solid ${feedback.kind === 'success' ? '#A7F3D0' : '#FECACA'}`, borderRadius: 8, padding: '12px 14px' }}>
-          <p style={{ fontSize: 13, color: feedback.kind === 'success' ? '#047857' : '#B91C1C', margin: 0 }}>{feedback.message}</p>
-        </div>
-      )}
 
       {performancePreparing && (
         <section style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 8, padding: 16 }}>

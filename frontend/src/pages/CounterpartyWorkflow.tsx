@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import api from '@/api/client'
+import { useNotification } from '@/context/NotificationContext'
 import WorkflowTimeline from '@/components/workflow/WorkflowTimeline'
 import NegotiationCommentsPanel from '@/components/workflow/NegotiationCommentsPanel'
 
@@ -37,13 +38,13 @@ type SharedWorkflowResponse = {
 
 export default function CounterpartyWorkflow() {
   const { workflowId } = useParams()
+  const notify = useNotification()
   const [workflow, setWorkflow] = useState<SharedWorkflow | null>(null)
   const [activeVersion, setActiveVersion] = useState<ActiveVersion | null>(null)
   const [requestedChanges, setRequestedChanges] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
 
   async function loadWorkflow() {
     if (!workflowId) return
@@ -71,13 +72,12 @@ export default function CounterpartyWorkflow() {
     if (!workflowId) return
     setIsSubmitting(true)
     setError('')
-    setMessage('')
     try {
       const { data } = await api.post<SharedWorkflowResponse>(`/ai/counterparty/workflows/${workflowId}/${path}/`, payload)
       setWorkflow(data.workflow)
       setActiveVersion(data.active_version)
       setRequestedChanges('')
-      setMessage(success)
+      notify.success(success)
     } catch (err: any) {
       setError(err?.response?.data?.error || 'Action failed. Please try again.')
     } finally {
@@ -99,7 +99,6 @@ export default function CounterpartyWorkflow() {
       </div>
 
       {error && <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#B91C1C', marginBottom: 16 }}>{error}</div>}
-      {message && <div style={{ background: '#ECFDF5', border: '1px solid #6EE7B7', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#065F46', marginBottom: 16 }}>{message}</div>}
 
       <div style={{ marginBottom: 16 }}>
         <WorkflowTimeline workflow={workflow} activeVersion={activeVersion} />

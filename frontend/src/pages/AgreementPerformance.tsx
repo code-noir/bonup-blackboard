@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import api, { tokenStorage } from '@/api/client'
+import { useNotification } from '@/context/NotificationContext'
 import { dateOnlyInputValue, dateOnlySortKey, formatDateOnly } from '@/lib/dateOnly'
 
 type BoardTab = 'payments' | 'work' | 'due_dates' | 'my_obligations' | 'activity' | 'changes'
@@ -719,6 +720,7 @@ function itemMatchesLifecycleDeepLink(item: TimelineItem, lifecycleItemId: strin
 
 export default function AgreementPerformance() {
   const [searchParams] = useSearchParams()
+  const notify = useNotification()
   const deepLinkContractId = searchParams.get('contract')
   const deepLinkLifecycleItemId = searchParams.get('lifecycle_item')
   const [agreements, setAgreements] = useState<PerformanceAgreement[]>([])
@@ -762,7 +764,6 @@ export default function AgreementPerformance() {
   const [deepLinkOpenedContractId, setDeepLinkOpenedContractId] = useState('')
   const [deepLinkSelectedItemId, setDeepLinkSelectedItemId] = useState('')
   const [boardError, setBoardError] = useState('')
-  const [feedback, setFeedback] = useState('')
 
   async function loadPerformanceAgreements() {
     setIsLoading(true)
@@ -786,7 +787,7 @@ export default function AgreementPerformance() {
     window.localStorage.setItem(LAST_PERFORMANCE_AGREEMENT_KEY, agreement.id)
     setBoardLoading(true)
     setBoardError('')
-    setFeedback('')
+    notify.dismiss()
     if (options.resetView !== false) {
       setActiveTab('payments')
       setSelectedItem(null)
@@ -829,7 +830,7 @@ export default function AgreementPerformance() {
     setNavigatorHighlightIndex(0)
     setBoardLoading(true)
     setBoardError('')
-    setFeedback('')
+    notify.dismiss()
     setActiveTab('payments')
     setSelectedItem(null)
     setSelectedProposal(null)
@@ -880,13 +881,13 @@ export default function AgreementPerformance() {
 
   async function runAction(item: TimelineItem, action: string) {
     setActionBusy(`${item.id}:${action}`)
-    setFeedback('')
+    notify.dismiss()
     setBoardError('')
     try {
       const response = await api.post<TimelineItem>(`/lifecycle/items/${item.id}/actions/`, { action })
       const refreshed = await refreshBoard({ resetView: false })
       setSelectedItem(findBoardItem(refreshed, item.id) || response.data)
-      setFeedback(`${performanceActionResultLabel(item, action)}.`)
+      notify.success(`${performanceActionResultLabel(item, action)}.`)
     } catch (err) {
       setBoardError(getErrorMessage(err, 'Unable to record performance action.'))
     } finally {
@@ -910,13 +911,13 @@ export default function AgreementPerformance() {
 
   async function saveReminder(item: TimelineItem, reminderAt: string | null) {
     setReminderBusy(item.id)
-    setFeedback('')
+    notify.dismiss()
     setBoardError('')
     try {
       const response = await api.patch<TimelineItem>(`/lifecycle/items/${item.id}/`, { reminder_at: reminderAt })
       if (selectedItem?.id === response.data.id) setSelectedItem(response.data)
       replaceBoardItem(response.data)
-      setFeedback(reminderAt ? 'Reminder saved.' : 'Reminder cleared.')
+      notify.success(reminderAt ? 'Reminder saved.' : 'Reminder cleared.')
     } catch (err) {
       setBoardError(getErrorMessage(err, 'Unable to update reminder.'))
     } finally {
@@ -945,7 +946,7 @@ export default function AgreementPerformance() {
   }
 
   async function uploadProof(item: TimelineItem, file: File, note: string) {
-    setFeedback('')
+    notify.dismiss()
     setBoardError('')
     setAttachmentErrorsByItemId((current) => ({ ...current, [item.id]: '' }))
     if (!isLifecycleTimelineItem(item)) {
@@ -962,7 +963,7 @@ export default function AgreementPerformance() {
       await loadAttachments(item)
       const refreshed = await refreshBoard({ resetView: false })
       setSelectedItem(findBoardItem(refreshed, item.id) || item)
-      setFeedback('Proof uploaded.')
+      notify.success('Proof uploaded.')
     } catch (err) {
       setAttachmentErrorsByItemId((current) => ({ ...current, [item.id]: getFetchErrorMessage(err, 'Unable to upload proof or receipt.') }))
       throw err
@@ -973,13 +974,13 @@ export default function AgreementPerformance() {
 
   async function submitProofResponse(item: TimelineItem, response: string, note: string) {
     setResponseBusy(`${item.id}:${response}`)
-    setFeedback('')
+    notify.dismiss()
     setBoardError('')
     try {
       await api.post<ProofResponse>(`/lifecycle/items/${item.id}/responses/`, { response, note })
       const refreshed = await refreshBoard({ resetView: false })
       setSelectedItem(findBoardItem(refreshed, item.id) || item)
-      setFeedback('Response saved.')
+      notify.success('Response saved.')
     } catch (err) {
       setBoardError(getErrorMessage(err, 'Unable to save counterparty response.'))
     } finally {
@@ -1033,7 +1034,7 @@ export default function AgreementPerformance() {
     if (!lifecycleAgreementId || !proposalMode) return
     setProposalSaving(true)
     setProposalError('')
-    setFeedback('')
+    notify.dismiss()
     try {
       const response = await api.post<LifecycleChangeProposal>(`/lifecycle/agreements/${lifecycleAgreementId}/proposals/`, {
         ...payload,
@@ -1042,7 +1043,7 @@ export default function AgreementPerformance() {
       setProposals((current) => [response.data, ...current])
       setSelectedProposal(response.data)
       setProposalMode(null)
-      setFeedback(`${proposalTypeLabel(response.data.proposal_type)} proposal submitted.`)
+      notify.success(`${proposalTypeLabel(response.data.proposal_type)} proposal submitted.`)
       void loadProposals(lifecycleAgreementId)
       void loadPerformanceAgreements()
     } catch (err) {
@@ -1076,7 +1077,7 @@ export default function AgreementPerformance() {
     try {
       const response = await api.post<LifecycleChangeProposalMessage>(`/lifecycle/proposals/${proposal.id}/messages/`, { body: trimmed })
       setProposalMessagesByProposalId((current) => ({ ...current, [proposal.id]: [...(current[proposal.id] || []), response.data] }))
-      setFeedback('Proposal message sent.')
+      notify.success('Proposal message sent.')
       void loadProposalMessages(proposal.id, { quiet: true })
     } catch (err) {
       setProposalMessageError(getErrorMessage(err, 'Unable to send proposal message.'))
@@ -1089,11 +1090,11 @@ export default function AgreementPerformance() {
     if (!proposal?.id) return
     setDecisionBusy(`${proposal.id}:${decision}`)
     setDecisionError('')
-    setFeedback('')
+    notify.dismiss()
     try {
       const response = await api.post<LifecycleChangeProposal>(`/lifecycle/proposals/${proposal.id}/decision/`, { decision, note: note.trim(), ...finalTerms })
       updateProposalState(response.data)
-      setFeedback(decision === 'accepted' ? 'Proposal accepted.' : 'Proposal rejected.')
+      notify.success(decision === 'accepted' ? 'Proposal accepted.' : 'Proposal rejected.')
       if (boardData?.lifecycle_agreement?.id) void loadProposals(boardData.lifecycle_agreement.id)
       const refreshed = await refreshBoard({ resetView: false })
       if (selectedItem?.id) setSelectedItem(findBoardItem(refreshed, selectedItem.id) || selectedItem)
@@ -1176,12 +1177,6 @@ export default function AgreementPerformance() {
       document.removeEventListener('mousedown', handlePointerDown)
     }
   }, [navigatorOpen])
-
-  useEffect(() => {
-    if (!feedback) return undefined
-    const timer = window.setTimeout(() => setFeedback(''), 4000)
-    return () => window.clearTimeout(timer)
-  }, [feedback])
 
   useEffect(() => {
     if (boardData?.lifecycle_agreement?.id) void loadProposals(boardData.lifecycle_agreement.id)
@@ -1437,8 +1432,6 @@ export default function AgreementPerformance() {
                 <SummaryCell label="Ready Since" value={formatDate(selectedAgreement.lifecycle_agreement?.performance_ready_at)} />
               </div>
             </div>
-
-            {feedback && <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: 8, padding: 12, marginBottom: 12 }}><p style={{ fontSize: 13, color: '#334155', margin: 0, fontWeight: 800 }}>{feedback}</p></div>}
 
             {!selectedItem && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>

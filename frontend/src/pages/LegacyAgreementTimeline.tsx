@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import api from '@/api/client'
+import { useNotification } from '@/context/NotificationContext'
 import {
-  type ActionFeedback,
   EmptyStates,
   formatDate,
   formatMoney,
@@ -192,12 +192,12 @@ function partyLabel(prefix: string, value?: number | string | null) {
 }
 
 export default function LegacyAgreementTimeline() {
+  const notify = useNotification()
   const [obligationSummary, setObligationSummary] = useState<ObligationSummary | null>(null)
   const [paymentSummary, setPaymentSummary] = useState<PaymentSummary | null>(null)
   const [obligations, setObligations] = useState<ObligationRecord[]>([])
   const [payments, setPayments] = useState<PaymentRecord[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [feedback, setFeedback] = useState<ActionFeedback>(null)
   const [busyAction, setBusyAction] = useState<string | null>(null)
 
   const [serviceDetail, setServiceDetail] = useState<{ obligation: ObligationRecord; detail: ObligationDetailResponse } | null>(null)
@@ -234,7 +234,7 @@ export default function LegacyAgreementTimeline() {
     if (payList.status === 'fulfilled') setPayments(payList.value.data.results || [])
     else nextErrors.push(getErrorMessage(payList.reason, 'Unable to load payments.'))
 
-    setFeedback(nextErrors.length > 0 ? { kind: 'error', message: nextErrors[0] } : null)
+    if (nextErrors.length > 0) notify.error(nextErrors[0])
     setIsLoading(false)
   }
 
@@ -293,7 +293,7 @@ export default function LegacyAgreementTimeline() {
       setApprovalSummary('Request approval for this execution event')
       return true
     } catch (error) {
-      setFeedback({ kind: 'error', message: getErrorMessage(error, 'Unable to load service obligation details.') })
+      notify.error(getErrorMessage(error, 'Unable to load service obligation details.'))
       return false
     } finally {
       setDetailLoading(false)
@@ -307,7 +307,7 @@ export default function LegacyAgreementTimeline() {
       const response = await api.get<PaymentDetailResponse>(`/payments/${payment.id}/`)
       setPaymentDetail({ payment, detail: response.data })
     } catch (error) {
-      setFeedback({ kind: 'error', message: getErrorMessage(error, 'Unable to load payment details.') })
+      notify.error(getErrorMessage(error, 'Unable to load payment details.'))
     } finally {
       setDetailLoading(false)
     }
@@ -319,7 +319,7 @@ export default function LegacyAgreementTimeline() {
       await runner()
       await loadData()
     } catch (error) {
-      setFeedback({ kind: 'error', message: getErrorMessage(error, 'Action failed.') })
+      notify.error(getErrorMessage(error, 'Action failed.'))
     } finally {
       setBusyAction(null)
     }
@@ -327,31 +327,31 @@ export default function LegacyAgreementTimeline() {
 
   const resolveService = (obligation: ObligationRecord) => runAction(`service-resolve-${obligation.id}`, async () => {
     await api.post(`/contracts/obligations/${obligation.type}/${obligation.id}/resolve/`)
-    setFeedback({ kind: 'success', message: 'Service obligation marked performed.' })
+    notify.success('Service obligation marked performed.')
     closeServiceDetail()
   })
 
   const resolvePaymentObligation = (obligation: ObligationRecord) => runAction(`payment-obligation-resolve-${obligation.id}`, async () => {
     await api.post(`/contracts/obligations/payment/${obligation.id}/resolve/`)
-    setFeedback({ kind: 'success', message: 'Payment obligation resolved.' })
+    notify.success('Payment obligation resolved.')
     closeServiceDetail()
   })
 
   const confirmPayment = (payment: PaymentRecord) => runAction(`payment-confirm-${payment.id}`, async () => {
     await api.post(`/payments/${payment.id}/confirm/`)
-    setFeedback({ kind: 'success', message: 'Payment confirmed.' })
+    notify.success('Payment confirmed.')
     closePaymentDetail()
   })
 
   const markPaymentPending = (payment: PaymentRecord) => runAction(`payment-pending-${payment.id}`, async () => {
     await api.post(`/payments/${payment.id}/pending/`)
-    setFeedback({ kind: 'success', message: 'Payment marked pending.' })
+    notify.success('Payment marked pending.')
     closePaymentDetail()
   })
 
   const markPaymentFailed = (payment: PaymentRecord) => runAction(`payment-failed-${payment.id}`, async () => {
     await api.post(`/payments/${payment.id}/fail/`)
-    setFeedback({ kind: 'success', message: 'Payment marked failed.' })
+    notify.success('Payment marked failed.')
     closePaymentDetail()
   })
 
@@ -383,7 +383,7 @@ export default function LegacyAgreementTimeline() {
       setLastRecordedEvent(event)
       setLastApprovalRequest(approvalRequest || null)
       setApprovalSummary(serviceEventDraft.summary || event.summary || 'Request approval for this execution event')
-      setFeedback({ kind: 'success', message: 'Execution event recorded.' })
+      notify.success('Execution event recorded.')
       await loadData()
     } catch (error) {
       setDetailError(getErrorMessage(error, 'Unable to record execution event.'))
@@ -405,7 +405,7 @@ export default function LegacyAgreementTimeline() {
         metadata: { source: 'lifecycle-management' },
       })
       setLastApprovalRequest(response.data as ApprovalRequestRecord)
-      setFeedback({ kind: 'success', message: 'Approval requested.' })
+      notify.success('Approval requested.')
       await loadData()
     } catch (error) {
       setDetailError(getErrorMessage(error, 'Unable to request approval.'))
@@ -430,12 +430,6 @@ export default function LegacyAgreementTimeline() {
           Track agreement activity, to-dos, due dates, services, and payments.
         </p>
       </section>
-
-      {feedback && (
-        <div style={{ background: feedback.kind === 'success' ? '#ECFDF5' : '#FEF2F2', border: `1px solid ${feedback.kind === 'success' ? '#A7F3D0' : '#FECACA'}`, borderRadius: 8, padding: '12px 14px' }}>
-          <p style={{ fontSize: 13, color: feedback.kind === 'success' ? '#047857' : '#B91C1C', margin: 0 }}>{feedback.message}</p>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Service Obligations" value={isLoading ? '—' : serviceCount} sub="Service and delivery duties" />

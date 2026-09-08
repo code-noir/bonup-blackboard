@@ -21,6 +21,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { MagnifyingGlassIcon, PlusIcon, RectangleStackIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { useAuth } from '@/context/AuthContext'
+import { useNotification } from '@/context/NotificationContext'
 import api from '@/api/client'
 import {
   loadContacts,
@@ -605,7 +606,6 @@ export default function CreateContract() {
   const [templatesLoading, setTemplatesLoading] = useState(false)
   const [templateSearch, setTemplateSearch] = useState('')
   const [templateCategoryFilter, setTemplateCategoryFilter] = useState<string>('All')
-  const [templateToast, setTemplateToast] = useState('')
   const [previewTemplate, setPreviewTemplate] = useState<TemplateItem | null>(null)
   const [preparedTerms, setPreparedTerms] = useState<PreparedTerms | null>(null)
   const [isPreparingContract, setIsPreparingContract] = useState(false)
@@ -660,6 +660,7 @@ export default function CreateContract() {
 
   // Parties panel state
   const { user, hasTrialExpired, canCreateContract } = useAuth()
+  const notify = useNotification()
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams] = useSearchParams()
@@ -850,7 +851,7 @@ export default function CreateContract() {
         setContractLoaded(true)
       })
       .catch(() => {
-        if (!cancelled) setTemplateToast('Unable to load saved draft')
+        if (!cancelled) notify.error('Unable to load saved draft')
       })
       .finally(() => {
         if (!cancelled) {
@@ -1503,13 +1504,11 @@ export default function CreateContract() {
   async function loadTemplate(tmpl: TemplateItem) {
     const contractId = currentContractId
     if (!contractId) {
-      setTemplateToast('Create the contract record before applying a template')
-      setTimeout(() => setTemplateToast(''), 2500)
+      notify.warning('Create the contract record before applying a template')
       return
     }
     if (!draftEditingAllowed) {
-      setTemplateToast('Prepared contracts must use negotiation, not the normal editor')
-      setTimeout(() => setTemplateToast(''), 3000)
+      notify.warning('Prepared contracts must use negotiation, not the normal editor')
       return
     }
 
@@ -1529,7 +1528,7 @@ export default function CreateContract() {
       sections: parsed,
     })
 
-    setTemplateToast('Saving template draft...')
+    notify.info('Saving template draft...')
     autosaveGuardRef.current = true
     try {
       const { data } = await api.patch<{ version?: ContractVersionPayload; latest_version?: ContractVersionPayload; content_snapshot?: string; state?: string; status?: string }>(`/contracts/${contractId}/draft/`, {
@@ -1562,42 +1561,38 @@ export default function CreateContract() {
       lastSavedDraftRef.current = savedSnapshot
       setPreviewTemplate(null)
       setActiveTool(null)
-      setTemplateToast('Template saved to draft')
+      notify.success('Template saved to draft')
     } catch (err) {
       const data = (err as { response?: { data?: unknown } })?.response?.data
       const msg = data && typeof data === 'object'
         ? Object.values(data as Record<string, unknown>).flat().join(' ')
         : 'Unable to save template draft'
-      setTemplateToast(String(msg))
+      notify.error(String(msg))
     } finally {
       autosaveGuardRef.current = false
-      setTimeout(() => setTemplateToast(''), 3000)
     }
   }
 
   async function handlePrepareContract() {
     const contractId = currentContractId
     if (!contractId) {
-      setTemplateToast('Create the contract record before preparing it')
-      setTimeout(() => setTemplateToast(''), 2500)
+      notify.warning('Create the contract record before preparing it')
       return
     }
     if (!draftEditingAllowed) {
-      setTemplateToast('Prepared contracts cannot be edited through the normal editor')
-      setTimeout(() => setTemplateToast(''), 3000)
+      notify.warning('Prepared contracts cannot be edited through the normal editor')
       return
     }
 
     const editorHtml = leftEditorRef.current?.innerHTML || ''
     const draftText = (leftEditorRef.current?.textContent || '').trim()
     if (!draftText) {
-      setTemplateToast('Add draft content before preparing the contract')
-      setTimeout(() => setTemplateToast(''), 2500)
+      notify.warning('Add draft content before preparing the contract')
       return
     }
 
     setIsPreparingContract(true)
-    setTemplateToast('Preparing contract...')
+    notify.info('Preparing contract...')
     try {
       const { data } = await api.post<{
         state: string
@@ -1611,16 +1606,15 @@ export default function CreateContract() {
       setPreparedTerms(data.prepared_terms)
       setContractLifecycleState(data.state || 'prepared')
       setContractStatus(data.state === 'prepared' ? 'Prepared' : toTitleCase(data.status || 'draft'))
-      setTemplateToast('Contract prepared for invite')
+      notify.success('Contract prepared for invite')
     } catch (err) {
       const data = (err as { response?: { data?: unknown } })?.response?.data
       const msg = data && typeof data === 'object'
         ? Object.values(data as Record<string, unknown>).flat().join(' ')
         : 'Unable to prepare contract'
-      setTemplateToast(String(msg))
+      notify.error(String(msg))
     } finally {
       setIsPreparingContract(false)
-      setTimeout(() => setTemplateToast(''), 3000)
     }
   }
 
@@ -1628,28 +1622,24 @@ export default function CreateContract() {
     const contractId = currentContractId
     const counterpartyEmail = detailsCounterpartyEmail.trim()
     if (!contractId) {
-      setTemplateToast('Create the contract record before sending an invite')
-      setTimeout(() => setTemplateToast(''), 2500)
+      notify.warning('Create the contract record before sending an invite')
       return
     }
     if (!counterpartyEmail) {
-      setTemplateToast('Add a counterparty email before sending an invite')
-      setTimeout(() => setTemplateToast(''), 3000)
+      notify.warning('Add a counterparty email before sending an invite')
       return
     }
     if (!draftEditingAllowed && contractLifecycleState !== 'prepared') {
-      setTemplateToast('Normal editor invites are disabled for this contract state')
-      setTimeout(() => setTemplateToast(''), 3000)
+      notify.warning('Normal editor invites are disabled for this contract state')
       return
     }
     if (!preparedTerms) {
-      setTemplateToast('Prepare Contract before sending an invite')
-      setTimeout(() => setTemplateToast(''), 3000)
+      notify.warning('Prepare Contract before sending an invite')
       return
     }
 
     setIsSendingInvite(true)
-    setTemplateToast('Sending invite...')
+    notify.info('Sending invite...')
     try {
       const { data } = await api.post<{
         contract_id?: string
@@ -1668,21 +1658,20 @@ export default function CreateContract() {
       if (data.status) setContractStatus(toTitleCase(data.status))
 
       if (data.email_sent) {
-        setTemplateToast(`Invite sent to ${data.invite_email || data.counterparty_email || counterpartyEmail}.`)
+        notify.success(`Invite sent to ${data.invite_email || data.counterparty_email || counterpartyEmail}.`)
       } else if (data.invite_url) {
-        setTemplateToast('Invite link created.')
+        notify.success('Invite link created.')
       } else {
-        setTemplateToast('Invite created.')
+        notify.success('Invite created.')
       }
     } catch (err) {
       const data = (err as { response?: { data?: unknown } })?.response?.data
       const msg = data && typeof data === 'object'
         ? Object.values(data as Record<string, unknown>).flat().join(' ')
         : 'Unable to send invite'
-      setTemplateToast(String(msg))
+      notify.error(String(msg))
     } finally {
       setIsSendingInvite(false)
-      setTimeout(() => setTemplateToast(''), 3000)
     }
   }
 
@@ -5033,18 +5022,6 @@ export default function CreateContract() {
           bonUP © 2026
         </span>
       </div>
-
-      {/* Template loaded toast */}
-      {templateToast && (
-        <div style={{
-          position: 'fixed', bottom: 44, right: 24, zIndex: 500,
-          background: '#D1FAE5', color: '#065F46',
-          padding: '10px 18px', borderRadius: 8,
-          fontSize: 13, fontWeight: 500,
-        }}>
-          {templateToast}
-        </div>
-      )}
 
       {/* Template preview modal */}
       {previewTemplate && (

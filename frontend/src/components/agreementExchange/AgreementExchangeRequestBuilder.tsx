@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import api from '@/api/client'
+import { useNotification } from '@/context/NotificationContext'
 
 type ContractSectionOption = {
   id: string
@@ -60,11 +61,11 @@ const ACTION_OPTIONS = [
 ] as const
 
 export default function AgreementExchangeRequestBuilder({ exchangeId, sections, onSaved }: AgreementExchangeRequestBuilderProps) {
+  const notify = useNotification()
   const [templates, setTemplates] = useState<Record<string, TemplateOption[]>>({})
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
   const [selectedSectionId, setSelectedSectionId] = useState(sections[0]?.id || '')
   const [category, setCategory] = useState('recitals_background')
   const [templateKey, setTemplateKey] = useState('')
@@ -114,7 +115,6 @@ export default function AgreementExchangeRequestBuilder({ exchangeId, sections, 
 
     setIsSubmitting(true)
     setError('')
-    setSuccess('')
     try {
       const { data } = await api.post<AgreementExchangeSaveResponse>(`/agreement-exchange/${exchangeId}/requests/`, {
         target_section_id: selectedSection?.id || null,
@@ -126,7 +126,7 @@ export default function AgreementExchangeRequestBuilder({ exchangeId, sections, 
         reason,
       })
       onSaved(data.request, data.exchange)
-      setSuccess('Request sent to initiator.')
+      notify.success('Request sent to initiator.')
     } catch (err: any) {
       setError(err?.response?.data?.proposed_text?.[0] || err?.response?.data?.detail || err?.response?.data?.error || 'Request could not be saved.')
     } finally {
@@ -180,7 +180,6 @@ export default function AgreementExchangeRequestBuilder({ exchangeId, sections, 
       </div>
 
       {error && <p style={{ fontSize: 12, color: '#B91C1C', margin: 0 }}>{error}</p>}
-      {success && <p style={{ fontSize: 12, color: '#047857', margin: 0 }}>{success}</p>}
       <button type="button" onClick={submitRequest} disabled={isSubmitting || !proposedText.trim()} style={{ justifySelf: 'start', height: 34, padding: '0 12px', border: 'none', borderRadius: 8, background: isSubmitting || !proposedText.trim() ? '#94A3B8' : '#243447', color: 'white', fontSize: 12, fontWeight: 800, cursor: isSubmitting || !proposedText.trim() ? 'default' : 'pointer' }}>
         {isSubmitting ? 'Submitting...' : 'Submit Request'}
       </button>

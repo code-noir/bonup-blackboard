@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/context/AuthContext'
+import { useNotification } from '@/context/NotificationContext'
 import api from '@/api/client'
 import type { BusinessEntity, BusinessType } from '@/types/entities'
 
@@ -40,6 +41,7 @@ function onFB(e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLS
 
 export default function Entities() {
   const { user } = useAuth()
+  const notify = useNotification()
 
   const [entities, setEntities] = useState<BusinessEntity[]>([])
   const [maxAllowed, setMaxAllowed] = useState(0)
@@ -68,7 +70,6 @@ export default function Entities() {
   const [formFoundedDate, setFormFoundedDate] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
-  const [toast, setToast] = useState('')
 
   const atLimit = entities.length >= maxAllowed
 
@@ -133,8 +134,7 @@ export default function Entities() {
       setEntities(data.results)
       setMaxAllowed(data.max_allowed || 35)
       closePanel()
-      setToast(editingId ? 'Business entity updated successfully' : 'Business entity added successfully')
-      setTimeout(() => setToast(''), 3000)
+      notify.success(editingId ? 'Business entity updated successfully' : 'Business entity added successfully')
     } catch {
       setSaveError('Failed to save. Please try again.')
     } finally {
@@ -535,18 +535,6 @@ export default function Entities() {
             </div>
           </div>
         </>
-      )}
-
-      {/* Success toast */}
-      {toast && (
-        <div style={{
-          position: 'fixed', bottom: 24, right: 24,
-          background: '#D1FAE5', color: '#065F46',
-          padding: '12px 20px', borderRadius: 8,
-          fontSize: 13, fontWeight: 500, zIndex: 500,
-        }}>
-          {toast}
-        </div>
       )}
     </div>
   )

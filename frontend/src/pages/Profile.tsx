@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/context/AuthContext'
+import { useNotification } from '@/context/NotificationContext'
 import api from '@/api/client'
 
 const LABEL: React.CSSProperties = {
@@ -30,6 +31,7 @@ function fb(e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) {
 
 export default function Profile() {
   const { user, refreshUser } = useAuth()
+  const notify = useNotification()
 
   const [firstName, setFirstName]     = useState('')
   const [lastName, setLastName]       = useState('')
@@ -43,7 +45,6 @@ export default function Profile() {
   const [zip, setZip]                 = useState('')
   const [bio, setBio]                 = useState('')
   const [saving, setSaving]           = useState(false)
-  const [toast, setToast]             = useState('')
 
   // Load profile from API + localStorage on mount
   useEffect(() => {
@@ -92,11 +93,9 @@ export default function Profile() {
       localStorage.setItem('bb_profile_extra', JSON.stringify({ occupation, address1, address2, zip, bio }))
 
       await refreshUser()
-      setToast('Profile saved successfully')
-      setTimeout(() => setToast(''), 3000)
+      notify.success('Profile saved successfully')
     } catch {
-      setToast('Failed to save. Please try again.')
-      setTimeout(() => setToast(''), 4000)
+      notify.error('Failed to save. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -269,19 +268,6 @@ export default function Profile() {
           </button>
         </div>
       </div>
-
-      {/* Toast */}
-      {toast && (
-        <div style={{
-          position: 'fixed', bottom: 24, right: 24, zIndex: 500,
-          background: toast.startsWith('Failed') ? '#FEE2E2' : '#D1FAE5',
-          color: toast.startsWith('Failed') ? '#991B1B' : '#065F46',
-          padding: '12px 20px', borderRadius: 8,
-          fontSize: 13, fontWeight: 500,
-        }}>
-          {toast}
-        </div>
-      )}
     </div>
   )
 }

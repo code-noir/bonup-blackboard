@@ -348,8 +348,6 @@ function emailErrorMessage(error: unknown) {
 
 export default function Vault() {
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const uploadPickerOpenRef = useRef(false)
-  const uploadPickerFocusTimerRef = useRef<number | null>(null)
   const [storage, setStorage] = useState<StorageSummary | null>(null)
   const [files, setFiles] = useState<VaultFile[]>([])
   const [folders, setFolders] = useState<VaultFolder[]>([])
@@ -445,32 +443,6 @@ export default function Vault() {
     void refreshVault()
   }, [])
 
-  useEffect(() => {
-    function handleWindowFocus() {
-      if (!uploadPickerOpenRef.current) return
-      if (uploadPickerFocusTimerRef.current !== null) {
-        window.clearTimeout(uploadPickerFocusTimerRef.current)
-      }
-      uploadPickerFocusTimerRef.current = window.setTimeout(() => {
-        uploadPickerFocusTimerRef.current = null
-        if (!uploadPickerOpenRef.current) return
-        const input = fileInputRef.current
-        if (!input || (input.files?.length ?? 0) === 0) {
-          uploadPickerOpenRef.current = false
-          setFileInputKey((current) => current + 1)
-        }
-      }, 500)
-    }
-
-    window.addEventListener('focus', handleWindowFocus)
-    return () => {
-      window.removeEventListener('focus', handleWindowFocus)
-      if (uploadPickerFocusTimerRef.current !== null) {
-        window.clearTimeout(uploadPickerFocusTimerRef.current)
-      }
-    }
-  }, [])
-
   const currentFolder = useMemo(() => folders.find((folder) => folder.id === currentFolderId) || null, [currentFolderId, folders])
 
   const folderBreadcrumbs = useMemo(() => {
@@ -559,18 +531,11 @@ export default function Vault() {
     if (uploading) return
     const input = fileInputRef.current
     if (!input) return
-    uploadPickerOpenRef.current = true
     input.value = ''
     input.click()
   }
 
-  function handleUploadPickerCancel() {
-    uploadPickerOpenRef.current = false
-    resetUploadInput()
-  }
-
   async function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
-    uploadPickerOpenRef.current = false
     const selectedFiles = Array.from(event.target.files || [])
     event.target.value = ''
     if (selectedFiles.length === 0 || uploading) {
@@ -1246,7 +1211,7 @@ export default function Vault() {
             <PlusIcon className="h-4 w-4" />
             {uploading ? 'Uploading...' : 'Upload Files'}
           </button>
-          <input key={fileInputKey} ref={fileInputRef} type="file" multiple className="sr-only" onChange={handleUpload} onCancel={handleUploadPickerCancel} />
+          <input key={fileInputKey} ref={fileInputRef} type="file" multiple className="sr-only" onChange={handleUpload} />
         </div>
       </header>
 

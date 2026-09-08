@@ -3,7 +3,6 @@ import {
   ArrowDownTrayIcon,
   ClipboardDocumentIcon,
   DocumentIcon,
-  EnvelopeIcon,
   FolderIcon,
   MagnifyingGlassIcon,
   MusicalNoteIcon,
@@ -402,7 +401,22 @@ export default function Vault() {
   const [fileInputKey, setFileInputKey] = useState(0)
   const [workingFileId, setWorkingFileId] = useState<string | null>(null)
   const [toast, setToast] = useState<Toast>(null)
-  const [addStorageOpen, setAddStorageOpen] = useState(false)
+
+  function reconcileActiveFileState(nextFiles: VaultFile[]) {
+    const byId = new Map(nextFiles.map((file) => [file.id, file]))
+    const updateFile = (current: VaultFile | null) => current ? byId.get(current.id) || null : null
+
+    setSelectedFile((current) => {
+      const updated = updateFile(current)
+      return updated && updated.folder_id === currentFolderId ? updated : null
+    })
+    setShareFile(updateFile)
+    setEmailFile(updateFile)
+    setRenameFile(updateFile)
+    setMoveFile(updateFile)
+    setNativeShareFallbackFile(updateFile)
+    setSelectedFileIds((current) => current.filter((id) => byId.has(id)))
+  }
 
   async function loadStorage() {
     setStorageState('loading')
@@ -420,6 +434,7 @@ export default function Vault() {
     try {
       const response = await api.get<VaultFile[]>('/uploads/')
       setFiles(response.data)
+      reconcileActiveFileState(response.data)
       setFilesState('success')
     } catch {
       setFilesState('error')
@@ -430,6 +445,8 @@ export default function Vault() {
     try {
       const response = await api.get<VaultFolder[]>('/uploads/folders/')
       setFolders(response.data)
+      const folderIds = new Set(response.data.map((folder) => folder.id))
+      setCurrentFolderId((current) => current && !folderIds.has(current) ? null : current)
     } catch {
       setToast({ tone: 'error', message: 'Folders could not be loaded.' })
     }
@@ -442,6 +459,21 @@ export default function Vault() {
   useEffect(() => {
     void refreshVault()
   }, [])
+
+  useEffect(() => {
+    if (uploading || uploadQueue.length === 0) return
+    if (!uploadQueue.every((item) => item.status === 'uploaded')) return
+
+    const timer = window.setTimeout(() => {
+      setUploadQueue((current) => current.length > 0 && current.every((item) => item.status === 'uploaded') ? [] : current)
+    }, 3500)
+
+    return () => window.clearTimeout(timer)
+  }, [uploadQueue, uploading])
+
+  useEffect(() => {
+    setSelectedFile((current) => current && current.folder_id !== currentFolderId ? null : current)
+  }, [currentFolderId])
 
   const currentFolder = useMemo(() => folders.find((folder) => folder.id === currentFolderId) || null, [currentFolderId, folders])
 
@@ -483,6 +515,7 @@ export default function Vault() {
   const displayedFileIds = useMemo(() => filteredFiles.map((file) => file.id), [filteredFiles])
   const selectedFileIdSet = useMemo(() => new Set(selectedFileIds), [selectedFileIds])
   const allDisplayedFilesSelected = displayedFileIds.length > 0 && displayedFileIds.every((id) => selectedFileIdSet.has(id))
+  const hasSearch = search.trim().length > 0
 
   useEffect(() => {
     const displayed = new Set(displayedFileIds)
@@ -1197,13 +1230,6 @@ export default function Vault() {
         <div className="flex flex-wrap gap-3">
           <button
             type="button"
-            onClick={() => setAddStorageOpen(true)}
-            className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50"
-          >
-            Add Storage
-          </button>
-          <button
-            type="button"
             onClick={openUploadPicker}
             disabled={uploading}
             className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
@@ -1211,7 +1237,7 @@ export default function Vault() {
             <PlusIcon className="h-4 w-4" />
             {uploading ? 'Uploading...' : 'Upload Files'}
           </button>
-          <input key={fileInputKey} ref={fileInputRef} type="file" multiple className="sr-only" onChange={handleUpload} />
+          <input key={fileInputKey} ref={fileInputRef} type="file" multiple aria-label="Upload files" className="sr-only" onChange={handleUpload} />
         </div>
       </header>
 
@@ -1344,8 +1370,8 @@ export default function Vault() {
         )}
         {filesState === 'loading' && <FileLoadingState />}
         {filesState === 'error' && <FileErrorState onRetry={refreshVault} />}
-        {filesState === 'success' && visibleFolders.length === 0 && currentFolderFiles.length === 0 && <EmptyState onUpload={openUploadPicker} />}
-        {filesState === 'success' && visibleFolders.length === 0 && currentFolderFiles.length > 0 && filteredFiles.length === 0 && <NoMatchesState />}
+        {filesState === 'success' && visibleFolders.length === 0 && currentFolderFiles.length === 0 && <EmptyState inFolder={Boolean(currentFolder)} onUpload={openUploadPicker} />}
+        {filesState === 'success' && visibleFolders.length === 0 && currentFolderFiles.length > 0 && filteredFiles.length === 0 && <NoMatchesState hasSearch={hasSearch} category={category} />}
         {filesState === 'success' && (visibleFolders.length > 0 || filteredFiles.length > 0) && (
           <div className={viewMode === 'grid' ? 'grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4' : 'divide-y divide-slate-100'}>
             {visibleFolders.map((folder) => (
@@ -1369,8 +1395,6 @@ export default function Vault() {
                 onToggleSelected={() => toggleFileSelection(file.id)}
                 onOpen={() => setSelectedFile(file)}
                 onDownload={() => handleDownload(file)}
-                onEmailFile={() => openEmailFile(file)}
-                onShareFile={() => void handleShareFile(file)}
                 onShareLink={() => openShareLink(file)}
                 onRename={() => openRenameFile(file)}
                 onMove={() => openMoveFile(file)}
@@ -1510,24 +1534,6 @@ export default function Vault() {
         />
       )}
 
-      {addStorageOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900">Add Storage</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-600">Additional storage plans are being updated for recurring billing. Purchasing is not available from Vault yet.</p>
-              </div>
-              <button type="button" onClick={() => setAddStorageOpen(false)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
-                <XMarkIcon className="h-5 w-5" />
-              </button>
-            </div>
-            <button type="button" onClick={() => setAddStorageOpen(false)} className="mt-5 h-10 w-full rounded-lg bg-slate-900 text-sm font-bold text-white hover:bg-slate-800">
-              Done
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -1565,13 +1571,20 @@ function UploadQueuePanel({
   onDismiss: () => void
 }) {
   const completed = items.every((item) => item.status === 'uploaded' || item.status === 'failed')
+  const failedCount = items.filter((item) => item.status === 'failed').length
+  const uploadedCount = items.filter((item) => item.status === 'uploaded').length
+  const summary = uploading
+    ? `${items.length} ${items.length === 1 ? 'file' : 'files'} in progress`
+    : failedCount > 0
+      ? `${failedCount} ${failedCount === 1 ? 'upload failed' : 'uploads failed'}`
+      : `${uploadedCount} ${uploadedCount === 1 ? 'file uploaded' : 'files uploaded'}`
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase text-slate-400">Upload queue</p>
-          <p className="mt-1 text-sm font-semibold text-slate-700">{items.length} {items.length === 1 ? 'file' : 'files'} selected</p>
+          <p className="text-xs font-bold uppercase text-slate-400">Uploads</p>
+          <p className="mt-1 text-sm font-semibold text-slate-700">{summary}</p>
         </div>
         {completed && !uploading && (
           <button type="button" onClick={onDismiss} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
@@ -1579,11 +1592,11 @@ function UploadQueuePanel({
           </button>
         )}
       </div>
-      <div className="mt-3 divide-y divide-slate-100 rounded-lg border border-slate-200">
+      <div className="mt-3 max-h-64 overflow-y-auto divide-y divide-slate-100 rounded-lg border border-slate-200">
         {items.map((item) => (
           <div key={item.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
-              <p title={item.name} className="truncate text-sm font-bold text-slate-900">{item.name}</p>
+              <p title={item.name} className="text-sm font-bold text-slate-900 [overflow-wrap:anywhere]">{item.name}</p>
               <p className="mt-1 text-xs text-slate-500">{formatBytes(item.size)}</p>
               {item.error && <p className="mt-1 text-xs font-semibold leading-5 text-red-600">{item.error}</p>}
             </div>
@@ -1625,22 +1638,22 @@ function BulkSelectionBar({
   onBulkRemove: () => void
 }) {
   return (
-    <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-sm font-bold text-slate-700">{selectedCount} selected</p>
-      <div className="flex flex-wrap items-center gap-2">
-        <button type="button" onClick={onSelectAll} disabled={working || displayedCount === 0 || allDisplayedSelected} className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Select All</button>
-        <button type="button" onClick={onClear} disabled={working || selectedCount === 0} className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Clear Selection</button>
+    <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+      <p className="shrink-0 text-sm font-bold text-slate-700">{selectedCount} selected</p>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <button type="button" onClick={onSelectAll} disabled={working || displayedCount === 0 || allDisplayedSelected} className="h-9 shrink-0 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Select All</button>
+        <button type="button" onClick={onClear} disabled={working || selectedCount === 0} className="h-9 shrink-0 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Clear Selection</button>
         {selectedCount > 0 && (
           <>
-            <button type="button" onClick={onBulkMove} disabled={working} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="button" onClick={onBulkMove} disabled={working} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
               <FolderIcon className="h-4 w-4" />
               {moving ? 'Moving...' : 'Move Selected'}
             </button>
-            <button type="button" onClick={onBulkDownload} disabled={working} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="button" onClick={onBulkDownload} disabled={working} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
               <ArrowDownTrayIcon className="h-4 w-4" />
               {downloading ? 'Downloading...' : 'Download Selected'}
             </button>
-            <button type="button" onClick={onBulkRemove} disabled={working} className="h-9 rounded-lg border border-red-200 bg-white px-3 text-xs font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="button" onClick={onBulkRemove} disabled={working} className="h-9 shrink-0 rounded-lg border border-red-200 bg-white px-3 text-xs font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50">
               {removing ? 'Removing...' : 'Remove from Vault'}
             </button>
           </>
@@ -1660,7 +1673,7 @@ function FolderBreadcrumbs({
   onOpen: (folder: VaultFolder) => void
 }) {
   return (
-    <nav className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-semibold text-slate-600">
+    <nav aria-label="Vault location" className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-semibold text-slate-600">
       <button type="button" onClick={onRoot} className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-700 hover:bg-slate-50">Vault root</button>
       {breadcrumbs.map((folder) => (
         <span key={folder.id} className="flex min-w-0 items-center gap-2">
@@ -1740,10 +1753,10 @@ function FolderActions({
         <FolderIcon className="h-4 w-4" />
         Move
       </button>
-      <button type="button" onClick={onRename} className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50" title="Rename Folder">
+      <button type="button" onClick={onRename} className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50" title="Rename Folder" aria-label="Rename Folder">
         <PencilSquareIcon className="h-4 w-4" />
       </button>
-      <button type="button" onClick={onDelete} className="rounded-lg border border-red-200 p-1.5 text-red-600 hover:bg-red-50" title="Delete Folder">
+      <button type="button" onClick={onDelete} className="rounded-lg border border-red-200 p-1.5 text-red-600 hover:bg-red-50" title="Delete empty folder" aria-label="Delete empty folder">
         <TrashIcon className="h-4 w-4" />
       </button>
     </div>
@@ -1832,7 +1845,7 @@ function MoveFileModal({
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase text-[#D4900A]">bonUP Vault</p>
             <h2 className="mt-1 text-lg font-bold text-slate-900">Move File</h2>
-            <p title={file.file_name} className="mt-2 truncate text-sm font-semibold text-slate-500">{file.file_name}</p>
+            <p title={file.file_name} className="mt-2 text-sm font-semibold text-slate-500 [overflow-wrap:anywhere]">{file.file_name}</p>
           </div>
           <button type="button" onClick={onClose} disabled={moving} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50">
             <XMarkIcon className="h-5 w-5" />
@@ -2018,14 +2031,14 @@ function FileErrorState({ onRetry }: { onRetry: () => void }) {
   )
 }
 
-function EmptyState({ onUpload }: { onUpload: () => void }) {
+function EmptyState({ inFolder, onUpload }: { inFolder: boolean; onUpload: () => void }) {
   return (
-    <div className="flex min-h-[420px] flex-col items-center justify-center p-8 text-center">
+    <div className="flex min-h-[360px] flex-col items-center justify-center p-8 text-center">
       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 text-slate-500">
         <RectangleStackIcon className="h-8 w-8" />
       </div>
-      <h2 className="mt-5 text-xl font-bold text-slate-900">No files yet</h2>
-      <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">Upload files to keep them organized in your bonUP Vault.</p>
+      <h2 className="mt-5 text-xl font-bold text-slate-900">{inFolder ? 'This folder is empty' : 'Vault is empty'}</h2>
+      <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">{inFolder ? 'Upload files to this folder.' : 'Upload files or create a folder.'}</p>
       <button type="button" onClick={onUpload} className="mt-5 inline-flex h-10 items-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800">
         <PlusIcon className="h-4 w-4" />
         Upload Files
@@ -2034,11 +2047,13 @@ function EmptyState({ onUpload }: { onUpload: () => void }) {
   )
 }
 
-function NoMatchesState() {
+function NoMatchesState({ hasSearch, category }: { hasSearch: boolean; category: Category }) {
+  const message = hasSearch ? 'No files match your search.' : category === 'all' ? 'No files match this view.' : 'No files in this category.'
+
   return (
     <div className="flex min-h-[320px] flex-col items-center justify-center p-8 text-center">
-      <h2 className="text-lg font-bold text-slate-900">No matching files</h2>
-      <p className="mt-2 text-sm text-slate-500">Adjust the category, search, or sort options.</p>
+      <h2 className="text-lg font-bold text-slate-900">No files found</h2>
+      <p className="mt-2 text-sm text-slate-500">{message}</p>
     </div>
   )
 }
@@ -2051,8 +2066,6 @@ function FileTile({
   onToggleSelected,
   onOpen,
   onDownload,
-  onEmailFile,
-  onShareFile,
   onShareLink,
   onRename,
   onMove,
@@ -2065,8 +2078,6 @@ function FileTile({
   onToggleSelected: () => void
   onOpen: () => void
   onDownload: () => void
-  onEmailFile: () => void
-  onShareFile: () => void
   onShareLink: () => void
   onRename: () => void
   onMove: () => void
@@ -2092,7 +2103,7 @@ function FileTile({
             <p className="mt-1 text-xs text-slate-500">{typeLabel(file)} · {formatBytes(file.file_size)} · {formatDate(file.uploaded_at)}</p>
           </div>
         </button>
-        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onEmailFile={onEmailFile} onShareFile={onShareFile} onShareLink={onShareLink} onRename={onRename} onMove={onMove} onRemove={onRemove} />
+        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onShareLink={onShareLink} onRename={onRename} onMove={onMove} onRemove={onRemove} />
       </div>
     )
   }
@@ -2122,7 +2133,7 @@ function FileTile({
         </div>
       </button>
       <div className="border-t border-slate-100 px-3 py-2">
-        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onEmailFile={onEmailFile} onShareFile={onShareFile} onShareLink={onShareLink} onRename={onRename} onMove={onMove} onRemove={onRemove} />
+        <FileActions working={working} onOpen={onOpen} onDownload={onDownload} onShareLink={onShareLink} onRename={onRename} onMove={onMove} onRemove={onRemove} />
       </div>
     </div>
   )
@@ -2132,8 +2143,6 @@ function FileActions({
   working,
   onOpen,
   onDownload,
-  onEmailFile,
-  onShareFile,
   onShareLink,
   onRename,
   onMove,
@@ -2142,38 +2151,28 @@ function FileActions({
   working: boolean
   onOpen: () => void
   onDownload: () => void
-  onEmailFile: () => void
-  onShareFile: () => void
   onShareLink: () => void
   onRename: () => void
   onMove: () => void
   onRemove: () => void
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <button type="button" onClick={onOpen} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">View</button>
-      <button type="button" onClick={onDownload} className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50" title="Download">
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <button type="button" onClick={onOpen} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">Details</button>
+      <button type="button" onClick={onDownload} className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50" title="Download" aria-label="Download">
         <ArrowDownTrayIcon className="h-4 w-4" />
-      </button>
-      <button type="button" onClick={onEmailFile} disabled={working} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Email File">
-        <EnvelopeIcon className="h-4 w-4" />
-        Email File
-      </button>
-      <button type="button" onClick={onShareFile} disabled={working} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Share File">
-        <ShareIcon className="h-4 w-4" />
-        Share File
       </button>
       <button type="button" onClick={onShareLink} disabled={working} className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Share Link">
         Share Link
       </button>
-      <button type="button" onClick={onRename} disabled={working} className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Rename">
+      <button type="button" onClick={onRename} disabled={working} className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Rename" aria-label="Rename">
         <PencilSquareIcon className="h-4 w-4" />
       </button>
-      <button type="button" onClick={onMove} disabled={working} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Move File">
+      <button type="button" onClick={onMove} disabled={working} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Move">
         <FolderIcon className="h-4 w-4" />
         Move
       </button>
-      <button type="button" onClick={onRemove} disabled={working} className="rounded-lg border border-red-200 p-1.5 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50" title="Remove from Vault">
+      <button type="button" onClick={onRemove} disabled={working} className="rounded-lg border border-red-200 p-1.5 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50" title="Remove from Vault" aria-label="Remove from Vault">
         <TrashIcon className="h-4 w-4" />
       </button>
     </div>
@@ -2394,7 +2393,7 @@ function ShareModal({
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase text-[#D4900A]">bonUP Vault</p>
             <h2 className="mt-1 truncate text-lg font-bold text-slate-900">Share Links</h2>
-            <p title={file.file_name} className="mt-2 truncate text-sm font-semibold text-slate-500">{file.file_name}</p>
+            <p title={file.file_name} className="mt-2 text-sm font-semibold text-slate-500 [overflow-wrap:anywhere]">{file.file_name}</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
             <XMarkIcon className="h-5 w-5" />
@@ -2541,7 +2540,7 @@ function FileDetailsModal({
       <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-lg bg-white shadow-xl">
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5">
           <div className="min-w-0">
-            <h2 className="truncate text-lg font-bold text-slate-900">{file.file_name}</h2>
+            <h2 className="text-lg font-bold text-slate-900 [overflow-wrap:anywhere]">{file.file_name}</h2>
             <p className="mt-1 text-sm text-slate-500">{typeLabel(file)} · {formatBytes(file.file_size)} · {formatDate(file.uploaded_at)}</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">

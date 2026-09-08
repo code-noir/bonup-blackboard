@@ -129,6 +129,16 @@ def get_active_canonical_uploads_for_user(user):
     return get_active_uploads_for_user(user).filter(stored_object__isnull=False)
 
 
+def get_upload_for_new_reference(user, upload_id):
+    """Resolve an owned upload for new references or bare-upload processing.
+
+    Canonical uploads require active, visible access to their stored object.
+    Only database-noncanonical uploads retain owner-only legacy eligibility.
+    Existing authorized Tool references must use their domain authorization.
+    """
+    return get_active_uploads_for_user(user).select_related("stored_object").get(pk=upload_id)
+
+
 def get_stored_object_url(stored_object):
     storage = get_storage_backend(stored_object.backend)
     return storage.url(stored_object.object_key)

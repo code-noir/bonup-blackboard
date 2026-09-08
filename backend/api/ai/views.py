@@ -575,19 +575,26 @@ def _get_pdf_bytes(request):
 
     upload_id = request.data.get("upload_id")
     if upload_id:
+        from django.core.exceptions import ValidationError
         from django.core.files.storage import default_storage
+
         from backend.uploads.models import Upload
+        from backend.uploads.services import get_storage_backend, get_upload_for_new_reference
 
         try:
-            upload = Upload.objects.get(pk=upload_id, user=request.user)
-        except Upload.DoesNotExist:
+            upload = get_upload_for_new_reference(request.user, upload_id)
+        except (Upload.DoesNotExist, ValidationError, ValueError, TypeError):
             return None, Response({"error": "Upload not found."}, status=status.HTTP_404_NOT_FOUND)
         if upload.file_type != "pdf":
             return None, Response(
                 {"error": "The referenced upload is not a PDF file."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        f = default_storage.open(upload.storage_key)
+        if upload.stored_object_id is not None:
+            storage = get_storage_backend(upload.stored_object.backend)
+            f = storage.open(upload.stored_object.object_key)
+        else:
+            f = default_storage.open(upload.storage_key)
         try:
             return f.read(), None
         finally:

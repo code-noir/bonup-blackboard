@@ -127,8 +127,8 @@ def get_user_active_storage_usage_bytes(user):
 
 def user_has_canonical_quota_usage_records(user):
     return UserObjectAccess.objects.filter(
+        models.Q(counts_toward_quota=True) | models.Q(removed_at__isnull=False),
         user=user,
-        counts_toward_quota=True,
     ).exists()
 
 

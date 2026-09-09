@@ -115,7 +115,7 @@ def create_managed_upload(
 
 def get_active_uploads_for_user(user):
     return Upload.objects.filter(user=user).filter(
-        models.Q(stored_object__isnull=True)
+        models.Q(stored_object__isnull=True, vault_removed_at__isnull=True)
         | models.Q(
             stored_object__user_accesses__user=user,
             stored_object__user_accesses__is_active=True,
@@ -186,7 +186,7 @@ def archive_user_object_access(
 
 
 def remove_user_object_access(user, stored_object):
-    return archive_user_object_access(user, stored_object, is_active=False)
+    return archive_user_object_access(user, stored_object, is_active=False, counts_toward_quota=False)
 
 
 def reactivate_user_object_access(

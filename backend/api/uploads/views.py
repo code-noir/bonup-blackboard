@@ -16,7 +16,7 @@ from django.core.validators import validate_email
 from django.core.files.base import File
 from django.core.files.storage import default_storage
 from django.db import IntegrityError, transaction
-from django.http import FileResponse
+from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -34,16 +34,15 @@ from backend.emailing.services import (
     EmailServiceUnavailable,
     send_email,
 )
+from backend.uploads.retention import remove_from_vault, create_vault_share
 from backend.uploads.models import Upload, VaultEmailDelivery, VaultFolder, VaultShare
 from backend.uploads.services import (
-    archive_user_object_access,
     create_managed_upload,
     create_stored_object_metadata,
     get_active_uploads_for_user,
     get_active_canonical_uploads_for_user,
     get_storage_backend,
     grant_user_object_access,
-    remove_user_object_access,
     StorageAdmissionRejected,
 )
 
@@ -361,31 +360,8 @@ def _move_upload_to_folder(upload, folder):
 
 
 def _remove_upload_from_vault(user, upload):
-    if upload.stored_object_id:
-        now = timezone.now()
-        VaultShare.objects.filter(
-            owner=user,
-            stored_object=upload.stored_object,
-            revoked_at__isnull=True,
-        ).update(revoked_at=now)
-
-        if upload.contract_documents.exists():
-            archive_user_object_access(
-                user,
-                upload.stored_object,
-                is_active=True,
-                counts_toward_quota=True,
-            )
-            return
-
-        remove_user_object_access(user, upload.stored_object)
-        upload.delete()
-        return
-
-    if upload.storage_key:
-        default_storage.delete(upload.storage_key)
-
-    upload.delete()
+    # Resolve eligibility again inside the shared, locked transaction.
+    remove_from_vault(user, upload.pk)
 
 
 def _validate_file_name(value):
@@ -528,7 +504,7 @@ class UploadsViewSet(DeliveryPrivacyMixin, ViewSet):
         folder = get_object_or_404(VaultFolder, pk=folder_id, user=request.user)
 
         if request.method == "DELETE":
-            if folder.children.exists() or folder.uploads.exists():
+            if folder.children.exists() or _active_uploads_for_user(request.user).filter(vault_folder=folder).exists():
                 return _validation_error("folder_not_empty", "Only empty folders can be deleted.", status_code=status.HTTP_409_CONFLICT)
             folder.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
@@ -566,17 +542,14 @@ class UploadsViewSet(DeliveryPrivacyMixin, ViewSet):
         if error is not None:
             return error
 
-        accessible_uploads = {
-            str(upload.id): upload
-            for upload in _active_uploads_for_user(request.user).filter(pk__in=normalized_ids)
-        }
         results = []
         removed_count = 0
         failed_count = 0
 
         for upload_id in normalized_ids:
-            upload = accessible_uploads.get(upload_id)
-            if upload is None:
+            try:
+                remove_from_vault(request.user, upload_id)
+            except Upload.DoesNotExist:
                 failed_count += 1
                 results.append({
                     "upload_id": upload_id,
@@ -585,7 +558,6 @@ class UploadsViewSet(DeliveryPrivacyMixin, ViewSet):
                 })
                 continue
 
-            _remove_upload_from_vault(request.user, upload)
             removed_count += 1
             results.append({
                 "upload_id": upload_id,
@@ -847,13 +819,14 @@ class UploadsViewSet(DeliveryPrivacyMixin, ViewSet):
         for _ in range(5):
             token = _new_share_token()
             try:
-                share = VaultShare.objects.create(
-                    owner=request.user,
-                    stored_object=upload.stored_object,
+                share = create_vault_share(
+                    request.user, upload.pk,
                     token_hash=_token_hash(token),
                     expires_at=_share_expires_at(expiration),
                 )
                 return Response(_serialize_share(share, token, request), status=status.HTTP_201_CREATED)
+            except Upload.DoesNotExist:
+                raise Http404("File not found.")
             except IntegrityError:
                 continue
         return Response({"error": "Could not create share."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -943,5 +916,8 @@ class UploadsViewSet(DeliveryPrivacyMixin, ViewSet):
 
     def destroy(self, request, pk=None):
         upload = get_object_or_404(_active_uploads_for_user(request.user), pk=pk)
-        _remove_upload_from_vault(request.user, upload)
+        try:
+            _remove_upload_from_vault(request.user, upload)
+        except Upload.DoesNotExist:
+            raise Http404("File not found.")
         return Response(status=status.HTTP_204_NO_CONTENT)

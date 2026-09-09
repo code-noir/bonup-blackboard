@@ -70,6 +70,7 @@ class Upload(models.Model):
     is_prep_material = models.BooleanField(default=False)
     is_draft_document = models.BooleanField(default=False)
     uploaded_at = models.DateTimeField(auto_now_add=True)
+    vault_removed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-uploaded_at"]

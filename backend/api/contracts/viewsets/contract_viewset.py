@@ -10,6 +10,7 @@ from rest_framework.viewsets import ViewSet
 
 from backend.billing.gates import can_create_contract, consume_trial_contract, increment_contracts_used
 from backend.contracts.models import Contract, ContractVersion
+from backend.documents.services import delete_contracts
 from backend.contract_pro.models import ContractProOversightEvent
 from backend.contract_pro.services import ContractProEditingService, ContractProOversightService
 
@@ -200,5 +201,5 @@ class ContractViewSet(ViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        contract.delete()
+        delete_contracts([contract.pk], actor=request.user, initiator_only=True)
         return Response(status=status.HTTP_204_NO_CONTENT)

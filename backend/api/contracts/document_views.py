@@ -2,6 +2,7 @@
 
 from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
+from django.http import Http404
 from rest_framework import status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
@@ -10,8 +11,9 @@ from rest_framework.views import APIView
 from backend.api.operator.permissions import file_content_prohibited, require_file_content_access
 from backend.contracts.models import Contract
 from backend.documents.models import ContractDocument
+from backend.documents.services import attach_upload, detach_document
 from backend.uploads.models import Upload
-from backend.uploads.services import StorageAdmissionRejected, create_managed_upload, get_upload_for_new_reference
+from backend.uploads.services import StorageAdmissionRejected, create_managed_upload
 from .permissions import contract_party_response, is_party
 
 from backend.uploads.delivery import deliver_upload, document_delivery_url, DeliveryPrivacyMixin
@@ -119,24 +121,22 @@ class ContractDocumentListCreateAPIView(APIView):
             except StorageAdmissionRejected as exc:
                 return _storage_capacity_response(exc.check)
         else:
-            try:
-                upload = get_upload_for_new_reference(request.user, upload_id)
-            except (Upload.DoesNotExist, ValidationError, ValueError, TypeError):
-                return Response({"error": "Upload not found."}, status=status.HTTP_404_NOT_FOUND)
+            upload = None
 
         description = request.data.get("description", "")
         is_proof = request.data.get("is_proof", False)
         if isinstance(is_proof, str):
             is_proof = is_proof.lower() in ("true", "1", "yes")
 
-        doc = ContractDocument.objects.create(
-            contract=contract,
-            upload=upload,
-            attached_by=request.user,
-            title=title,
-            description=description,
-            is_proof=bool(is_proof),
-        )
+        try:
+            doc = attach_upload(
+                request.user, contract.pk, upload.pk if upload is not None else upload_id,
+                title=title, description=description, is_proof=bool(is_proof),
+            )
+        except (Upload.DoesNotExist, ValidationError, ValueError, TypeError):
+            return Response({"error": "Upload not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Contract.DoesNotExist:
+            raise Http404("Contract not found.")
 
         return Response(_serialize(doc, request), status=status.HTTP_201_CREATED)
 
@@ -151,8 +151,10 @@ class ContractDocumentDeleteAPIView(APIView):
         if not is_party(request.user, contract):
             return contract_party_response()
 
-        doc = get_object_or_404(ContractDocument, pk=doc_id, contract=contract)
-        doc.delete()
+        try:
+            detach_document(request.user, contract.pk, doc_id)
+        except (Contract.DoesNotExist, ContractDocument.DoesNotExist):
+            raise Http404("Document not found.")
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

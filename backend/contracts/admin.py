@@ -2,7 +2,17 @@
 from django.contrib import admin
 from .models import Contract, ContractExtractionCandidate, ContractExtractionRun, ContractObligation, Obligation
 
-admin.site.register(Contract)
+from backend.documents.services import delete_contracts
+
+
+@admin.register(Contract)
+class ContractAdmin(admin.ModelAdmin):
+    def delete_model(self, request, obj):
+        delete_contracts([obj.pk])
+
+    def delete_queryset(self, request, queryset):
+        delete_contracts(list(queryset.values_list("pk", flat=True)))
+
 admin.site.register(Obligation)
 admin.site.register(ContractObligation)
 

@@ -2477,17 +2477,19 @@ class UploadDeleteTests(TestCase):
         )
 
     @patch("backend.api.uploads.views.default_storage")
-    def test_delete_removes_record(self, mock_storage):
+    def test_delete_legacy_retains_record_with_removal_marker(self, mock_storage):
         upload = self._make_upload()
         r = self.client.delete(f"{UPLOAD_URL}{upload.id}/")
         self.assertEqual(r.status_code, 204)
-        self.assertFalse(Upload.objects.filter(pk=upload.id).exists())
+        upload.refresh_from_db()
+        self.assertIsNotNone(upload.vault_removed_at)
+        mock_storage.delete.assert_not_called()
 
     @patch("backend.api.uploads.views.default_storage")
-    def test_delete_calls_storage_delete(self, mock_storage):
+    def test_delete_legacy_never_calls_storage_delete(self, mock_storage):
         upload = self._make_upload()
         self.client.delete(f"{UPLOAD_URL}{upload.id}/")
-        mock_storage.delete.assert_called_once_with(upload.storage_key)
+        mock_storage.delete.assert_not_called()
 
     @patch("backend.api.uploads.views.default_storage")
     def test_delete_canonical_upload_removes_access_without_physical_delete(self, mock_storage):

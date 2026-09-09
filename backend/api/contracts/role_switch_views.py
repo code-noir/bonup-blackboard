@@ -10,6 +10,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from backend.documents.services import delete_contracts
 from backend.contracts.models import Contract, ContractRoleSwitchRequest
 from backend.activity.log import log_activity
 
@@ -177,7 +178,7 @@ class ContractRoleSwitchConfirmAPIView(APIView):
         with transaction.atomic():
             # Delete original contract — cascades to versions, obligations,
             # payments, role switch requests (including switch_request itself).
-            contract.delete()
+            delete_contracts([contract.pk], actor=request.user, initiator_only=True)
 
             new_contract = Contract.objects.create(
                 initiator=new_initiator,

@@ -17,8 +17,9 @@ from backend.documents.models import ContractDocument
 from backend.notifications.models import Notification
 from backend.payments.models import Payment
 from backend.sessions.models import LiveSession
+from backend.uploads.delivery import upload_delivery_url, document_delivery_url
 from backend.uploads.models import Upload
-from backend.uploads.services import get_active_uploads_for_user, get_upload_url
+from backend.uploads.services import get_active_uploads_for_user
 from backend.users.models import BonUserProfile
 from backend.sol.models import Sol, SolMember
 
@@ -121,7 +122,7 @@ def _serialize_document(d, request):
         "title": d.title,
         "description": d.description,
         "file_name": d.upload.file_name,
-        "file_url": None if file_content_prohibited(request) else get_upload_url(d.upload),
+        "file_url": None if file_content_prohibited(request) else document_delivery_url(d),
         "is_proof": d.is_proof,
         "attached_at": d.attached_at,
     }
@@ -132,7 +133,7 @@ def _serialize_upload(u, request):
         "id": str(u.id),
         "file_name": u.file_name,
         "file_type": u.file_type,
-        "file_url": None if file_content_prohibited(request) else get_upload_url(u),
+        "file_url": None if file_content_prohibited(request) else upload_delivery_url(u),
         "file_size": u.file_size,
         "uploaded_at": u.uploaded_at,
     }

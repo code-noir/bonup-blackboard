@@ -14,11 +14,13 @@ export const tokenStorage = {
   set: (access: string, refresh: string) => {
     localStorage.setItem(TOKEN_KEY, access)
     localStorage.setItem(REFRESH_KEY, refresh)
+    window.dispatchEvent(new Event('bonup-auth-context-change'))
   },
   setAccess: (access: string) => localStorage.setItem(TOKEN_KEY, access),
   clear: () => {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(REFRESH_KEY)
+    window.dispatchEvent(new Event('bonup-auth-context-change'))
   },
 }
 
@@ -60,11 +62,13 @@ export const impersonationTokenStorage = {
     localStorage.setItem(IMPERSONATION_ACCESS_KEY, access)
     localStorage.setItem(IMPERSONATION_SESSION_KEY, sessionId)
     localStorage.setItem(IMPERSONATION_USER_KEY, JSON.stringify(user))
+    window.dispatchEvent(new Event('bonup-auth-context-change'))
   },
   clear: () => {
     localStorage.removeItem(IMPERSONATION_ACCESS_KEY)
     localStorage.removeItem(IMPERSONATION_SESSION_KEY)
     localStorage.removeItem(IMPERSONATION_USER_KEY)
+    window.dispatchEvent(new Event('bonup-auth-context-change'))
   },
 }
 
@@ -141,6 +145,7 @@ api.interceptors.response.use(
       refreshQueue.forEach((cb) => cb(data.access))
       refreshQueue = []
       original.headers.Authorization = `Bearer ${data.access}`
+      if (original.url?.includes('/delivery/')) return api(original)
       const { signal: _dropped, ...retryConfig } = original
       return api(retryConfig)
     } catch {

@@ -7,12 +7,14 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from backend.api.operator.permissions import file_content_prohibited
+from backend.api.operator.permissions import file_content_prohibited, require_file_content_access
 from backend.contracts.models import Contract
 from backend.documents.models import ContractDocument
 from backend.uploads.models import Upload
-from backend.uploads.services import StorageAdmissionRejected, create_managed_upload, get_upload_for_new_reference, get_upload_url
+from backend.uploads.services import StorageAdmissionRejected, create_managed_upload, get_upload_for_new_reference
 from .permissions import contract_party_response, is_party
+
+from backend.uploads.delivery import deliver_upload, document_delivery_url, DeliveryPrivacyMixin
 
 VALID_CONTRACT_DOCUMENT_FILE_TYPES = {choice[0] for choice in Upload.FILE_TYPE_CHOICES}
 
@@ -58,7 +60,7 @@ def _serialize(doc, request):
         "id": str(doc.id),
         "contract_id": str(doc.contract_id),
         "upload_id": str(doc.upload_id),
-        "file_url": None if file_content_prohibited(request) else get_upload_url(doc.upload),
+        "file_url": None if file_content_prohibited(request) else document_delivery_url(doc),
         "file_name": doc.upload.file_name,
         "file_type": doc.upload.file_type,
         "file_size": doc.upload.file_size,
@@ -152,3 +154,16 @@ class ContractDocumentDeleteAPIView(APIView):
         doc = get_object_or_404(ContractDocument, pk=doc_id, contract=contract)
         doc.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ContractDocumentDeliveryAPIView(DeliveryPrivacyMixin, APIView):
+    def get(self, request, contract_id, doc_id):
+        require_file_content_access(request)
+        contract = get_object_or_404(Contract, pk=contract_id)
+        if not is_party(request.user, contract):
+            return contract_party_response()
+        document = get_object_or_404(
+            ContractDocument.objects.select_related("upload__stored_object"),
+            pk=doc_id, contract=contract,
+        )
+        return deliver_upload(request, document.upload)

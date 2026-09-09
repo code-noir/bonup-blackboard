@@ -16,7 +16,7 @@ from django.core.validators import validate_email
 from django.core.files.base import File
 from django.core.files.storage import default_storage
 from django.db import IntegrityError, transaction
-from django.http import FileResponse, HttpResponseRedirect
+from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -42,12 +42,12 @@ from backend.uploads.services import (
     get_active_uploads_for_user,
     get_active_canonical_uploads_for_user,
     get_storage_backend,
-    get_stored_object_url,
-    get_upload_url,
     grant_user_object_access,
     remove_user_object_access,
     StorageAdmissionRejected,
 )
+
+from backend.uploads.delivery import (deliver_upload, deliver_stored_object, upload_delivery_url, privacy_headers, DeliveryPrivacyMixin)
 
 VALID_FILE_TYPES = {"pdf", "image", "video", "audio", "slides", "document", "other"}
 VALID_SHARE_EXPIRATIONS = {
@@ -107,7 +107,7 @@ def _active_canonical_uploads_for_user(user):
 def _serialize(upload, request):
     return {
         "id": str(upload.id),
-        "file_url": None if file_content_prohibited(request) else get_upload_url(upload),
+        "file_url": None if file_content_prohibited(request) else upload_delivery_url(upload),
         "file_name": upload.file_name,
         "file_type": upload.file_type,
         "content_type": upload.stored_object.content_type if upload.stored_object_id else "",
@@ -429,7 +429,7 @@ def _serialize_email_delivery(delivery, *, idempotent=False):
     }
 
 
-class UploadsViewSet(ViewSet):
+class UploadsViewSet(DeliveryPrivacyMixin, ViewSet):
 
     def list(self, request):
         qs = _active_uploads_for_user(request.user)
@@ -714,15 +714,8 @@ class UploadsViewSet(ViewSet):
     @action(detail=True, methods=["get"], url_path="delivery")
     def delivery(self, request, pk=None, format=None):
         require_file_content_access(request)
-        upload = get_object_or_404(_active_canonical_uploads_for_user(request.user), pk=pk)
-        storage = get_storage_backend(upload.stored_object.backend)
-        content_type = upload.stored_object.content_type or "application/octet-stream"
-        return FileResponse(
-            storage.open(upload.stored_object.object_key, "rb"),
-            as_attachment=True,
-            filename=upload.file_name,
-            content_type=content_type,
-        )
+        upload = get_object_or_404(_active_uploads_for_user(request.user).select_related("stored_object"), pk=pk)
+        return deliver_upload(request, upload)
 
     @action(detail=True, methods=["post"], url_path="email")
     def email_file(self, request, pk=None):
@@ -897,7 +890,6 @@ class UploadsViewSet(ViewSet):
             saved_key = storage.save(storage_key, File(source_file, name=duplicate_name))
 
         try:
-            file_url = storage.url(saved_key)
             with transaction.atomic():
                 stored_object = create_stored_object_metadata(
                     backend=source.stored_object.backend,
@@ -914,7 +906,7 @@ class UploadsViewSet(ViewSet):
                 )
                 upload = Upload.objects.create(
                     user=request.user,
-                    file_url=file_url,
+                    file_url="",
                     file_name=duplicate_name,
                     file_type=source.file_type,
                     file_size=incoming_size,
@@ -937,16 +929,17 @@ class UploadsViewSet(ViewSet):
         require_file_content_access(request)
         share = _resolve_valid_share(token or "")
         if share is None:
-            return Response(SHARE_UNAVAILABLE_RESPONSE, status=status.HTTP_404_NOT_FOUND)
-        return Response(_serialize_public_share(share, token or ""))
+            return privacy_headers(Response(SHARE_UNAVAILABLE_RESPONSE, status=status.HTTP_404_NOT_FOUND), public=True)
+        return privacy_headers(Response(_serialize_public_share(share, token or "")), public=True)
 
     @action(detail=False, methods=["get"], permission_classes=[AllowAny], url_path=r"shares/(?P<token>[^/.]+)/delivery")
     def public_share_delivery(self, request, token=None, format=None):
         require_file_content_access(request)
         share = _resolve_valid_share(token or "")
         if share is None:
-            return Response(SHARE_UNAVAILABLE_RESPONSE, status=status.HTTP_404_NOT_FOUND)
-        return HttpResponseRedirect(get_stored_object_url(share.stored_object))
+            return privacy_headers(Response(SHARE_UNAVAILABLE_RESPONSE, status=status.HTTP_404_NOT_FOUND), public=True)
+        upload = _owner_upload_for_share(share)
+        return deliver_stored_object(request, share.stored_object, filename=upload.file_name if upload else "Shared file", public=True)
 
     def destroy(self, request, pk=None):
         upload = get_object_or_404(_active_uploads_for_user(request.user), pk=pk)

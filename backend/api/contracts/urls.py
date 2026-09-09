@@ -42,6 +42,7 @@ from .approval_views import (
 from .document_views import (
     ContractDocumentListCreateAPIView,
     ContractDocumentDeleteAPIView,
+    ContractDocumentDeliveryAPIView,
 )
 
 router = DefaultRouter()
@@ -147,6 +148,11 @@ urlpatterns = [
         "<uuid:contract_id>/documents/",
         ContractDocumentListCreateAPIView.as_view(),
         name="contract-documents",
+    ),
+    path(
+        "<uuid:contract_id>/documents/<uuid:doc_id>/delivery/",
+        ContractDocumentDeliveryAPIView.as_view(),
+        name="contract-document-delivery",
     ),
     path(
         "<uuid:contract_id>/documents/<uuid:doc_id>/",

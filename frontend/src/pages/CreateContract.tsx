@@ -17,6 +17,7 @@
 // Reference: EDITOR_PROTECTION.md
 // ============================================================
 
+import { usePrivateDownload } from '@/components/files/PrivateFile'
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { MagnifyingGlassIcon, PlusIcon, RectangleStackIcon, XMarkIcon } from '@heroicons/react/24/outline'
@@ -563,6 +564,7 @@ function PartySearchBlock({
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function CreateContract() {
+  const attachmentDownload = usePrivateDownload()
   const [activeTool, setActiveTool] = useState<string | null>(null)
   const [templateDropdownOpen, setTemplateDropdownOpen] = useState(false)
   const [rightDrawerOpen, setRightDrawerOpen] = useState(true)
@@ -3749,7 +3751,7 @@ export default function CreateContract() {
                           return
                         }
                         setAttachError('')
-                        window.open(file.fileUrl, '_blank', 'noopener,noreferrer')
+                        void attachmentDownload.download(file.fileUrl, file.name)
                       }
 
                       async function deleteAttachment(file: AttachmentFile) {
@@ -3850,9 +3852,9 @@ export default function CreateContract() {
                           />
 
                           {/* Drop zone */}
-                          {attachError && (
+                          {(attachError || attachmentDownload.error) && (
                             <p style={{ fontSize: 12, color: '#FCA5A5', margin: '0 0 10px', lineHeight: 1.4 }}>
-                              {attachError}
+                              {attachError || attachmentDownload.error}
                             </p>
                           )}
                           <div
@@ -3976,9 +3978,9 @@ export default function CreateContract() {
                                   <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
                                     <button
                                       type="button"
-                                      title="View / Download"
+                                      title={attachmentDownload.loading ? "Loading…" : "Download / Open"}
                                       onClick={() => viewAttachment(file)}
-                                      disabled={!file.fileUrl}
+                                      disabled={!file.fileUrl || attachmentDownload.loading}
                                       style={{
                                         background: 'transparent', border: 'none',
                                         cursor: file.fileUrl ? 'pointer' : 'not-allowed', fontSize: 14, padding: 4,

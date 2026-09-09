@@ -125,7 +125,7 @@ class UploadCreateTests(TestCase):
             format="multipart",
         )
         self.assertEqual(r.status_code, 201)
-        self.assertEqual(r.data["file_url"], _MOCK_FILE_URL)
+        self.assertEqual(r.data["file_url"], f"/api/uploads/{r.data['id']}/delivery/")
         self.assertEqual(r.data["file_name"], "test.pdf")
         self.assertEqual(r.data["file_type"], "pdf")
         self.assertFalse(r.data["is_prep_material"])
@@ -288,8 +288,8 @@ class UploadCreateTests(TestCase):
         r = self.client.post(UPLOAD_URL, {"file": _pdf(), "file_type": "pdf"}, format="multipart")
 
         self.assertEqual(r.status_code, 201)
-        self.assertEqual(r.data["file_url"], "https://current-provider.example/dynamic/file.pdf")
-        self.assertEqual(self.mock_service_storage.url.call_count, 2)
+        self.assertEqual(r.data["file_url"], f"/api/uploads/{r.data['id']}/delivery/")
+        self.mock_service_storage.url.assert_not_called()
 
     def test_database_failure_after_storage_save_cleans_up_new_object(self):
         self.mock_service_storage.save.return_value = _MOCK_KEY
@@ -396,7 +396,7 @@ class UploadListTests(TestCase):
             self.assertIn(field, item, f"Missing field: {field}")
 
     @patch("backend.uploads.services.default_storage")
-    def test_list_uses_dynamic_url_when_storage_key_exists(self, mock_storage):
+    def test_list_uses_bonup_delivery_route_when_storage_key_exists(self, mock_storage):
         mock_storage.url.return_value = "https://current-provider.example/uploads/example/file.pdf"
         self._make_upload(
             storage_key="uploads/example/file.pdf",
@@ -408,12 +408,12 @@ class UploadListTests(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(
             r.data[0]["file_url"],
-            "https://current-provider.example/uploads/example/file.pdf",
+            f"/api/uploads/{r.data[0]['id']}/delivery/",
         )
-        mock_storage.url.assert_called_once_with("uploads/example/file.pdf")
+        mock_storage.url.assert_not_called()
 
     @patch("backend.uploads.services.default_storage")
-    def test_list_falls_back_to_legacy_file_url_without_storage_key(self, mock_storage):
+    def test_list_never_exposes_legacy_file_url_without_storage_key(self, mock_storage):
         self._make_upload(
             storage_key="",
             file_url="https://legacy-provider.example/file.pdf",
@@ -422,7 +422,7 @@ class UploadListTests(TestCase):
         r = self.client.get(UPLOAD_URL)
 
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.data[0]["file_url"], "https://legacy-provider.example/file.pdf")
+        self.assertEqual(r.data[0]["file_url"], f"/api/uploads/{r.data[0]['id']}/delivery/")
         mock_storage.url.assert_not_called()
 
     def test_list_includes_active_canonical_uploads_for_user(self):
@@ -449,7 +449,7 @@ class UploadListTests(TestCase):
         self.assertEqual([item["id"] for item in r.data], [str(canonical.id)])
         self.assertEqual(r.data[0]["file_name"], canonical.file_name)
         self.assertNotIn(str(legacy.id), [item["id"] for item in r.data])
-        mock_storage.url.assert_called_once_with("uploads/list/canonical.pdf")
+        mock_storage.url.assert_not_called()
 
     def test_list_excludes_another_users_canonical_upload(self):
         _managed_upload(self.other, key="uploads/list/other.pdf")
@@ -1193,14 +1193,16 @@ class UploadShareTests(TestCase):
     @patch("backend.uploads.services.default_storage")
     def test_controlled_delivery_requires_valid_share(self, mock_storage):
         _, token = self._create_share()
-        mock_storage.url.return_value = "https://provider.example/temp-signed-url"
+        mock_storage.size.return_value = 7
+        mock_storage.open.return_value = ContentFile(b"fixture")
 
         valid = APIClient().get(f"{UPLOAD_URL}shares/{token}/delivery/")
         invalid = APIClient().get(f"{UPLOAD_URL}shares/not-real/delivery/")
 
-        self.assertEqual(valid.status_code, 302)
-        self.assertEqual(valid["Location"], "https://provider.example/temp-signed-url")
-        mock_storage.url.assert_called_once_with(self.upload.stored_object.object_key)
+        self.assertEqual(valid.status_code, 200)
+        self.assertEqual(b"".join(valid.streaming_content), b"fixture")
+        self.assertNotIn("Location", valid)
+        mock_storage.url.assert_not_called()
         self.assertEqual(invalid.status_code, 404)
         self.assertEqual(invalid.data, {"detail": "Share is unavailable."})
 
@@ -1354,6 +1356,7 @@ class UploadShareFileDeliveryTests(TestCase):
         before_access = UserObjectAccess.objects.count()
 
         with patch("backend.uploads.services.default_storage") as mock_storage:
+            mock_storage.size.return_value = len(b"%PDF-1.4 real bytes")
             mock_storage.open.return_value = ContentFile(b"%PDF-1.4 real bytes", name="contract.pdf")
 
             response = self.client.get(f"{UPLOAD_URL}{self.upload.id}/delivery/")
@@ -1401,6 +1404,7 @@ class UploadShareFileDeliveryTests(TestCase):
 
     def test_delivery_response_does_not_expose_provider_internals(self):
         with patch("backend.uploads.services.default_storage") as mock_storage:
+            mock_storage.size.return_value = 5
             mock_storage.open.return_value = ContentFile(b"bytes", name="contract.pdf")
             response = self.client.get(f"{UPLOAD_URL}{self.upload.id}/delivery/")
 

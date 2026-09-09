@@ -306,9 +306,9 @@ class ListDocumentsTests(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(
             r.data[0]["file_url"],
-            "https://current-provider.example/uploads/example/file.pdf",
+            f"/api/contracts/{self.contract.pk}/documents/{r.data[0]['id']}/delivery/",
         )
-        mock_storage.url.assert_called_once_with("uploads/example/file.pdf")
+        mock_storage.url.assert_not_called()
 
     def test_list_nonexistent_contract_returns_404(self):
         r = self.client.get(doc_url(uuid.uuid4()))

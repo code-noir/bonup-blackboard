@@ -100,7 +100,7 @@ export default function VaultShare() {
                   <h2 className="truncate text-xl font-bold text-slate-900">{file.file_name}</h2>
                   <p className="mt-1 text-sm text-slate-500">{file.content_type || file.file_type} · {formatBytes(file.file_size)}</p>
                 </div>
-                <a href={file.delivery_url} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800">
+                <a href={`${file.delivery_url}?download=1`} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800">
                   <ArrowDownTrayIcon className="h-4 w-4" />
                   Download
                 </a>

@@ -1,8 +1,9 @@
 from django.urls import path
 
-from .views import AgreementPerformanceListAPIView, LifecycleAgreementAPIView, LifecycleChangeProposalAPIView, LifecycleChangeProposalDecisionAPIView, LifecycleChangeProposalDetailAPIView, LifecycleChangeProposalMessageAPIView, LifecycleItemActionAPIView, LifecycleItemAttachmentAPIView, LifecycleItemCreateAPIView, LifecycleItemDetailAPIView, LifecycleItemMessageAPIView, LifecycleItemResponseAPIView, LifecycleOperationalObligationListAPIView, LifecycleReadyForPerformanceAPIView
+from .views import LifecycleAttachmentDeliveryAPIView, AgreementPerformanceListAPIView, LifecycleAgreementAPIView, LifecycleChangeProposalAPIView, LifecycleChangeProposalDecisionAPIView, LifecycleChangeProposalDetailAPIView, LifecycleChangeProposalMessageAPIView, LifecycleItemActionAPIView, LifecycleItemAttachmentAPIView, LifecycleItemCreateAPIView, LifecycleItemDetailAPIView, LifecycleItemMessageAPIView, LifecycleItemResponseAPIView, LifecycleOperationalObligationListAPIView, LifecycleReadyForPerformanceAPIView
 
 urlpatterns = [
+    path("items/<uuid:item_id>/attachments/<uuid:attachment_id>/delivery/", LifecycleAttachmentDeliveryAPIView.as_view(), name="lifecycle-attachment-delivery"),
     path("", LifecycleAgreementAPIView.as_view(), name="lifecycle-agreement"),
     path("performance/", AgreementPerformanceListAPIView.as_view(), name="agreement-performance-list"),
     path("operational-obligations/", LifecycleOperationalObligationListAPIView.as_view(), name="lifecycle-operational-obligations"),

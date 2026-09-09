@@ -1,3 +1,4 @@
+import { PrivateFilePreview, usePrivateDownload } from '@/components/files/PrivateFile'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowDownTrayIcon,
@@ -903,16 +904,13 @@ export default function Vault() {
     }
   }
 
+  const fileDownload = usePrivateDownload()
   function handleDownload(file: VaultFile) {
-    if (!file.file_url) return
-    const link = document.createElement('a')
-    link.href = file.file_url
-    link.download = file.file_name
-    link.rel = 'noopener noreferrer'
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
+    if (file.file_url) void fileDownload.download(file.file_url, file.file_name)
   }
+  useEffect(() => {
+    if (fileDownload.error) notify.error(fileDownload.error)
+  }, [fileDownload.error])
 
   function openEmailFile(file: VaultFile) {
     setEmailFile(file)
@@ -2118,7 +2116,7 @@ function FileTile({
       <button type="button" onClick={onOpen} className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">
         <div className="relative flex aspect-[4/3] items-center justify-center bg-slate-50">
           {isImage ? (
-            <img src={file.file_url || ''} alt="" className="h-full w-full object-cover" />
+            <PrivateFilePreview path={file.file_url || ''} thumbnail className="h-full w-full object-cover" />
           ) : (
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm">
               <Icon className="h-8 w-8" />
@@ -2560,10 +2558,7 @@ function FileDetailsModal({
         </div>
         <div className="grid max-h-[calc(90vh-78px)] overflow-y-auto lg:grid-cols-[1.5fr_1fr]">
           <div className="flex min-h-[320px] items-center justify-center bg-slate-50 p-5">
-            {category === 'images' && file.file_url ? <img src={file.file_url} alt="" className="max-h-[560px] max-w-full rounded-lg object-contain" /> : null}
-            {category === 'videos' && file.file_url ? <video src={file.file_url} controls className="max-h-[560px] max-w-full rounded-lg" /> : null}
-            {category === 'audio' && file.file_url ? <audio src={file.file_url} controls className="w-full max-w-md" /> : null}
-            {category === 'documents' && file.file_url ? <iframe src={file.file_url} title={file.file_name} className="h-[560px] w-full rounded-lg border border-slate-200 bg-white" /> : null}
+            {file.file_url && <PrivateFilePreview path={file.file_url} title={file.file_name} className="max-h-[560px] max-w-full rounded-lg object-contain" />}
             {(!file.file_url || category === 'other') && (
               <div className="text-center text-slate-500">
                 <Icon className="mx-auto h-14 w-14" />

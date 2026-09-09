@@ -198,9 +198,9 @@ class GlobalSearchTests(TestCase):
         self.assertEqual(len(r.data["uploads"]), 1)
         self.assertEqual(
             r.data["uploads"][0]["file_url"],
-            "https://current-provider.example/uploads/example/file.pdf",
+            f"/api/uploads/{upload.pk}/delivery/",
         )
-        mock_storage.url.assert_called_once_with("uploads/example/file.pdf")
+        mock_storage.url.assert_not_called()
 
     def test_global_excludes_others_upload(self):
         make_upload(self.other, file_name="secretfile.pdf")
@@ -221,7 +221,7 @@ class GlobalSearchTests(TestCase):
         self.assertEqual(r.data["uploads"], [])
         self.assertEqual(len(r.data["documents"]), 1)
         self.assertEqual(r.data["documents"][0]["title"], "Hidden Contract Doc")
-        mock_storage.url.assert_called_once_with(upload.stored_object.object_key)
+        mock_storage.url.assert_not_called()
 
     # notifications
     def test_global_finds_own_notification(self):
@@ -675,9 +675,9 @@ class DocumentSearchTests(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(
             r.data[0]["file_url"],
-            "https://current-provider.example/uploads/example/file.pdf",
+            f"/api/contracts/{self.contract.pk}/documents/{r.data[0]['id']}/delivery/",
         )
-        mock_storage.url.assert_called_once_with("uploads/example/file.pdf")
+        mock_storage.url.assert_not_called()
 
     def test_unauthenticated_returns_401(self):
         from rest_framework.test import APIClient

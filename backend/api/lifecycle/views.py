@@ -7,7 +7,8 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from backend.api.operator.permissions import file_content_prohibited
+from backend.uploads.delivery import attachment_delivery_url, deliver_file, DeliveryPrivacyMixin
+from backend.api.operator.permissions import file_content_prohibited, require_file_content_access
 from backend.api.contracts.permissions import contract_party_response, is_party
 from backend.contracts.models import (
     Contract,
@@ -80,12 +81,7 @@ def _party_summary(user):
 
 
 def _attachment_summary(attachment, request):
-    file_url = ""
-    if not file_content_prohibited(request) and attachment.file:
-        try:
-            file_url = attachment.file.url
-        except ValueError:
-            file_url = ""
+    file_url = "" if file_content_prohibited(request) or not attachment.file else attachment_delivery_url(attachment)
     return {
         "id": str(attachment.id),
         "lifecycle_item_id": str(attachment.lifecycle_item_id),
@@ -1234,3 +1230,18 @@ class LifecycleItemActionAPIView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(_serialize_lifecycle_item(item, user=request.user), status=status.HTTP_200_OK)
+
+
+class LifecycleAttachmentDeliveryAPIView(DeliveryPrivacyMixin, LifecycleItemAttachmentAPIView):
+    http_method_names = ["get", "head", "options"]
+
+    def get(self, request, item_id, attachment_id):
+        require_file_content_access(request)
+        item, error = self._get_item(request, item_id)
+        if error is not None:
+            return error
+        attachment = get_object_or_404(item.attachments, pk=attachment_id,
+                                      contract=item.lifecycle_agreement.contract,
+                                      lifecycle_agreement=item.lifecycle_agreement)
+        return deliver_file(request, storage=attachment.file.storage, key=attachment.file.name,
+                            filename=attachment.original_filename, content_type=attachment.content_type)

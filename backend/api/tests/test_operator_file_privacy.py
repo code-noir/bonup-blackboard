@@ -81,7 +81,7 @@ class OperatorFilePrivacyTests(TestCase):
             storage.open.assert_not_called()
             storage.url.assert_not_called()
 
-    def test_prep_urls_suppressed_and_customer_unchanged(self):
+    def test_prep_url_only_documents_preserve_metadata_without_urls(self):
         prep = PrepSession.objects.create(owner=self.customer, title="Fixture prep")
         PrepDocument.objects.create(prep_session=prep, title="Fixture", file_type="pdf",
                                     file_url="https://example.invalid/prep")
@@ -90,7 +90,7 @@ class OperatorFilePrivacyTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["title"], prep.title)
         self.assertIsNone(response.data["documents"][0]["file_url"])
-        self.assertEqual(self.normal.get(path).data["documents"][0]["file_url"], "https://example.invalid/prep")
+        self.assertIsNone(self.normal.get(path).data["documents"][0]["file_url"])
 
     def test_lifecycle_urls_suppressed_before_url_generation(self):
         version = make_version(self.contract, self.customer, status="signed")
@@ -105,8 +105,9 @@ class OperatorFilePrivacyTests(TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.data["results"][0]["file_url"], "")
             url.assert_not_called()
-            self.assertEqual(self.normal.get(path).data["results"][0]["file_url"], "https://example.invalid/proof")
-            url.assert_called_once()
+            row = self.normal.get(path).data["results"][0]
+            self.assertEqual(row["file_url"], f"{path}{row['id']}/delivery/")
+            url.assert_not_called()
 
     def test_ai_messages_suppressed_but_metadata_and_customer_messages_preserved(self):
         conversation = AIConversation.objects.create(user=self.customer, messages=[{"role": "user", "content": "fixture extracted text"}])
@@ -156,12 +157,14 @@ class OperatorFilePrivacyTests(TestCase):
                     self.assertEqual(getattr(self.view_as, method)(route).status_code, 403)
             storage.open.assert_not_called()
             storage.url.assert_not_called()
-            storage.url.return_value = "https://example.invalid/shared"
+            storage.size.return_value = 7
+            storage.open.side_effect = lambda *args: ContentFile(b"fixture")
             for client in [APIClient(), self.normal]:
                 self.assertEqual(client.get(path).status_code, 200)
                 response = client.get(path + "delivery/")
-                self.assertEqual(response.status_code, 302)
-                self.assertEqual(response["Location"], "https://example.invalid/shared")
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(b"".join(response.streaming_content), b"fixture")
+                self.assertNotIn("Location", response)
         listing = self.view_as.get(f"/api/uploads/{self.upload.id}/shares/")
         self.assertEqual(listing.status_code, 200)
         self.assertEqual(listing.data[0]["id"], str(share.id))
@@ -192,15 +195,16 @@ class OperatorFilePrivacyTests(TestCase):
 
     def test_customer_delivery_and_both_contract_parties_keep_access(self):
         with patch("backend.uploads.services.default_storage") as storage:
+            storage.size.return_value = len(b"fixture bytes")
             storage.open.return_value = ContentFile(b"fixture bytes")
             response = self.normal.get(f"/api/uploads/{self.upload.id}/delivery/")
             self.assertEqual(response.status_code, 200)
             self.assertEqual(b"".join(response.streaming_content), b"fixture bytes")
             storage.url.return_value = "https://example.invalid/current"
-            self.assertEqual(self.normal.get("/api/uploads/").data[0]["file_url"], "https://example.invalid/current")
+            self.assertEqual(self.normal.get("/api/uploads/").data[0]["file_url"], f"/api/uploads/{self.upload.pk}/delivery/")
             for user in [self.customer, self.party]:
                 client = self.bearer(str(AccessToken.for_user(user)))
                 response = client.get(f"/api/contracts/{self.contract.id}/documents/")
                 self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.data[0]["file_url"], "https://example.invalid/current")
+                self.assertEqual(response.data[0]["file_url"], f"/api/contracts/{self.contract.pk}/documents/{self.document.pk}/delivery/")
             self.assertTrue(ContractDocument.objects.filter(pk=self.document.pk).exists())

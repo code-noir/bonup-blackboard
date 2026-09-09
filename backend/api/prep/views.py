@@ -11,7 +11,6 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from backend.api.operator.permissions import file_content_prohibited
 from backend.billing.gates import has_feature
 from backend.negotiation_prep.models import PrepDocument, PrepNote, PrepSession
 from backend.sessions.models import LiveSession
@@ -27,7 +26,8 @@ def _serialize_document(doc, request):
     return {
         "id": str(doc.id),
         "title": doc.title,
-        "file_url": None if file_content_prohibited(request) else doc.file_url,
+        # URL-only records do not establish authorization to a storage resource.
+        "file_url": None,
         "file_type": doc.file_type,
         "uploaded_at": doc.uploaded_at,
     }

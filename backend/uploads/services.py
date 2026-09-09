@@ -80,7 +80,6 @@ def create_managed_upload(
     saved_key = default_storage.save(storage_key, file)
 
     try:
-        file_url = default_storage.url(saved_key)
         with transaction.atomic():
             stored_object = create_stored_object_metadata(
                 backend=DEFAULT_STORAGE_BACKEND_ALIAS,
@@ -97,7 +96,7 @@ def create_managed_upload(
             )
             return Upload.objects.create(
                 user=user,
-                file_url=file_url,
+                file_url="",
                 file_name=original_name,
                 file_type=file_type,
                 file_size=incoming_size,

@@ -1,3 +1,4 @@
+import { PrivateDownloadButton } from '@/components/files/PrivateFile'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import api, { tokenStorage } from '@/api/client'
@@ -2232,7 +2233,7 @@ function ProofReceiptsSection({
                   <p style={{ fontSize: 11, color: '#64748B', margin: '5px 0 0' }}>Uploaded by {uploader} · {eventTimeLabel(attachment.created_at)} · {fileSizeLabel(attachment.file_size)}</p>
                 </div>
                 {attachment.file_url && (
-                  <a href={attachment.file_url} target="_blank" rel="noreferrer" style={{ ...inspectButtonStyle, textDecoration: 'none', alignSelf: 'flex-start' }}>Open / View</a>
+                  <PrivateDownloadButton path={attachment.file_url} filename={filename}>Download / Open</PrivateDownloadButton>
                 )}
               </div>
               {attachment.note && <p style={{ fontSize: 12, color: '#334155', lineHeight: 1.5, margin: '8px 0 0' }}>{attachment.note}</p>}

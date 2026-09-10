@@ -65,100 +65,129 @@ export const impersonationTokenStorage = {
     window.dispatchEvent(new Event('bonup-auth-context-change'))
   },
   clear: () => {
+    const wasViewingAs = !!localStorage.getItem(IMPERSONATION_ACCESS_KEY)
     localStorage.removeItem(IMPERSONATION_ACCESS_KEY)
     localStorage.removeItem(IMPERSONATION_SESSION_KEY)
     localStorage.removeItem(IMPERSONATION_USER_KEY)
     window.dispatchEvent(new Event('bonup-auth-context-change'))
+    if (wasViewingAs) window.dispatchEvent(new Event('view-as-exited'))
   },
 }
 
-function pathFor(configUrl?: string) {
-  if (!configUrl) return ''
-  try {
-    return new URL(configUrl, window.location.origin).pathname
-  } catch {
-    return configUrl
+type CredentialContext = 'customer' | 'operator' | 'view-as'
+
+// Resolve only our API origin before credentials are attached. Never trust an
+// arbitrary absolute URL or an overridden Axios baseURL.
+export function apiPath(value: string, baseURL = '/api'): string {
+  if (!['/api', '/api/'].includes(baseURL) || !value || value.trim() !== value ||
+      /^[a-z][a-z\d+.-]*:/i.test(value) || value.startsWith('//') || /[\\\u0000-\u0020\u007f]/.test(value)) {
+    throw new Error('API destination is unavailable.')
   }
+  // Reject ambiguous path encodings, separators and dot segments before URL parsing.
+  // Query values may legitimately contain encoded URLs; they are not destinations.
+  const inputPath = value.split(/[?#]/, 1)[0]
+  if (/%(?:2f|5c|2e|25|0[0-9a-f]|1[0-9a-f]|7f)/i.test(inputPath) ||
+      inputPath.includes('//') || inputPath.split('/').some(part => part === '.' || part === '..')) {
+    throw new Error('API destination is unavailable.')
+  }
+  const raw = value.startsWith('/api/') ? value : `/api/${value.replace(/^\//, '')}`
+  const url = new URL(raw, window.location.origin)
+  // Axios combines /api with this suffix. Validate that final combination as well:
+  // stripping /api must never produce an absolute/protocol-relative destination.
+  const suffix = url.pathname.slice(4) + url.search
+  const destination = new URL(`/api/${suffix.replace(/^\//, '')}`, window.location.origin)
+  if (!url.pathname.startsWith('/api/') || !/^\/(?!\/)/.test(suffix) ||
+      destination.origin !== window.location.origin || destination.href !== url.href || url.hash) {
+    throw new Error('API destination is unavailable.')
+  }
+  return url.pathname + url.search
 }
 
-function tokenForRequest(configUrl?: string) {
-  const path = pathFor(configUrl)
-  if (path.startsWith('/api/operator/view-as/exit/') && impersonationTokenStorage.getAccess()) {
-    return impersonationTokenStorage.getAccess()
-  }
-  if (path.startsWith('/api/operator/') || path.startsWith('/operator/') || path.startsWith('/api/admin/') || path.startsWith('/admin/')) {
-    return operatorTokenStorage.getAccess()
-  }
-  return impersonationTokenStorage.getAccess() || tokenStorage.getAccess()
+function contextFor(path: string): CredentialContext {
+  if (path.startsWith('/api/operator/view-as/exit/') && impersonationTokenStorage.getAccess()) return 'view-as'
+  if (path.startsWith('/api/operator/') || path.startsWith('/api/admin/')) return 'operator'
+  return impersonationTokenStorage.getAccess() ? 'view-as' : 'customer'
 }
 
-const api = axios.create({
-  baseURL: '/api',
-  headers: { 'Content-Type': 'application/json' },
-})
+function contextIdentity(context: CredentialContext) {
+  if (context === 'view-as') return impersonationTokenStorage.getAccess()
+  const storage = context === 'operator' ? operatorTokenStorage : tokenStorage
+  return storage.getRefresh() || storage.getAccess()
+}
 
-api.interceptors.request.use((config) => {
-  const token = tokenForRequest(config.url)
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
+function accessFor(context: CredentialContext) {
+  return context === 'view-as' ? impersonationTokenStorage.getAccess() : context === 'operator' ? operatorTokenStorage.getAccess() : tokenStorage.getAccess()
+}
+
+const api = axios.create({ baseURL: '/api', headers: { 'Content-Type': 'application/json' } })
+type RequestConfig = import('axios').InternalAxiosRequestConfig & {
+  _retry?: boolean
+  _context?: CredentialContext
+  _identity?: string | null
+}
+
+api.interceptors.request.use((rawConfig) => {
+  const config = rawConfig as RequestConfig
+  const path = apiPath(config.url || '', config.baseURL)
+  config.url = path.slice(4)
+  config._context = contextFor(path)
+  config._identity = contextIdentity(config._context)
+  const token = accessFor(config._context)
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  else delete config.headers.Authorization
   return config
 })
 
-let refreshing = false
-let refreshQueue: Array<(token: string) => void> = []
+const refreshes: Partial<Record<'customer' | 'operator', { identity: string | null; promise: Promise<string> }>> = {}
+
+function stillCurrent(config: RequestConfig) {
+  return config._context === contextFor(apiPath(config.url || '', config.baseURL)) &&
+    config._identity === contextIdentity(config._context!)
+}
+
+async function refreshAccess(context: 'customer' | 'operator', identity: string | null) {
+  const storage = context === 'operator' ? operatorTokenStorage : tokenStorage
+  const refresh = storage.getRefresh()
+  if (!refresh) throw new Error('Authentication expired.')
+  const { data } = await axios.post(context === 'operator' ? '/api/operator/auth/token/refresh/' : '/api/auth/token/refresh/', { refresh })
+  if (contextIdentity(context) !== identity) throw new axios.CanceledError('Authentication context changed.')
+  storage.setAccess(data.access)
+  return data.access as string
+}
 
 api.interceptors.response.use(
-  (res) => res,
+  (response) => {
+    if (!stillCurrent(response.config as RequestConfig)) throw new axios.CanceledError('Authentication context changed.')
+    return response
+  },
   async (err) => {
-    const original = err.config
-    if (err.response?.status !== 401 || original._retry) {
-      return Promise.reject(err)
-    }
+    const original = err.config as RequestConfig | undefined
+    if (!original || err.response?.status !== 401 || original._retry) return Promise.reject(err)
+    if (!stillCurrent(original)) return Promise.reject(new axios.CanceledError('Authentication context changed.'))
     original._retry = true
-
-    const path = pathFor(original.url)
-    const isOperatorRequest = path.startsWith('/api/operator/') || path.startsWith('/operator/') || path.startsWith('/api/admin/') || path.startsWith('/admin/')
-    const isImpersonating = !!impersonationTokenStorage.getAccess() && !isOperatorRequest
-    if (isImpersonating || path.startsWith('/api/operator/view-as/exit/') || path.startsWith('/operator/view-as/exit/')) {
+    const context = original._context!
+    if (context === 'view-as') {
       impersonationTokenStorage.clear()
-      return Promise.reject(err)
+      return Promise.reject(new axios.CanceledError('View-As ended.'))
     }
-
-    if (refreshing) {
-      return new Promise((resolve) => {
-        refreshQueue.push((newToken) => {
-          original.headers.Authorization = `Bearer ${newToken}`
-          resolve(api(original))
-        })
-      })
-    }
-
-    refreshing = true
+    const identity = original._identity ?? null
     try {
-      const refresh = isOperatorRequest ? operatorTokenStorage.getRefresh() : tokenStorage.getRefresh()
-      if (!refresh) throw new Error('no refresh token')
-      const refreshUrl = isOperatorRequest ? '/api/operator/auth/token/refresh/' : '/api/auth/token/refresh/'
-      const { data } = await axios.post(refreshUrl, { refresh })
-      if (isOperatorRequest) operatorTokenStorage.setAccess(data.access)
-      else tokenStorage.setAccess(data.access)
-      refreshQueue.forEach((cb) => cb(data.access))
-      refreshQueue = []
-      original.headers.Authorization = `Bearer ${data.access}`
-      if (original.url?.includes('/delivery/')) return api(original)
-      const { signal: _dropped, ...retryConfig } = original
-      return api(retryConfig)
-    } catch {
-      if (isOperatorRequest) {
-        operatorTokenStorage.clear()
-        window.location.href = '/operator/login'
-      } else {
-        tokenStorage.clear()
-        window.location.href = '/login'
+      // Customer and operator refreshes must never share a queue or token.
+      let entry = refreshes[context]
+      if (!entry || entry.identity !== identity) {
+        entry = { identity, promise: refreshAccess(context, identity) }
+        refreshes[context] = entry
       }
-      return Promise.reject(err)
-    } finally {
-      refreshing = false
+      try { await entry.promise } finally { if (refreshes[context] === entry) delete refreshes[context] }
+      if (!stillCurrent(original) || original.signal?.aborted) throw new axios.CanceledError('Authentication context changed.')
+      return api(original)
+    } catch (refreshError) {
+      if (stillCurrent(original) && !axios.isCancel(refreshError)) {
+        const storage = context === 'operator' ? operatorTokenStorage : tokenStorage
+        storage.clear()
+        window.location.href = context === 'operator' ? '/operator/login' : '/login'
+      }
+      return Promise.reject(refreshError)
     }
   },
 )

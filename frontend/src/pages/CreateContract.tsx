@@ -1,3 +1,4 @@
+import { safeContractHtml, pastePlainText, CONTRACT_FONTS } from '@/lib/safeHtml'
 // ============================================================
 // PROTECTED FILE — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
 // ============================================================
@@ -34,14 +35,7 @@ import {
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
-const FONTS = [
-  'Arial', 'Georgia', 'Times New Roman', 'Helvetica', 'Courier New',
-  'Verdana', 'Trebuchet MS', 'Impact', 'Comic Sans MS', 'Palatino',
-  'Garamond', 'Bookman', 'Avant Garde', 'Optima', 'Futura', 'Gill Sans',
-  'Century Gothic', 'Calibri', 'Cambria', 'Constantia', 'Candara',
-  'Corbel', 'Segoe UI', 'Tahoma', 'Geneva', 'Lucida Grande',
-  'Lucida Sans', 'Rockwell', 'Franklin Gothic', 'Baskerville',
-]
+const FONTS = CONTRACT_FONTS
 
 const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72]
 
@@ -1102,7 +1096,7 @@ export default function CreateContract() {
       .replace(/<\/(h1|h2|h3|h4|p|div|li)>/gi, '\n')
       .replace(/<[^>]+>/g, '')
     const decoder = document.createElement('textarea')
-    decoder.innerHTML = htmlWithBreaks
+    decoder.innerHTML = safeContractHtml(htmlWithBreaks)
     const decodedText = decoder.value.replace(/\n{3,}/g, '\n\n').trim()
     return decodedText || (editorEl.textContent || '')
   }
@@ -1173,13 +1167,14 @@ export default function CreateContract() {
     const pastedText = e.clipboardData.getData('text/plain')
     const parsed = pastedText ? parseDraftEditorSections(pastedText) : null
     if (!parsed) {
+      pastePlainText(e)
       queueDraftSectionRegeneration(80)
       return
     }
 
     e.preventDefault()
     const html = buildTemplateHtml(pastedText, parsed)
-    document.execCommand('insertHTML', false, html)
+    document.execCommand('insertHTML', false, safeContractHtml(html))
     lastSectionSyncHtmlRef.current = leftEditorRef.current?.innerHTML || ''
     commitParsedSections(parsed)
     setLeftEmpty(false)
@@ -1466,8 +1461,8 @@ export default function CreateContract() {
     let snapshot: PersistedTemplateDraft | null = null
     try {
       snapshot = JSON.parse(contentSnapshot) as PersistedTemplateDraft
-    } catch (err) {
-      console.warn('Unable to parse saved draft snapshot', err)
+    } catch {
+      // A parser exception can quote private document text; never dump it.
       snapshot = null
     }
 
@@ -1493,12 +1488,12 @@ export default function CreateContract() {
     if (!html && contentSnapshot.trim().startsWith('<')) html = contentSnapshot
 
     if (leftEditorRef.current) {
-      leftEditorRef.current.innerHTML = html || ''
+      leftEditorRef.current.innerHTML = safeContractHtml(html || '')
       lastSectionSyncHtmlRef.current = leftEditorRef.current.innerHTML || ''
       setLeftEmpty((leftEditorRef.current.textContent ?? '').trim() === '')
     }
     if (rightEditorRef.current) {
-      rightEditorRef.current.innerHTML = finalHtml || ''
+      rightEditorRef.current.innerHTML = safeContractHtml(finalHtml || '')
       setRightEmpty((rightEditorRef.current.textContent ?? '').trim() === '')
     }
   }
@@ -1537,7 +1532,7 @@ export default function CreateContract() {
         content_snapshot: contentSnapshot,
       })
       if (leftEditorRef.current) {
-        leftEditorRef.current.innerHTML = html
+        leftEditorRef.current.innerHTML = safeContractHtml(html)
         lastSectionSyncHtmlRef.current = html
         setLeftEmpty(false)
       }
@@ -1690,10 +1685,10 @@ export default function CreateContract() {
   // Pre-populate the left editor with section headings on mount
   useEffect(() => {
     if (leftEditorRef.current && leftEditorRef.current.innerHTML.trim() === '') {
-      leftEditorRef.current.innerHTML = DEFAULT_SECTIONS.map((s) =>
+      leftEditorRef.current.innerHTML = safeContractHtml(DEFAULT_SECTIONS.map((s) =>
         `<h2 id="section-${s.id}" style="margin:0 0 6px;font-size:16px;font-weight:600;color:#0F1F3D;">${s.name}</h2>` +
         `<p style="margin:0 0 28px;color:#9CA3AF;font-size:14px;">[ Content for ${s.name} ]</p>`
-      ).join('')
+      ).join(''))
       setLeftEmpty(false)
       sectionsRef.current = DEFAULT_SECTIONS
       if (!lastSavedDraftRef.current) {
@@ -3405,9 +3400,9 @@ export default function CreateContract() {
                         updateSections((prev) => [...prev, newSec])
                         // Append heading to editor
                         if (leftEditorRef.current) {
-                          leftEditorRef.current.innerHTML +=
+                          leftEditorRef.current.innerHTML += safeContractHtml(
                             `<h2 id="section-${newId}" style="margin:0 0 6px;font-size:16px;font-weight:600;color:#0F1F3D;">${name}</h2>` +
-                            `<p style="margin:0 0 28px;color:#9CA3AF;font-size:14px;">[ Content for ${name} ]</p>`
+                            `<p style="margin:0 0 28px;color:#9CA3AF;font-size:14px;">[ Content for ${name} ]</p>`)
                           setLeftEmpty(false)
                         }
                         queueAutosave()
@@ -4647,6 +4642,7 @@ export default function CreateContract() {
                     <div
                       ref={leftEditorRef}
                       contentEditable={draftEditingAllowed}
+                      onDrop={(event) => event.preventDefault()}
                       suppressContentEditableWarning
                       onFocus={handleDraftEditorFocus}
                       onInput={handleDraftEditorInput}
@@ -4667,6 +4663,7 @@ export default function CreateContract() {
                     <div
                       ref={leftEditorRef}
                       contentEditable={draftEditingAllowed}
+                      onDrop={(event) => event.preventDefault()}
                       suppressContentEditableWarning
                       onFocus={handleDraftEditorFocus}
                       onInput={handleDraftEditorInput}
@@ -4713,8 +4710,10 @@ export default function CreateContract() {
                     <div
                       ref={rightEditorRef}
                       contentEditable={draftEditingAllowed}
+                      onDrop={(event) => event.preventDefault()}
                       suppressContentEditableWarning
                       onFocus={() => setActiveEditor('right')}
+                      onPaste={pastePlainText}
                       onInput={(e) => {
                         setRightEmpty((e.currentTarget.textContent ?? '') === '')
                         queueAutosave()
@@ -4735,8 +4734,10 @@ export default function CreateContract() {
                     <div
                       ref={rightEditorRef}
                       contentEditable={draftEditingAllowed}
+                      onDrop={(event) => event.preventDefault()}
                       suppressContentEditableWarning
                       onFocus={() => setActiveEditor('right')}
+                      onPaste={pastePlainText}
                       onInput={(e) => {
                         setRightEmpty((e.currentTarget.textContent ?? '') === '')
                         queueAutosave()

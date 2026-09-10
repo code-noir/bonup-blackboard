@@ -16,10 +16,12 @@ User = get_user_model()
 
 
 def client_ip(request):
-    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR") or None
+    from backend.core.throttling import client_ip as trusted_client_ip
+    from ipaddress import ip_address
+    try:
+        return str(ip_address(trusted_client_ip(request)))
+    except ValueError:
+        return None
 
 
 def user_agent(request):

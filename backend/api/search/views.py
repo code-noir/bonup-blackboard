@@ -276,6 +276,7 @@ def _search_users(q, exclude_user, limit=GLOBAL_RESULT_LIMIT, include_sol_member
 # ---------------------------------------------------------------------------
 
 class GlobalSearchView(APIView):
+    throttle_scope = "search"
 
     def get(self, request):
         q = request.query_params.get("q", "").strip()
@@ -444,6 +445,7 @@ def _serialize_template(t):
 
 
 class ContractSearchView(APIView):
+    throttle_scope = "search"
 
     def get(self, request):
         q = request.query_params.get("q", "").strip()
@@ -482,6 +484,7 @@ class ContractSearchView(APIView):
 # ---------------------------------------------------------------------------
 
 class ObligationSearchView(APIView):
+    throttle_scope = "search"
 
     def get(self, request):
         q = request.query_params.get("q", "").strip()
@@ -517,6 +520,7 @@ class ObligationSearchView(APIView):
 # ---------------------------------------------------------------------------
 
 class PaymentSearchView(APIView):
+    throttle_scope = "search"
 
     def get(self, request):
         q = request.query_params.get("q", "").strip()
@@ -544,6 +548,7 @@ class PaymentSearchView(APIView):
 # ---------------------------------------------------------------------------
 
 class SessionSearchView(APIView):
+    throttle_scope = "search"
 
     def get(self, request):
         q = request.query_params.get("q", "").strip()
@@ -570,6 +575,7 @@ class SessionSearchView(APIView):
 # ---------------------------------------------------------------------------
 
 class DocumentSearchView(APIView):
+    throttle_scope = "search"
 
     def get(self, request):
         q = request.query_params.get("q", "").strip()
@@ -598,6 +604,7 @@ class DocumentSearchView(APIView):
 # ---------------------------------------------------------------------------
 
 class TemplateSearchView(APIView):
+    throttle_scope = "search"
 
     def get(self, request):
         q = request.query_params.get("q", "").strip()
@@ -623,6 +630,7 @@ class TemplateSearchView(APIView):
 # ---------------------------------------------------------------------------
 
 class SolSearchView(APIView):
+    throttle_scope = "search"
 
     def get(self, request):
         q = request.query_params.get("q", "").strip()

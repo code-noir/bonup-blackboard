@@ -1,3 +1,4 @@
+import CustomerSignOutButton from './CustomerSignOutButton'
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { MagnifyingGlassIcon, ChevronDownIcon } from '@heroicons/react/24/outline'
@@ -12,7 +13,7 @@ const TODAY = new Date().toLocaleDateString('en-US', {
 })
 
 export default function Header() {
-  const { user, logout, isOnTrial, trialDaysRemaining } = useAuth()
+  const { user, isOnTrial, trialDaysRemaining } = useAuth()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -52,10 +53,7 @@ export default function Header() {
     return () => window.removeEventListener('topbar-collapse', onCollapse)
   }, [])
 
-  const handleLogout = async () => {
-    await logout()
-    navigate('/login')
-  }
+
 
   const firstName = user?.first_name || ''
   const bonId = user?.bon_id ?? '—'
@@ -209,12 +207,7 @@ export default function Header() {
             >
               Settings
             </button>
-            <button
-              onClick={handleLogout}
-              className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
-            >
-              Sign out
-            </button>
+            <CustomerSignOutButton />
           </div>
         )}
       </div>

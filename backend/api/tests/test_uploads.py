@@ -296,8 +296,9 @@ class UploadCreateTests(TestCase):
         self.mock_service_storage.url.return_value = _MOCK_FILE_URL
 
         with patch("backend.api.uploads.views.Upload.objects.create", side_effect=RuntimeError("db failed")):
-            with self.assertRaisesMessage(RuntimeError, "db failed"):
-                self.client.post(UPLOAD_URL, {"file": _pdf(), "file_type": "pdf"}, format="multipart")
+            response = self.client.post(UPLOAD_URL, {"file": _pdf(), "file_type": "pdf"}, format="multipart")
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(response.data, {"detail": "Request could not be completed."})
 
         self.mock_service_storage.delete.assert_called_once_with(_MOCK_KEY)
         self.assertEqual(StoredObject.objects.count(), 0)
@@ -310,8 +311,9 @@ class UploadCreateTests(TestCase):
         self.mock_service_storage.delete.side_effect = RuntimeError("cleanup failed")
 
         with patch("backend.api.uploads.views.Upload.objects.create", side_effect=RuntimeError("db failed")):
-            with self.assertRaisesMessage(RuntimeError, "db failed"):
-                self.client.post(UPLOAD_URL, {"file": _pdf(), "file_type": "pdf"}, format="multipart")
+            response = self.client.post(UPLOAD_URL, {"file": _pdf(), "file_type": "pdf"}, format="multipart")
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(response.data, {"detail": "Request could not be completed."})
 
         self.mock_service_storage.delete.assert_called_once_with(_MOCK_KEY)
         self.assertEqual(StoredObject.objects.count(), 0)
@@ -1790,8 +1792,9 @@ class UploadDuplicateTests(TestCase):
     def test_duplicate_provider_failure_creates_no_canonical_duplicate(self, mock_storage):
         mock_storage.open.side_effect = RuntimeError("copy failed")
 
-        with self.assertRaisesMessage(RuntimeError, "copy failed"):
-            self.client.post(f"{UPLOAD_URL}{self.upload.id}/duplicate/")
+        response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/duplicate/")
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.data, {"detail": "Request could not be completed."})
 
         self.assertEqual(Upload.objects.filter(user=self.user).count(), 1)
         self.assertEqual(StoredObject.objects.filter(user_accesses__user=self.user).distinct().count(), 1)
@@ -1801,8 +1804,9 @@ class UploadDuplicateTests(TestCase):
         self._mock_copy_storage(mock_storage)
 
         with patch("backend.api.uploads.views.Upload.objects.create", side_effect=RuntimeError("db failed")):
-            with self.assertRaisesMessage(RuntimeError, "db failed"):
-                self.client.post(f"{UPLOAD_URL}{self.upload.id}/duplicate/")
+            response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/duplicate/")
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(response.data, {"detail": "Request could not be completed."})
 
         mock_storage.delete.assert_called_once_with("uploads/copy/receipt-copy.pdf")
         self.assertEqual(Upload.objects.filter(user=self.user).count(), 1)
@@ -1814,8 +1818,9 @@ class UploadDuplicateTests(TestCase):
         mock_storage.delete.side_effect = RuntimeError("cleanup failed")
 
         with patch("backend.api.uploads.views.Upload.objects.create", side_effect=RuntimeError("db failed")):
-            with self.assertRaisesMessage(RuntimeError, "db failed"):
-                self.client.post(f"{UPLOAD_URL}{self.upload.id}/duplicate/")
+            response = self.client.post(f"{UPLOAD_URL}{self.upload.id}/duplicate/")
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(response.data, {"detail": "Request could not be completed."})
 
         mock_storage.delete.assert_called_once_with("uploads/copy/receipt-copy.pdf")
         self.assertEqual(Upload.objects.filter(user=self.user).count(), 1)

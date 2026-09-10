@@ -141,7 +141,7 @@ class AttachDocumentTests(TestCase):
             {"upload_id": str(self.upload.id), "title": "Sneaky Doc"},
             format="json",
         )
-        self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.status_code, 404)
         self.assertFalse(ContractDocument.objects.filter(contract=self.contract).exists())
 
     def test_attach_missing_upload_id_returns_400(self):
@@ -270,7 +270,7 @@ class ListDocumentsTests(TestCase):
     def test_stranger_cannot_list_documents(self):
         attach_doc(self.contract, self.upload, self.initiator, "Private")
         r = authed_client(self.stranger).get(doc_url(self.contract.id))
-        self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.status_code, 404)
 
     def test_list_does_not_include_other_contracts_documents(self):
         other_cp = make_user("other_cp_list", "other_cp_list@example.com")
@@ -344,7 +344,7 @@ class DetachDocumentTests(TestCase):
     def test_stranger_cannot_detach_document(self):
         doc = attach_doc(self.contract, self.upload, self.initiator, "Protected")
         r = authed_client(self.stranger).delete(doc_detail_url(self.contract.id, doc.id))
-        self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.status_code, 404)
         self.assertTrue(ContractDocument.objects.filter(pk=doc.id).exists())
 
     def test_detach_nonexistent_doc_returns_404(self):
@@ -442,7 +442,7 @@ class ContractDocumentDeviceUploadVaultIntegrationTests(TestCase):
     def test_unauthorized_contract_user_cannot_device_upload(self, mock_storage):
         response = self._post_file(client=authed_client(self.stranger))
 
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 404)
         mock_storage.save.assert_not_called()
         self.assertEqual(StoredObject.objects.count(), 0)
         self.assertEqual(UserObjectAccess.objects.count(), 0)
@@ -489,8 +489,9 @@ class ContractDocumentDeviceUploadVaultIntegrationTests(TestCase):
         mock_storage.url.return_value = "https://current-provider.example/uploads/device/failure.pdf"
 
         with patch("backend.uploads.services.Upload.objects.create", side_effect=RuntimeError("db failed")):
-            with self.assertRaisesMessage(RuntimeError, "db failed"):
-                self._post_file()
+            response = self._post_file()
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(response.data, {"detail": "Request could not be completed."})
 
         mock_storage.delete.assert_called_once_with("uploads/device/failure.pdf")
         self.assertEqual(StoredObject.objects.count(), 0)
@@ -504,8 +505,9 @@ class ContractDocumentDeviceUploadVaultIntegrationTests(TestCase):
         mock_storage.url.return_value = "https://current-provider.example/uploads/device/kept.pdf"
 
         with patch("backend.api.contracts.document_views.ContractDocument.objects.create", side_effect=RuntimeError("document failed")):
-            with self.assertRaisesMessage(RuntimeError, "document failed"):
-                self._post_file()
+            response = self._post_file()
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(response.data, {"detail": "Request could not be completed."})
 
         upload = Upload.objects.get()
         self.assertIsNotNone(upload.stored_object_id)
@@ -698,7 +700,7 @@ class ContractDocumentVaultSelectionTests(TestCase):
 
         response = self._post_vault_attachment(upload, client=authed_client(self.stranger))
 
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 404)
         mock_storage.save.assert_not_called()
         mock_storage.url.assert_not_called()
         self.assertEqual(ContractDocument.objects.count(), 0)

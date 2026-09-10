@@ -430,7 +430,7 @@ class CheckoutSessionAPIView(APIView):
         except ValidationError as exc:
             return Response({"error": _serialize_validation_error(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except _stripe.error.StripeError as exc:
-            logger.error("Stripe error creating Store checkout session: %s", exc)
+            logger.error("External service operation failed.")
             return Response(
                 {"error": "Payment provider error. Please try again later."},
                 status=status.HTTP_502_BAD_GATEWAY,
@@ -490,7 +490,7 @@ class BillingPortalAPIView(APIView):
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except _stripe.error.StripeError as exc:
-            logger.error("Stripe error creating portal session: %s", exc)
+            logger.error("External service operation failed.")
             return Response(
                 {"error": "Payment provider error. Please try again later."},
                 status=status.HTTP_502_BAD_GATEWAY,
@@ -566,7 +566,7 @@ class WebhookAPIView(APIView):
                 else:
                     logger.debug("Unhandled Stripe event: %s", event_type)
         except Exception as exc:
-            logger.exception("Webhook handler error for %s: %s", event_type, exc)
+            logger.error("External service operation failed.")
             # Return 200 to prevent Stripe from retrying for application errors.
 
         return Response({"received": True})

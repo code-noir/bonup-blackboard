@@ -55,3 +55,13 @@ class ResendEmailBackend(BaseEmailBackend):
         )
         response.raise_for_status()
         return True
+
+
+class PrivacyConsoleEmailBackend(BaseEmailBackend):
+    """Development placeholder: never writes email bodies or bearer links to stdout."""
+    def send_messages(self, email_messages):
+        from backend.core.privacy_logging import safe_event
+        messages = list(email_messages or [])
+        if messages:
+            safe_event("development_email_suppressed")
+        return 0

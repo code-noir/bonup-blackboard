@@ -32,7 +32,7 @@ def _send_email(email, *, subject, message):
         )
         result["email_sent"] = sent_count > 0
     except Exception as exc:
-        result["error"] = str(exc)
+        result["error"] = "email_delivery_failed"
     return result
 
 
@@ -81,7 +81,7 @@ def notify_exchange_recipient(*, user=None, email="", notification_type="agreeme
                 result["deduplicated"] = True
                 result["notification_id"] = str(existing.id)
         except Exception as exc:
-            result["in_app_error"] = str(exc)
+            result["in_app_error"] = "notification_failed"
         result.update(_send_email(recipient_email, subject=title, message=message))
         return result
 

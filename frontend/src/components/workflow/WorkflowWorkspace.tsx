@@ -1,3 +1,4 @@
+import { safeContractHtml } from '@/lib/safeHtml'
 import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import WorkflowTimeline from '@/components/workflow/WorkflowTimeline'
@@ -354,7 +355,7 @@ function parseCompatibleSections(content: string): ContractSection[] | null {
 function textFromHtml(html: string) {
   if (typeof document === 'undefined') return html.replace(/<[^>]+>/g, '\n')
   const container = document.createElement('div')
-  container.innerHTML = html
+  container.innerHTML = safeContractHtml(html)
   return Array.from(container.querySelectorAll<HTMLElement>('h1,h2,h3,h4,p,div,li'))
     .map((el) => (el.textContent || '').trim())
     .filter(Boolean)
@@ -384,7 +385,7 @@ function buildHtmlFromText(content: string, sections: ContractSection[]) {
 function annotateHtmlAnchors(html: string, sections: ContractSection[]) {
   if (!sections.length || typeof document === 'undefined') return html
   const container = document.createElement('div')
-  container.innerHTML = html
+  container.innerHTML = safeContractHtml(html)
   const candidates = Array.from(container.querySelectorAll<HTMLElement>('h1,h2,h3,h4,p,div,li'))
   const used = new Set<string>()
 
@@ -633,7 +634,7 @@ export default function WorkflowWorkspace({ workflow }: WorkflowWorkspaceProps) 
                 <div
                   ref={contractPreviewRef}
                   style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 10, padding: 14, maxHeight: 560, minHeight: 420, overflowY: 'auto' }}
-                  dangerouslySetInnerHTML={{ __html: contractDocument.html }}
+                  dangerouslySetInnerHTML={{ __html: safeContractHtml(contractDocument.html) }}
                 />
               ) : (
                 <div style={{ minHeight: 420, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F8FAFC', border: '1px dashed #CBD5E1', borderRadius: 10, padding: 18, textAlign: 'center' }}>

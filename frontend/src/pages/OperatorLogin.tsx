@@ -3,7 +3,7 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import { useOperator } from '@/context/OperatorContext'
 
 export default function OperatorLogin() {
-  const { loginOperator, isOperatorAuthenticated } = useOperator()
+  const { loginOperator, isOperatorAuthenticated, sessionNotice } = useOperator()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -39,6 +39,7 @@ export default function OperatorLogin() {
 
         <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
           <h1 className="mb-6 text-xl font-semibold text-slate-800">Operator sign in</h1>
+          {sessionNotice && <p role="alert" className="mb-4 rounded bg-amber-50 p-3 text-sm text-amber-900">{sessionNotice}</p>}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="operator-email" className="mb-1.5 block text-sm font-medium text-slate-700">Email address</label>

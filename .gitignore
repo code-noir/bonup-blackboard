@@ -24,3 +24,8 @@ frontend/.env.staging
 # Mac
 .DS_Store
 .env
+
+# Generated development output (existing tracked logs require owner untracking).
+dev/logs/
+*.log
+*.pid

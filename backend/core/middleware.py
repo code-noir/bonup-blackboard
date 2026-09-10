@@ -32,3 +32,35 @@ class UserLanguageMiddleware:
         response = self.get_response(request)
         translation.deactivate()
         return response
+
+
+class PrivacyRequestMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        from uuid import uuid4
+        from backend.core.privacy_logging import request_id
+        correlation = str(uuid4())
+        request.request_id = correlation
+        token = request_id.set(correlation)
+        try:
+            from django.conf import settings
+            from django.urls import reverse
+            if settings.BONUP_THROTTLE_ENABLED and request.method == "POST" and request.path == reverse("admin:login"):
+                from types import SimpleNamespace
+                from django.http import JsonResponse
+                from backend.core.throttling import PrivacyScopedThrottle
+                import math
+                throttle = PrivacyScopedThrottle()
+                if not throttle.allow_request(request, SimpleNamespace(throttle_scope="operator_login")):
+                    response = JsonResponse({"detail": "Too many login attempts."}, status=429)
+                    response["Retry-After"] = str(math.ceil(throttle.wait() or 1))
+                    response["Cache-Control"] = "no-store"
+                    response["X-Request-ID"] = correlation
+                    return response
+            response = self.get_response(request)
+            response["X-Request-ID"] = correlation
+            return response
+        finally:
+            request_id.reset(token)

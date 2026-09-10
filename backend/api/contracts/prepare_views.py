@@ -574,7 +574,7 @@ class ContractPrepareAPIView(APIView):
                             request.user,
                         )
                 except Exception:
-                    logger.exception("Prepare extraction shadow persistence failed for contract %s", contract.id)
+                    logger.error("Prepare extraction shadow persistence failed for contract %s", contract.id)
 
                 contract.status = "draft"
                 contract.state = "prepared"

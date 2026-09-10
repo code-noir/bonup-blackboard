@@ -524,7 +524,7 @@ def _repair_staged_update_for_initiator_detail(exchange, user, role):
             )
             return load_exchange(locked_exchange.id)
     except Exception:
-        logger.exception("Agreement Exchange staged update auto-repair failed", extra={"exchange_id": str(exchange.id)})
+        logger.error("Agreement Exchange staged update auto-repair failed", extra={"exchange_id": str(exchange.id)})
         return exchange
 
 

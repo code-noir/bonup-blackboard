@@ -409,6 +409,7 @@ def _execute_create_contract(data: dict, user) -> dict:
 # ---------------------------------------------------------------------------
 
 class GenerateContractDraftView(APIView):
+    throttle_scope = "ai"
 
     def post(self, request):
         ai_tier = get_ai_tier(request.user)
@@ -466,6 +467,7 @@ class GenerateContractDraftView(APIView):
 # ---------------------------------------------------------------------------
 
 class AIChatView(APIView):
+    throttle_scope = "ai"
 
     def post(self, request):
         ai_tier = get_ai_tier(request.user)
@@ -650,6 +652,7 @@ def _parse_iso_date(date_str):
 # ---------------------------------------------------------------------------
 
 class AnalyzeContractView(APIView):
+    throttle_scope = "ai"
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def post(self, request):
@@ -735,6 +738,7 @@ class AnalyzeContractView(APIView):
 # ---------------------------------------------------------------------------
 
 class CounterContractView(APIView):
+    throttle_scope = "ai"
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def post(self, request):
@@ -827,6 +831,7 @@ class CounterContractView(APIView):
 # ---------------------------------------------------------------------------
 
 class ImportContractView(APIView):
+    throttle_scope = "ai"
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def post(self, request):

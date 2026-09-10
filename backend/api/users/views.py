@@ -6,6 +6,8 @@ from datetime import timedelta
 from django.contrib.auth import get_user_model
 from django.db import models, transaction
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
@@ -77,6 +79,7 @@ def _send_verification_email(email: str, token) -> None:
 # ============================================================
 
 class RegisterAPIView(APIView):
+    throttle_scope = "recovery"
     """
     Stage 1 of signup: validate form data and create a PendingSignup record.
 
@@ -216,6 +219,8 @@ class LogoutAPIView(APIView):
             )
         try:
             token = RefreshToken(refresh_token)
+            if token.get("auth_context") is not None or str(token.get("user_id")) != str(request.user.pk):
+                return Response({"error": "Invalid logout token."}, status=400)
             token.blacklist()
         except Exception:
             return Response(
@@ -226,6 +231,7 @@ class LogoutAPIView(APIView):
 
 
 class PasswordResetRequestAPIView(APIView):
+    throttle_scope = "recovery"
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -264,6 +270,7 @@ class PasswordResetRequestAPIView(APIView):
 
 
 class PasswordResetConfirmAPIView(APIView):
+    throttle_scope = "recovery"
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -292,6 +299,10 @@ class PasswordResetConfirmAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        try:
+            validate_password(new_password, user)
+        except ValidationError:
+            return Response({"error": "New password does not meet password requirements."}, status=400)
         user.set_password(new_password)
         user.save(update_fields=["password"])
         return Response({"detail": "Password has been reset."})
@@ -501,6 +512,7 @@ class BillingInfoAPIView(APIView):
 # ============================================================
 
 class UserSearchAPIView(APIView):
+    throttle_scope = "search"
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -537,6 +549,7 @@ class UserSearchAPIView(APIView):
 # ============================================================
 
 class ResendVerificationAPIView(APIView):
+    throttle_scope = "recovery"
     permission_classes = [AllowAny]
 
     def post(self, request):

@@ -96,7 +96,7 @@ class CanonicalFileAuthorizationTests(TestCase):
             storage.delete.assert_not_called()
         self.assertEqual(counts, (Upload.objects.count(), StoredObject.objects.count(), UserObjectAccess.objects.count()))
         self.assertEqual(get_user_active_storage_usage_bytes(self.owner), before)
-        self.assertEqual(self.attach(upload, {}, client=self.authenticated(self.stranger)).status_code, 403)
+        self.assertEqual(self.attach(upload, {}, client=self.authenticated(self.stranger)).status_code, 404)
 
     def test_legacy_owner_policy_is_preserved_independently_of_source(self):
         upload = make_upload(self.owner)

@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -53,6 +54,7 @@ def _user_summary(user):
 
 
 class OperatorTokenView(APIView):
+    throttle_scope = "operator_login"
     authentication_classes = []
     permission_classes = []
 
@@ -116,7 +118,7 @@ class OperatorViewAsExitView(APIView):
                 return Response({"detail": "view_as_session_id is required."}, status=status.HTTP_400_BAD_REQUEST)
             try:
                 session = OperatorViewAsSession.objects.select_related("administrator", "target_user").get(pk=session_id)
-            except (OperatorViewAsSession.DoesNotExist, ValueError):
+            except (OperatorViewAsSession.DoesNotExist, ValueError, ValidationError, TypeError):
                 return Response({"detail": "View-As session not found."}, status=status.HTTP_404_NOT_FOUND)
             if administrator is None:
                 return Response({"detail": "Administrator context is required."}, status=status.HTTP_403_FORBIDDEN)
@@ -142,3 +144,26 @@ class OperatorViewAsExitView(APIView):
             "ended": True,
             "already_ended": already_ended,
         })
+
+
+class OperatorLogoutView(APIView):
+    permission_classes = [IsOperator]
+
+    def post(self, request):
+        from rest_framework_simplejwt.tokens import RefreshToken
+        from rest_framework_simplejwt.exceptions import TokenError
+        from backend.operator.services import OPERATOR_CONTEXT
+        try:
+            token = RefreshToken(request.data.get("refresh", ""))
+            if token.get("auth_context") != OPERATOR_CONTEXT or str(token.get("administrator_id")) != str(request.administrator.pk):
+                return Response({"detail": "Invalid logout token."}, status=400)
+            token.blacklist()
+        except (TokenError, TypeError):
+            return Response({"detail": "Invalid logout token."}, status=400)
+        # End outstanding View-As contexts through the same explicit audit boundary.
+        for session in OperatorViewAsSession.objects.filter(administrator=request.administrator, ended_at__isnull=True):
+            session.end(reason="operator_logout")
+            create_audit_event(administrator=request.administrator, target_user=session.target_user,
+                               view_as_session=session, action=OperatorAuditEvent.ACTION_VIEW_AS_ENDED,
+                               request=request, metadata={"ended_reason": "operator_logout"})
+        return Response(status=204)

@@ -17,7 +17,7 @@ from django.core.files.base import File
 from django.core.files.storage import default_storage
 from django.db import IntegrityError, transaction
 from django.http import FileResponse, Http404
-from django.shortcuts import get_object_or_404
+from rest_framework.generics import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
@@ -85,14 +85,14 @@ def _cleanup_saved_object(saved_key):
     try:
         default_storage.delete(saved_key)
     except Exception:
-        logger.exception("Failed to clean up saved upload object after database failure.")
+        logger.error("Failed to clean up saved upload object after database failure.")
 
 
 def _cleanup_saved_object_with_storage(storage, saved_key):
     try:
         storage.delete(saved_key)
     except Exception:
-        logger.exception("Failed to clean up saved duplicate upload object after database failure.")
+        logger.error("Failed to clean up saved duplicate upload object after database failure.")
 
 
 def _active_uploads_for_user(user):
@@ -348,7 +348,7 @@ class TemporaryArchiveFile:
             except FileNotFoundError:
                 pass
             except Exception:
-                logger.exception("Failed to clean up temporary Vault bulk-download archive.")
+                logger.error("Failed to clean up temporary Vault bulk-download archive.")
 
 
 def _move_upload_to_folder(upload, folder):
@@ -406,6 +406,11 @@ def _serialize_email_delivery(delivery, *, idempotent=False):
 
 
 class UploadsViewSet(DeliveryPrivacyMixin, ViewSet):
+    throttle_scopes = {
+        "create": "upload", "duplicate": "upload", "bulk_download": "bulk_download",
+        "email_file": "email", "shares": "share_create",
+        "public_share": "share_metadata", "public_share_delivery": "share_delivery",
+    }
 
     def list(self, request):
         qs = _active_uploads_for_user(request.user)
@@ -658,8 +663,8 @@ class UploadsViewSet(DeliveryPrivacyMixin, ViewSet):
             except FileNotFoundError:
                 pass
             except Exception:
-                logger.exception("Failed to clean up temporary Vault bulk-download archive after failure.")
-            logger.exception("Failed to prepare Vault bulk-download archive.")
+                logger.error("Failed to clean up temporary Vault bulk-download archive after failure.")
+            logger.error("Failed to prepare Vault bulk-download archive.")
             return _validation_error(
                 "bulk_download_unavailable",
                 "One or more selected files could not be prepared for download.",

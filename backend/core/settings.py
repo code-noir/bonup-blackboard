@@ -202,8 +202,6 @@ EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
 EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587") or 587)
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
-EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "False") == "True"
-EMAIL_USE_SSL = os.environ.get("EMAIL_USE_SSL", "False") == "True"
 EMAIL_TIMEOUT = int(os.environ.get("EMAIL_TIMEOUT", "10") or 10)
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@bonup.cloud")
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
@@ -278,3 +276,15 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ],
 }
+
+# Repository-owned production posture; no environment values are logged.
+from backend.core.security import security_settings
+from backend.core.privacy_logging import LOGGING
+globals().update(security_settings(os.environ, development_hosts=ALLOWED_HOSTS))
+REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"] = ["backend.core.throttling.PrivacyScopedThrottle"]
+REST_FRAMEWORK["EXCEPTION_HANDLER"] = "backend.core.api_errors.exception_handler"
+SIMPLE_JWT = {
+    "ROTATE_REFRESH_TOKENS": False,
+    "BLACKLIST_AFTER_ROTATION": False,
+}
+MIDDLEWARE.insert(0, "backend.core.middleware.PrivacyRequestMiddleware")

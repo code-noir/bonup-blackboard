@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import type { ReactNode } from 'react'
+import { isCancel } from 'axios'
 import api, { impersonationTokenStorage, tokenStorage } from '@/api/client'
 import type { AuthUser } from '@/types/auth'
 
@@ -33,7 +34,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data } = await api.get<AuthUser>('/users/me/')
       setUser(data)
-    } catch {
+    } catch (error) {
+      if (isCancel(error)) return
       setUser(null)
       if (!impersonationTokenStorage.getAccess()) tokenStorage.clear()
     }
@@ -51,7 +53,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       fetchMe().finally(() => setIsLoading(false))
     }
     function onViewAsExited() {
-      if (!tokenStorage.getAccess()) setUser(null)
+      setUser(null)
+      if (tokenStorage.getAccess()) {
+        setIsLoading(true)
+        fetchMe().finally(() => setIsLoading(false))
+      }
     }
     window.addEventListener('view-as-started', onViewAsStarted)
     window.addEventListener('view-as-exited', onViewAsExited)
@@ -71,6 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout = async () => {
+    if (impersonationTokenStorage.getAccess()) throw new Error('Exit User View before signing out.')
     try {
       const refresh = tokenStorage.getRefresh()
       if (refresh) await api.post('/users/logout/', { refresh })

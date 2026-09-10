@@ -524,7 +524,7 @@ def handle_checkout_completed(session):
     try:
         stripe_sub = stripe.Subscription.retrieve(stripe_subscription_id)
     except Exception as exc:
-        logger.error("Failed to retrieve Stripe subscription %s: %s", stripe_subscription_id, exc)
+        logger.error("External service operation failed.")
         return
 
     _sync_subscription_from_stripe(

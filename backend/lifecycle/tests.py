@@ -1201,7 +1201,7 @@ Contractor must return any key, access badge, parking pass, or written door code
         self.assertEqual(created.status_code, 201)
         self.assertEqual(initiator_response.status_code, 200)
         self.assertEqual(counterparty_response.status_code, 200)
-        self.assertEqual(stranger_response.status_code, 403)
+        self.assertEqual(stranger_response.status_code, 404)
         self.assertEqual(len(initiator_response.data["results"]), 1)
         self.assertEqual(len(counterparty_response.data["results"]), 1)
         self.assertEqual(counterparty_response.data["results"][0]["id"], created.data["id"])

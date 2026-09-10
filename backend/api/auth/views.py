@@ -43,7 +43,7 @@ class EmailOrUsernameTokenSerializer(TokenObtainPairSerializer):
         if not email_verified:
             raise AuthenticationFailed(
                 "Email address not verified. "
-                "Check your email (or the server terminal in development) "
+                "Check your email "
                 "for the verification link."
             )
 
@@ -51,6 +51,7 @@ class EmailOrUsernameTokenSerializer(TokenObtainPairSerializer):
 
 
 class EmailOrUsernameTokenView(TokenObtainPairView):
+    throttle_scope = "login"
     serializer_class = EmailOrUsernameTokenSerializer
 
 
@@ -58,14 +59,16 @@ class ContextTokenRefreshSerializer(TokenRefreshSerializer):
     required_auth_context = None
 
     def validate(self, attrs):
-        data = super().validate(attrs)
         token = self.token_class(attrs["refresh"])
         auth_context = token.get("auth_context")
         if self.required_auth_context is None and auth_context is not None:
             raise InvalidToken("Refresh token is not valid for this endpoint.")
         if self.required_auth_context is not None and auth_context != self.required_auth_context:
             raise InvalidToken("Refresh token is not valid for this endpoint.")
-        return data
+        try:
+            return super().validate(attrs)
+        except User.DoesNotExist:
+            raise InvalidToken("Refresh token is unavailable.") from None
 
 
 class NormalTokenRefreshSerializer(ContextTokenRefreshSerializer):
@@ -92,8 +95,10 @@ class OperatorTokenRefreshSerializer(ContextTokenRefreshSerializer):
 
 
 class NormalTokenRefreshView(TokenRefreshView):
+    throttle_scope = "refresh"
     serializer_class = NormalTokenRefreshSerializer
 
 
 class OperatorTokenRefreshView(TokenRefreshView):
+    throttle_scope = "refresh"
     serializer_class = OperatorTokenRefreshSerializer

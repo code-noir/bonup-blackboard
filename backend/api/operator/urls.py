@@ -4,12 +4,14 @@ from backend.api.auth.views import OperatorTokenRefreshView
 
 from .views import (
     OperatorMeView,
+    OperatorLogoutView,
     OperatorTokenView,
     OperatorViewAsExitView,
     OperatorViewAsStartView,
 )
 
 urlpatterns = [
+    path("auth/logout/", OperatorLogoutView.as_view(), name="operator-logout"),
     path("auth/token/", OperatorTokenView.as_view(), name="operator-token"),
     path("auth/token/refresh/", OperatorTokenRefreshView.as_view(), name="operator-token-refresh"),
     path("me/", OperatorMeView.as_view(), name="operator-me"),

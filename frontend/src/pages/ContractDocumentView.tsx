@@ -1,3 +1,4 @@
+import { safeContractHtml } from '@/lib/safeHtml'
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import api from '@/api/client'
@@ -86,7 +87,7 @@ function sectionBody(section: ContractSection) {
 function annotateDocumentHtml(html: string, sections: ContractSection[]) {
   if (!sections.length || typeof document === 'undefined') return html
   const container = document.createElement('div')
-  container.innerHTML = html
+  container.innerHTML = safeContractHtml(html)
   const candidates = Array.from(container.querySelectorAll<HTMLElement>('h1,h2,h3,h4,p,div,li,section'))
   const used = new Set<string>()
   sections.forEach((section) => {
@@ -107,7 +108,7 @@ function annotateDocumentHtml(html: string, sections: ContractSection[]) {
     if (body) {
       const wrapper = document.createElement('section')
       wrapper.id = anchorId
-      wrapper.innerHTML = body.includes('<') ? body : plainTextToHtml(body)
+      wrapper.innerHTML = safeContractHtml(body.includes('<') ? body : plainTextToHtml(body))
       container.appendChild(wrapper)
     }
   })
@@ -333,7 +334,7 @@ export default function ContractDocumentView() {
               {document?.html ? (
                 <div
                   style={{ color: '#1E293B', fontSize: 14, lineHeight: 1.75 }}
-                  dangerouslySetInnerHTML={{ __html: annotatedHtml }}
+                  dangerouslySetInnerHTML={{ __html: safeContractHtml(annotatedHtml) }}
                 />
               ) : document?.text ? (
                 <pre style={{ whiteSpace: 'pre-wrap', margin: 0, color: '#1E293B', fontSize: 14, lineHeight: 1.75, fontFamily: "Georgia, 'Times New Roman', serif" }}>

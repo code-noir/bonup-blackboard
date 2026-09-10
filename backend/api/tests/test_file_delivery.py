@@ -93,7 +93,7 @@ class AuthorizedFileDeliveryTests(TestCase):
         for user in [self.owner, self.party]:
             self.assertEqual(self.body(self.auth(user).get(self.doc_path)), DATA)
         self.assertEqual(self.client.get(self.path).status_code, 404)
-        self.assertEqual(self.auth(self.stranger).get(self.doc_path).status_code, 403)
+        self.assertEqual(self.auth(self.stranger).get(self.doc_path).status_code, 404)
         other = make_contract(self.owner, self.party.email)
         self.assertEqual(self.client.get(self.doc_path.replace(str(self.contract.pk), str(other.pk))).status_code, 404)
 
@@ -191,7 +191,7 @@ class AuthorizedFileDeliveryTests(TestCase):
         field = LifecycleItemAttachment._meta.get_field('file')
         with patch.object(field, 'storage', self.storage):
             self.assertEqual(self.body(self.auth(self.party).get(path)), DATA)
-            self.assertEqual(self.auth(self.stranger).get(path).status_code, 403)
+            self.assertEqual(self.auth(self.stranger).get(path).status_code, 404)
             listing = self.client.get(path.rsplit('/', 3)[0] + '/').data
             self.assertEqual(listing['results'][0]['file_url'], path)
             self.storage.url.assert_not_called()

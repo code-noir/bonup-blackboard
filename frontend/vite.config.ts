@@ -4,7 +4,16 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), {
+    name: 'production-security-policy',
+    apply: 'build',
+    transformIndexHtml() {
+      return [
+        { tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: "script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'" }, injectTo: 'head-prepend' },
+        { tag: 'meta', attrs: { name: 'referrer', content: 'no-referrer' }, injectTo: 'head-prepend' },
+      ]
+    },
+  }],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

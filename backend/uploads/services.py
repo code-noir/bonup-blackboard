@@ -27,7 +27,7 @@ def cleanup_saved_object(saved_key):
     try:
         default_storage.delete(saved_key)
     except Exception:
-        logger.exception("Failed to clean up saved upload object after database failure.")
+        logger.error("Failed to clean up saved upload object after database failure.")
 
 
 def get_storage_backend(backend):

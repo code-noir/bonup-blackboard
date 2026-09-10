@@ -200,7 +200,6 @@ function ContractContextBar({
                 )}
                 <span
                   onClick={() => {
-                    console.log('[ContextBar] pill clicked:', entity.name, '| id:', entity.id, '| personal:', entity.personal)
                     onSelect(entity.personal ? 'Personal' : entity.name, entity.personal ? null : entity.id)
                   }}
                   style={{
@@ -282,9 +281,7 @@ export default function Contracts() {
   // AbortController ensures a stale in-flight response never overwrites newer results.
   // tabOpen resets so the list closes and reopens cleanly with the new entity's data.
   useEffect(() => {
-    console.log('[ENTITY SWITCH] activeEntityId is now: ' + activeEntityId)
     const entityParam = activeEntityId === null ? 'personal' : activeEntityId
-    console.log('[Contracts] activeEntityId changed → fetching for entity:', entityParam)
 
     const controller = new AbortController()
     setTabOpen(false)
@@ -296,7 +293,6 @@ export default function Contracts() {
       { params: { entity: entityParam }, signal: controller.signal }
     )
       .then(({ data }) => {
-        console.log('[Contracts] received', data.length, 'contracts for entity:', entityParam)
         setContracts(data.map((c) => {
           const title = c.title || `${structureLabel(c.structure_type)} #${c.id.slice(-6).toUpperCase()}`
           const party = c.counterparty_email === 'pending@bonup.placeholder'
@@ -318,7 +314,6 @@ export default function Contracts() {
       })
       .catch((err) => {
         if (axios.isCancel(err)) {
-          console.log('[Contracts] fetch aborted for entity:', entityParam)
           return  // do NOT call setContractsLoading — the new fetch owns loading state
         }
         setContractsLoading(false)

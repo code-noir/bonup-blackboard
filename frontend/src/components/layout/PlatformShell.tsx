@@ -1,3 +1,4 @@
+import CustomerSignOutButton from './CustomerSignOutButton'
 import { useState, useEffect, useRef } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
@@ -51,7 +52,7 @@ function PlatformNavItem({ to, label, Icon, compact }: { to: string; label: stri
 }
 
 export default function PlatformShell() {
-  const { user, logout } = useAuth()
+  const { user } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [compact, setCompact] = useState(false)
@@ -74,10 +75,7 @@ export default function PlatformShell() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  async function handleLogout() {
-    await logout()
-    navigate('/login', { replace: true })
-  }
+
 
   const sidebarWidth = compact ? 64 : 232
   const displayName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.email || ''
@@ -136,7 +134,7 @@ export default function PlatformShell() {
               <button type="button" onClick={() => { setMenuOpen(false); navigate('/account') }} className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">Account / Identity</button>
               <button type="button" onClick={() => { setMenuOpen(false); navigate('/billing') }} className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">Billing</button>
               <button type="button" onClick={() => { setMenuOpen(false); navigate('/settings') }} className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">Settings</button>
-              <button type="button" onClick={handleLogout} className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50">Sign out</button>
+              <CustomerSignOutButton />
             </div>
           )}
         </div>

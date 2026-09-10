@@ -14,7 +14,7 @@ from backend.documents.models import ContractDocument
 from backend.documents.services import attach_upload, detach_document
 from backend.uploads.models import Upload
 from backend.uploads.services import StorageAdmissionRejected, create_managed_upload
-from .permissions import contract_party_response, is_party
+from .permissions import is_party
 
 from backend.uploads.delivery import deliver_upload, document_delivery_url, DeliveryPrivacyMixin
 
@@ -84,7 +84,7 @@ class ContractDocumentListCreateAPIView(APIView):
     def get(self, request, contract_id):
         contract = get_object_or_404(Contract, pk=contract_id)
         if not is_party(request.user, contract):
-            return contract_party_response()
+            raise Http404("Not found.")
 
         docs = ContractDocument.objects.filter(contract=contract).select_related("upload")
         return Response([_serialize(d, request) for d in docs])
@@ -92,7 +92,7 @@ class ContractDocumentListCreateAPIView(APIView):
     def post(self, request, contract_id):
         contract = get_object_or_404(Contract, pk=contract_id)
         if not is_party(request.user, contract):
-            return contract_party_response()
+            raise Http404("Not found.")
 
         upload_id = request.data.get("upload_id")
         file = request.FILES.get("file")
@@ -149,7 +149,7 @@ class ContractDocumentDeleteAPIView(APIView):
     def delete(self, request, contract_id, doc_id):
         contract = get_object_or_404(Contract, pk=contract_id)
         if not is_party(request.user, contract):
-            return contract_party_response()
+            raise Http404("Not found.")
 
         try:
             detach_document(request.user, contract.pk, doc_id)
@@ -163,7 +163,7 @@ class ContractDocumentDeliveryAPIView(DeliveryPrivacyMixin, APIView):
         require_file_content_access(request)
         contract = get_object_or_404(Contract, pk=contract_id)
         if not is_party(request.user, contract):
-            return contract_party_response()
+            raise Http404("Not found.")
         document = get_object_or_404(
             ContractDocument.objects.select_related("upload__stored_object"),
             pk=doc_id, contract=contract,

@@ -1,6 +1,7 @@
 from django.db import DatabaseError, connection
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from django.http import Http404
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -1114,7 +1115,7 @@ class LifecycleItemAttachmentAPIView(APIView):
             pk=item_id,
         )
         if not is_party(request.user, item.lifecycle_agreement.contract):
-            return None, contract_party_response()
+            raise Http404("Not found.")
         return item, None
 
     def get(self, request, item_id):

@@ -4,7 +4,9 @@
 // Navigation is handled entirely by the operator mode sidebar.
 // This layout provides the operator mode indicator bar at the top + the outlet.
 
-import { Outlet, Link, useLocation } from 'react-router-dom'
+import { useState } from 'react'
+import { useOperator } from '@/context/OperatorContext'
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 
 const SECTION_LABELS: Record<string, string> = {
   '/operator': 'Home',
@@ -25,6 +27,14 @@ const SECTION_LABELS: Record<string, string> = {
 
 export default function AdminLayout() {
   const location = useLocation()
+  const navigate = useNavigate()
+  const { logoutOperator, sessionNotice } = useOperator()
+  const [signingOut, setSigningOut] = useState(false)
+  const signOut = async () => {
+    setSigningOut(true)
+    await logoutOperator()
+    navigate('/operator/login', { replace: true })
+  }
 
   // Match user detail routes like /operator/identity/users/123
   const userDetailMatch = location.pathname.match(/^\/operator\/identity\/users\/(\d+)$/)
@@ -66,6 +76,9 @@ export default function AdminLayout() {
           </span>
         </div>
 
+        <button type="button" disabled={signingOut} onClick={signOut} className="rounded bg-white px-4 py-2 text-sm font-semibold text-slate-900 disabled:opacity-50">
+          {signingOut ? 'Signing out...' : 'Sign out of Operator Console'}
+        </button>
         <Link
           to="/dashboard"
           style={{
@@ -86,6 +99,7 @@ export default function AdminLayout() {
         </Link>
       </div>
 
+      {sessionNotice && <p role="alert" className="mb-4 rounded bg-amber-50 p-3 text-sm text-amber-900">{sessionNotice}</p>}
       <Outlet />
     </div>
   )

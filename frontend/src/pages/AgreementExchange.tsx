@@ -1,3 +1,4 @@
+import { safeContractHtml, pastePlainText } from '@/lib/safeHtml'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '@/api/client'
@@ -311,7 +312,7 @@ function annotateContractBodyHtml(html: string, sections: ContractSection[]) {
     }).join('')}`
   }
   const container = document.createElement('div')
-  container.innerHTML = html
+  container.innerHTML = safeContractHtml(html)
   const candidates = Array.from(container.querySelectorAll<HTMLElement>('h1,h2,h3,h4,p,div,li,section'))
   const used = new Set<string>()
 
@@ -333,7 +334,7 @@ function annotateContractBodyHtml(html: string, sections: ContractSection[]) {
     if (body) {
       const wrapper = document.createElement('section')
       wrapper.id = anchorId
-      wrapper.innerHTML = body.includes('<') ? body : plainTextToHtml(body)
+      wrapper.innerHTML = safeContractHtml(body.includes('<') ? body : plainTextToHtml(body))
       container.appendChild(wrapper)
     }
   })
@@ -382,7 +383,7 @@ function ContractViewer({ contract }: { contract: CurrentContract }) {
         )}
         <div ref={previewRef} style={{ maxHeight: stackContractLayout ? 560 : 680, minHeight: stackContractLayout ? 360 : 520, overflow: 'auto', border: '1px solid #CBD5E1', borderRadius: 8, padding: 22, background: '#FFFFFF', color: '#0F172A', lineHeight: 1.65, fontSize: 14, boxShadow: 'inset 0 1px 0 rgba(15,23,42,0.04)' }}>
           {hasBody ? (
-            <div className="agreement-exchange-contract-body" dangerouslySetInnerHTML={{ __html: annotatedBodyHtml }} />
+            <div className="agreement-exchange-contract-body" dangerouslySetInnerHTML={{ __html: safeContractHtml(annotatedBodyHtml) }} />
           ) : (
             <div style={{ minHeight: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', border: '1px dashed #CBD5E1', borderRadius: 8, background: '#F8FAFC', color: '#64748B', fontSize: 13, fontWeight: 700 }}>
               No contract body was returned for this version.
@@ -414,9 +415,11 @@ function FullContractUpdateReview({ contract, request, message, setMessage, onSa
           <div
             ref={editorRef}
             contentEditable
+            onPaste={pastePlainText}
+            onDrop={(event) => event.preventDefault()}
             suppressContentEditableWarning
             style={{ minHeight: 420, maxHeight: 640, overflow: 'auto', border: '1px solid #CBD5E1', borderRadius: 8, background: '#FFFFFF', color: '#0F172A', padding: 18, fontSize: 14, lineHeight: 1.65, outline: 'none' }}
-            dangerouslySetInnerHTML={{ __html: annotatedBodyHtml }}
+            dangerouslySetInnerHTML={{ __html: safeContractHtml(annotatedBodyHtml) }}
           />
         ) : (
           <div style={{ minHeight: 220, border: '1px dashed #CBD5E1', borderRadius: 8, background: '#F8FAFC', color: '#64748B', padding: 18, display: 'grid', alignContent: 'center', justifyItems: 'center', gap: 10, textAlign: 'center', fontSize: 13, fontWeight: 700 }}>

@@ -193,8 +193,10 @@ class SessionConsumer(AsyncWebsocketConsumer):
 
         try:
             token = AccessToken(token_list[0])
+            if token.get("auth_context") is not None:
+                return None
             User = get_user_model()
-            return await User.objects.aget(id=token["user_id"])
+            return await User.objects.aget(id=token["user_id"], is_active=True)
         except Exception:
             return None
 

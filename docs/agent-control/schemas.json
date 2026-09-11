@@ -2118,7 +2118,18 @@
             "PUSHED",
             "INTERRUPTED",
             "RECOVERED",
-            "BUDGET_PAUSED"
+            "BUDGET_PAUSED",
+            "REGISTRY_INITIALIZED",
+            "SPEC_VERSION_CREATED",
+            "SPEC_FROZEN",
+            "TASK_CHECKPOINT",
+            "TASK_METADATA_UPDATED",
+            "RECORD_CREATED",
+            "RECORD_RESOLVED",
+            "RECORD_SUPERSEDED",
+            "EXECUTION_RECORDED",
+            "EVIDENCE_RECORDED",
+            "CANDIDATE_REVIEWED"
           ]
         },
         "task_id": {

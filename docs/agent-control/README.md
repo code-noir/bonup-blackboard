@@ -10,6 +10,12 @@ Authority Core” implementation instruction. No runtime Approval record exists.
 Supersedes/superseded by: none. Dependencies: the founder-approved foundation
 rules, this milestone's instructions, and the version 1 policy/schema files.
 
+Current persistence implementation: [Durable registry and publication](registry.md)
+(Phase I / Milestone 2). That document supersedes the Milestone 1-only statements
+below that persistence/publication are future work. Role policy and domain
+validation remain authoritative; no agents are activated. The following sections
+retain the original Milestone 1 policy/design record and its historical scope.
+
 This is the authoritative entry point for **managed** Agent Control policy.
 It does not activate managed execution or change ordinary repository permissions.
 

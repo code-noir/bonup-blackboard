@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "policy_version": 1,
+  "document_id": "AGENT-CONTROL-DOCUMENT-AUTHORITY",
+  "status": "ACCEPTED_DEFINITIONS_ONLY",
+  "owner": "FOUNDER",
+  "scope": "Managed Agent Control executions; Phase I Milestone 1",
+  "baseline_commit": "6020850cb41c8a94e451c254b5497b0cda523225",
+  "supersedes": [],
+  "hierarchy": [
+    "Founder-approved current ATS/objective",
+    "Agent Control operating policy",
+    "Accepted current architecture",
+    "Current domain architecture",
+    "Verified source/tests",
+    "Historical documentation"
+  ],
+  "required_document_metadata": [
+    "document_id", "version", "status", "owner", "scope", "updated_at",
+    "reviewed_at", "review_due_at", "verified_at_commit", "approval_reference",
+    "supersedes", "superseded_by", "dependencies"
+  ],
+  "freshness_rules": [
+    "Descriptive implementation claims require a verified commit and inspection/test evidence.",
+    "Normative policy records may have null verified_at_commit; they specify required behavior, not verified runtime enforcement.",
+    "Missing metadata, overdue review, supersession, or changed referenced source requires a freshness warning and inspection.",
+    "Source/tests can establish that implementation documentation is stale; they do not authorize weakening approved policy.",
+    "Record contradictions as findings/conflicts. Pause dependent work; resolve through the authorized owner. Never silently choose.",
+    "A revision cites the superseded version and approval; historical records are retained.",
+    "Legacy current-task/next-task and architecture documents are discovery aids until scope and freshness are verified."
+  ]
+}

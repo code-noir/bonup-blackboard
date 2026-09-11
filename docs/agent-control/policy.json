@@ -1,0 +1,188 @@
+{
+  "schema_version": 1,
+  "policy_version": 1,
+  "status": "DEFINITIONS_ONLY",
+  "phase": 1,
+  "max_active_execution_slots": 4,
+  "default_execution_concurrency": 1,
+  "founder": {
+    "actor_id": "FOUNDER",
+    "is_agent": false,
+    "capabilities": [
+      "APPROVE_SPEC",
+      "APPROVE_INTEGRATION",
+      "APPROVE_PUSH",
+      "RESOLVE_POLICY",
+      "ABANDON_TASK"
+    ]
+  },
+  "agents": {
+    "ARCH-01": "ARCHITECT",
+    "FE-01": "FRONTEND_ENGINEERING",
+    "BE-01": "BACKEND_ENGINEERING",
+    "QA-01": "INTEGRATION_QA"
+  },
+  "roles": {
+    "ARCHITECT": {
+      "capabilities": [
+        "READ_SANITIZED",
+        "PROPOSE_SPEC",
+        "COORDINATE",
+        "RECORD_FINDING",
+        "RESOLVE_TECHNICAL"
+      ],
+      "write_roots": [
+        "docs/agent-control/proposals"
+      ],
+      "can_commit_local": false,
+      "can_push": false,
+      "can_merge": false,
+      "can_change_task_spec": true
+    },
+    "FRONTEND_ENGINEERING": {
+      "capabilities": [
+        "READ_SANITIZED",
+        "WRITE_ASSIGNED",
+        "COMMIT_LOCAL",
+        "RECORD_FINDING"
+      ],
+      "write_roots": [
+        "frontend",
+        "docs"
+      ],
+      "can_commit_local": true,
+      "can_push": false,
+      "can_merge": false,
+      "can_change_task_spec": false
+    },
+    "BACKEND_ENGINEERING": {
+      "capabilities": [
+        "READ_SANITIZED",
+        "WRITE_ASSIGNED",
+        "COMMIT_LOCAL",
+        "RECORD_FINDING"
+      ],
+      "write_roots": [
+        "backend",
+        "tools",
+        "tests",
+        "docs"
+      ],
+      "can_commit_local": true,
+      "can_push": false,
+      "can_merge": false,
+      "can_change_task_spec": false
+    },
+    "INTEGRATION_QA": {
+      "capabilities": [
+        "READ_SANITIZED",
+        "TEST_SYNTHETIC",
+        "REVIEW_CANDIDATE",
+        "RECORD_FINDING"
+      ],
+      "write_roots": [],
+      "can_commit_local": false,
+      "can_push": false,
+      "can_merge": false,
+      "can_change_task_spec": false
+    }
+  },
+  "protected_paths": [
+    {
+      "kind": "DIRECTORY",
+      "path": ".git"
+    },
+    {
+      "kind": "DIRECTORY",
+      "path": ".codex"
+    },
+    {
+      "kind": "DIRECTORY",
+      "path": ".agents"
+    },
+    {
+      "kind": "DIRECTORY",
+      "path": "dev/logs"
+    },
+    {
+      "kind": "FILE",
+      "path": "AGENTS.md"
+    },
+    {
+      "kind": "FILE",
+      "path": "CLAUDE.md"
+    },
+    {
+      "kind": "FILE",
+      "path": "docs/agent-control/policy.json"
+    },
+    {
+      "kind": "FILE",
+      "path": "docs/agent-control/schemas.json"
+    },
+    {
+      "kind": "FILE",
+      "path": "docs/agent-control/document-authority.json"
+    }
+  ],
+  "resources": {
+    "MIGRATION": {
+      "mode": "EXCLUSIVE",
+      "phase_one_agent_allowed": true,
+      "lease_seconds": 600
+    },
+    "BACKEND_TEST_DB": {
+      "mode": "EXCLUSIVE",
+      "phase_one_agent_allowed": true,
+      "lease_seconds": 120
+    },
+    "CONCURRENCY_TEST_DB": {
+      "mode": "EXCLUSIVE",
+      "phase_one_agent_allowed": true,
+      "lease_seconds": 120
+    },
+    "FRONTEND_BUILD": {
+      "mode": "EXCLUSIVE",
+      "phase_one_agent_allowed": true,
+      "lease_seconds": 120
+    },
+    "DEPENDENCY_INSTALL": {
+      "mode": "EXCLUSIVE",
+      "phase_one_agent_allowed": true,
+      "lease_seconds": 120
+    },
+    "DEPENDENCY_LOCKFILE": {
+      "mode": "EXCLUSIVE",
+      "phase_one_agent_allowed": true,
+      "lease_seconds": 600
+    },
+    "BACKEND_DEV_SERVER": {
+      "mode": "EXCLUSIVE",
+      "phase_one_agent_allowed": true,
+      "lease_seconds": 120
+    },
+    "FRONTEND_DEV_SERVER": {
+      "mode": "EXCLUSIVE",
+      "phase_one_agent_allowed": true,
+      "lease_seconds": 120
+    },
+    "GIT_INTEGRATION": {
+      "mode": "EXCLUSIVE",
+      "phase_one_agent_allowed": false,
+      "lease_seconds": 120
+    },
+    "PRODUCTION_DEPLOYMENT": {
+      "mode": "EXCLUSIVE",
+      "phase_one_agent_allowed": false,
+      "lease_seconds": null
+    }
+  },
+  "authority_notes": [
+    "Policy is a domain-level decision model, not authentication or filesystem enforcement.",
+    "Engineers require an approved assigned path scope in addition to a role write boundary.",
+    "Founder-controlled integration/push operations are not agent ExecutionGrants.",
+    "Future organizational roles are recommendation-only and cannot receive Phase I execution grants.",
+    "Only an authenticated founder context supplied by a trusted future authentication adapter may authorize approval.",
+    "Local managed commits require can_commit_local=true; existing unmanaged instructions remain unchanged."
+  ]
+}

@@ -1,6 +1,6 @@
 """Offline routing acceptance: synthetic state, model output and supervisor only."""
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import json
 import os
 from pathlib import Path
@@ -168,6 +168,184 @@ class RoutingTests(unittest.TestCase):
     def test_profile_change_during_setup(self):
         self.supervisor.before_ready=lambda:setattr(self.store,'binding',replace(self.store.binding,profile_digest='0'*64))
         self.deny()
+
+    def change_grant(self, **changes):
+        grant = self.store.binding.grant.to_dict()
+        grant.update(changes)
+        self.store.binding = replace(self.store.binding, grant=ExecutionGrant(grant))
+
+    def reject_prepared_change(self, change, raw=None):
+        self.supervisor.before_ready = change
+        self.deny(raw)
+        self.assertEqual(self.supervisor.trace[-1], 'ABORT')
+        self.assertFalse(self.supervisor._prepared)
+        self.assertFalse(self.controller._issued)
+        self.assertEqual(self.supervisor.records, [])
+
+    def test_valid_replacement_grant_rejects_prepared_launch(self):
+        self.reject_prepared_change(lambda: self.change_grant(expires_at='2026-09-16T00:00:00Z'))
+
+    def test_coordinated_fencing_change_rejects_prepared_launch(self):
+        def change():
+            self.change_grant(fencing_epoch=2)
+            self.store.binding = replace(self.store.binding, fencing_epoch=2)
+        self.reject_prepared_change(change)
+
+    def test_coordinated_task_spec_change_rejects_prepared_launch(self):
+        def change():
+            task = self.store.binding.task.to_dict()
+            task['objective'] = 'Changed synthetic objective'
+            task['spec_version'] += 1
+            task['spec_digest'] = task_spec_digest(task)
+            self.store.binding = replace(self.store.binding, task=Task(task))
+            self.change_grant(spec_version=task['spec_version'], spec_digest=task['spec_digest'])
+        self.reject_prepared_change(change)
+
+    def test_valid_workspace_rebinding_rejects_prepared_launch(self):
+        def change():
+            root = Path(self.root.path)/'replacement'
+            (root/'frontend').mkdir(parents=True)
+            (root/'frontend/example.ts').write_text('synthetic replacement')
+            replacement = TaskRoot(root)
+            self.addCleanup(replacement.close)
+            task = self.store.binding.task.to_dict()
+            task['assignments'][0]['worktree'] = str(root)
+            task['worktree']['FE-01'] = str(root)
+            task['spec_digest'] = task_spec_digest(task)
+            self.store.binding = replace(self.store.binding, root=replacement, task=Task(task))
+            self.change_grant(worktree=str(root), spec_digest=task['spec_digest'])
+        self.reject_prepared_change(change)
+
+    def test_valid_repository_rebinding_rejects_prepared_launch(self):
+        profile = replace(self.profile, git_metadata='readonly')
+        git = Path(self.root.path)/'.git'
+        self.store.binding = replace(self.store.binding, profile=profile, profile_digest=profile.profile_digest,
+                                     repository_identity=TaskRoot._identity(git.stat()))
+        def change():
+            git.rename(git.with_name('old-git'))
+            git.mkdir()
+            self.store.binding = replace(self.store.binding, repository_identity=TaskRoot._identity(git.stat()))
+        self.reject_prepared_change(change, self.raw('GIT_STATUS', {}))
+
+    def test_valid_profile_rebinding_rejects_prepared_launch(self):
+        def change():
+            profile = replace(self.profile, process_limit=16)
+            self.store.binding = replace(self.store.binding, profile=profile, profile_digest=profile.profile_digest)
+        self.reject_prepared_change(change)
+
+    def test_valid_process_rebinding_rejects_prepared_launch(self):
+        def change():
+            self.worker_process = replace(self.worker_process, start_ticks=124)
+            self.store.binding = replace(self.store.binding, execution_process=self.worker_process)
+            self.change_grant(process_start_identity='124')
+        self.reject_prepared_change(change)
+
+    def test_authority_revision_detects_revoke_restore(self):
+        def change():
+            self.store.binding = replace(self.store.binding, revoked=True, authority_revision=1)
+            self.store.binding = replace(self.store.binding, revoked=False, authority_revision=2)
+        self.reject_prepared_change(change)
+
+    def use_expiry_clock(self, remaining):
+        self.now = datetime(2026, 9, 15, tzinfo=timezone.utc) - timedelta(seconds=remaining)
+        self.controller.clock = lambda: self.now
+
+    def test_expiry_before_record_creation(self):
+        self.use_expiry_clock(0)
+        self.deny()
+        self.assertEqual(self.supervisor.trace, [])
+        self.assertFalse(self.controller._issued)
+
+    def test_expiry_during_initial_validation(self):
+        self.use_expiry_clock(.5)
+        original = self.root.inspect
+        def inspect(*args, **kwargs):
+            original(*args, **kwargs)
+            self.now += timedelta(seconds=1)
+        with patch.object(self.root, 'inspect', side_effect=inspect):
+            self.deny()
+        self.assertEqual(self.supervisor.trace, [])
+
+    def test_expiry_in_setup_audit_prevents_preparation(self):
+        self.use_expiry_clock(.5)
+        def audit(event):
+            self.events.append(event)
+            if event.event_type == 'CONFINEMENT_SETUP_STARTED':
+                self.now += timedelta(seconds=1)
+        self.controller.audit = audit
+        self.deny()
+        self.assertNotIn('CONFINEMENT_SETUP', self.supervisor.trace)
+
+    def test_expiry_during_preparation_aborts(self):
+        self.use_expiry_clock(.5)
+        self.reject_prepared_change(lambda: setattr(self, 'now', self.now + timedelta(seconds=1)))
+
+    def test_expiry_during_final_validation_aborts(self):
+        self.use_expiry_clock(.5)
+        original = self.root.inspect
+        def inspect(*args, **kwargs):
+            original(*args, **kwargs)
+            if 'FINAL_AUTHORITY_RECHECK' in self.supervisor.trace:
+                self.now += timedelta(seconds=1)
+        with patch.object(self.root, 'inspect', side_effect=inspect):
+            self.reject_prepared_change(lambda: None)
+
+    def test_expiry_at_last_release_clock_aborts(self):
+        self.use_expiry_clock(.5)
+        original = self.controller._check
+        def check(*args):
+            record = original(*args)
+            if 'FINAL_AUTHORITY_RECHECK' in self.supervisor.trace:
+                self.now += timedelta(seconds=1)
+            return record
+        with patch.object(self.controller, '_check', side_effect=check):
+            self.reject_prepared_change(lambda: None)
+
+    def test_grant_disappears_during_final_validation(self):
+        original_inspect = self.root.inspect
+        original_load = self.store.load
+        removed = False
+        def inspect(*args, **kwargs):
+            nonlocal removed
+            original_inspect(*args, **kwargs)
+            if 'FINAL_AUTHORITY_RECHECK' in self.supervisor.trace:
+                removed = True
+        def load(execution_id):
+            if removed:
+                raise KeyError(execution_id)
+            return original_load(execution_id)
+        with patch.object(self.root, 'inspect', side_effect=inspect), patch.object(self.store, 'load', side_effect=load):
+            self.reject_prepared_change(lambda: None)
+
+    def test_subsecond_authority_never_rounded_up(self):
+        self.use_expiry_clock(.5)
+        self.supervisor.before_ready = lambda: setattr(self, 'now', self.now + timedelta(seconds=.25))
+        self.controller.dispatch(self.raw(), self.enrollment)
+        self.assertEqual(self.supervisor.records[0].timeout_seconds, .25)
+
+    def test_unchanged_authority_with_elapsed_time_succeeds(self):
+        self.use_expiry_clock(10)
+        self.supervisor.before_ready = lambda: setattr(self, 'now', self.now + timedelta(seconds=2))
+        self.controller.dispatch(self.raw(), self.enrollment)
+        self.assertEqual(self.supervisor.records[0].timeout_seconds, 8)
+
+    def test_worker_started_audit_cannot_bypass_release_recheck(self):
+        def audit(event):
+            self.events.append(event)
+            if event.event_type == 'WORKER_STARTED':
+                self.change_grant(fencing_epoch=2)
+                self.store.binding = replace(self.store.binding, fencing_epoch=2)
+        self.controller.audit = audit
+        self.reject_prepared_change(lambda: None)
+
+    def test_state_change_during_final_validation_aborts(self):
+        original = self.root.inspect
+        def inspect(*args, **kwargs):
+            original(*args, **kwargs)
+            if 'FINAL_AUTHORITY_RECHECK' in self.supervisor.trace:
+                self.store.binding = replace(self.store.binding, revoked=True)
+        with patch.object(self.root, 'inspect', side_effect=inspect):
+            self.reject_prepared_change(lambda: None)
 
     def test_replay_is_one_use(self):
         raw=self.raw();self.controller.dispatch(raw,self.enrollment)

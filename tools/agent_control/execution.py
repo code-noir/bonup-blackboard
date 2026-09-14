@@ -3,7 +3,7 @@
 Injected state/enrollment/audit providers are trusted controller dependencies,
 never model data. This module does not activate agents or launch OS processes.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import os
 from datetime import datetime, timezone
 from typing import Protocol
@@ -15,6 +15,7 @@ from .paths import PathRule, contained_by
 from .protocol import ModelProposal, Operation
 from .records import ExecutionGrant, Task
 from .schema import document, timestamp
+from .serialization import digest
 from .types import AuthorityError, ValidationError
 
 EVENTS = frozenset({'MODEL_PROPOSAL_RECEIVED', 'OPERATION_AUTHORIZED', 'OPERATION_DENIED',
@@ -37,7 +38,8 @@ class RoutingEvent:
         if self.event_type not in EVENTS or self.reason_code not in {
             'RECEIVED', 'AUTHORIZED', 'SETUP', 'SETUP_FAILED', 'STARTED', 'EXITED',
             'INVALID_PROPOSAL', 'IDENTITY', 'GRANT', 'EXPIRED', 'REVOKED', 'FENCING',
-            'SPEC', 'PROFILE', 'PATH', 'OPERATION', 'RESERVATION', 'REPLAY', 'CANCELLED'}:
+            'SPEC', 'PROFILE', 'PATH', 'OPERATION', 'RESERVATION', 'REPLAY', 'CANCELLED',
+            'AUTHORITY_CHANGED'}:
             raise ValidationError('Invalid routing audit event.')
 
 
@@ -80,6 +82,7 @@ class ExecutionBinding:
     fencing_epoch: int = 1
     active_reservations: frozenset = frozenset()
     repository_identity: tuple | None = None
+    authority_revision: int = 0  # Store increments on every authority transition, including revoke/restore.
 
 
 class ExecutionStore(Protocol):
@@ -93,11 +96,13 @@ class LaunchRecord:
     argv: tuple
     cwd: str
     environment: tuple
-    timeout_seconds: int
+    timeout_seconds: float
     output_bytes: int
     profile_digest: str
     worker: WorkerIdentity
     payload_json: str
+    authorization_digest: str
+    expires_at: str
     inherited_fds: tuple = ()
     shell: bool = False
 
@@ -137,7 +142,7 @@ class LaunchSupervisor(Protocol):
     def record_stage(self, stage): ...
     def prepare(self, record): ...
     def abort(self, handle): ...
-    def execute(self, handle, cancellation) -> LaunchResult: ...
+    def execute(self, handle, cancellation, release) -> LaunchResult: ...
 
 
 class SyntheticLaunchSupervisor:
@@ -173,8 +178,11 @@ class SyntheticLaunchSupervisor:
         self._prepared.pop(handle, None)
         self.trace.append('ABORT')
 
-    def execute(self, handle, cancellation):
-        record = self._prepared.pop(handle)  # exactly one use
+    def execute(self, handle, cancellation, release):
+        prepared = self._prepared[handle]
+        # No callbacks, I/O or setup after this controller-owned release gate.
+        record = release(prepared)
+        self._prepared.pop(handle)  # exactly one use; failure leaves handle for abort
         if cancellation.cancelled:
             return LaunchResult.bounded('CANCELLED', limit=record.output_bytes)
         self.trace.append('EXEC')
@@ -299,11 +307,51 @@ class Controller:
             raise RoutingDenied('OPERATION')
         if not set(command.required_reservations) <= (binding.active_reservations & required):
             raise RoutingDenied('RESERVATION')
-        # The future file helper consumes bounded payload through stdin, never through a shell.
-        record = LaunchRecord(proposal.operation, command.argv, '/work', binding.profile.environment(),
-                              min(binding.profile.timeout_seconds, max(1, int((timestamp(grant['expires_at']) - self.clock()).total_seconds()))),
-                              binding.profile.output_bytes, binding.profile_digest, binding.worker, proposal.arguments_json)
-        return record
+        authorization = self._snapshot(binding, enrollment, command)
+        # Reload after potentially slow filesystem validation: do not use stale store state.
+        try:
+            latest = self.store.load(enrollment.execution_id)
+        except (KeyError, LookupError):
+            raise RoutingDenied('GRANT') from None
+        if self._snapshot(latest, enrollment, command) != authorization:
+            raise RoutingDenied('AUTHORITY_CHANGED')
+        remaining = (timestamp(grant['expires_at']) - self.clock()).total_seconds()
+        if remaining <= 0:
+            raise RoutingDenied('EXPIRED')
+        # Payload travels through a bounded pipe in a future helper, never a shell.
+        return LaunchRecord(proposal.operation, command.argv, '/work', binding.profile.environment(),
+                            min(binding.profile.timeout_seconds, remaining), binding.profile.output_bytes,
+                            binding.profile_digest, binding.worker, proposal.arguments_json,
+                            authorization, grant['expires_at'])
+
+    @staticmethod
+    def _snapshot(binding, enrollment, command):
+        """Digest trusted state using the existing canonical JSON format, not model claims.
+
+        Full validated records avoid duplicating M1/M2 authority field selection.
+        The store revision detects change-and-restore (ABA) between observations.
+        """
+        if type(binding.authority_revision) is not int or binding.authority_revision < 0:
+            raise RoutingDenied('AUTHORITY_CHANGED')
+        return digest({
+            'version': 1, 'grant': binding.grant.to_dict(), 'task': binding.task.to_dict(),
+            'worker': [binding.worker.agent_id, binding.worker.role.value, binding.worker.username,
+                       binding.worker.uid, binding.worker.gid],
+            'caller': [enrollment.execution_id, enrollment.peer.uid, enrollment.peer.gid,
+                       enrollment.peer.pid, enrollment.process.boot_id, enrollment.process.start_ticks],
+            'process': [binding.execution_process.boot_id, binding.execution_process.pid,
+                        binding.execution_process.start_ticks],
+            'workspace': [binding.root.path, list(binding.root.identity)],
+            'repository': None if binding.repository_identity is None else list(binding.repository_identity),
+            'profile': binding.profile.profile_digest, 'configured_profile': binding.profile_digest,
+            'environment': [list(pair) for pair in binding.profile.environment()],
+            'active': binding.active, 'revoked': binding.revoked, 'revision': binding.authority_revision,
+            'fence': binding.fencing_epoch, 'reservations': sorted(binding.active_reservations),
+            'command': [command.command_id, command.operation.value, list(command.argv),
+                        list(command.required_reservations)],
+            'commands': [[c.command_id, c.operation.value, list(c.argv), list(c.required_reservations)]
+                         for c in binding.commands],
+        })
 
     def dispatch(self, raw, enrollment, *, cancellation=None):
         correlation = str(uuid4())  # never trust model text for audit fields
@@ -327,21 +375,36 @@ class Controller:
             ticket = object()
             self._issued[ticket] = record
             self._event('CONFINEMENT_SETUP_STARTED', correlation, 'SETUP')
+            if self.clock() >= timestamp(record.expires_at):
+                raise RoutingDenied('EXPIRED')
             try:
                 handle = self.supervisor.prepare(record)
             except Exception:
                 self._event('CONFINEMENT_SETUP_FAILED', correlation, 'SETUP_FAILED')
                 raise RoutingDenied('SETUP_FAILED') from None
             self.supervisor.record_stage('FINAL_AUTHORITY_RECHECK')
-            current = self._check(enrollment, proposal)
             issued = self._issued.pop(ticket)
-            if current != issued:
-                raise RoutingDenied('PROFILE')
             cancel = cancellation or Cancellation()
             if cancel.cancelled:
                 raise RoutingDenied('CANCELLED')
             self._event('WORKER_STARTED', correlation, 'STARTED')
-            result = self.supervisor.execute(handle, cancel)
+
+            def release(prepared):
+                if prepared is not issued:
+                    raise RoutingDenied('AUTHORITY_CHANGED')
+                current = self._check(enrollment, proposal)
+                # Time may only shorten the timeout; it is not an authority change.
+                if replace(current, timeout_seconds=issued.timeout_seconds) != issued:
+                    raise RoutingDenied('AUTHORITY_CHANGED')
+                if cancel.cancelled:
+                    raise RoutingDenied('CANCELLED')
+                remaining = (timestamp(issued.expires_at) - self.clock()).total_seconds()
+                if remaining <= 0:
+                    raise RoutingDenied('EXPIRED')
+                return replace(current, timeout_seconds=min(issued.timeout_seconds,
+                                                            current.timeout_seconds, remaining))
+
+            result = self.supervisor.execute(handle, cancel, release)
             handle = None
             self._event('WORKER_EXITED', correlation, 'EXITED')
             return result

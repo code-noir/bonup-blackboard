@@ -84,6 +84,44 @@ sharing founder UID cannot automatically access founder authority. Workers do no
 receive either the founder interface or the model-client/control channel. Persistent
 socket enrollment and production pidfd lifetime management are not implemented.
 
+## Preparation-to-release authority continuity
+
+The controller hashes the complete validated ExecutionGrant and Task records using
+existing canonical JSON/SHA-256. This includes grant identity, scope, execution ID,
+agent/role, branch, task/specification, process binding and absolute expiry without
+maintaining a competing list of M1/M2 record fields. The same digest binds the
+controller enrollment, worker UID/GID, execution process, pinned workspace identity,
+repository identity, profile/environment, selected command policy, active reservations,
+fence and active/revoked state. A controller-owned `authority_revision` must increase
+on every authority transition, including revoke/restore, to detect change-and-restore.
+A future store adapter must enforce this revision; it is not a model-supplied value.
+
+The immutable launch record retains this digest and absolute expiry. The supervisor
+passes the original prepared record to a controller-owned release callback after
+setup and audit callbacks. The controller reloads and validates authority, reloads
+again after filesystem inspection, and compares with the original authorization.
+A newly valid replacement grant, fence, task, process, workspace or profile cannot
+release an old prepared handle. Any failed release aborts the handle, with no retry
+or unrestricted fallback. WORKER_STARTED remains a synthetic pre-release audit intent;
+a subsequent denial means no simulated EXEC occurred.
+
+Remaining lifetime is checked after validation and again at release. Zero/negative
+lifetime denies execution; fractional seconds remain fractional. Release may reduce,
+but never increase, the prepared timeout. The absolute deadline remains part of the
+record; a future OS supervisor must enforce that deadline, not restart an old timeout
+following scheduling or setup delays.
+
+This is a synchronous synthetic release contract. No untrusted callback or setup
+runs between the final gate and simulated EXEC. It is not an atomic OS exec/clock or
+filesystem guarantee: production still requires a serialized authority transaction
+through release, monotonic revision persistence, pinned mounts, and a supervised child
+barrier/deadline. Those activation gates must not be replaced with polling checks.
+
+Deterministic tests change valid grants/fences/specifications, workspace/repository
+identities, profiles and processes during setup; test revoke/restore revisions;
+expire authority before preparation, during validation/setup and before release;
+and verify fractional deadlines, unchanged-authority success and handle cleanup.
+
 ## Filesystem, environment and Git
 
 TaskRoot pins a directory descriptor and verifies device/inode/owner/group. Safe

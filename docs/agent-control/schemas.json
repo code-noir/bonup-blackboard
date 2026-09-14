@@ -2129,7 +2129,14 @@
             "RECORD_SUPERSEDED",
             "EXECUTION_RECORDED",
             "EVIDENCE_RECORDED",
-            "CANDIDATE_REVIEWED"
+            "CANDIDATE_REVIEWED",
+            "MODEL_PROPOSAL_RECEIVED",
+            "OPERATION_AUTHORIZED",
+            "OPERATION_DENIED",
+            "CONFINEMENT_SETUP_STARTED",
+            "CONFINEMENT_SETUP_FAILED",
+            "WORKER_STARTED",
+            "WORKER_EXITED"
           ]
         },
         "task_id": {

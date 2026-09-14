@@ -221,3 +221,11 @@ application integration candidates are created. No packages or runtime config
 are installed. No task IDs are allocated. Python fixtures use synthetic IDs,
 paths and hashes only. Later milestones must provide persistence, authenticated
 commands, confinement, atomic ownership, recovery and actual execution checks.
+
+## Milestone 3 offline proposal routing
+
+The [proposal-only routing foundation](model-routing.md) adds strict model
+proposals, identity/framing primitives, controller checks, immutable confinement
+descriptions and a synthetic supervisor. It has no live OpenAI transport, OS worker
+launcher, provisioning or activation. Existing founder Codex authentication and
+M1/M2 registry behavior remain unchanged. See that document for production gates.

@@ -71,7 +71,7 @@ class RoutingTests(unittest.TestCase):
         self.events = []
         self.reader = lambda pid: {42000:self.caller_process,42001:self.worker_process}[pid]
         self.controller = Controller(self.store, [self.enrollment], self.supervisor, self.events.append,
-            clock=lambda:datetime(2026,9,14,tzinfo=timezone.utc), process_reader=self.reader)
+            clock=lambda:datetime(2026,9,14,tzinfo=timezone.utc), process_reader=self.reader, elapsed=lambda:0)
 
     def raw(self, operation='READ_FILE', arguments=None, **overrides):
         d = dict(version=1, request_id=str(uuid4()), execution_id=U, operation=operation,

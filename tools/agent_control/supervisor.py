@@ -3,7 +3,7 @@
 No listening socket or host cgroup is created on import. Backend setup is trusted
 installation code; wire requests select a registered launch, never host parameters.
 """
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 import socket
 import struct
@@ -15,7 +15,7 @@ from .protocol import uuid_value
 from .release_gate import ExpectedRelease, receive_one, release_frame
 from .runtime import STATES
 from .schema import timestamp
-from .serialization import canonical_json, digest
+from .serialization import canonical_json, digest, parse_json
 from .types import AuthorityError, ValidationError
 
 
@@ -110,6 +110,12 @@ class Supervisor:
         runtime = self.runtime.runtime(launch['execution_id'])
         if runtime['revoked'] or runtime['authority_revision']!=launch['authority_revision']:
             raise AuthorityError('Authority changed.')
+        leases = self.runtime.required_leases(launch['execution_id'])
+        if ([asdict(l) for l in leases] != parse_json(launch['binding'])['required_leases'] or
+                any(l.revoked or not l.held or l.execution_id!=launch['execution_id'] or
+                    l.fencing_epoch!=runtime['fencing_epoch'] or self.now()>=timestamp(l.expires_at)
+                    for l in leases)):
+            raise AuthorityError('Required lease changed or expired.')
         record = self.authorize(launch['execution_id'],launch['request_id'])
         if record.authorization_digest!=launch['authorization_digest'] or self.now()>=timestamp(launch['deadline']):
             raise AuthorityError('Launch authority/expiry mismatch.')
@@ -118,10 +124,16 @@ class Supervisor:
     def prepare(self, launch_id):
         launch = self.runtime.launch(launch_id)
         try:
+            elapsed, now = self.elapsed(), self.now()
             record = self._validate(launch)
             launch = self.runtime.transition(launch_id,launch['revision'],'PREPARING')
-            self.deadlines[launch_id] = ExecutionDeadline.arm(launch['deadline'],now=self.now(),elapsed=self.elapsed(),
-                                                            timeout_seconds=record.timeout_seconds)
+            deadline = ExecutionDeadline.arm(launch['deadline'],now=now,elapsed=elapsed,
+                                             timeout_seconds=record.timeout_seconds)
+            if record.elapsed_deadline is not None:
+                deadline = replace(deadline,elapsed_deadline=min(deadline.elapsed_deadline,record.elapsed_deadline))
+            if deadline.expired(now=self.now(),elapsed=self.elapsed()):
+                raise AuthorityError('Expired before preparation.')
+            self.deadlines[launch_id] = deadline
             self.backend.arm_deadline(launch_id,self.deadlines[launch_id])
             process = self.backend.prepare(launch,record)
             # Backend returns only after namespace/FD/capability verification, payload still gated.

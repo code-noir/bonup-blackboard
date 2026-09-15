@@ -215,20 +215,24 @@ class PinnedMounts:
             for paths, writable in ((profile.readable_paths,False),(profile.writable_paths,True)):
                 for path in paths:
                     count = 0
-                    def inspect(relative):
+                    def inspect(fd, relative):
                         nonlocal count
                         count += 1
                         if count>4096 or len(relative.split('/'))>64:
                             raise ValidationError('Export inventory limit.')
-                        fd = secure_open(root.fd,relative)
-                        try:
-                            if stat.S_ISDIR(os.fstat(fd).st_mode):
-                                for name in os.listdir(fd):
-                                    inspect(relative+'/'+name)
-                        finally:
-                            os.close(fd)
-                    inspect(path)
-                    self.entries.append((secure_open(root.fd,path),path,writable))
+                        safe_relative(relative)
+                        if stat.S_ISDIR(os.fstat(fd).st_mode):
+                            for name in os.listdir(fd):
+                                child = secure_open(fd, name)
+                                try:
+                                    inspect(child, relative+'/'+name)
+                                finally:
+                                    os.close(child)
+                    # Own the FD before inspection and retain it through mount setup.
+                    # Descendants are opened relative to that object, never its old path.
+                    fd = secure_open(root.fd, path)
+                    self.entries.append((fd, path, writable))
+                    inspect(fd, path)
             root.verify()
         except BaseException:
             self.close()

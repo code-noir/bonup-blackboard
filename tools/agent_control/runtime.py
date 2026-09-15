@@ -11,9 +11,10 @@ from uuid import uuid4
 
 from .authority import require_context
 from .confinement import ConfinementProfile
-from .execution import CommandPolicy, ExecutionBinding
+from .execution import CommandPolicy, ExecutionBinding, RequiredLease
 from .identity import ProcessIdentity, WorkerIdentity
 from .protocol import Operation, uuid_value
+from .records import Reservation
 from .runtime_schema import check_version
 from .schema import timestamp, valid_format
 from .serialization import canonical_json, digest, parse_json
@@ -227,13 +228,21 @@ class RuntimeRegistry:
                     raise ValueError()
             except ValueError:
                 raise AuthorityError('Invalid supervisor anchor.') from None
-            stored_binding = dict(binding, supervisor_anchor=asdict(anchor))
+            leases = self.required_leases(execution_id)
+            if any(l.execution_id!=execution_id or not l.held or l.revoked or
+                   l.fencing_epoch!=runtime['fencing_epoch'] for l in leases):
+                raise AuthorityError('Required lease authority mismatch.')
+            deadline = min([timestamp(grant['expires_at']), *(timestamp(l.expires_at) for l in leases)])
+            if deadline <= self.now():
+                raise AuthorityError('Expired required authority.')
+            stored_binding = dict(binding, supervisor_anchor=asdict(anchor),
+                                  required_leases=[asdict(l) for l in leases])
             self.db.execute('''INSERT INTO launch_attempts
                 (launch_id,execution_id,request_id,state,revision,authorization_digest,authority_revision,
                  supervisor_generation,boot_id,cgroup_name,deadline,binding)
                 VALUES (?,?,?,'REGISTERED',0,?,?,?,?,?,?,?)''',
                 (launch_id,execution_id,request_id,authorization_digest,runtime['authority_revision'],generation,
-                 boot_id,'launch-'+launch_id,grant['expires_at'],canonical_json(stored_binding)))
+                 boot_id,'launch-'+launch_id,deadline.isoformat(),canonical_json(stored_binding)))
         return launch_id
 
     def launch(self, launch_id):
@@ -259,17 +268,22 @@ class RuntimeRegistry:
                  WHERE launch_id=? AND revision=?''',
                 (target,reason,int(cleanup),metadata,exit_code,launch_id,revision))
             if target == 'TERMINAL':
-                self.db.execute('UPDATE resource_leases SET held=0 WHERE execution_id=?',(row['execution_id'],))
+                self.db.execute('UPDATE resource_leases SET held=0,revision=revision+1 WHERE execution_id=?',(row['execution_id'],))
         return self.launch(launch_id)
 
-    def acquire_lease(self, execution_id, resource_key, fence, expires_at, now):
+    def acquire_lease(self, execution_id, resource_key, fence, expires_at, now, *, reservation=None):
         if type(resource_key) is not str or not resource_key or len(resource_key)>256:
             raise ValidationError('Invalid resource key.')
-        if timestamp(expires_at) <= now:
+        if timestamp(expires_at) <= max(now,self.now()):
             raise AuthorityError('Expired lease.')
         with self.transaction('lease'):
             runtime = self.runtime(execution_id)
             grant = self.registry.load('ExecutionGrant',execution_id)
+            if (type(reservation) is not Reservation or reservation['owner_task']!=grant['task_id'] or
+                    reservation['status']!='ACTIVE'):
+                raise AuthorityError('Exact trusted resource reservation required.')
+            resource_json=canonical_json(reservation.to_dict())
+            RequiredLease(resource_key,execution_id,fence,expires_at,1,True,False,resource_json)
             if (runtime['revoked'] or fence != runtime['fencing_epoch'] or resource_key not in grant['reserved_resources']
                     or timestamp(expires_at)>timestamp(grant['expires_at'])):
                 raise AuthorityError('Lease authority mismatch.')
@@ -277,10 +291,34 @@ class RuntimeRegistry:
             # Expiry does not prove old descendants stopped. Never steal a held lease.
             if prior and (prior['held'] or fence <= prior['fencing_epoch']):
                 raise AuthorityError('Lease held or stale fence.')
-            self.db.execute('''INSERT INTO resource_leases VALUES (?,?,?,?,1)
+            self.db.execute('''INSERT INTO resource_leases VALUES (?,?,?,?,1,1,0,?,?)
                 ON CONFLICT(resource_key) DO UPDATE SET execution_id=excluded.execution_id,
-                fencing_epoch=excluded.fencing_epoch,expires_at=excluded.expires_at,held=1''',
-                (resource_key,execution_id,fence,expires_at))
+                fencing_epoch=excluded.fencing_epoch,expires_at=excluded.expires_at,held=1,
+                revision=resource_leases.revision+1,revoked=0,
+                resource_json=excluded.resource_json,resource_digest=excluded.resource_digest''',
+                (resource_key,execution_id,fence,expires_at,resource_json,digest(reservation.to_dict())))
+
+    def revoke_lease(self, resource_key, revision, *, context):
+        self.founder(context)
+        with self.transaction('revoke-lease'):
+            cursor = self.db.execute('''UPDATE resource_leases SET revoked=1,revision=revision+1
+                WHERE resource_key=? AND revision=? AND held=1''', (resource_key,revision))
+            if cursor.rowcount != 1:
+                raise AuthorityError('Stale lease revocation.')
+        # held remains true until whole-launch cleanup; revocation is not release.
+
+    def required_leases(self, execution_id):
+        grant = self.registry.load('ExecutionGrant', execution_id)
+        result = []
+        for key in sorted(grant['reserved_resources']):
+            row = self.db.execute('SELECT * FROM resource_leases WHERE resource_key=?', (key,)).fetchone()
+            if row is None:
+                raise AuthorityError('Required lease missing.')
+            if digest(parse_json(row['resource_json'])) != row['resource_digest']:
+                raise AuthorityError('Lease resource digest mismatch.')
+            result.append(RequiredLease(row['resource_key'],row['execution_id'],row['fencing_epoch'],
+                row['expires_at'],row['revision'],bool(row['held']),bool(row['revoked']),row['resource_json']))
+        return tuple(result)
 
 
 @dataclass
@@ -302,8 +340,9 @@ class DurableExecutionStore:
             proc = ProcessIdentity(grant['boot_id'],pid,int(grant['process_start_identity']))
         except ValueError:
             raise AuthorityError('Invalid process binding.') from None
-        leases = rr.db.execute('SELECT * FROM resource_leases WHERE execution_id=? AND held=1',(execution_id,)).fetchall()
+        leases = rr.required_leases(execution_id)
         # Lease expiry is checked by the supervisor/controller clock, never inferred from held alone.
         return ExecutionBinding(grant,task,worker,proc,self.roots[execution_id],profile,profile.profile_digest,
             commands,not runtime['revoked'],bool(runtime['revoked']),runtime['fencing_epoch'],
-            frozenset(r['resource_key'] for r in leases if timestamp(r['expires_at'])>rr.now() and r['fencing_epoch']==runtime['fencing_epoch']),self.repositories.get(execution_id),runtime['authority_revision'])
+            frozenset(l.resource_key for l in leases if l.held and not l.revoked),
+            self.repositories.get(execution_id),runtime['authority_revision'],leases)

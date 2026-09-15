@@ -11,6 +11,38 @@ writable roots must be reviewed and rendered. No socket/service is enabled by a
 Python import. The trusted host event-loop/controller composition is an installed
 integration gate, not a command exposing root Python evaluation.
 
+`validate_approved_manifest` now accepts only the closed version-1 installation
+policy: exact Phase-I accounts/private groups, generation, trusted founder UID/GID,
+private homes, locked passwords, nologin and no supplementary groups/SSH keys.
+Every privileged file requires its reviewed SHA256, exact bundle source and installed
+destination, root ownership and immutable mode. The complete module/policy inventory,
+gate, rendered unit and future installed supervisor executable are mandatory.
+The generated review template deliberately lacks the latter two built artifacts,
+service configuration, numeric identities, finite filesystem quotas and rollback
+receipt policy. Setting `approved=true` cannot make that template pass.
+
+The approved service policy fixes an argv array for
+`/usr/lib/bonup-agent-control/supervisor`, root identity, `/` working directory,
+minimal environment with HOME `/nonexistent`, no EnvironmentFile, and only
+SETUID/SETGID/KILL. Shell/interpreter commands, arbitrary systemd properties,
+CAP_SYS_ADMIN and unreviewed capabilities are rejected. This is a contract for a
+future built entrypoint, not a newly supplied or installed executable.
+Storage requires finite byte/inode filesystem quotas for each exact controller or
+worker root. Other roots, unresolved quotas and writable privileged artifacts fail.
+
+Manifest validation checks metadata and returns the existing canonical JSON digest;
+it cannot attest that arbitrary bytes match that metadata. Before installation,
+the separately reviewed installer must verify the complete unprivileged bundle,
+rendered service policy and all hashes, then verify root-controlled installed files
+and ancestors. Never run code from the writable checkout as root. A passing synthetic
+manifest is not permission to install and does not replace those content/host checks.
+
+Rollback metadata covers every created file, directory, socket, account/private
+group and the approved manifest. Exact installation receipt identities (generation,
+device/inode/type/owner and file hash) must match before removal. Preexisting objects
+and nonempty directories are preserved. Wildcards, arbitrary shell, recursive
+removal, unknown paths and removal before cgroup cleanup are rejected.
+
 Before installation, the founder reviews:
 
 1. Exact unused UID/GID pairs and generation; existing matching names are NOT silently

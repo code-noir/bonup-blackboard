@@ -3,8 +3,9 @@
 Injected state/enrollment/audit providers are trusted controller dependencies,
 never model data. This module does not activate agents or launch OS processes.
 """
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 import os
+import time
 from datetime import datetime, timezone
 from typing import Protocol
 from uuid import uuid4
@@ -14,8 +15,8 @@ from .identity import PeerIdentity, ProcessIdentity, WorkerIdentity
 from .paths import PathRule, contained_by
 from .protocol import ModelProposal, Operation
 from .records import ExecutionGrant, Task
-from .schema import document, timestamp
-from .serialization import digest
+from .schema import document, timestamp, validate_schema
+from .serialization import canonical_json, digest, parse_json
 from .types import AuthorityError, ValidationError
 
 EVENTS = frozenset({'MODEL_PROPOSAL_RECEIVED', 'OPERATION_AUTHORIZED', 'OPERATION_DENIED',
@@ -68,6 +69,33 @@ class CommandPolicy:
 
 
 @dataclass(frozen=True)
+class RequiredLease:
+    """Exact durable authority including the canonical granted Reservation record."""
+    resource_key: str
+    execution_id: str
+    fencing_epoch: int
+    expires_at: str
+    revision: int
+    held: bool
+    revoked: bool
+    resource_json: str
+
+    def __post_init__(self):
+        if (type(self.resource_key) is not str or not self.resource_key or
+                type(self.execution_id) is not str or not self.execution_id or
+                any(type(v) is not int or v < 1 for v in (self.fencing_epoch, self.revision)) or
+                type(self.held) is not bool or type(self.revoked) is not bool):
+            raise ValidationError('Invalid required lease authority.')
+        timestamp(self.expires_at)
+        resource = parse_json(self.resource_json)
+        validate_schema('Reservation', resource)
+        if (canonical_json(resource)!=self.resource_json or resource['reservation_id']!=self.resource_key or
+                resource['owner_execution']!=self.execution_id or resource['fencing_epoch']!=self.fencing_epoch or
+                timestamp(self.expires_at)>timestamp(resource['lease_expires_at'])):
+            raise ValidationError('Lease resource binding mismatch.')
+
+
+@dataclass(frozen=True)
 class ExecutionBinding:
     grant: ExecutionGrant
     task: Task
@@ -83,6 +111,7 @@ class ExecutionBinding:
     active_reservations: frozenset = frozenset()
     repository_identity: tuple | None = None
     authority_revision: int = 0  # Store increments on every authority transition, including revoke/restore.
+    required_leases: tuple = ()
 
 
 class ExecutionStore(Protocol):
@@ -105,6 +134,7 @@ class LaunchRecord:
     expires_at: str
     inherited_fds: tuple = ()
     shell: bool = False
+    elapsed_deadline: float | None = None  # CLOCK_BOOTTIME, same boot as process binding.
 
     def __post_init__(self):
         if type(self.argv) is not tuple or not self.argv or self.shell is not False or self.inherited_fds != ():
@@ -194,13 +224,17 @@ class SyntheticLaunchSupervisor:
 
 class Controller:
     """One synchronous request at a time. No durable runtime is enabled yet."""
-    def __init__(self, store, enrollments, supervisor, audit, *, clock=None, process_reader=None):
+    def __init__(self, store, enrollments, supervisor, audit, *, clock=None, process_reader=None, elapsed=None):
         self.store = store
         self.enrollments = tuple(enrollments)
         self.supervisor = supervisor
         self.audit = audit
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.process_reader = process_reader
+        self.elapsed = elapsed or (lambda: time.clock_gettime(time.CLOCK_BOOTTIME))
+        self._deadlines = {}
+        self._lease_deadlines = {}
+        self._grant_deadlines = {}
         self._used = set()
         self._issued = {}
 
@@ -208,6 +242,8 @@ class Controller:
         self.audit(RoutingEvent(kind, correlation, reason))
 
     def _check(self, enrollment, proposal):
+        # Sample elapsed first: validation work must consume, never extend, authority.
+        started_elapsed, started_at = self.elapsed(), self.clock()
         if type(enrollment) is not Enrollment:
             raise RoutingDenied('IDENTITY')
         if not any(enrollment is e for e in self.enrollments) or enrollment.peer.pid != enrollment.process.pid:
@@ -227,7 +263,12 @@ class Controller:
             raise RoutingDenied('IDENTITY')
         if not binding.active or binding.revoked:
             raise RoutingDenied('REVOKED')
-        if self.clock() >= timestamp(grant['expires_at']):
+        grant_key=digest(grant.to_dict())
+        grant_deadline=started_elapsed+(timestamp(grant['expires_at'])-started_at).total_seconds()
+        grant_deadline=min(grant_deadline,self._grant_deadlines.get(grant_key,grant_deadline))
+        self._grant_deadlines[grant_key]=grant_deadline
+        if self.clock() >= timestamp(grant['expires_at']) or self.elapsed()>=grant_deadline:
+            self._grant_deadlines[grant_key]=min(grant_deadline,self.elapsed())
             raise RoutingDenied('EXPIRED')
         if grant['fencing_epoch'] != binding.fencing_epoch:
             raise RoutingDenied('FENCING')
@@ -249,6 +290,23 @@ class Controller:
         required = set(grant['reserved_resources'])
         if not required <= binding.active_reservations:
             raise RoutingDenied('RESERVATION')
+        leases = binding.required_leases
+        if (type(leases) is not tuple or any(type(l) is not RequiredLease for l in leases) or
+                len(leases) != len(required) or {l.resource_key for l in leases} != required or
+                any(l.execution_id != enrollment.execution_id or l.fencing_epoch != binding.fencing_epoch or
+                    not l.held or l.revoked or parse_json(l.resource_json)['owner_task']!=task['task_id'] or
+                    parse_json(l.resource_json)['status']!='ACTIVE' for l in leases)):
+            raise RoutingDenied('RESERVATION')
+        expiry = min([timestamp(grant['expires_at']), *(timestamp(l.expires_at) for l in leases)])
+        lease_deadlines=[]
+        for lease in leases:
+            key=digest(asdict(lease))
+            deadline=started_elapsed+(timestamp(lease.expires_at)-started_at).total_seconds()
+            deadline=min(deadline,self._lease_deadlines.get(key,deadline))
+            self._lease_deadlines[key]=deadline
+            lease_deadlines.append(deadline)
+        if any(started_elapsed>=d for d in lease_deadlines):
+            raise RoutingDenied('EXPIRED')
         try:
             binding.root.verify()
             protected = tuple(PathRule.from_dict(p) for p in document('policy.json')['protected_paths'])
@@ -315,14 +373,28 @@ class Controller:
             raise RoutingDenied('GRANT') from None
         if self._snapshot(latest, enrollment, command) != authorization:
             raise RoutingDenied('AUTHORITY_CHANGED')
-        remaining = (timestamp(grant['expires_at']) - self.clock()).total_seconds()
+        key = (enrollment.execution_id, proposal.request_id)
+        deadline = started_elapsed + min(binding.profile.timeout_seconds, (expiry-started_at).total_seconds())
+        deadline = min([deadline,grant_deadline,*lease_deadlines])
+        # A repeated recheck, including after wall-clock rollback, cannot re-arm.
+        deadline = min(deadline, self._deadlines.get(key, deadline))
+        self._deadlines[key] = deadline
+        final_now, final_elapsed = self.clock(), self.elapsed()
+        remaining = min((expiry-final_now).total_seconds(), deadline-final_elapsed)
         if remaining <= 0:
+            # Latch observed absolute expiry too: a later UTC rollback cannot revive it.
+            if final_now>=timestamp(grant['expires_at']):
+                self._grant_deadlines[grant_key]=min(grant_deadline,final_elapsed)
+            for lease in leases:
+                if final_now>=timestamp(lease.expires_at):
+                    key=digest(asdict(lease))
+                    self._lease_deadlines[key]=min(self._lease_deadlines[key],final_elapsed)
             raise RoutingDenied('EXPIRED')
         # Payload travels through a bounded pipe in a future helper, never a shell.
         return LaunchRecord(proposal.operation, command.argv, '/work', binding.profile.environment(),
                             min(binding.profile.timeout_seconds, remaining), binding.profile.output_bytes,
                             binding.profile_digest, binding.worker, proposal.arguments_json,
-                            authorization, grant['expires_at'])
+                            authorization, expiry.isoformat(), elapsed_deadline=deadline)
 
     @staticmethod
     def _snapshot(binding, enrollment, command):
@@ -347,6 +419,7 @@ class Controller:
             'environment': [list(pair) for pair in binding.profile.environment()],
             'active': binding.active, 'revoked': binding.revoked, 'revision': binding.authority_revision,
             'fence': binding.fencing_epoch, 'reservations': sorted(binding.active_reservations),
+            'leases': [asdict(l) for l in sorted(binding.required_leases, key=lambda l:l.resource_key)],
             'command': [command.command_id, command.operation.value, list(command.argv),
                         list(command.required_reservations)],
             'commands': [[c.command_id, c.operation.value, list(c.argv), list(c.required_reservations)]
@@ -394,11 +467,13 @@ class Controller:
                     raise RoutingDenied('AUTHORITY_CHANGED')
                 current = self._check(enrollment, proposal)
                 # Time may only shorten the timeout; it is not an authority change.
-                if replace(current, timeout_seconds=issued.timeout_seconds) != issued:
+                if replace(current, timeout_seconds=issued.timeout_seconds,
+                           elapsed_deadline=issued.elapsed_deadline) != issued:
                     raise RoutingDenied('AUTHORITY_CHANGED')
                 if cancel.cancelled:
                     raise RoutingDenied('CANCELLED')
-                remaining = (timestamp(issued.expires_at) - self.clock()).total_seconds()
+                remaining = min((timestamp(issued.expires_at) - self.clock()).total_seconds(),
+                                issued.elapsed_deadline-self.elapsed())
                 if remaining <= 0:
                     raise RoutingDenied('EXPIRED')
                 return replace(current, timeout_seconds=min(issued.timeout_seconds,

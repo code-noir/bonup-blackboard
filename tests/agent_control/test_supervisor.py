@@ -240,7 +240,8 @@ class RuntimeTests(unittest.TestCase):
 
     def test_leases_retained_until_cleanup(self):
         key=uid()
-        self.runtime.db.execute('INSERT INTO resource_leases VALUES (?,?,?,?,1)',(key,self.execution_id,1,EXPIRY))
+        self.runtime.db.execute('INSERT INTO resource_leases VALUES (?,?,?,?,1,1,0,?,?)',
+                               (key,self.execution_id,1,EXPIRY,'{}','a'*64))
         self.supervisor.prepare(self.launch_id)
         self.backend.cleanup_known=False
         self.supervisor.stop(self.launch_id,'REVOKED')

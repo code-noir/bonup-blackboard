@@ -1,0 +1,35 @@
+# REVIEW TEMPLATE ONLY. Render approved values; do not install this file verbatim.
+[Unit]
+Description=bonUP trusted agent execution supervisor
+ConditionPathExists=/etc/bonup-agent-control/approved-installation.json
+After=local-fs.target
+
+[Service]
+Type=notify
+User=root
+Group=root
+ExecStart=@VERIFIED_INSTALLED_ENTRYPOINT@
+WorkingDirectory=/
+Environment=PATH=/usr/bin:/bin LANG=C.UTF-8 LC_ALL=C.UTF-8
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=@APPROVED_CAPABILITY_BOUND@
+AmbientCapabilities=
+Delegate=cpu memory pids
+DelegateSubgroup=supervisor
+KillMode=control-group
+KillSignal=SIGKILL
+SendSIGKILL=yes
+TimeoutStopSec=5s
+WatchdogSec=10s
+WatchdogSignal=SIGKILL
+NotifyAccess=main
+Restart=no
+LimitCORE=0
+LimitNOFILE=4096
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=@APPROVED_RUNTIME_AND_WORKSPACE_ROOTS@
+# Do not add RestrictNamespaces/PrivateUsers settings that break the approved bwrap path.
+# Workers receive no service notification socket, cgroup mount or administrative IPC.

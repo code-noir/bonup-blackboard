@@ -1,8 +1,8 @@
-"""Immutable launch descriptions, not a privileged or production launcher.
+"""Immutable launch descriptions and pinned mount preparation.
 
 Descriptor-relative inspection pins roots and rejects symlinks/hardlinks. The
-future OS launcher must consume pinned descriptors, not re-open generated source
-pathnames after validation. Generated argv is for synthetic fixtures/review only.
+installed OS backend consumes pinned descriptors, not generated source pathnames.
+The legacy bwrap_argv method remains for synthetic fixture/review use only.
 """
 from dataclasses import dataclass, asdict
 import os
@@ -191,3 +191,78 @@ class ConfinementProfile:
         for k, v in self.environment():
             result += ['--setenv', k, v]
         return tuple(result + ['--', *argv])
+
+
+class PinnedMounts:
+    """Prepared FD-based source exports. Caller owns exclusive sanitized workspace lease.
+
+    Pinning prevents pathname substitution, not concurrent content modification.
+    Keep this object alive until bwrap consumes the inherited descriptors.
+    """
+    def __init__(self, root, profile, *, expected_identity):
+        from .supervisor_linux import secure_open
+        if type(root) is not TaskRoot or type(profile) is not ConfinementProfile:
+            raise ValidationError('Trusted root/profile required.')
+        root.verify()
+        if root.identity != expected_identity:
+            raise ValidationError('Workspace identity mismatch.')
+        # Writable Git requires a separate sanitized Git helper; generic exports never provide it.
+        if profile.git_metadata != 'hidden':
+            raise ValidationError('Generic launch cannot export Git metadata.')
+        self.root, self.profile, self.entries = root, profile, []
+        self.identity = expected_identity
+        try:
+            for paths, writable in ((profile.readable_paths,False),(profile.writable_paths,True)):
+                for path in paths:
+                    count = 0
+                    def inspect(relative):
+                        nonlocal count
+                        count += 1
+                        if count>4096 or len(relative.split('/'))>64:
+                            raise ValidationError('Export inventory limit.')
+                        fd = secure_open(root.fd,relative)
+                        try:
+                            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                                for name in os.listdir(fd):
+                                    inspect(relative+'/'+name)
+                        finally:
+                            os.close(fd)
+                    inspect(path)
+                    self.entries.append((secure_open(root.fd,path),path,writable))
+            root.verify()
+        except BaseException:
+            self.close()
+            raise
+
+    @property
+    def pass_fds(self):
+        return tuple(fd for fd,_,_ in self.entries)
+
+    def argv(self, fixed_payload):
+        from .release_gate import FixedPayload
+        if type(fixed_payload) is not FixedPayload:
+            raise ValidationError('Fixed payload required.')
+        self.root.verify()
+        if self.root.identity != self.identity:
+            raise ValidationError('Workspace substituted.')
+        # Runtime is distribution /usr only. Worker source bind sources are exclusively FDs.
+        result = ['/usr/bin/bwrap','--unshare-user','--unshare-pid','--unshare-net',
+                  '--unshare-ipc','--unshare-uts','--cap-drop','ALL','--die-with-parent',
+                  '--new-session','--clearenv','--ro-bind','/usr','/usr']
+        for name in ('bin','sbin','lib','lib64'):
+            result += ['--symlink','usr/'+name,'/'+name]
+        result += ['--proc','/proc','--dev','/dev','--size','16777216','--tmpfs','/tmp',
+                   '--dir','/run','--dir','/home','--size','16777216','--tmpfs','/home/worker','--dir','/work']
+        for fd,path,writable in self.entries:
+            os.fstat(fd)
+            result += ['--bind-fd' if writable else '--ro-bind-fd',str(fd),'/work/'+path]
+        result += ['--chdir','/work','--remount-ro','/']
+        for key,value in self.profile.environment():
+            result += ['--setenv',key,value]
+        # fixed_payload MUST be the installed trusted gate, not untrusted model argv.
+        return tuple(result+['--',*fixed_payload.argv])
+
+    def close(self):
+        for fd,_,_ in self.entries:
+            os.close(fd)
+        self.entries.clear()

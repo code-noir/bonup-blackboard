@@ -131,9 +131,11 @@ class Registry:
     def history(self):return GitHistory(self.meta('history_path'),self.meta('registry_id'))
 
     def _version(self):
-        try:versions=[r[0] for r in self.db.execute('SELECT version FROM schema_versions ORDER BY version')]
-        except sqlite3.DatabaseError:raise RegistryBlocked('Control schema is missing or invalid.') from None
-        if versions != [DB_VERSION]:raise RegistryBlocked('Unsupported control database schema version.')
+        from .runtime_schema import check_version
+        try:
+            check_version(self.db)
+        except sqlite3.DatabaseError:
+            raise RegistryBlocked('Control schema is missing or invalid.') from None
 
     def _next(self,kind):
         self.db.execute('UPDATE sequences SET value=value+1 WHERE name=?',(kind,))
@@ -154,6 +156,11 @@ class Registry:
                 self.db.commit();return parse_json(prior['result'])
             changed=[];now=utc_now()
             result,task_id=action(now,changed)
+            if self.db.execute("SELECT 1 FROM sqlite_master WHERE name='execution_runtime' AND type='table'").fetchone():
+                affected={data['task_id'] for kind,_,_,data in changed if kind in {'Task','Approval'}}
+                for affected_task in affected:
+                    self.db.execute('''UPDATE execution_runtime SET authority_revision=authority_revision+1
+                        WHERE execution_id IN (SELECT record_id FROM executions WHERE task_id=?)''',(affected_task,))
             sequence=self._next('EVENT')
             previous=self.db.execute('SELECT event_digest FROM audit_events ORDER BY sequence DESC LIMIT 1').fetchone()
             actor=context.actor() if context else {'actor_id':'ARCH-01','role':'ARCHITECT'}

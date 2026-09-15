@@ -2,6 +2,11 @@
 
 Status: implemented offline foundation; not an activated agent runtime.
 
+The subsequent [supervisor foundation](supervisor.md) adds explicit durable runtime
+state and uninstalled Linux launch/gate primitives. It supersedes the future-work
+statements below for those primitives; this document's synthetic launcher remains
+a simulation, and installed cross-UID/service integration remains unverified.
+
 The founder approved this architecture for the managed 12-agent runtime. Phase I
 still enables only the existing ARCH/FE/BE/QA policy definitions, and no identities
 or agents are provisioned/activated by this implementation. The current founder

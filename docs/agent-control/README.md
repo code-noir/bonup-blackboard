@@ -16,6 +16,10 @@ below that persistence/publication are future work. Role policy and domain
 validation remain authoritative; no agents are activated. The following sections
 retain the original Milestone 1 policy/design record and its historical scope.
 
+Milestone 3 repository foundations: [proposal-only routing](model-routing.md) and
+[durable supervised execution](supervisor.md). The latter adds explicit registry v2
+migration and uninstalled Linux supervisor primitives; it does not activate agents.
+
 This is the authoritative entry point for **managed** Agent Control policy.
 It does not activate managed execution or change ordinary repository permissions.
 

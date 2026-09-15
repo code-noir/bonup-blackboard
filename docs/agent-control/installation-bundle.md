@@ -4,6 +4,13 @@ Block 4 generates and verifies a repository review artifact. It does not install
 provision, start services, enroll tasks or activate workers. Host integration remains
 required. The existing founder Codex workflow is unchanged.
 
+Generation-1 installation approval is now governed by
+[installation-approval.md](installation-approval.md). The historical candidate and
+its inventory remain unchanged. Future installers must use the separate approved
+installation inventory and linked receipt contract in `installation_approval.py`;
+the legacy plan/receipt primitives described below are compatibility components,
+not the complete approval gate.
+
 ## Source and dependency boundary
 
 `tools/agent_control/installation_bundle.py` exposes `build`, `write_review`,

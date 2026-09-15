@@ -1,0 +1,1 @@
+{"executions":[],"founder":null,"founder_uid":1000,"proposal":null,"service":{"capabilities":[],"component":"controller","endpoint":"/run/bonup-agent-supervisor/control.sock","gid":3000,"provisioning_generation":1,"service":"bonup-agent-controller.service","uid":3000},"version":2}

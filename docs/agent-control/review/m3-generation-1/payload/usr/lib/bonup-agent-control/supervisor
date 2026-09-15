@@ -1,0 +1,51 @@
+#!/usr/bin/python3 -I
+import hashlib
+import json
+import os
+import stat
+import sys
+from pathlib import Path
+root = Path('/usr/lib/bonup-agent-control')
+here = root / 'supervisor'
+if Path(__file__) != here or len(sys.argv) != 1 or not sys.flags.isolated or not sys.flags.no_user_site:
+    raise SystemExit('Immutable isolated installation required')
+def read_verified(path):
+    fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        parts = Path(path).parts[1:]
+        for index, part in enumerate(parts):
+            child = os.open(part, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK |
+                (os.O_DIRECTORY if index < len(parts)-1 else 0), dir_fd=fd)
+            os.close(fd)
+            fd = child
+            info = os.fstat(fd)
+            if info.st_uid != 0 or info.st_mode & 0o022:
+                raise SystemExit('Mutable installed object')
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > 1048576:
+            raise SystemExit('Unsafe installed object')
+        with os.fdopen(os.dup(fd), 'rb') as stream:
+            raw = stream.read(1048577)
+        if len(raw) != info.st_size or any(getattr(os.fstat(fd), k) != getattr(info, k)
+            for k in ('st_dev','st_ino','st_mode','st_nlink','st_uid','st_gid','st_size','st_mtime_ns','st_ctime_ns')):
+            raise SystemExit('Installed object changed')
+        return raw
+    finally:
+        os.close(fd)
+def unique_pairs(pairs):
+    result = {}
+    for key,value in pairs:
+        if key in result:
+            raise SystemExit('Duplicate manifest key')
+        result[key] = value
+    return result
+manifest = json.loads(read_verified('/etc/bonup-agent-control/approved-installation.json'), object_pairs_hook=unique_pairs)
+expected_paths = ['/usr/lib/bonup-agent-control/tools/agent_control/__init__.py', '/usr/lib/bonup-agent-control/tools/agent_control/__main__.py', '/usr/lib/bonup-agent-control/tools/agent_control/authority.py', '/usr/lib/bonup-agent-control/tools/agent_control/bootstrap_entry.py', '/usr/lib/bonup-agent-control/tools/agent_control/composition.py', '/usr/lib/bonup-agent-control/tools/agent_control/composition_protocol.py', '/usr/lib/bonup-agent-control/tools/agent_control/confinement.py', '/usr/lib/bonup-agent-control/tools/agent_control/controller_entry.py', '/usr/lib/bonup-agent-control/tools/agent_control/exec_start.py', '/usr/lib/bonup-agent-control/tools/agent_control/execution.py', '/usr/lib/bonup-agent-control/tools/agent_control/filesystem_evidence.py', '/usr/lib/bonup-agent-control/tools/agent_control/gate_entry.py', '/usr/lib/bonup-agent-control/tools/agent_control/identity.py', '/usr/lib/bonup-agent-control/tools/agent_control/installation_bundle.py', '/usr/lib/bonup-agent-control/tools/agent_control/installed_config.py', '/usr/lib/bonup-agent-control/tools/agent_control/installed_runtime.py', '/usr/lib/bonup-agent-control/tools/agent_control/installed_transport.py', '/usr/lib/bonup-agent-control/tools/agent_control/integration_policy.py', '/usr/lib/bonup-agent-control/tools/agent_control/lifecycle.py', '/usr/lib/bonup-agent-control/tools/agent_control/model_client.py', '/usr/lib/bonup-agent-control/tools/agent_control/operational_enrollment.py', '/usr/lib/bonup-agent-control/tools/agent_control/paths.py', '/usr/lib/bonup-agent-control/tools/agent_control/protocol.py', '/usr/lib/bonup-agent-control/tools/agent_control/provisioning.py', '/usr/lib/bonup-agent-control/tools/agent_control/publication.py', '/usr/lib/bonup-agent-control/tools/agent_control/records.py', '/usr/lib/bonup-agent-control/tools/agent_control/registry.py', '/usr/lib/bonup-agent-control/tools/agent_control/release_gate.py', '/usr/lib/bonup-agent-control/tools/agent_control/resource_supervision.py', '/usr/lib/bonup-agent-control/tools/agent_control/runtime.py', '/usr/lib/bonup-agent-control/tools/agent_control/runtime_schema.py', '/usr/lib/bonup-agent-control/tools/agent_control/schema.py', '/usr/lib/bonup-agent-control/tools/agent_control/serialization.py', '/usr/lib/bonup-agent-control/tools/agent_control/service_runtime.py', '/usr/lib/bonup-agent-control/tools/agent_control/storage.py', '/usr/lib/bonup-agent-control/tools/agent_control/supervisor.py', '/usr/lib/bonup-agent-control/tools/agent_control/supervisor_entry.py', '/usr/lib/bonup-agent-control/tools/agent_control/supervisor_linux.py', '/usr/lib/bonup-agent-control/tools/agent_control/types.py', '/usr/lib/bonup-agent-control/docs/agent-control/document-authority.json', '/usr/lib/bonup-agent-control/docs/agent-control/policy.json', '/usr/lib/bonup-agent-control/docs/agent-control/schemas.json', '/usr/lib/bonup-agent-control/bootstrap_entry.py', '/usr/lib/bonup-agent-control/gate_entry.py', '/usr/lib/bonup-agent-control/tools/__init__.py', '/usr/lib/bonup-agent-control/controller', '/usr/lib/bonup-agent-control/supervisor']
+if type(manifest.get('files')) is not dict or set(manifest['files']) != set(expected_paths):
+    raise SystemExit('Incomplete installed dependency inventory')
+for path in expected_paths:
+    if hashlib.sha256(read_verified(path)).hexdigest() != manifest['files'][path]:
+        raise SystemExit('Installed artifact digest mismatch')
+os.chdir('/')
+sys.path.insert(0, str(root))
+from tools.agent_control.supervisor_entry import main
+main()

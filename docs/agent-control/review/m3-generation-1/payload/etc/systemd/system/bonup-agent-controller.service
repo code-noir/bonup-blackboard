@@ -1,0 +1,32 @@
+[Unit]
+Description=bonUP agent controller
+After=local-fs.target
+ConditionPathExists=/etc/bonup-agent-control/approved-installation.json
+[Service]
+Type=notify
+User=bonup-agentctl
+Group=bonup-agentctl
+ExecStart=/usr/lib/bonup-agent-control/controller
+WorkingDirectory=/
+UMask=0077
+Environment=PATH=/usr/bin:/bin LANG=C.UTF-8 LC_ALL=C.UTF-8 HOME=/nonexistent
+CapabilityBoundingSet=
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+# PrivateDevices compatibility: HOST_TEST_REQUIRED
+ReadWritePaths=/var/lib/bonup-agent-control /run/bonup-agent-control
+InaccessiblePaths=/srv/bonup-agent-work
+KillMode=control-group
+KillSignal=SIGKILL
+SendSIGKILL=yes
+TimeoutStopSec=5s
+WatchdogSec=10s
+WatchdogSignal=SIGKILL
+NotifyAccess=main
+Restart=no
+LimitCORE=0
+LimitNOFILE=256
+Sockets=bonup-agent-founder.socket bonup-agent-proposals.socket

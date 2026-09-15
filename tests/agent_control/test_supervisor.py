@@ -487,7 +487,12 @@ class LinuxPrimitiveTests(unittest.TestCase):
         from tools.agent_control.supervisor_linux import LinuxProcessBackend
         before=open_fds()
         backend=LinuxProcessBackend.__new__(LinuxProcessBackend)
+        import threading
+        backend.release_lock=threading.RLock();backend.results={}
         backend.reconciled=True;backend.children={};backend.anchor=ProcessIdentity.read(os.getpid())
+        # This fixture stops at fork failure; no namespace/gate is executed. Its
+        # synthetic installation pin must nevertheless be closed with all others.
+        backend.artifacts=SimpleNamespace(pin=lambda worker:(os.dup(self.root.fd),{}))
         launch_id=uid()
         backend.plans={launch_id:(self.root,self.profile,self.root.identity)}
         deadline=ExecutionDeadline.arm(EXPIRY,now=NOW,elapsed=time.clock_gettime(time.CLOCK_BOOTTIME),timeout_seconds=30)

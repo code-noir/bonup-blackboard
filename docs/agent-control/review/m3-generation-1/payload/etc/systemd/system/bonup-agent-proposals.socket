@@ -1,0 +1,13 @@
+[Unit]
+Description=bonUP proposals endpoint
+[Socket]
+ListenStream=/run/bonup-agent-control/proposals.sock
+SocketUser=bonup-agentctl
+SocketGroup=bonup-agentctl
+SocketMode=0600
+DirectoryMode=0700
+Accept=no
+RemoveOnStop=yes
+PassCredentials=yes
+FileDescriptorName=proposals
+Service=bonup-agent-controller.service

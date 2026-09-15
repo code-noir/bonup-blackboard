@@ -1,0 +1,13 @@
+[Unit]
+Description=bonUP supervisor endpoint
+[Socket]
+ListenStream=/run/bonup-agent-supervisor/control.sock
+SocketUser=root
+SocketGroup=bonup-agentctl
+SocketMode=0660
+DirectoryMode=0700
+Accept=no
+RemoveOnStop=yes
+PassCredentials=yes
+FileDescriptorName=supervisor
+Service=bonup-agent-supervisor.service

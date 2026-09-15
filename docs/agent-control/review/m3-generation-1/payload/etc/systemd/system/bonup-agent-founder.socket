@@ -1,0 +1,13 @@
+[Unit]
+Description=bonUP founder endpoint
+[Socket]
+ListenStream=/run/bonup-agent-control/founder.sock
+SocketUser=bonup-agentctl
+SocketGroup=bonup
+SocketMode=0660
+DirectoryMode=0700
+Accept=no
+RemoveOnStop=yes
+PassCredentials=yes
+FileDescriptorName=founder
+Service=bonup-agent-controller.service

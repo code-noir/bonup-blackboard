@@ -28,6 +28,8 @@ class FounderSessions:
     """
     def __init__(self,root,*,observe,audit,clock=wall,boottime=elapsed):
         if type(root) is not FounderRoot:raise ValidationError('Trusted founder root required.')
+        from .founder_key_validation import validate_public_key
+        validate_public_key(root.public_key)
         self.root=root;self.observe=observe;self.audit=audit;self.clock=clock;self.boottime=boottime
         self.generation=str(uuid4());self.pending={};self.sessions={};self.used=set();self.lock=threading.RLock()
         self.verifier=OpenSSLVerifier()

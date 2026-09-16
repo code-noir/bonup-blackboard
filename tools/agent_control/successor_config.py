@@ -23,7 +23,7 @@ PREFIX = '/usr/lib/bonup-agent-control'
 MODULES = ('authority_installation','authority_journal','founder_crypto','founder_session',
     'founder_intake','founder_transport','host_test_catalog','host_test_launch',
     'host_test_observation','host_test_runtime','service_evidence','successor_config','installation_approval','interruption',
-    'founder_genesis')
+    'founder_genesis','founder_key_validation')
 OPENSSL = dict(path='/usr/bin/openssl', algorithm='Ed25519', operation='VERIFY_ONLY',
                compatibility='OpenSSL 3.x; RFC8032 positive and negative verification')
 INTERRUPTION = dict(version=1,observer='PIDFD_DEATH_WITH_LIVE_CANARY',journal='/usr/bin/journalctl',

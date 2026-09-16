@@ -19,6 +19,8 @@ from tools.agent_control.identity import PeerIdentity, ProcessIdentity
 from tools.agent_control.serialization import canonical_json, digest
 from tools.agent_control.types import AuthorityError, ValidationError
 
+OTHER_PUBLIC=bytes.fromhex('d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a')
+
 
 class SyntheticCeremony(g.OfflineCeremony):
     def confirm(self, challenge, full_digest, comparison_code):
@@ -123,7 +125,7 @@ class GenesisTests(unittest.TestCase):
 
     def test_restart_reboot_cannot_reenable(self):
         self.bind()
-        for key in (self.encoded,base64.b64encode(bytes([3])*32).decode()):
+        for key in (self.encoded,base64.b64encode(OTHER_PUBLIC).decode()):
             service=self.service_new()
             with self.assertRaises(AuthorityError):service.propose(raw(self.candidate),key)
 
@@ -144,11 +146,11 @@ class GenesisTests(unittest.TestCase):
 
     def test_malformed_private_multiple_keys_denied(self):
         for key in ('',self.encoded+'\n',self.encoded*2,'-----BEGIN PRIVATE KEY-----',base64.b64encode(bytes(32)).decode()):
-            with self.subTest(key=key),self.assertRaises(ValidationError):g.public_root(key)
+            with self.subTest(key=key),self.assertRaises((ValidationError,AuthorityError)):g.public_root(key)
 
     def test_fingerprint_deterministic(self):
         self.assertEqual(g.public_root(self.encoded).key_id,hashlib.sha256(PUBLIC).hexdigest())
-        self.assertNotEqual(g.public_root(self.encoded).key_id,g.public_root(base64.b64encode(bytes([3])*32).decode()).key_id)
+        self.assertNotEqual(g.public_root(self.encoded).key_id,g.public_root(base64.b64encode(OTHER_PUBLIC).decode()).key_id)
 
     def test_candidate_mismatch(self):
         self.service.propose(raw(self.candidate),self.encoded)
@@ -196,7 +198,7 @@ class GenesisTests(unittest.TestCase):
 
     def test_wrong_installed_root(self):
         record,_,receipt,_=self.installation()
-        root=g.public_root(base64.b64encode(bytes([3])*32).decode())
+        root=g.public_root(base64.b64encode(OTHER_PUBLIC).decode())
         with self.assertRaises(AuthorityError):sc.validate(self.configs['controller'],self.attest,self.ids,
             receipt,root,component='controller',genesis=record)
 

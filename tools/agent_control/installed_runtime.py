@@ -106,6 +106,8 @@ class KernelIO:
         return load_founder_root()
 
     def verify_crypto(self):
+        from .founder_key_validation import preflight
+        preflight()
         from .founder_crypto import OpenSSLVerifier
         OpenSSLVerifier().preflight()
 

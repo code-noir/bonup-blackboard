@@ -13,6 +13,7 @@ from datetime import datetime, timezone, timedelta
 from uuid import uuid4
 
 from .founder_crypto import FounderRoot, PURPOSES
+from .founder_key_validation import validate_public_key, DEPENDENCY
 from .serialization import canonical_json, digest, parse_json
 from .schema import valid_format
 from .types import AuthorityError, ValidationError
@@ -31,7 +32,7 @@ def policy():
         genesis='OFFLINE_HUMAN_CEREMONY_REQUIRED', rotation=False,
         binding='REQUIRED_BEFORE_INSTALLATION_APPROVAL',
         session_seconds=60, genesis_seconds=300, replay='ONE_USE_BOOT_PROCESS_PURPOSE_BOUND',
-        activation=False)
+        activation=False, public_key_validation=dict(DEPENDENCY))
 
 
 def public_root(encoded):
@@ -43,12 +44,7 @@ def public_root(encoded):
         raise ValidationError('Malformed Ed25519 public key.') from error
     if len(raw) != 32 or base64.b64encode(raw).decode() != encoded:
         raise ValidationError('Noncanonical Ed25519 public key.')
-    # Canonical compressed Edwards encoding. Signature validity is checked only
-    # by the reviewed OpenSSL adapter; this is not a signature implementation.
-    if int.from_bytes(raw, 'little') & ((1 << 255)-1) >= (1 << 255)-19:
-        raise ValidationError('Noncanonical Ed25519 point encoding.')
-    if raw in (bytes(32), b'\x01' + bytes(31)):
-        raise ValidationError('Degenerate public key.')
+    validate_public_key(raw)
     return FounderRoot(hashlib.sha256(raw).hexdigest(), raw, 1)
 
 
@@ -142,7 +138,7 @@ class Genesis:
         try:
             root = public_root(encoded_key)
         except BaseException:
-            self.audit('GENESIS_KEY_DENIED', {})
+            self.audit('GENESIS_KEY_DENIED', {'reason':'INVALID_FOUNDER_ROOT_KEY'})
             raise
         now = self.clock()
         challenge = dict(version=1, protocol='bonup-founder-genesis-v1', purpose='FOUNDER_ROOT_GENESIS',

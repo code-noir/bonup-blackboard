@@ -13,8 +13,9 @@ import stat
 import subprocess
 import time
 
-from .serialization import digest
+from .serialization import digest, canonical_json
 from .types import AuthorityError, ValidationError
+from .founder_key_validation import validate_public_key
 
 OPENSSL = '/usr/bin/openssl'
 SPKI_PREFIX = bytes.fromhex('302a300506032b6570032100')
@@ -52,6 +53,7 @@ class FounderRoot:
                 type(self.generation) is not int or self.generation < 1 or
                 self.purposes != PURPOSES or self.algorithm != 'Ed25519'):
             raise ValidationError('Invalid immutable founder root.')
+        validate_public_key(self.public_key)
 
     @property
     def identity(self):
@@ -121,6 +123,7 @@ class OpenSSLVerifier:
         if (type(root) is not FounderRoot or type(message) is not bytes or not 1 <= len(message) <= 16384 or
                 type(signature) is not bytes or len(signature) != 64):
             raise ValidationError('Bounded Ed25519 verification inputs required.')
+        validate_public_key(root.public_key)
         descriptors=[]
         try:
             executable=self._executable();descriptors.append(executable)
@@ -154,6 +157,17 @@ class OpenSSLVerifier:
         raise AuthorityError('OpenSSL accepted an invalid known-answer signature.')
 
 
+def parse_founder_root(cfg):
+    """Strict installed PUBLIC artifact parser, including repeated point validity."""
+    if type(cfg) is not dict or set(cfg)!={'key_id','algorithm','public_key','generation','purposes'}:
+        raise ValidationError('Closed public trust configuration required.')
+    from .founder_genesis import public_root, public_artifact
+    root=public_root(cfg['public_key'])
+    if canonical_json(cfg)!=canonical_json(public_artifact(root)):
+        raise ValidationError('Installed founder public key identity mismatch.')
+    return root
+
+
 def load_founder_root():
     """Only installed, root-controlled PUBLIC trust configuration; no env input."""
     from .serialization import parse_json
@@ -175,9 +189,5 @@ def load_founder_root():
                 (info.st_size,info.st_mtime_ns,info.st_ctime_ns)!=(after.st_size,after.st_mtime_ns,after.st_ctime_ns)):
             raise AuthorityError('Public trust configuration changed.')
         cfg=parse_json(raw)
-        if type(cfg) is not dict or set(cfg)!={'key_id','algorithm','public_key','generation','purposes'}:
-            raise ValidationError('Closed public trust configuration required.')
-        try:public=base64.b64decode(cfg['public_key'],validate=True)
-        except (ValueError,TypeError) as error:raise ValidationError('Invalid public key encoding.') from error
-        return FounderRoot(cfg['key_id'],public,cfg['generation'],tuple(cfg['purposes']),cfg['algorithm'])
+        return parse_founder_root(cfg)
     finally:os.close(fd)

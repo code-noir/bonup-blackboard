@@ -107,6 +107,49 @@ conflicts, and the fixed OpenSSL 3.x positive/negative Ed25519 verification prob
 No host check is performed by this module. Offline ledger and Genesis evidence
 must be retained in history and excluded from destructive rollback.
 
+## Corrective Ed25519 public-key validation
+
+Founder keys must pass system libsodium's
+`crypto_core_ed25519_is_valid_point()` before an authoritative fingerprint is
+derived. This positive predicate checks canonical representation, curve and main
+subgroup membership, and excludes small-order points. The previous two-encoding
+rejection rule was insufficient: the reviewed order-two fixture passed it and
+OpenSSL 3.0.13 accepted a constructed signature with no private-key operation.
+OpenSSL `pkey -pubcheck` is not a substitute. No handwritten curve arithmetic or
+blacklist is used by the correction.
+
+The dependency is system `libsodium23`, ABI/SONAME `libsodium.so.23`, under the
+fixed `/usr/lib/x86_64-linux-gnu` directory. Read-only inspection found package
+`1.0.18-1ubuntu0.24.04.1`, resolved library `libsodium.so.23.3.0`, runtime version
+1.0.18, and both required symbols. No package was installed or changed.
+
+The native adapter takes exactly 32 bytes. It verifies root-controlled directories,
+SONAME link and regular library, restricts the link to the same ABI's versioned
+basename, and loads a retained pinned descriptor using ctypes RTLD_LOCAL/NOW.
+The descriptor and handle remain paired for process life, avoiding descriptor-name
+reuse with the dynamic loader cache. Root-controlled compatible patch updates are
+picked up on process restart. There is no library search, caller-selected path,
+symbol, algorithm, signing API, PyNaCl or native-provider fallback. Native-loader
+environment overrides are rejected. The two signatures are fixed: sodium_init
+takes no arguments and returns int; the valid-point function takes a 32-byte
+unsigned-byte buffer and returns int. Init must return 0 or 1. Only predicate
+result 1 accepts a key; dependency errors latch failure until process restart.
+
+Future Generation-2 preflight must verify this ABI/path, both symbols, successful
+sodium_init, acceptance of the public RFC 8032 vector, and rejection of the exact
+reviewed order-two fixture. Feature probes, rather than a patch-version equality,
+define compatibility. The successor policy digest includes this dependency.
+The binary is an OS dependency, not copied into a bundle.
+
+Validation is repeated at Genesis entry, FounderRoot construction, installed
+public-artifact parsing, session construction and before OpenSSL signature
+verification. Installed parsing additionally requires the derived key ID and
+canonical algorithm/generation/purpose fields; successor startup retains the
+candidate, binding and receipt checks. Invalid Genesis attempts emit the bounded
+INVALID_FOUNDER_ROOT_KEY reason and do not consume the ledger. A valid attempt
+afterward can still consume it exactly once. OpenSSL remains responsible only
+for Ed25519 signature verification; external hardware retains the private key.
+
 ## Audit and validation
 
 The offline adapter supplies a durable bounded audit sink for proposal, malformed
@@ -126,3 +169,12 @@ full regression passed 740 tests in 507.748 seconds with
 Compile/import and whitespace checks passed. All 77 source/test files matched
 the final-run hash snapshot, and all 60 Generation-1 historical review files
 remained byte-identical to `dd39ae0e55f6c33bac3028467c5ccec518013083`.
+
+Corrective libsodium validation: 20 new tests were added. The focused command
+`env TMPDIR=/var/tmp python3 -B -m unittest discover -s tests/agent_control -p 'test_founder*.py' -v`
+passed 105 tests in 18.840 seconds. The full command above passed 760 tests in
+516.368 seconds. All 79 source/test files matched the final-run hash snapshot;
+compile/import, native feature and scoped whitespace checks passed. All 60
+Generation-1 historical files remained byte-identical to the same baseline.
+No package installation, real founder key, bundle generation or provisioning
+was involved. Real offline ceremony and installed-host proof remain outstanding.

@@ -66,7 +66,7 @@ class OpenSSLTests(unittest.TestCase):
             OpenSSLVerifier('/tmp/openssl')
 
     def test_environment_ignored(self):
-        with patch.dict(os.environ, {'OPENSSL_CONF': '/missing', 'LD_PRELOAD': '/missing',
+        with patch.dict(os.environ, {'OPENSSL_CONF': '/missing',
                                      'OPENSSL': '/missing', 'PATH': '/missing'}):
             OpenSSLVerifier().verify(ROOT, b'x', sign(b'x'))
 

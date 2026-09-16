@@ -169,3 +169,45 @@ activation/peer authentication, witness persistence/order, watchdog and crash/re
 behavior remain HOST_TEST_REQUIRED. Synthetic tests are not host enforcement proof.
 Generation-2 packaging, preflight, provisioning and any hardware signing ceremony
 remain separate later work. No installation or activation approval is generated.
+
+## Corrective host-test authority closure
+
+The follow-up correction adds protocol version 4 only for bounded host-test
+admission operations. OPEN and CLOSE bind the installed identity digest, the
+operational enrollment digest (which binds both enrolled participants and their
+generations), and the signed host-test delegation digest. The normal authenticated
+controller channel is the sole caller; no founder/model/worker direct operation
+exists. Legacy OPEN cannot enable successor host-test admission.
+
+END and successful COMPLETE first close local admission and consume the delegation,
+then require matching supervisor closure and cleanup evidence. The supervisor closes
+before cleanup, retains the consumed session identity, and cannot reopen it even
+with a fresh request ID. Only observation/rechecking of closure is idempotent.
+Completion is finalized in the existing durable audit/metadata path after closure;
+its retained results are evidence and cannot be used as a session. Subsequent END,
+COMPLETE, enrollment, run, or evidence-recording requests under that session fail.
+
+Lost/malformed/stale closure acknowledgement, audit failure or uncertain cleanup
+invalidates the operational channel and stops heartbeats. Controller admission stays
+CLOSED; the supervisor's existing disconnect/deadline enforcement handles loss.
+No completion/end success is reported. Fresh operational enrollment/reconciliation
+and separately signed authority are required for later host testing. No release is
+retried. Expiry, receipt replacement, fatal request failure, revocation and shutdown
+use the same closure boundary. Revocation invalidates retained verifiers before audit
+I/O, and shutdown closes the operational channel even if founder teardown fails.
+
+An explicit INTERRUPTION closure is the only keep-running case: both sides close
+new admission/release, but the supervisor preserves exactly one already RUNNING,
+exec-confirmed closed-catalog interruption canary under its unchanged deadline.
+It returns closed admission with cleanup still false; this cannot finalize END or
+COMPLETE. The existing pending-interruption/reconciliation path must prove cleanup.
+
+Correlated audit events record closure request, supervisor confirmation or
+uncertainty, authority consumption, session end and final completion. No new audit
+store or installation authority is introduced. Generation 1 remains unchanged.
+
+Corrective validation: 29 closure tests, 52 founder tests, 30 service-runtime tests,
+and the installed successor factory check passed. The full agent-control suite
+passed all 707 tests in 516.578 seconds. Compile/import and whitespace checks
+passed; the 76 captured source/schema hashes were unchanged during that full run.
+All 60 tracked Generation-1 historical review files remain unchanged.

@@ -2198,7 +2198,11 @@
             "HOST_TEST_COMPLETION_DENIED",
             "HOST_TEST_REBOOT_PENDING",
             "HOST_TEST_REQUEST_RECEIVED",
-            "HOST_TEST_AUTHORIZED"
+            "HOST_TEST_AUTHORIZED",
+            "HOST_TEST_CLOSURE_REQUESTED",
+            "HOST_TEST_SUPERVISOR_CLOSED",
+            "HOST_TEST_CLOSURE_UNCERTAIN",
+            "HOST_TEST_AUTHORITY_CONSUMED"
           ]
         },
         "task_id": {

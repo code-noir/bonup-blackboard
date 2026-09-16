@@ -77,8 +77,11 @@ class FounderIntake:
             return dict(version=1, request_id=request_id, result=result)
         except BaseException:
             kind = 'HOST_TEST_AUTHORIZATION_DENIED' if host else 'FOUNDER_SIGNATURE_DENIED'
-            if not (self.tests is not None and request_id in self.tests.authorized_requests):
-                self.journal.record(kind, request_id, context)
+            try:
+                if not (self.tests is not None and request_id in self.tests.authorized_requests):
+                    self.journal.record(kind, request_id, context)
+            finally:
+                if self.tests is not None:self.tests.abort('FAILURE')
             raise
 
     def _request(self, action, args):
@@ -145,6 +148,6 @@ class FounderIntake:
     def close(self):
         try:
             if self.tests is not None and self.tests.session is not None:
-                self.tests.end()
+                self.tests.abort('REVOKE')
         finally:
             self.founder.revoke_all()

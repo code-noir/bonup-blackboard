@@ -32,9 +32,17 @@ class HostTests:
     def _live(self):
         if self.session is None or self.verify is None:
             raise AuthorityError('Host-test session is closed.')
-        self.verify()
-        if self.context() != self.initial_context:
-            raise AuthorityError('Runtime changed; fresh enrollment required.')
+        try:
+            self.verify()
+            if self.context() != self.initial_context:
+                raise AuthorityError('Runtime changed; fresh enrollment required.')
+        except BaseException:
+            self.abort('REVOKE')
+            raise
+
+    def _binding(self, session):
+        return dict(session_digest=self.controller.admission.session,
+                    host_session_digest=session,installation_digest=digest(self.receipt.binding.data()))
 
     def begin(self, session):
         admission = self.controller.admission
@@ -55,13 +63,13 @@ class HostTests:
                 dict(receipt=self.receipt.receipt_digest, signature_decision=proof,
                      runtime=context, activation=False,correlation=dict(self.audit_context)))
             admission.begin_host_tests(self.runner.execution_ids(), self._live)
-            response = self.controller.remote._call('OPEN_ADMISSION', str(uuid4()),
-                dict(session_digest=admission.session), 'ADMISSION_EVIDENCE')
-            if response['session_digest'] != admission.session:
+            binding=self._binding(session)
+            response = self.controller.remote._call('OPEN_HOST_TEST_ADMISSION', str(uuid4()),
+                binding, 'HOST_TEST_ADMISSION_EVIDENCE',version=4)
+            if response != dict(binding,closed=False,cleanup_confirmed=False):
                 raise AuthorityError('Supervisor host-test session mismatch.')
         except BaseException:
-            self.session = self.verify = None
-            admission.end_host_tests()
+            self.abort('FAILURE')
             raise
         return {'mode': 'HOST_TEST_ONLY', 'activation': False}
 
@@ -132,12 +140,16 @@ class HostTests:
             any(all(row[k] == v for k, v in context.items()) for context in self.accepted_contexts)
             for name,row in self.results.items())
         valid = valid and len({row['launch_id'] for row in self.results.values()})==len(IDS)
-        self.journal.record('HOST_TEST_COMPLETION_ACCEPTED' if valid else 'HOST_TEST_COMPLETION_DENIED',
-            self.audit_context.get('request_id',self.session),
-            dict(receipt=self.receipt.receipt_digest,correlation=dict(self.audit_context),evidence_digest=digest(self.results)))
         if not valid:
+            self.journal.record('HOST_TEST_COMPLETION_DENIED',self.audit_context.get('request_id',self.session),
+                dict(receipt=self.receipt.receipt_digest,evidence_digest=digest(self.results)))
             raise AuthorityError('All exact non-stale mandatory test results are required.')
-        return dict(completed=True, activation=False, evidence_digest=digest(self.results))
+        evidence=dict(receipt=self.receipt.receipt_digest,correlation=dict(self.audit_context),
+                      evidence_digest=digest(self.results),results=dict(self.results),activation=False)
+        correlation=self.audit_context.get('request_id',self.session)
+        self._close('COMPLETE')
+        self.journal.record('HOST_TEST_COMPLETION_ACCEPTED',correlation,evidence)
+        return dict(completed=True, activation=False, mode='CLOSED',evidence_digest=evidence['evidence_digest'])
 
     def prepare_interruption(self, request):
         self._live()
@@ -155,9 +167,7 @@ class HostTests:
         self.journal.record('HOST_TEST_REBOOT_PENDING', self.receipt.receipt_digest + ':' + case.test_id, pending)
         # Close future admission/release, not the running canary. Normal service
         # loss and the immutable execution deadline still enforce termination.
-        self.controller.admission.end_host_tests()
-        self.session=self.verify=None
-        self.founder.revoke_all()
+        self._close('INTERRUPTION')
         return dict(pending=True, activation=False)
 
     def reconcile_interruption(self, request):
@@ -233,18 +243,47 @@ class HostTests:
         return self.reconcile_interruption({'test_id':'reboot_reconciliation'})
 
     def end(self):
-        session = self.session
+        self._live()
+        return self._close('END')
+
+    def abort(self, reason='FAILURE'):
+        if self.session is not None:
+            return self._close(reason)
+
+    def _close(self, reason):
+        session=self.session
+        if session is None:raise AuthorityError('Host-test authority already consumed.')
+        binding=self._binding(session)
+        correlation=self.audit_context.get('request_id',session)
+        evidence=dict(binding,reason=reason,receipt=self.receipt.receipt_digest,
+                      correlation=dict(self.audit_context),activation=False)
+        # The controller thread owns admission/SQLite. Reentrant operations now
+        # fail before RPC, audit, or cleanup can block. No delegation is restored.
         self.controller.admission.end_host_tests()
-        self.session = self.verify = None
+        self.session=self.verify=None
         try:
-            rows = self.controller.runtime.db.execute("SELECT launch_id FROM launch_attempts WHERE state!='TERMINAL'").fetchall()
-            for (launch,) in rows:
-                if launch is not None:
-                    row = self.controller.stop(launch, 'CANCELLED')
-                    if row['state'] != 'TERMINAL' or not row['cleanup_confirmed']:
+            try:
+                self.founder.revoke_all()
+                self.journal.record('HOST_TEST_CLOSURE_REQUESTED',correlation,evidence)
+            finally:
+                response=self.controller.remote._call('CLOSE_HOST_TEST_ADMISSION',str(uuid4()),
+                    dict(binding,reason=reason),'HOST_TEST_ADMISSION_EVIDENCE',version=4)
+                expected=dict(binding,closed=True,cleanup_confirmed=reason!='INTERRUPTION')
+                if response!=expected:
+                    raise AuthorityError('Supervisor host-test closure uncertain.')
+            if reason!='INTERRUPTION':
+                rows=self.controller.runtime.db.execute("SELECT launch_id FROM launch_attempts WHERE state!='TERMINAL'").fetchall()
+                for (launch,) in rows:
+                    row=self.controller.stop(launch,'CANCELLED')
+                    if row['state']!='TERMINAL' or not row['cleanup_confirmed']:
                         raise AuthorityError('Host-test cleanup remains uncertain.')
-        finally:
-            if session is not None:
-                self.journal.record('HOST_TEST_SESSION_ENDED',session,
-                    dict(receipt=self.receipt.receipt_digest,correlation=dict(self.audit_context)))
-        return {'mode': 'CLOSED', 'activation': False}
+            self.journal.record('HOST_TEST_SUPERVISOR_CLOSED',correlation,evidence)
+            self.journal.record('HOST_TEST_AUTHORITY_CONSUMED',correlation,evidence)
+            self.journal.record('HOST_TEST_SESSION_ENDED',correlation,evidence)
+        except BaseException:
+            try:self.controller.remote.invalidate_channel()
+            finally:
+                self.controller.admission.end_host_tests()
+                self.journal.record('HOST_TEST_CLOSURE_UNCERTAIN',correlation,evidence)
+            raise
+        return {'mode':'CLOSED','activation':False}

@@ -235,7 +235,8 @@ class ServiceLoop:
                                 raise AuthorityError('Unknown admission evidence.')
                             self.transport.send(frame(dict(request, data=dict(ready=ready))))
                         continue
-                    allowed = ({'PREPARE_LAUNCH', 'RELEASE_LAUNCH', 'STOP_LAUNCH', 'RECONCILE', 'STATUS_LAUNCH', 'OPEN_ADMISSION'}
+                    allowed = ({'PREPARE_LAUNCH', 'RELEASE_LAUNCH', 'STOP_LAUNCH', 'RECONCILE', 'STATUS_LAUNCH', 'OPEN_ADMISSION',
+                                'OPEN_HOST_TEST_ADMISSION','CLOSE_HOST_TEST_ADMISSION'}
                                if self.config.component == 'supervisor' else
                                {'PREPARED_EVIDENCE', 'RUNNING_EVIDENCE', 'CLEANUP_EVIDENCE', 'STATUS_EVIDENCE'})
                     if request['action'] not in allowed or self.pending is not None:
@@ -262,7 +263,9 @@ class ServiceLoop:
                         raise AuthorityError('Uncorrelated work result.')
                     expected = {'PREPARE_LAUNCH':'PREPARED_EVIDENCE', 'RELEASE_LAUNCH':'RUNNING_EVIDENCE',
                                 'STOP_LAUNCH':'CLEANUP_EVIDENCE', 'RECONCILE':'CLEANUP_EVIDENCE',
-                                'STATUS_LAUNCH':'STATUS_EVIDENCE', 'OPEN_ADMISSION':'ADMISSION_EVIDENCE'}
+                                'STATUS_LAUNCH':'STATUS_EVIDENCE', 'OPEN_ADMISSION':'ADMISSION_EVIDENCE',
+                                'OPEN_HOST_TEST_ADMISSION':'HOST_TEST_ADMISSION_EVIDENCE',
+                                'CLOSE_HOST_TEST_ADMISSION':'HOST_TEST_ADMISSION_EVIDENCE'}
                     if result['action'] != expected[self.pending['action']]:
                         raise AuthorityError('Unexpected response action.')
                     self.transport.send(raw)  # Bounded nonblocking enqueue; backpressure must raise.

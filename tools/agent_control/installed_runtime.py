@@ -444,6 +444,7 @@ class InstalledBase:
         else:
             self.config['roots']=raw_roots
             self.config['host_test_catalog']=data['authority']['catalog_digest'] if enabled else None
+            self.config['host_installation_digest']=digest(receipt.binding.data())
         self.notify_adapter=self.io.notifier()
         local,remote=installation_pair(data,attestation,self.component,generation=2)
         self.operational_channel=self.io.enroll(local,remote)
@@ -506,7 +507,8 @@ class InstalledSupervisorAdapters(InstalledBase):
             admission=getattr(self, "admission", None), host_only=host_only,
             witness=self.io.witness('supervisor') if host_only else None,
             controller_process=config.peer.process if host_only else None,
-            ordinary_admission=self.config['version']!=3)
+            ordinary_admission=self.config['version']!=3,
+            host_installation_digest=self.config.get('host_installation_digest'))
         deadline=DeadlineService(backend,self.io)
         driver=InstalledSupervisorDriver(endpoint,FixedWork(endpoint.handle),deadline)
         self.driver=driver
@@ -820,11 +822,16 @@ class InstalledControllerDriver:
                 runner.observe_interruption(cleanup=lambda:self.controller.tick(controller_alive=False))
             else:self.controller.tick(controller_alive=False)
         finally:
-            if self.founder_transport is not None:self.founder_transport.close()
-            for listener in self.listeners.values():listener.close()
-            self.client.close()
-            runner=getattr(self,'host_runner',None)
-            if runner is not None:runner.close()
+            try:
+                if self.founder_transport is not None:self.founder_transport.close()
+            finally:
+                try:
+                    for listener in self.listeners.values():listener.close()
+                finally:
+                    try:self.client.close()
+                    finally:
+                        runner=getattr(self,'host_runner',None)
+                        if runner is not None:runner.close()
 
 
 def build_installed_controller_adapters(*, _io=None):

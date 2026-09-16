@@ -25,6 +25,9 @@ FIELDS = {
     'RECONCILE': set(),
     'OPEN_ADMISSION': {'session_digest'},
     'ADMISSION_EVIDENCE': {'session_digest'},
+    'OPEN_HOST_TEST_ADMISSION': {'session_digest','host_session_digest','installation_digest'},
+    'CLOSE_HOST_TEST_ADMISSION': {'session_digest','host_session_digest','installation_digest','reason'},
+    'HOST_TEST_ADMISSION_EVIDENCE': {'session_digest','host_session_digest','installation_digest','closed','cleanup_confirmed'},
     'STATUS_LAUNCH': set(),
     'STATUS_EVIDENCE': {'exited', 'process', 'output'},
 }
@@ -34,12 +37,15 @@ BASE = {'version', 'action', 'request_id', 'launch_id', 'generation', 'boot_id',
 def validate(message):
     if type(message) is not dict or set(message) != BASE:
         raise ValidationError('Unexpected composition message fields.')
-    if type(message['version']) is not int or message['version'] not in (1, 2, 3):
+    if type(message['version']) is not int or message['version'] not in (1, 2, 3, 4):
         raise ValidationError('Unsupported composition protocol.')
     action, data = message['action'], message['data']
     if type(action) is not str or action not in FIELDS:
         raise ValidationError('Unknown composition action.')
     expected = FIELDS[action]
+    host_actions={'OPEN_HOST_TEST_ADMISSION','CLOSE_HOST_TEST_ADMISSION','HOST_TEST_ADMISSION_EVIDENCE'}
+    if (action in host_actions) != (message['version']==4):
+        raise ValidationError('Explicit host-test admission protocol required.')
     if message['version'] == 3:
         if action not in ('STATUS_LAUNCH', 'STATUS_EVIDENCE'):
             raise ValidationError('Version 3 extends status evidence only.')
@@ -95,13 +101,17 @@ def validate(message):
                         type(item['retained']) is not int or not 0 <= item['retained'] <= 65536 or
                         type(item['truncated']) is not bool):
                     raise ValidationError('Bounded output evidence required.')
-        elif name in {'empty', 'ready', 'exited'}:
+        elif name in {'empty', 'ready', 'exited','closed','cleanup_confirmed'}:
             if type(value) is not bool:
                 raise ValidationError('Boolean evidence required.')
         elif name == 'exit_code':
             if value is not None and (type(value) is not int or not -255 <= value <= 255):
                 raise ValidationError('Invalid exit evidence.')
         elif name == 'reason':
+            if message['version']==4:
+                if value not in {'COMPLETE','END','REVOKE','FAILURE','INTERRUPTION'}:
+                    raise ValidationError('Invalid host-test closure reason.')
+                continue
             if value not in {'DENIED', 'SETUP_FAILED', 'EXITED', 'TIMEOUT',
                              'REVOKED', 'CANCELLED', 'INTERRUPTED'}:
                 raise ValidationError('Invalid stop reason.')

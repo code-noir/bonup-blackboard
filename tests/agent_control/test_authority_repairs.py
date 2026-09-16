@@ -141,6 +141,9 @@ class InterruptionTests(unittest.TestCase):
         self.binding=InstallationBinding('a'*40,'b'*64,'c'*64,'d'*64,'e'*64,2)
         self.controller=Mock();self.controller.admission=Admission()
         self.controller.admission.state=AdmissionState.HOST_TEST_ONLY
+        self.controller.admission.session='a'*64
+        self.controller.remote._call.side_effect=lambda action,launch,data,response,**kw: dict(
+            {k:v for k,v in data.items() if k!='reason'},closed=True,cleanup_confirmed=False)
         self.controller.runtime.db.execute.return_value.fetchone.return_value=None
         self.runner=Mock();self.founder=Mock();self.journal=Mock()
         self.host=HostTests(self.founder,InstalledReceipt(self.binding,'f'*64,str(uuid4())),
@@ -155,7 +158,7 @@ class InterruptionTests(unittest.TestCase):
 
     def prepare(self):
         self.host.prepare_reboot()
-        self.pending=self.journal.record.call_args.args[2]
+        self.pending=next(call.args[2] for call in self.journal.record.call_args_list if call.args[0]=='HOST_TEST_REBOOT_PENDING')
         self.journal.load.return_value=dict(event='HOST_TEST_REBOOT_PENDING',evidence=self.pending)
         self.controller.runtime.launch.return_value=dict(state='TERMINAL',cleanup_confirmed=True,
             cgroup_name=self.armed['cgroup_name'],process_identity=canonical_json(self.armed['process']))
@@ -270,11 +273,12 @@ class InstalledSuccessorTests(unittest.TestCase):
         request('BEGIN_HOST_TEST_SESSION',session=session)
         self.assertEqual(fixture.ca.admission.state,AdmissionState.HOST_TEST_ONLY)
         self.assertEqual(fixture.sa.admission.state,AdmissionState.HOST_TEST_ONLY)
-        for args in ({'test_id':'unknown'},{'test_id':'uid_gid_drop','argv':['secret-canary']}):
-            with self.assertRaises(AuthorityError):request('ENROLL_HOST_TEST_CASE',**args)
         with self.assertRaises(AuthorityError):fixture.ca.admission.run(lambda:None)
         request('END_HOST_TEST_SESSION')
         self.assertEqual(fixture.ca.admission.state,AdmissionState.CLOSED)
+        self.assertEqual(fixture.sa.admission.state,AdmissionState.CLOSED)
+        for args in ({'test_id':'unknown'},{'test_id':'uid_gid_drop','argv':['secret-canary']}):
+            with self.assertRaises(AuthorityError):request('ENROLL_HOST_TEST_CASE',**args)
         with self.assertRaises(AuthorityError):fixture.ca.admission.open(fixture.ca.admission.session)
 
 
@@ -436,6 +440,10 @@ class CompletionTests(unittest.TestCase):
         binding=InstallationBinding('a'*40,'b'*64,'c'*64,'d'*64,'e'*64,2)
         self.host=HostTests(Mock(),InstalledReceipt(binding,'f'*64,str(uuid4())),Mock(),Mock(),Mock(),lambda:dict(self.context))
         self.host.session='1'*64;self.host.verify=lambda:None;self.host.initial_context=dict(self.context)
+        self.host.controller.admission.session='a'*64
+        self.host.controller.remote._call.side_effect=lambda action,launch,data,response,**kw: dict(
+            {k:v for k,v in data.items() if k!='reason'},closed=True,cleanup_confirmed=True)
+        self.host.controller.runtime.db.execute.return_value.fetchall.return_value=[]
         self.host.accepted_contexts=[dict(self.context)]
         self.host.results={name:dict(receipt='f'*64,binding=binding.data(),catalog_version=VERSION,
             catalog_digest=CATALOG_DIGEST,test_id=name,launch_id=str(uuid4()),worker=list(case.worker),

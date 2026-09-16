@@ -14,6 +14,8 @@ EVENTS = (
     'HOST_TEST_CASE_FAILED', 'HOST_TEST_COMPLETION_ACCEPTED', 'HOST_TEST_COMPLETION_DENIED',
     'HOST_TEST_REBOOT_PENDING',
     'HOST_TEST_REQUEST_RECEIVED', 'HOST_TEST_AUTHORIZED',
+    'HOST_TEST_CLOSURE_REQUESTED','HOST_TEST_SUPERVISOR_CLOSED',
+    'HOST_TEST_CLOSURE_UNCERTAIN','HOST_TEST_AUTHORITY_CONSUMED',
 )
 
 
@@ -34,6 +36,8 @@ class AuthorityJournal:
         from .schema import valid_format
         request=correlation if valid_format('uuid',correlation) else str(uuid5(NAMESPACE_URL,correlation))
         reason='INVALID_PROPOSAL' if kind.endswith('DENIED') else 'RECEIVED' if kind.endswith('RECEIVED') else 'AUTHORIZED'
+        reason={'HOST_TEST_CLOSURE_REQUESTED':'RECEIVED','HOST_TEST_CLOSURE_UNCERTAIN':'SETUP_FAILED',
+                'HOST_TEST_AUTHORITY_CONSUMED':'REVOKED','HOST_TEST_SUPERVISOR_CLOSED':'CANCELLED'}.get(kind,reason)
         event = RoutingEvent(kind, request, reason)
         def action(now, changed):
             row = dict(event=kind, evidence=evidence, digest=digest(evidence), timestamp=now)

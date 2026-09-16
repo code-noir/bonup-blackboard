@@ -79,7 +79,10 @@ class SupervisorEndpoint:
     A new generation starts closed and requires reconciliation. Any ambiguity stops
     admission and retains launch identities until cleanup can be established.
     """
-    def __init__(self, plans, backend, *, generation, boot_id, now=None, elapsed=None, inspector=None, admission=None, host_only=False, witness=None, controller_process=None, ordinary_admission=True):
+    def __init__(self, plans, backend, *, generation, boot_id, now=None, elapsed=None, inspector=None, admission=None, host_only=False, witness=None, controller_process=None, ordinary_admission=True, host_installation_digest=None):
+        self.host_installation_digest=host_installation_digest
+        self.host_session_digest=None
+        self.host_closed=False
         self.witness,self.controller_process=witness,controller_process
         self.ordinary_admission=ordinary_admission
         uuid_value(generation)
@@ -148,6 +151,36 @@ class SupervisorEndpoint:
                     self.backend.exited(entry['launch'])):
                 self._cleanup(entry)
 
+    def host_admission(self, request):
+        data=request['data']
+        if (not self.host_only or self.admission is None or not self.ready or
+                data['session_digest']!=self.admission.session or
+                data['installation_digest']!=self.host_installation_digest):
+            raise AuthorityError('Wrong installed host-test operational identity.')
+        self.admission.verify()
+        binding={key:data[key] for key in ('session_digest','host_session_digest','installation_digest')}
+        if request['action']=='OPEN_HOST_TEST_ADMISSION':
+            if self.host_session_digest is not None or self.host_closed:
+                raise AuthorityError('Consumed host admission cannot reopen.')
+            self.admission.begin_host_tests(tuple(p.execution_id for p in self.plans.values()),lambda:None)
+            self.host_session_digest=data['host_session_digest']
+            return self._reply(request,'HOST_TEST_ADMISSION_EVIDENCE',dict(binding,closed=False,cleanup_confirmed=False))
+        if data['host_session_digest']!=self.host_session_digest:
+            raise AuthorityError('Wrong host-test delegation.')
+        # Close before any potentially failing cleanup. Repeated closure can
+        # observe/finish cleanup, but can never reopen this operational session.
+        self.host_closed=True
+        self.admission.end_host_tests()
+        active=[entry for entry in self.launches.values() if entry['state']!='TERMINAL']
+        if data['reason']=='INTERRUPTION':
+            if (len(active)!=1 or active[0]['state']!='RUNNING' or not active[0].get('exec_confirmed') or
+                    active[0]['record'].argv[-1] not in ('controller_crash','supervisor_crash','watchdog','reboot_reconciliation')):
+                raise AuthorityError('Only a running interruption canary may remain.')
+        else:
+            for entry in active:self._cleanup(entry)
+        clean=all(entry['state']=='TERMINAL' for entry in self.launches.values())
+        return self._reply(request,'HOST_TEST_ADMISSION_EVIDENCE',dict(binding,closed=True,cleanup_confirmed=clean))
+
     def handle(self, request):
         request = validate(request)
         if request['generation'] != self.generation or request['boot_id'] != self.boot_id:
@@ -156,17 +189,16 @@ class SupervisorEndpoint:
             raise AuthorityError('Request replay or generation capacity exhausted.')
         self.seen.add(request['request_id'])
         action, data, launch_id = request['action'], request['data'], request['launch_id']
+        if action in ('OPEN_HOST_TEST_ADMISSION','CLOSE_HOST_TEST_ADMISSION'):
+            return self.host_admission(request)
         if action == 'OPEN_ADMISSION':
+            if self.host_only:
+                raise AuthorityError('Host testing requires the bound host admission protocol.')
             if not self.ordinary_admission and not self.host_only:
                 raise AuthorityError('Successor ordinary admission is disabled.')
             if self.admission is None or not self.ready:
                 raise AuthorityError('Fresh operational reconciliation required.')
-            if self.host_only:
-                if data['session_digest'] != self.admission.session:
-                    raise AuthorityError('Host-test operational session mismatch.')
-                self.admission.begin_host_tests(tuple(p.execution_id for p in self.plans.values()), lambda: None)
-            else:
-                self.admission.open(data['session_digest'])
+            self.admission.open(data['session_digest'])
             return self._reply(request, 'ADMISSION_EVIDENCE', dict(session_digest=self.admission.session))
         if action == 'RECONCILE':
             from .operational_enrollment import AdmissionState
@@ -355,6 +387,13 @@ class RemoteProcessBackend:
                 ('version', 'request_id', 'launch_id', 'generation', 'boot_id'))):
             raise AuthorityError('Mismatched supervisor evidence.')
         return reply['data']
+
+    def invalidate_channel(self):
+        # Production DuplexClient.close also closes operational enrollment and
+        # stops heartbeats. Offline transport exposes the same loss semantics.
+        close=getattr(self.transport,'close',None)
+        if close is not None:close()
+        else:self.transport.disconnect()
 
     def arm_deadline(self, launch_id, deadline):
         if launch_id in self.deadlines:

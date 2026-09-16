@@ -71,11 +71,12 @@ class FounderSessions:
 
     def revoke_all(self):
         with self.lock:
-            for session in tuple(self.sessions):
-                self.audit('FOUNDER_SESSION_EXPIRED',session)
+            sessions=tuple(self.sessions)
             self.sessions.clear()
             self.pending.clear()
             self.generation=str(uuid4())
+            for session in sessions:
+                self.audit('FOUNDER_SESSION_EXPIRED',session)
 
     def _live(self,challenge,deadline):
         peer,process=self._peer()

@@ -107,6 +107,8 @@ class FounderIntake:
             decision = dict(version=1, purpose=PURPOSES[0], binding=self.policy.binding.data(),
                 approval_id=str(uuid4()), projection_digest=projection, signature_decision_digest=proof,
                 challenge_digest=args['session'], activation=False, integration_services_approved=False)
+            if self.policy.binding.founder_root_binding_digest is not None:
+                decision['state']='APPROVED_FOR_INSTALLATION'
             self.journal.record('INSTALLATION_APPROVAL_ISSUED', args['session'], decision)
             verify()
             return decision

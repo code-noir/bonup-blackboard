@@ -23,6 +23,8 @@ IDENTITIES='/etc/bonup-agent-control/identity-map.json'
 
 def read_installed(path):
     allowed={MANIFEST,IDENTITIES,'/etc/bonup-agent-control/controller.json',
+        '/etc/bonup-agent-control/founder-root-binding.json',
+        '/etc/bonup-agent-control/founder-genesis-evidence.json',
         '/etc/bonup-agent-control/runtime-authority.json',
         '/etc/bonup-agent-control/host-test-roots.json',
         '/etc/bonup-agent-control/supervisor.json',

@@ -22,7 +22,8 @@ RECEIPT = '/etc/bonup-agent-control/authority-receipt.json'
 PREFIX = '/usr/lib/bonup-agent-control'
 MODULES = ('authority_installation','authority_journal','founder_crypto','founder_session',
     'founder_intake','founder_transport','host_test_catalog','host_test_launch',
-    'host_test_observation','host_test_runtime','service_evidence','successor_config','installation_approval','interruption')
+    'host_test_observation','host_test_runtime','service_evidence','successor_config','installation_approval','interruption',
+    'founder_genesis')
 OPENSSL = dict(path='/usr/bin/openssl', algorithm='Ed25519', operation='VERIFY_ONLY',
                compatibility='OpenSSL 3.x; RFC8032 positive and negative verification')
 INTERRUPTION = dict(version=1,observer='PIDFD_DEATH_WITH_LIVE_CANARY',journal='/usr/bin/journalctl',
@@ -38,24 +39,41 @@ def files():
     return result
 
 
-def validate(configuration, attestation, identity_map, receipt, root, *, component):
+def validate(configuration, attestation, identity_map, receipt, root, *, component, genesis=None):
     controller = component == 'controller'
     if component not in ('controller','supervisor'):
         raise AuthorityError('Unknown successor component.')
     keys(configuration, ('version','service','authority','founder_uid','founder','proposal','executions')
          if controller else ('version','service','authority','roots','plans'))
-    if type(configuration['version']) is not int or configuration['version'] != 3:
+    if type(configuration['version']) is not int or configuration['version'] not in (3,4):
         raise AuthorityError('Explicit successor configuration version required.')
     policy = configuration['authority']
-    keys(policy, ('version','installation_generation','founder_enabled','root_id','root_digest',
-        'root_generation','algorithm','purposes','openssl','host_tests_enabled','catalog_version',
-        'catalog_digest','audit','receipt','activation','interruption'))
+    deferred = configuration['version'] == 4
+    common = ('version','installation_generation','founder_enabled',
+        'host_tests_enabled','catalog_version','catalog_digest','audit','receipt','activation','interruption')
+    keys(policy, common + (('founder_root_policy',) if deferred else
+        ('root_id','root_digest','root_generation','algorithm','purposes','openssl')))
     expected = dict(version=1,installation_generation=2,founder_enabled=policy['founder_enabled'],
         root_id=root.key_id,root_digest=root.identity,root_generation=root.generation,
         algorithm='Ed25519',purposes=list(PURPOSES),openssl=OPENSSL,
         host_tests_enabled=policy['host_tests_enabled'],catalog_version=VERSION,catalog_digest=CATALOG_DIGEST,
         audit='CONTROLLER_DURABLE_OUTBOX_REQUIRED',receipt='EXACT_VERIFIED_INSTALLATION_REQUIRED',activation=False,
         interruption=INTERRUPTION)
+    if deferred:
+        from .founder_genesis import policy as root_policy, validate_binding, receipt_projection
+        binding=InstallationBinding(**attestation['binding'])
+        identity={k:v for k,v in binding.data().items() if k in ('source_commit','candidate_manifest_digest',
+            'candidate_bundle_digest','provisioning_generation')}
+        identity['founder_root_policy_digest']=digest(root_policy())
+        bound=validate_binding(genesis,identity)
+        if (binding.founder_root_binding_digest != genesis['binding_digest'] or root != bound or
+                receipt.get('genesis') != receipt_projection(genesis)):
+            raise AuthorityError('Installed Genesis root/receipt mismatch.')
+        for name in ('root_id','root_digest','root_generation','algorithm','purposes','openssl'):
+            del expected[name]
+        expected.update(version=2,founder_root_policy=root_policy())
+    elif genesis is not None:
+        raise AuthorityError('Genesis cannot be smuggled through legacy configuration.')
     if (type(policy['founder_enabled']) is not bool or type(policy['host_tests_enabled']) is not bool or
             policy['host_tests_enabled'] and not policy['founder_enabled'] or
             canonical_json(policy) != canonical_json(expected)):

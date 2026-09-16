@@ -323,7 +323,9 @@ class InstalledBase:
         manifest=self.io.read(MANIFEST)
         identities=self.io.read(IDENTITIES)
         data=self.io.read(path)
-        if type(data) is dict and type(data.get('version')) is int and data['version']==3:
+        if type(data) is dict and type(data.get('version')) is int and data['version'] in (3,4):
+            if type(self.io) is KernelIO and data['version'] != 4:
+                raise AuthorityError('Successor installed authority requires Genesis binding.')
             return self.load_successor(data,manifest,identities)
         modern = manifest.get('version') in (3,4)
         # v2 exists solely for the prior offline fixtures. Installed startup cannot
@@ -397,8 +399,15 @@ class InstalledBase:
         from dataclasses import asdict
         attestation=self.io.read(successor.ATTESTATION)
         root=self.io.founder_root()
+        genesis=None
+        if data['version']==4:
+            from .founder_genesis import BINDING_PATH,EVIDENCE_PATH
+            genesis=self.io.read(BINDING_PATH)
+            evidence=self.io.read(EVIDENCE_PATH)
+            if evidence != dict(version=1,state='GENESIS_ALREADY_PERFORMED',binding_digest=genesis.get('binding_digest')):
+                raise AuthorityError('Installed Genesis consumption evidence required.')
         receipt=successor.validate(data,attestation,identities,
-            self.io.read(successor.RECEIPT),root,component=self.component)
+            self.io.read(successor.RECEIPT),root,component=self.component,genesis=genesis)
         candidate=self.io.read('/etc/bonup-agent-control/installation-candidate.json')
         approved=self.io.read('/etc/bonup-agent-control/installation-approved.json')
         if manifest != approved:
@@ -480,7 +489,7 @@ class InstalledSupervisorAdapters(InstalledBase):
         from .composition import ApprovedPlan,SupervisorEndpoint
         from .filesystem_evidence import ExpectedFilesystem
         from .supervisor_entry import SupervisorDriver
-        roots=mappings(self.config['roots'],generation=2 if self.config['version']==3 else 1)
+        roots=mappings(self.config['roots'],generation=2 if self.config['version'] in (3,4) else 1)
         roots_by_id={r.logical_id:r for r in roots}
         if len(roots_by_id)!=len(roots):raise ValidationError('Duplicate installed root.')
         raw_plans=self.config['plans']
@@ -507,7 +516,7 @@ class InstalledSupervisorAdapters(InstalledBase):
             admission=getattr(self, "admission", None), host_only=host_only,
             witness=self.io.witness('supervisor') if host_only else None,
             controller_process=config.peer.process if host_only else None,
-            ordinary_admission=self.config['version']!=3,
+            ordinary_admission=self.config['version'] not in (3,4),
             host_installation_digest=self.config.get('host_installation_digest'))
         deadline=DeadlineService(backend,self.io)
         driver=InstalledSupervisorDriver(endpoint,FixedWork(endpoint.handle),deadline)

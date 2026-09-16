@@ -33,7 +33,7 @@ class InstallationIdentity:
     capabilities: tuple
 
     @classmethod
-    def parse(cls, value):
+    def parse(cls, value, *, generation=1):
         closed(value, cls.__dataclass_fields__)
         component = value['component']
         policy = {
@@ -46,7 +46,8 @@ class InstallationIdentity:
             raise AuthorityError('Unknown service installation identity.')
         uid, endpoint, service, capabilities = policy[component]
         if (any(type(value[k]) is not int for k in ('uid', 'gid', 'provisioning_generation')) or
-                value['uid'] != uid or value['gid'] != uid or value['provisioning_generation'] != 1 or
+                type(generation) is not int or generation not in (1,2) or
+                value['uid'] != uid or value['gid'] != uid or value['provisioning_generation'] != generation or
                 value['endpoint'] != endpoint or value['service'] != service or
                 type(value['capabilities']) is not list or value['capabilities'] != list(capabilities) or
                 any(not valid_format('sha256', value[k]) for k in ('bundle_digest', 'configuration_digest'))):
@@ -80,6 +81,8 @@ class AdmissionState(str, Enum):
     ENROLLMENT_CLOSED = 'ENROLLMENT_CLOSED'
     RECONCILING = 'RECONCILING'
     READY_CLOSED = 'READY_CLOSED'
+    CLOSED = 'CLOSED'
+    HOST_TEST_ONLY = 'HOST_TEST_ONLY'
     ADMISSION_OPEN = 'ADMISSION_OPEN'
     STOPPING = 'STOPPING'
 
@@ -95,6 +98,9 @@ class Admission:
         self.session = None
         self.lock = RLock()
         self.verify = None
+        self.host_executions = frozenset()
+        self.host_validator = None
+        self.host_scope = None
 
     def starting(self):
         with self.lock:
@@ -132,6 +138,43 @@ class Admission:
         except BaseException:
             self.close()
             raise
+
+    def begin_host_tests(self, executions, validator):
+        with self.lock:
+            if self.state != AdmissionState.READY_CLOSED or not executions or len(executions) > 18:
+                raise AuthorityError('Reconciled closed admission and bounded catalog required.')
+            self.verify()
+            validator()
+            self.host_executions = frozenset(executions)
+            self.host_validator = validator
+            self.state = AdmissionState.HOST_TEST_ONLY
+
+    def require_execution(self, execution_id):
+        if self.state == AdmissionState.HOST_TEST_ONLY:
+            if execution_id not in self.host_executions or self.host_scope != execution_id:
+                raise AuthorityError('Only the authenticated host-test operation may execute.')
+            self.verify()
+            self.host_validator()
+        else:
+            self.require_open()
+
+    def run_host(self, execution_id, operation, *args, **kwargs):
+        with self.lock:
+            if self.state != AdmissionState.HOST_TEST_ONLY or self.host_scope is not None:
+                raise AuthorityError('No host-test authority or nested operation.')
+            self.host_scope = execution_id
+            try:
+                self.require_execution(execution_id)
+                return operation(*args, **kwargs)
+            finally:
+                self.host_scope = None
+
+    def end_host_tests(self):
+        with self.lock:
+            self.host_executions = frozenset()
+            self.host_validator = None
+            self.host_scope = None
+            self.state = AdmissionState.CLOSED
 
     def run(self, operation, *args, **kwargs):
         with self.lock:
@@ -267,22 +310,22 @@ class Enrollment:
         self.admission.close()
 
 
-def installation_spec(component):
+def installation_spec(component, *, generation=1):
     """Resolved static policy; deliberately contains no process, boot or session."""
-    if component not in ('controller', 'supervisor'):
+    if component not in ('controller', 'supervisor') or type(generation) is not int or generation not in (1,2):
         raise ValidationError('Unknown service.')
     controller = component == 'controller'
     return dict(component=component, uid=3000 if controller else 0, gid=3000 if controller else 0,
-        provisioning_generation=1, endpoint='/run/bonup-agent-supervisor/control.sock', service='bonup-agent-'+component+'.service',
+        provisioning_generation=generation, endpoint='/run/bonup-agent-supervisor/control.sock', service='bonup-agent-'+component+'.service',
         capabilities=[] if controller else ['CAP_SETUID','CAP_SETGID','CAP_KILL','CAP_DAC_READ_SEARCH'])
 
 
-def installation_pair(configuration, manifest, component):
+def installation_pair(configuration, manifest, component, *, generation=1):
     """Component digests bind full immutable config without circular self-hashes."""
     peer = 'supervisor' if component == 'controller' else 'controller'
-    expected = installation_spec(component)
+    expected = installation_spec(component, generation=generation)
     if canonical_json(configuration['service']) != canonical_json(expected):
         raise AuthorityError('Installation configuration includes unknown or operational identity.')
-    return tuple(InstallationIdentity.parse(dict(installation_spec(name),
-        bundle_digest=manifest['bundle_digest'], configuration_digest=manifest['configuration_digests'][name]))
+    return tuple(InstallationIdentity.parse(dict(installation_spec(name,generation=generation),
+        bundle_digest=manifest['bundle_digest'], configuration_digest=manifest['configuration_digests'][name]),generation=generation)
         for name in (component, peer))

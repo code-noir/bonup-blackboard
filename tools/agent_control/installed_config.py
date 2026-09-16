@@ -23,7 +23,13 @@ IDENTITIES='/etc/bonup-agent-control/identity-map.json'
 
 def read_installed(path):
     allowed={MANIFEST,IDENTITIES,'/etc/bonup-agent-control/controller.json',
+        '/etc/bonup-agent-control/runtime-authority.json',
+        '/etc/bonup-agent-control/host-test-roots.json',
         '/etc/bonup-agent-control/supervisor.json',
+        '/etc/bonup-agent-control/founder-policy.json',
+        '/etc/bonup-agent-control/authority-receipt.json',
+        '/etc/bonup-agent-control/installation-candidate.json',
+        '/etc/bonup-agent-control/installation-approved.json',
         '/etc/bonup-agent-control/installation-receipt.json','/etc/bonup-agent-control/host-tests.json'}
     if path not in allowed:raise AuthorityError('Unknown installed configuration.')
     fd=os.open('/',os.O_RDONLY|os.O_DIRECTORY|os.O_CLOEXEC)

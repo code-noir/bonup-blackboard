@@ -123,6 +123,17 @@ def set_process_limits(*, nofile, file_bytes, cpu_seconds):
 
 
 class CgroupV2:
+    def verify_limits(self, name):
+        expected = {'memory.max':'268435456', 'memory.swap.max':'0', 'pids.max':'32',
+                    'cpu.max':'100000 100000', 'memory.oom.group':'1'}
+        for key, value in expected.items():
+            fd = os.open(key, os.O_RDONLY|os.O_CLOEXEC|os.O_NOFOLLOW, dir_fd=self.children[name])
+            try:
+                if os.read(fd, 128).decode('ascii').strip() != value:
+                    raise AuthorityError('Kernel cgroup limits differ from the approved profile.')
+            finally:
+                os.close(fd)
+        return True
     """A pre-opened, root-owned delegated subtree. Never accepts absolute child paths."""
     def __init__(self, root_fd):
         info = os.fstat(root_fd)
@@ -228,7 +239,7 @@ class InstalledArtifacts:
 
     def bind_installation(self, bundle_digest, generation):
         from .schema import valid_format
-        if self.installation is not None or not valid_format('sha256',bundle_digest) or type(generation) is not int or generation != 1:
+        if self.installation is not None or not valid_format('sha256',bundle_digest) or type(generation) is not int or generation not in (1,2):
             raise AuthorityError('Invalid installation binding.')
         self.installation = (bundle_digest,generation)
 
@@ -279,6 +290,7 @@ class LinuxProcessBackend:
             raise AuthorityError('Verified installed privileged supervisor required.')
         self.artifacts,self.cgroups,self.plans,self.boot_id = artifacts,cgroups,plans,boot_id
         self.armed,self.children,self.results = {},{},{}
+        self.verified_resources = {}
         import threading
         self.release_lock=threading.RLock()
         self.reconciled = False
@@ -467,7 +479,11 @@ class LinuxProcessBackend:
         state['preparing']=False
         if state['stopped']:
             raise AuthorityError('Cancelled preparation cannot release.')
+        self.verified_resources[launch_id] = self.cgroups.verify_limits(cgroup)
         return ProcessIdentity.read(pid)
+
+    def resource_evidence(self, launch):
+        return self.verified_resources.get(launch['launch_id']) is True
 
     def release(self, launch, record):
         with self.release_lock:

@@ -79,7 +79,9 @@ class SupervisorEndpoint:
     A new generation starts closed and requires reconciliation. Any ambiguity stops
     admission and retains launch identities until cleanup can be established.
     """
-    def __init__(self, plans, backend, *, generation, boot_id, now=None, elapsed=None, inspector=None, admission=None):
+    def __init__(self, plans, backend, *, generation, boot_id, now=None, elapsed=None, inspector=None, admission=None, host_only=False, witness=None, controller_process=None, ordinary_admission=True):
+        self.witness,self.controller_process=witness,controller_process
+        self.ordinary_admission=ordinary_admission
         uuid_value(generation)
         uuid_value(boot_id)
         if any(type(p) is not ApprovedPlan for p in plans) or len({p.plan_id for p in plans}) != len(plans):
@@ -93,6 +95,7 @@ class SupervisorEndpoint:
         self.launches, self.seen = {}, set()
         self.ready = False
         self.admission = admission
+        self.host_only = host_only
         self.last_heartbeat = self.elapsed()
 
     def _reply(self, request, action, data):
@@ -124,7 +127,10 @@ class SupervisorEndpoint:
         try:
             for entry in tuple(self.launches.values()):
                 if entry['state'] != 'TERMINAL':
-                    self._cleanup(entry)
+                    if self.witness is not None and entry['state']=='RUNNING':
+                        self.witness.observe(entry['launch']['launch_id'],
+                                             cleanup=lambda:self._cleanup(entry))
+                    else:self._cleanup(entry)
         finally:
             if self.inspector is not None and not any(e.get('preparing',False) for e in self.launches.values()):
                 self.inspector.disconnect()
@@ -151,9 +157,16 @@ class SupervisorEndpoint:
         self.seen.add(request['request_id'])
         action, data, launch_id = request['action'], request['data'], request['launch_id']
         if action == 'OPEN_ADMISSION':
+            if not self.ordinary_admission and not self.host_only:
+                raise AuthorityError('Successor ordinary admission is disabled.')
             if self.admission is None or not self.ready:
                 raise AuthorityError('Fresh operational reconciliation required.')
-            self.admission.open(data['session_digest'])
+            if self.host_only:
+                if data['session_digest'] != self.admission.session:
+                    raise AuthorityError('Host-test operational session mismatch.')
+                self.admission.begin_host_tests(tuple(p.execution_id for p in self.plans.values()), lambda: None)
+            else:
+                self.admission.open(data['session_digest'])
             return self._reply(request, 'ADMISSION_EVIDENCE', dict(session_digest=self.admission.session))
         if action == 'RECONCILE':
             from .operational_enrollment import AdmissionState
@@ -173,7 +186,10 @@ class SupervisorEndpoint:
             return self._reply(request, 'HEARTBEAT', dict(ready=self.ready))
         if action == 'PREPARE_LAUNCH':
             if self.admission is not None:
-                self.admission.require_open()
+                if self.host_only:
+                    self.admission.run_host(data['execution_id'], lambda: None)
+                else:
+                    self.admission.require_open()
             if not self.ready or launch_id in self.launches or any(e['state'] != 'TERMINAL' for e in self.launches.values()):
                 raise AuthorityError('Admission closed, launch replay or concurrency limit.')
             plan = self.plans.get(data['plan_id'])
@@ -243,7 +259,14 @@ class SupervisorEndpoint:
         if action == 'STATUS_LAUNCH':
             if 'process' not in entry:
                 raise AuthorityError('No authenticated prepared process evidence.')
-            return self._reply(request, 'STATUS_EVIDENCE', dict(
+            extra = {}
+            if request['version'] == 3:
+                from .service_evidence import recent_service_events
+                extra['service_events'] = recent_service_events()
+                extra['lifecycle'] = dict(resources_verified=self.backend.resource_evidence(entry['launch']),
+                    exec_confirmed=entry.get('exec_confirmed') is True,
+                    cleanup_confirmed=entry['state'] == 'TERMINAL')
+            return self._reply(request, 'STATUS_EVIDENCE', dict(**extra,
                 exited=entry['state'] == 'TERMINAL' or self.backend.exited(entry['launch']) is True,
                 process=asdict(entry['process']),
                 output=self.backend.output_evidence(entry['launch']) if hasattr(self.backend,'output_evidence')
@@ -267,11 +290,18 @@ class SupervisorEndpoint:
             if self.admission is None:
                 proof = self.backend.release(entry['launch'], entry['record'])
             else:
-                proof = self.admission.run(self.backend.release, entry['launch'], entry['record'])
+                if self.host_only:
+                    proof = self.admission.run_host(entry['launch']['execution_id'],
+                        self.backend.release, entry['launch'], entry['record'])
+                else:
+                    proof = self.admission.run(self.backend.release, entry['launch'], entry['record'])
             from .exec_start import ExecStart
             if type(proof) is not ExecStart:
                 raise AuthorityError('Release delivery is not execution-start proof.')
             proof.verify(entry['launch'], entry['record'])
+            entry['exec_confirmed'] = True
+            if self.witness is not None and entry['record'].argv[-1] in ('controller_crash','reboot_reconciliation','watchdog'):
+                self.witness.inspect(launch_id,entry['process'],self.controller_process)
             entry['state'] = 'RUNNING'
             return self._reply(request, 'RUNNING_EVIDENCE',
                 dict(authorization_digest=entry['record'].authorization_digest,
@@ -509,7 +539,7 @@ class ControllerRuntime:
         self._launch_audit('CONFINEMENT_SETUP_STARTED', launch_id, 'SETUP')
         try:
             if self.admission is not None:
-                self.admission.require_open()
+                self.admission.require_execution(self.runtime.launch(launch_id)['execution_id'])
             return self.sequencer.prepare(launch_id)
         except BaseException:
             self._launch_audit('CONFINEMENT_SETUP_FAILED', launch_id, 'SETUP_FAILED')
@@ -518,7 +548,9 @@ class ControllerRuntime:
     def release(self, launch_id):
         try:
             if self.admission is not None:
-                result = self.admission.run(self.sequencer.release, launch_id)
+                with self.admission.lock:
+                    self.admission.require_execution(self.runtime.launch(launch_id)['execution_id'])
+                    result = self.sequencer.release(launch_id)
             else:
                 result = self.sequencer.release(launch_id)
             self._launch_audit('WORKER_STARTED', launch_id, 'STARTED')

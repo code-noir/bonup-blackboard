@@ -2097,18 +2097,47 @@
         },
         "actor": {
           "anyOf": [
-            {"$ref": "#/$defs/Actor"},
-            {"type": "object", "properties": {"component": {"type": "string", "enum": ["CONTROLLER"]}},
-              "required": ["component"], "additionalProperties": false}
+            {
+              "$ref": "#/$defs/Actor"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "component": {
+                  "type": "string",
+                  "enum": [
+                    "CONTROLLER"
+                  ]
+                }
+              },
+              "required": [
+                "component"
+              ],
+              "additionalProperties": false
+            }
           ]
         },
         "routing": {
           "type": "object",
           "properties": {
-            "request_id": {"$ref": "#/$defs/UUID"},
-            "launch_id": {"anyOf": [{"$ref": "#/$defs/UUID"}, {"type": "null"}]}
+            "request_id": {
+              "$ref": "#/$defs/UUID"
+            },
+            "launch_id": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/UUID"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
           },
-          "required": ["request_id", "launch_id"],
+          "required": [
+            "request_id",
+            "launch_id"
+          ],
           "additionalProperties": false
         },
         "event_type": {
@@ -2149,7 +2178,27 @@
             "CONFINEMENT_SETUP_STARTED",
             "CONFINEMENT_SETUP_FAILED",
             "WORKER_STARTED",
-            "WORKER_EXITED"
+            "WORKER_EXITED",
+            "FOUNDER_CHALLENGE_ISSUED",
+            "FOUNDER_SIGNATURE_ACCEPTED",
+            "FOUNDER_SIGNATURE_DENIED",
+            "FOUNDER_SESSION_CREATED",
+            "FOUNDER_SESSION_EXPIRED",
+            "INSTALLATION_APPROVAL_ISSUED",
+            "INSTALLATION_APPROVAL_DENIED",
+            "HOST_TEST_AUTHORIZATION_ACCEPTED",
+            "HOST_TEST_AUTHORIZATION_DENIED",
+            "HOST_TEST_SESSION_BEGUN",
+            "HOST_TEST_SESSION_ENDED",
+            "HOST_TEST_CASE_ENROLLED",
+            "HOST_TEST_CASE_STARTED",
+            "HOST_TEST_CASE_PASSED",
+            "HOST_TEST_CASE_FAILED",
+            "HOST_TEST_COMPLETION_ACCEPTED",
+            "HOST_TEST_COMPLETION_DENIED",
+            "HOST_TEST_REBOOT_PENDING",
+            "HOST_TEST_REQUEST_RECEIVED",
+            "HOST_TEST_AUTHORIZED"
           ]
         },
         "task_id": {

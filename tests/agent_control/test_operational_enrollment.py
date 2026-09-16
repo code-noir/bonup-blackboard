@@ -270,9 +270,16 @@ class InstalledStartupTests(unittest.TestCase):
         listener.bind(str(Path(self.temp.name)/'enrollment.sock'));listener.listen(1)
         self.addCleanup(listener.close)
         test=self
+        # The socketpair is connected before registry validation, unlike the
+        # installed AF_UNIX connect. Start the security handshake only when both
+        # fixture participants have completed that pre-connect work.
+        self.enrollment_barrier = threading.Barrier(2, timeout=10)
+        self.enrollment_entered={name:threading.Event() for name in ('controller','supervisor')}
         class IO(previous.CompositionIO):
             def peer(self,sock):return PeerIdentity(3000,3000,101) if self.component=='supervisor' else PeerIdentity(0,0,100)
             def enroll(self,local,remote):
+                test.enrollment_entered[self.component].set()
+                test.enrollment_barrier.wait()
                 own=lambda:Observation(self.identity(),self.process(self.identity().pid),local.service)
                 obs=lambda:Observation(self.peer(None),self.process(self.peer(None).pid),remote.service)
                 channel=OperationalChannel(test.ssocket if self.component=='supervisor' else test.csocket,

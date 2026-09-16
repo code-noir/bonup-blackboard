@@ -398,10 +398,13 @@ def source_bytes(root,relative):
 
 
 def build(repository, *, source_commit):
+    # Generation 1 is historical. Rehydrate its reviewed bytes, never incorporate
+    # successor source files under its provisioning generation or old identities.
+    repository = Path(repository) / 'docs/agent-control/review/m3-generation-1/payload'
     payloads=generated_payloads();artifacts=[]
     for spec in artifact_spec():
         path=spec['destination']
-        if path not in payloads:payloads[path]=source_bytes(repository,spec['source'])
+        if path not in payloads:payloads[path]=source_bytes(repository,path.lstrip('/'))
         artifacts.append(dict(spec,sha256=sha(payloads[path])))
     manifest=candidate(artifacts,source_commit)
     verify_payloads(manifest,payloads)

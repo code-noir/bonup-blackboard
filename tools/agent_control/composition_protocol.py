@@ -34,12 +34,17 @@ BASE = {'version', 'action', 'request_id', 'launch_id', 'generation', 'boot_id',
 def validate(message):
     if type(message) is not dict or set(message) != BASE:
         raise ValidationError('Unexpected composition message fields.')
-    if type(message['version']) is not int or message['version'] not in (1, 2):
+    if type(message['version']) is not int or message['version'] not in (1, 2, 3):
         raise ValidationError('Unsupported composition protocol.')
     action, data = message['action'], message['data']
     if type(action) is not str or action not in FIELDS:
         raise ValidationError('Unknown composition action.')
     expected = FIELDS[action]
+    if message['version'] == 3:
+        if action not in ('STATUS_LAUNCH', 'STATUS_EVIDENCE'):
+            raise ValidationError('Version 3 extends status evidence only.')
+        if action == 'STATUS_EVIDENCE':
+            expected = expected | {'lifecycle', 'service_events'}
     if message['version'] == 2:
         expected = expected | {'PREPARE_LAUNCH':{'root_id','filesystem_policy_digest'},
             'PREPARED_EVIDENCE':{'filesystem_evidence'},
@@ -49,7 +54,21 @@ def validate(message):
     for name in ('request_id', 'launch_id', 'generation', 'boot_id'):
         uuid_value(message[name])
     for name, value in data.items():
-        if name in {'plan_id', 'execution_id', 'release_id','root_id'}:
+        if name == 'service_events':
+            if type(value) is not list or len(value)>4:
+                raise ValidationError('Bounded service events required.')
+            for row in value:
+                if (type(row) is not dict or set(row)!={'unit','reason','cursor','boot_id'} or
+                        row['unit'] not in ('bonup-agent-controller.service','bonup-agent-supervisor.service') or
+                        row['reason'] not in ('WATCHDOG','PROCESS_KILLED') or
+                        type(row['cursor']) is not str or not 1<=len(row['cursor'])<=512):
+                    raise ValidationError('Invalid service observation.')
+                uuid_value(row['boot_id'])
+        elif name == 'lifecycle':
+            if (type(value) is not dict or set(value) != {'resources_verified','exec_confirmed','cleanup_confirmed'} or
+                    any(type(v) is not bool for v in value.values())):
+                raise ValidationError('Closed kernel lifecycle facts required.')
+        elif name in {'plan_id', 'execution_id', 'release_id','root_id'}:
             uuid_value(value)
         elif name.endswith('_digest'):
             if not valid_format('sha256', value):

@@ -108,7 +108,10 @@ def main():
         if not os.fstatvfs(root).f_flag & os.ST_RDONLY:
             raise RuntimeError('Installation bind must be read-only.')
         mapping=lambda name: [list(map(int,line.split())) for line in Path('/proc/self/'+name).read_text().splitlines()]
-        verify_namespace_installation(root,cfg['installation'],mapping('uid_map'),mapping('gid_map'))
+        generation=cfg['installation']['generation']
+        if type(generation) is not int or generation not in (1,2):
+            raise ValueError('Unsupported sealed installation generation')
+        verify_namespace_installation(root,cfg['installation'],mapping('uid_map'),mapping('gid_map'),generation=generation)
     finally:
         os.close(root)
     sys.path.insert(0,str(installed))

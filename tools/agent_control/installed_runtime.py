@@ -64,7 +64,7 @@ def profile(data):
     return ConfinementProfile(**row)
 
 
-def mappings(data):
+def mappings(data, *, generation=1):
     from .filesystem_evidence import RootMapping, Export, StoragePolicy
     if type(data) is not list or len(data)>4: raise ValidationError('Bounded root catalog required.')
     result=[]
@@ -73,7 +73,7 @@ def mappings(data):
                    'repository_id','repository_identity'))
         if not row['host_root'].startswith('/srv/bonup-agent-work/'):
             raise AuthorityError('Installed root outside worker storage.')
-        if row['generation']!=1: raise AuthorityError('Stale provisioning generation.')
+        if type(row['generation']) is not int or row['generation']!=generation: raise AuthorityError('Stale provisioning generation.')
         exports=[]
         for export in row['exports']:
             keys(export,('logical_id','relative','identity','kind','writable'))
@@ -100,6 +100,20 @@ class KernelIO:
             return sock.sender
         return PeerIdentity.from_socket(sock)
     read = staticmethod(read_installed)
+
+    def founder_root(self):
+        from .founder_crypto import load_founder_root
+        return load_founder_root()
+
+    def verify_crypto(self):
+        from .founder_crypto import OpenSSLVerifier
+        OpenSSLVerifier().preflight()
+
+    def witness(self, component):
+        from .interruption import Witness
+        witness=Witness(component)
+        witness.preflight()
+        return witness
 
     def verify_code(self, files):
         from .supervisor_linux import InstalledArtifacts
@@ -309,6 +323,8 @@ class InstalledBase:
         manifest=self.io.read(MANIFEST)
         identities=self.io.read(IDENTITIES)
         data=self.io.read(path)
+        if type(data) is dict and type(data.get('version')) is int and data['version']==3:
+            return self.load_successor(data,manifest,identities)
         modern = manifest.get('version') in (3,4)
         # v2 exists solely for the prior offline fixtures. Installed startup cannot
         # pre-enroll future processes via that superseded configuration contract.
@@ -373,6 +389,73 @@ class InstalledBase:
                       generation=peer.generation, enrollment_id=peer.enrollment_id))
         return service
 
+    def load_successor(self, data, manifest, identities):
+        from . import successor_config as successor
+        from .authority_installation import approval_projection
+        from .host_test_catalog import ROOT_ID, PROFILE
+        from .operational_enrollment import installation_pair
+        from dataclasses import asdict
+        attestation=self.io.read(successor.ATTESTATION)
+        root=self.io.founder_root()
+        receipt=successor.validate(data,attestation,identities,
+            self.io.read(successor.RECEIPT),root,component=self.component)
+        candidate=self.io.read('/etc/bonup-agent-control/installation-candidate.json')
+        approved=self.io.read('/etc/bonup-agent-control/installation-approved.json')
+        if manifest != approved:
+            raise AuthorityError('Successor policy cannot be installed over a different generation manifest.')
+        approval_projection(canonical_json(candidate).encode(),canonical_json(approved).encode(),receipt.binding)
+        for field in ('files','configuration_digests','identity_map_digest','resource_digest','authority_digest'):
+            if approved.get(field) != attestation[field]:
+                raise AuthorityError('Runtime attestation changes approved installation policy.')
+        if approved.get('source_commit') != receipt.binding.source_commit:
+            raise AuthorityError('Runtime attestation source mismatch.')
+        self.artifacts=self.io.verify_code(attestation['files'])
+        from .supervisor_linux import InstalledArtifacts
+        if type(self.artifacts) is InstalledArtifacts:
+            self.artifacts.bind_installation(receipt.binding.candidate_bundle_digest,2)
+        self.io.verify_crypto()
+        raw_roots=self.io.read('/etc/bonup-agent-control/host-test-roots.json')
+        if digest(raw_roots) != attestation['filesystem_digest']:
+            raise AuthorityError('Physical installation enrollment mismatch.')
+        roots=mappings(raw_roots, generation=2)
+        enabled=data['authority']['host_tests_enabled']
+        if enabled:
+            if (len(roots)!=1 or roots[0].host_root!='/srv/bonup-agent-work/bonup-fe01/workspace' or
+                    roots[0].logical_id!=ROOT_ID or roots[0].profile!=PROFILE or
+                    roots[0].object_identity[2:]!=(3002,3002) or roots[0].repository_id is not None or
+                    len(roots[0].exports)!=1 or roots[0].exports[0].relative!='frontend/example.ts' or
+                    roots[0].exports[0].writable):
+                raise AuthorityError('Only the installed synthetic canary root is permitted.')
+        elif roots:
+            raise AuthorityError('Disabled host tests cannot enroll storage.')
+        self.manifest_digest=digest(attestation)
+        self.config=dict(data)
+        if self.component=='controller':
+            from .controller_entry import validate_registry
+            registry=self.io.open_registry('/var/lib/bonup-agent-control/control.sqlite3')
+            try: validate_registry(registry)
+            finally: registry.close()
+            if self.io.capabilities()!=():
+                raise AuthorityError('Controller capabilities prohibited.')
+            self.config['founder_policy']=dict(enabled=data['authority']['founder_enabled'],
+                binding=receipt.binding.data(),root_digest=root.identity,receipt_digest=receipt.receipt_digest,
+                activation=False,host_tests_enabled=enabled,
+                filesystem=roots[0].expectation().policy if enabled else None)
+        else:
+            self.config['roots']=raw_roots
+            self.config['host_test_catalog']=data['authority']['catalog_digest'] if enabled else None
+        self.notify_adapter=self.io.notifier()
+        local,remote=installation_pair(data,attestation,self.component,generation=2)
+        self.operational_channel=self.io.enroll(local,remote)
+        session=self.operational_channel.session
+        self.admission=session.admission
+        peer=session.peer_enrollment()
+        return dict(version=1,component=self.component,approved=True,generation=session.generation,
+            boot_id=session.boot_id,manifest_digest=self.manifest_digest,
+            registry_path='/var/lib/bonup-agent-control/control.sqlite3' if self.component=='controller' else None,
+            peer=dict(endpoint=peer.endpoint,uid=peer.uid,gid=peer.gid,**asdict(peer.process),
+                      generation=peer.generation,enrollment_id=peer.enrollment_id))
+
     def abort_startup(self):
         channel = getattr(self, 'operational_channel', None)
         if channel is not None:
@@ -396,7 +479,7 @@ class InstalledSupervisorAdapters(InstalledBase):
         from .composition import ApprovedPlan,SupervisorEndpoint
         from .filesystem_evidence import ExpectedFilesystem
         from .supervisor_entry import SupervisorDriver
-        roots=mappings(self.config['roots'])
+        roots=mappings(self.config['roots'],generation=2 if self.config['version']==3 else 1)
         roots_by_id={r.logical_id:r for r in roots}
         if len(roots_by_id)!=len(roots):raise ValidationError('Duplicate installed root.')
         raw_plans=self.config['plans']
@@ -409,11 +492,21 @@ class InstalledSupervisorAdapters(InstalledBase):
             if anchor!=self.io.process(os.getpid()):raise AuthorityError('Stale supervisor anchor.')
             plans.append(ApprovedPlan(row['plan_id'],row['execution_id'],parse_record(row['record']),
                 root.object_identity,row['profile_id'],anchor,filesystem=root.expectation()))
+        host_only = self.config.get('host_test_catalog') is not None
+        if host_only:
+            from .host_test_catalog import CATALOG_DIGEST
+            from .host_test_launch import supervisor_catalog
+            if self.config['host_test_catalog'] != CATALOG_DIGEST or raw_plans != [] or len(roots) != 1:
+                raise AuthorityError('Exact installed host-test catalog required.')
+            plans = supervisor_catalog(roots[0], config.generation, self.io.process(os.getpid()))
         backend=self.io.backend(self.artifacts,config.boot_id)
         inspector=self.io.inspector(roots)
         endpoint=SupervisorEndpoint(tuple(plans),backend,generation=config.generation,boot_id=config.boot_id,
             now=self.io.wall,elapsed=self.io.now,inspector=inspector,
-            admission=getattr(self, "admission", None))
+            admission=getattr(self, "admission", None), host_only=host_only,
+            witness=self.io.witness('supervisor') if host_only else None,
+            controller_process=config.peer.process if host_only else None,
+            ordinary_admission=self.config['version']!=3)
         deadline=DeadlineService(backend,self.io)
         driver=InstalledSupervisorDriver(endpoint,FixedWork(endpoint.handle),deadline)
         self.driver=driver
@@ -484,6 +577,8 @@ class InstalledControllerAdapters(InstalledBase):
         controller=ControllerRuntime(runtime,authorization,remote,generation=config.peer.generation,boot_id=config.boot_id,
             admission=getattr(self, "admission", None))
         self.driver=InstalledControllerDriver(controller,client,founder,proposal,enrollments,self.io)
+        if self.config.get('founder_policy') is not None:
+            self.driver.configure_founder(self.config['founder_policy'])
         return self.driver
 
     def listener(self,config):
@@ -503,7 +598,9 @@ class InstalledSupervisorDriver(SupervisorDriver):
         return clean
     def disconnect(self):
         try:super().disconnect()
-        finally:self.deadline.close()
+        finally:
+            self.deadline.close()
+            if self.endpoint.witness is not None:self.endpoint.witness.close()
 
 
 class EvidenceWork:
@@ -552,6 +649,50 @@ class InstalledControllerDriver:
         self.listeners={}
         self.seen=set()
         self.client.maintenance=self.service_founder
+        self.founder_transport = None
+        self.founder_factory = None
+        self.successor = False
+
+    def configure_founder(self, installed_policy):
+        """Generation-2 typed installed contract; never called from client data.
+
+        Generation-1 configuration continues to reject this extra field. The
+        successor bundle must bind this policy through its config digest.
+        """
+        self.successor = True
+        from .authority_installation import InstallationBinding
+        from .authority_journal import AuthorityJournal
+        from .founder_intake import FounderPolicy, FounderIntake
+        from .founder_crypto import load_founder_root
+        from .filesystem_evidence import ExpectedFilesystem
+        from .host_test_launch import CatalogLaunches
+        keys(installed_policy, ('enabled','binding','root_digest','receipt_digest','activation','filesystem','host_tests_enabled'))
+        policy = FounderPolicy(installed_policy['enabled'], InstallationBinding(**installed_policy['binding']),
+            installed_policy['root_digest'], installed_policy['receipt_digest'], installed_policy['activation'],
+            installed_policy['host_tests_enabled'])
+        if not policy.enabled:
+            return
+        root = self.io.founder_root()
+        journal = AuthorityJournal(self.controller.runtime.registry)
+        expected = ExpectedFilesystem(canonical_json(installed_policy['filesystem'])) if policy.host_tests_enabled else None
+        anchor = self.client.rpc.auth.enrollment.process
+        peer = PeerIdentity(0, 0, anchor.pid)
+        runner = CatalogLaunches(self.controller, policy.binding, expected, anchor, peer=peer,
+            witness=self.io.witness('controller'),own_process=self.io.process(os.getpid()),elapsed=self.io.now) if expected else None
+        self.host_runner = runner
+        def context():
+            self.client.rpc.verify()
+            return dict(boot_id=self.controller.sequencer.boot_id,
+                        controller_generation=self.controller.admission.session,
+                        supervisor_generation=self.controller.sequencer.generation)
+        def read_receipt():
+            return canonical_json(self.io.read('/etc/bonup-agent-control/authority-receipt.json')).encode()
+        def read_candidates():
+            return tuple(canonical_json(self.io.read('/etc/bonup-agent-control/installation-'+name+'.json')).encode()
+                         for name in ('candidate','approved'))
+        self.founder_factory = lambda observe: FounderIntake(policy, root, observe, journal,
+            controller=self.controller, runner=runner, runtime_context=context, receipt_reader=read_receipt,
+            candidate_reader=read_candidates, clock=self.io.wall, boottime=self.io.now)
     def validate_config(self,config):
         return self.controller.sequencer.generation==config.peer.generation and self.controller.sequencer.boot_id==config.boot_id
     def reconcile(self):
@@ -567,6 +708,8 @@ class InstalledControllerDriver:
                 self.deadlines()
                 self.controller.tick()  # Durable revocation/deadline servicing before OPEN.
                 admission.reconciled()
+                if getattr(self, 'successor', False):
+                    return 'CLOSED'
                 result = self.controller.remote._call('OPEN_ADMISSION', str(uuid4()),
                     dict(session_digest=admission.session), 'ADMISSION_EVIDENCE')
                 if result['session_digest'] != admission.session:
@@ -576,6 +719,11 @@ class InstalledControllerDriver:
             admission.require_open()
         return 'OPEN'
     def open_clients(self):
+        if self.founder_factory is not None:
+            from .founder_transport import FounderTransport
+            self.founder_transport = FounderTransport(self.io._listener_socket('founder',1000),
+                self.founder_factory, now=self.io.now, process_reader=self.io.process)
+            return
         if self.founder is None and self.proposal is None:
             return  # No human/model authority is created by service enrollment.
         try:
@@ -589,6 +737,10 @@ class InstalledControllerDriver:
     def deadlines(self):self.client.check()
     def control(self):
         self.controller.tick()
+        if self.founder_transport is not None:
+            if self.founder_transport.intake is not None:
+                self.founder_transport.intake.tick()
+            self.founder_transport.poll()
         for kind,listener in self.listeners.items():
             if listener.handshake is None:listener.accept()
             if listener.handshake is None:continue
@@ -607,6 +759,9 @@ class InstalledControllerDriver:
         # release versus revocation. Outside it, PREPARE waits service founder
         # control on this same SQLite-owning thread, without nested RPC.
         if self.controller.runtime.db.in_transaction:return
+        if self.founder_transport is not None:
+            self.founder_transport.poll()
+            return
         listener=self.listeners.get('founder')
         if listener is None:return
         if listener.handshake is None:listener.accept()
@@ -659,10 +814,17 @@ class InstalledControllerDriver:
             row=self.controller.stop(data['launch_id'],reason)
         return dict(version=1,request_id=data['request_id'],launch_id=data['launch_id'],state=row['state'])
     def disconnect(self):
-        try:self.controller.tick(controller_alive=False)
+        try:
+            runner=getattr(self,'host_runner',None)
+            if runner is not None:
+                runner.observe_interruption(cleanup=lambda:self.controller.tick(controller_alive=False))
+            else:self.controller.tick(controller_alive=False)
         finally:
+            if self.founder_transport is not None:self.founder_transport.close()
             for listener in self.listeners.values():listener.close()
             self.client.close()
+            runner=getattr(self,'host_runner',None)
+            if runner is not None:runner.close()
 
 
 def build_installed_controller_adapters(*, _io=None):

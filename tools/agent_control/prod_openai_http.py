@@ -5,10 +5,11 @@ import requests
 from requests.adapters import HTTPAdapter
 
 from .prod_model_transport import (
-    ALLOW_REDIRECTS, MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES, TIMEOUT_SECONDS,
-    TRUSTED_ENDPOINT, TRUSTED_MODEL, TRUST_ENVIRONMENT,
+    ALLOW_REDIRECTS, MAX_REQUEST_BYTES, MAX_REQUESTS_PER_CYCLE, MAX_RESPONSE_BYTES,
+    MAX_RETRIES, PRODUCT_PROPOSAL_SCHEMA_DIGEST, TIMEOUT_SECONDS, TRUSTED_ENDPOINT,
+    TRUSTED_MODEL, TRUST_ENVIRONMENT,
 )
-from .serialization import canonical_json, parse_json
+from .serialization import canonical_json, digest, parse_json
 from .types import ValidationError
 
 PROVIDER = "OpenAI"
@@ -17,6 +18,42 @@ CONNECT_TIMEOUT_SECONDS = 5
 READ_TIMEOUT_SECONDS = TIMEOUT_SECONDS
 HTTP_MAX_RETRIES = 0
 _RESPONSE_CHUNK_BYTES = 8192
+
+
+def project_openai_responses_request(request):
+    """Translate the closed internal PROD-01 contract into one OpenAI wire body."""
+    if type(request) is not dict or set(request) != {
+            "contract_version", "agent_id", "logical_model", "context", "tools",
+            "output_contract", "request_policy"}:
+        raise OpenAIHTTPError("Malformed internal PROD-01 request contract.")
+    output = request["output_contract"]
+    policy = request["request_policy"]
+    if (request["contract_version"] != 1 or request["agent_id"] != "PROD-01"
+            or request["logical_model"] != TRUSTED_MODEL or request["tools"] != []
+            or type(request["context"]) is not dict
+            or type(output) is not dict or set(output) != {
+                "type", "encoding", "name", "strict", "schema", "schema_digest"}
+            or output["type"] != "PRODUCT_REQUIREMENT_PROPOSAL"
+            or output["encoding"] != "STRICT_JSON_SCHEMA"
+            or output["name"] != "product_requirement_proposal"
+            or output["strict"] is not True
+            or output["schema_digest"] != PRODUCT_PROPOSAL_SCHEMA_DIGEST
+            or digest(output["schema"]) != PRODUCT_PROPOSAL_SCHEMA_DIGEST
+            or policy != {"max_requests": MAX_REQUESTS_PER_CYCLE,
+                          "max_retries": MAX_RETRIES}):
+        raise OpenAIHTTPError("Internal PROD-01 request contract mismatch.")
+    return {
+        "model": PROVIDER_MODEL,
+        "input": canonical_json(request["context"]),
+        "tools": [],
+        "text": {"format": {
+            "type": "json_schema",
+            "name": output["name"],
+            "strict": True,
+            "schema": output["schema"],
+        }},
+        "store": False,
+    }
 
 
 class OpenAIHTTPError(ValidationError):
@@ -92,16 +129,10 @@ class OpenAIResponsesHTTPAdapter:
                 or "\r" in credential or "\n" in credential):
             raise OpenAIHTTPError("Trusted OpenAI credential is unavailable.")
         try:
-            body = parse_json(request.decode("utf-8"))
+            internal_request = parse_json(request.decode("utf-8"))
         except (UnicodeError, ValidationError):
             raise OpenAIHTTPError("Malformed trusted OpenAI request.") from None
-        if (type(body) is not dict or body.get("model") != TRUSTED_MODEL
-                or body.get("tools") != [] or body.get("store") is not False
-                or type(body.get("text")) is not dict
-                or body["text"].get("format", {}).get("type") != "json_schema"
-                or body["text"]["format"].get("strict") is not True):
-            raise OpenAIHTTPError("OpenAI request violates the PROD-01 structured-output boundary.")
-        body["model"] = PROVIDER_MODEL
+        body = project_openai_responses_request(internal_request)
         encoded = canonical_json(body).encode("utf-8")
         if len(encoded) > MAX_REQUEST_BYTES:
             raise OpenAIHTTPError("Bounded OpenAI request is too large.")

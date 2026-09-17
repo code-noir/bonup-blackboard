@@ -8,8 +8,10 @@ import subprocess
 
 from .prod_contract import load_contract, validate_product_task
 from .prod_model_transport import (
-    ALLOW_REDIRECTS, MAX_REQUESTS_PER_CYCLE, MAX_RETRIES, MAX_REQUEST_BYTES,
-    TIMEOUT_SECONDS, TRUSTED_ENDPOINT, TRUSTED_MODEL, TRUST_ENVIRONMENT,
+    ACCOUNT_MODEL_ACCESS, ALLOW_REDIRECTS, LOCAL_CONTRACT_VALIDATED,
+    MAX_REQUESTS_PER_CYCLE, MAX_RETRIES, MAX_REQUEST_BYTES,
+    PROVIDER_WIRE_COMPATIBILITY, TIMEOUT_SECONDS, TRUSTED_ENDPOINT, TRUSTED_MODEL,
+    TRUST_ENVIRONMENT,
     build_product_model_request, project_product_context,
 )
 from .prod_openai_http import (
@@ -168,11 +170,13 @@ def run_preflight(credential_provider, reviewed_source):
         "CANNOT_GRANT_AUTHORITY", "CANNOT_EXECUTE", "CANNOT_DEPLOY", "CANNOT_PUBLISH",
         "CANNOT_ACTIVATE_AGENTS",
     }
-    output = request.get("text", {}).get("format", {})
+    output = request.get("output_contract", {})
     schema = output.get("schema", {})
     knowledge = schema.get("properties", {}).get("knowledge_state", {})
-    if (request.get("tools") != [] or output.get("type") != "json_schema"
-            or output.get("strict") is not True or schema.get("additionalProperties") is not False
+    if (request.get("tools") != [] or output.get("type") != "PRODUCT_REQUIREMENT_PROPOSAL"
+            or output.get("encoding") != "STRICT_JSON_SCHEMA"
+            or output.get("strict") is not True
+            or schema.get("additionalProperties") is not False
             or knowledge != {"type": "string", "const": "WORKING"}
             or behavior != required_behavior or len(request_bytes) > MAX_REQUEST_BYTES):
         raise ValidationError("PROD-01 pre-live request boundary mismatch.")
@@ -182,6 +186,9 @@ def run_preflight(credential_provider, reviewed_source):
         "mode": "DRY_RUN_PREFLIGHT_ONLY",
         "gate_status": "READY_FOR_SEPARATE_LIVE_AUTHORIZATION",
         "live_check_status": "LIVE_CHECK_REQUIRED",
+        "local_contract_validated": LOCAL_CONTRACT_VALIDATED,
+        "provider_wire_compatibility": PROVIDER_WIRE_COMPATIBILITY,
+        "account_model_access": ACCOUNT_MODEL_ACCESS,
         "source_commit": source_commit,
         "task_id": task["task_id"],
         "agent_id": task["agent_id"],

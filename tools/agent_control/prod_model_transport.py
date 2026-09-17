@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from typing import Protocol
 
-from .prod_contract import validate_product_proposal, validate_product_task
+from .prod_contract import REFERENCE_TYPES, validate_product_proposal, validate_product_task
 from .serialization import canonical_json, digest, parse_json
 from .types import ValidationError
 
@@ -17,13 +17,16 @@ MAX_OUTPUT_ITEMS = 32
 MAX_CONTENT_PARTS = 8
 TRUSTED_ENDPOINT = "https://api.openai.com/v1/responses"
 TRUSTED_MODEL = "PROD-01-STRUCTURED-MODEL-V1"
+LOCAL_CONTRACT_VALIDATED = True
+PROVIDER_WIRE_COMPATIBILITY = "LIVE_OR_OFFICIAL_CHECK_REQUIRED"
+ACCOUNT_MODEL_ACCESS = "AUTHENTICATED_CHECK_REQUIRED"
 
 _REFERENCE_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "required": ["reference_type", "reference_id", "digest", "knowledge_state"],
     "properties": {
-        "reference_type": {"type": "string"},
+        "reference_type": {"type": "string", "enum": list(REFERENCE_TYPES)},
         "reference_id": {"type": "string", "maxLength": 128},
         "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "knowledge_state": {"type": "string", "enum": ["DIRECT_FOUNDER", "APPROVED_INTERNAL"]},
@@ -59,6 +62,7 @@ _PROPOSAL_SCHEMA = {
         "knowledge_state": {"type": "string", "const": "WORKING"},
     },
 }
+PRODUCT_PROPOSAL_SCHEMA_DIGEST = digest(_PROPOSAL_SCHEMA)
 
 
 class ProductTransport(Protocol):
@@ -114,18 +118,23 @@ def project_product_context(task):
 def build_product_model_request(task):
     context = project_product_context(task)
     request = {
-        "model": TRUSTED_MODEL,
-        "input": canonical_json(context),
+        "contract_version": 1,
+        "agent_id": "PROD-01",
+        "logical_model": TRUSTED_MODEL,
+        "context": context,
         "tools": [],
-        "text": {
-            "format": {
-                "type": "json_schema",
-                "name": "product_requirement_proposal",
-                "strict": True,
-                "schema": parse_json(canonical_json(_PROPOSAL_SCHEMA)),
-            }
+        "output_contract": {
+            "type": "PRODUCT_REQUIREMENT_PROPOSAL",
+            "encoding": "STRICT_JSON_SCHEMA",
+            "name": "product_requirement_proposal",
+            "strict": True,
+            "schema": parse_json(canonical_json(_PROPOSAL_SCHEMA)),
+            "schema_digest": PRODUCT_PROPOSAL_SCHEMA_DIGEST,
         },
-        "store": False,
+        "request_policy": {
+            "max_requests": MAX_REQUESTS_PER_CYCLE,
+            "max_retries": MAX_RETRIES,
+        },
     }
     raw = canonical_json(request).encode("utf-8")
     if len(raw) > MAX_REQUEST_BYTES:

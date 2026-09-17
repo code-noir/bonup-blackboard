@@ -6,12 +6,14 @@ from prod_cycle_fixtures import DeterministicProductFake
 from test_prod_cycle import synthetic_task
 from tools.agent_control.prod_contract import load_contract, validate_product_proposal
 from tools.agent_control.prod_model_transport import (
-    MAX_RESPONSE_BYTES, TIMEOUT_SECONDS, TRUSTED_ENDPOINT, TRUSTED_MODEL,
+    ACCOUNT_MODEL_ACCESS, LOCAL_CONTRACT_VALIDATED, MAX_RESPONSE_BYTES,
+    PRODUCT_PROPOSAL_SCHEMA_DIGEST, PROVIDER_WIRE_COMPATIBILITY, TIMEOUT_SECONDS,
+    TRUSTED_ENDPOINT, TRUSTED_MODEL,
     ProductModelFailure, build_product_model_request, project_product_context,
     run_product_model_cycle,
 )
 from tools.agent_control.prod_review import SyntheticFounderReviewContext, create_product_review
-from tools.agent_control.serialization import canonical_json
+from tools.agent_control.serialization import canonical_json, digest
 from tools.agent_control.types import ValidationError
 
 
@@ -104,8 +106,45 @@ class ProductModelTransportTests(unittest.TestCase):
         self.assertNotIn("endpoint", canonical_json(context))
         self.assertNotIn("model", context)
         request, _ = build_product_model_request(synthetic_task())
-        self.assertEqual(request["model"], TRUSTED_MODEL)
+        self.assertEqual(request["logical_model"], TRUSTED_MODEL)
         self.assertEqual(request["tools"], [])
+
+    def test_internal_request_contract_and_schema_are_frozen(self):
+        first, first_bytes = build_product_model_request(synthetic_task())
+        second, second_bytes = build_product_model_request(synthetic_task())
+        self.assertEqual(first_bytes, second_bytes)
+        self.assertEqual(first_bytes, canonical_json(first).encode())
+        self.assertEqual(set(first), {
+            "contract_version", "agent_id", "logical_model", "context", "tools",
+            "output_contract", "request_policy"})
+        self.assertEqual(first["agent_id"], "PROD-01")
+        self.assertEqual(first["logical_model"], TRUSTED_MODEL)
+        self.assertEqual(first["tools"], [])
+        self.assertEqual(first["request_policy"], {"max_requests": 1, "max_retries": 0})
+        output = first["output_contract"]
+        self.assertEqual(output["type"], "PRODUCT_REQUIREMENT_PROPOSAL")
+        self.assertEqual(output["encoding"], "STRICT_JSON_SCHEMA")
+        self.assertTrue(output["strict"])
+        self.assertFalse(output["schema"]["additionalProperties"])
+        self.assertEqual(output["schema"]["properties"]["knowledge_state"],
+                         {"type": "string", "const": "WORKING"})
+        self.assertEqual(output["schema_digest"], PRODUCT_PROPOSAL_SCHEMA_DIGEST)
+        self.assertEqual(PRODUCT_PROPOSAL_SCHEMA_DIGEST,
+                         "ddb3255919710a5176ad78435ac29ae18fafc48d41c508e0c7f3ca91b62612a3")
+        self.assertEqual(set(output["schema"]["required"]),
+                         set(output["schema"]["properties"]))
+        self.assertFalse({"approved", "execution_grant", "assignment", "command"}
+                         & set(output["schema"]["properties"]))
+        self.assertNotIn("credential", canonical_json(first).lower())
+        self.assertNotIn("endpoint", canonical_json(first).lower())
+        changed = deepcopy(first)
+        changed["output_contract"]["schema"]["additionalProperties"] = True
+        self.assertNotEqual(canonical_json(first), canonical_json(changed))
+        self.assertNotEqual(first_bytes, canonical_json(changed).encode())
+        self.assertNotEqual(digest(first), digest(changed))
+        self.assertIs(LOCAL_CONTRACT_VALIDATED, True)
+        self.assertEqual(PROVIDER_WIRE_COMPATIBILITY, "LIVE_OR_OFFICIAL_CHECK_REQUIRED")
+        self.assertEqual(ACCOUNT_MODEL_ACCESS, "AUTHENTICATED_CHECK_REQUIRED")
 
     def test_timeout_transport_and_malformed_output_make_no_retry(self):
         cases = [

@@ -14,6 +14,13 @@ trust are fixed by trusted code rather than task or model content. A credential 
 obtained through a trusted provider and passed only to the injected transport. It is
 not serialized into context, requests, proposals, task documents, or audit metadata.
 
+The bounded model layer emits a deterministic internal request contract containing
+the PROD-01 identity, logical model binding, bounded context, zero tools, closed
+proposal schema and digest, and one-request/zero-retry policy. These internal fields
+do not claim provider semantics or authority. Only the OpenAI HTTP adapter translates
+that contract into provider-specific `model`, `input`, `text.format`, `tools`, and
+`store` fields. Task, Founder, and model content cannot select or modify that mapping.
+
 Each cycle permits exactly one request, zero retries, no fallback, no repair call,
 and no autonomous loop. The bounded Responses envelope may contain reasoning before
 the result, but must contain exactly one completed assistant `message` with exactly
@@ -57,6 +64,14 @@ account access to the owner-selected `gpt-5.6-luna` model. Account access status
 intentionally fail-closed; unverified provider-envelope behavior must not be assumed
 to work or bypass validation. No environment-variable, file, keyring, or
 service-secret source is selected by this contract.
+
+Readiness is represented by three separate values and never implies `LIVE_READY`:
+
+```text
+LOCAL_CONTRACT_VALIDATED = true
+PROVIDER_WIRE_COMPATIBILITY = LIVE_OR_OFFICIAL_CHECK_REQUIRED
+ACCOUNT_MODEL_ACCESS = AUTHENTICATED_CHECK_REQUIRED
+```
 
 After that separate approval, the pre-authorized live procedure is exactly one
 synthetic PROD-01 task, one POST to the fixed endpoint using `gpt-5.6-luna`, zero

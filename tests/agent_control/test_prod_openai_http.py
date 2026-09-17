@@ -13,13 +13,14 @@ from prod_cycle_fixtures import DeterministicProductFake
 from test_prod_cycle import synthetic_task
 from tools.agent_control.prod_model_transport import (
     MAX_RESPONSE_BYTES, TRUSTED_ENDPOINT, TRUSTED_MODEL, ProductModelFailure,
-    project_product_context, run_product_model_cycle,
+    build_product_model_request, project_product_context, run_product_model_cycle,
 )
 from tools.agent_control.prod_cycle import run_synthetic_product_cycle
 from tools.agent_control.prod_openai_http import (
     PROVIDER_MODEL, InjectedOpenAICredentialProvider, OpenAIResponsesHTTPAdapter,
+    project_openai_responses_request,
 )
-from tools.agent_control.serialization import canonical_json
+from tools.agent_control.serialization import canonical_json, digest
 from tools.agent_control.types import ValidationError
 
 SECRET = "synthetic-openai-secret-marker"
@@ -115,10 +116,25 @@ class ProductOpenAIHTTPTests(unittest.TestCase):
         request = json.loads(calls[0]["body"])
         self.assertEqual(request["model"], PROVIDER_MODEL)
         self.assertEqual(request["tools"], [])
+        self.assertEqual(set(request), {"model", "input", "tools", "text", "store"})
         self.assertEqual(request["text"]["format"]["type"], "json_schema")
         self.assertTrue(request["text"]["format"]["strict"])
         self.assertEqual(calls[0]["headers"]["Authorization"], "Bearer " + SECRET)
         self.assertEqual(result.proposal["knowledge_state"], "WORKING")
+
+    def test_provider_wire_projection_is_fixed_and_deterministic(self):
+        internal, _ = build_product_model_request(synthetic_task())
+        first = project_openai_responses_request(internal)
+        second = project_openai_responses_request(internal)
+        self.assertEqual(canonical_json(first), canonical_json(second))
+        self.assertEqual(digest(first),
+                         "bdc532506e2d4ce59a4dd41af440a0a4ef3bba21a865df5d9060c58c638f759d")
+        self.assertEqual(first["model"], PROVIDER_MODEL)
+        self.assertEqual(first["tools"], [])
+        self.assertEqual(first["text"]["format"]["type"], "json_schema")
+        self.assertTrue(first["text"]["format"]["strict"])
+        self.assertNotIn(SECRET, canonical_json(first))
+        self.assertNotIn(TRUSTED_ENDPOINT, canonical_json(first))
 
     def test_secret_exists_only_at_http_authorization_boundary(self):
         stream = io.StringIO()
@@ -204,8 +220,7 @@ class ProductOpenAIHTTPTests(unittest.TestCase):
     def test_caller_cannot_override_production_endpoint_or_model(self):
         provider = InjectedOpenAICredentialProvider(SECRET)
         adapter = OpenAIResponsesHTTPAdapter(provider)
-        request = canonical_json({"model": TRUSTED_MODEL, "tools": [], "store": False,
-                                  "text": {"format": {"type": "json_schema", "strict": True}}}).encode()
+        _, request = build_product_model_request(synthetic_task())
         for changes in ({"endpoint": "http://127.0.0.1:1/v1/responses"}, {"model": PROVIDER_MODEL}):
             kwargs = {"endpoint": TRUSTED_ENDPOINT, "model": TRUSTED_MODEL, "request": request,
                       "credential": None, "timeout_seconds": 30,

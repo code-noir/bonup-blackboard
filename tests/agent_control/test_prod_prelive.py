@@ -56,6 +56,10 @@ class ProductPreLiveTests(unittest.TestCase):
         self.assertEqual(first["tool_count"], 0)
         self.assertEqual(first["max_request_count"], 1)
         self.assertEqual(first["max_retries"], 0)
+        self.assertIs(first["local_contract_validated"], True)
+        self.assertEqual(first["provider_wire_compatibility"],
+                         "LIVE_OR_OFFICIAL_CHECK_REQUIRED")
+        self.assertEqual(first["account_model_access"], "AUTHENTICATED_CHECK_REQUIRED")
         self.assertNotIn(SECRET, canonical_json(first))
         request, _ = build_product_model_request(synthetic_first_live_task())
         self.assertNotIn(SECRET, canonical_json(request))

@@ -1,0 +1,141 @@
+"""Hardened OpenAI HTTP transport for PROD-01; no live construction side effects."""
+from urllib.parse import urlsplit
+
+import requests
+from requests.adapters import HTTPAdapter
+
+from .prod_model_transport import (
+    MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES, TIMEOUT_SECONDS, TRUSTED_ENDPOINT, TRUSTED_MODEL,
+)
+from .serialization import canonical_json, parse_json
+from .types import ValidationError
+
+PROVIDER = "OpenAI"
+PROVIDER_MODEL = "gpt-5.6-luna"
+CONNECT_TIMEOUT_SECONDS = 5
+READ_TIMEOUT_SECONDS = TIMEOUT_SECONDS
+_RESPONSE_CHUNK_BYTES = 8192
+
+
+class OpenAIHTTPError(ValidationError):
+    """Bounded transport failure. Messages never contain provider bodies or credentials."""
+
+
+class InjectedOpenAICredentialProvider:
+    """Trusted composition supplies the secret; tasks and environment never do."""
+
+    def __init__(self, credential):
+        if (type(credential) is not str or not credential or len(credential) > 4096
+                or "\r" in credential or "\n" in credential):
+            raise ValidationError("Invalid trusted OpenAI credential.")
+        self.__credential = credential
+
+    def credential(self):
+        return self.__credential
+
+
+class OpenAIResponsesHTTPAdapter:
+    """One POST per call to a fixed provider route; retry and redirect free."""
+
+    credential_owned = True
+
+    def __init__(self, credential_provider):
+        if not callable(getattr(credential_provider, "credential", None)):
+            raise ValidationError("Trusted OpenAI credential provider is required.")
+        self.__credential_provider = credential_provider
+        self.__endpoint = TRUSTED_ENDPOINT
+        self.__timeouts = (CONNECT_TIMEOUT_SECONDS, READ_TIMEOUT_SECONDS)
+        self.__session_factory = requests.Session
+        self.__test_only = False
+
+    @classmethod
+    def _for_loopback_tests(cls, endpoint, credential_provider, *, timeouts=None,
+                            session_factory=None):
+        """Test-only seam: accepts an explicit numeric loopback HTTP endpoint."""
+        parsed = urlsplit(endpoint)
+        if (parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "::1"}
+                or parsed.path != "/v1/responses" or parsed.query or parsed.fragment
+                or parsed.username is not None or parsed.password is not None
+                or parsed.port is None):
+            raise ValidationError("Test OpenAI endpoint must be an explicit loopback Responses path.")
+        adapter = cls(credential_provider)
+        adapter.__endpoint = endpoint
+        adapter.__test_only = True
+        if timeouts is not None:
+            if (type(timeouts) is not tuple or len(timeouts) != 2
+                    or any(type(value) not in (int, float) or value <= 0 or value > 30
+                           for value in timeouts)):
+                raise ValidationError("Invalid bounded test HTTP timeout.")
+            adapter.__timeouts = timeouts
+        if session_factory is not None:
+            adapter.__session_factory = session_factory
+        return adapter
+
+    @property
+    def test_only(self):
+        return self.__test_only
+
+    def send(self, *, endpoint, model, request, credential, timeout_seconds,
+             allow_redirects, trust_environment):
+        if (endpoint != TRUSTED_ENDPOINT or model != TRUSTED_MODEL
+                or timeout_seconds != TIMEOUT_SECONDS or allow_redirects is not False
+                or trust_environment is not False):
+            raise OpenAIHTTPError("Trusted PROD-01 model transport binding mismatch.")
+        if (type(request) is not bytes or not request or len(request) > MAX_REQUEST_BYTES):
+            raise OpenAIHTTPError("Invalid bounded OpenAI request.")
+        if credential is not None:
+            raise OpenAIHTTPError("Credential must remain inside the trusted OpenAI adapter.")
+        credential = self.__credential_provider.credential()
+        if (type(credential) is not str or not credential or len(credential) > 4096
+                or "\r" in credential or "\n" in credential):
+            raise OpenAIHTTPError("Trusted OpenAI credential is unavailable.")
+        try:
+            body = parse_json(request.decode("utf-8"))
+        except (UnicodeError, ValidationError):
+            raise OpenAIHTTPError("Malformed trusted OpenAI request.") from None
+        if (type(body) is not dict or body.get("model") != TRUSTED_MODEL
+                or body.get("tools") != [] or body.get("store") is not False
+                or type(body.get("text")) is not dict
+                or body["text"].get("format", {}).get("type") != "json_schema"
+                or body["text"]["format"].get("strict") is not True):
+            raise OpenAIHTTPError("OpenAI request violates the PROD-01 structured-output boundary.")
+        body["model"] = PROVIDER_MODEL
+        encoded = canonical_json(body).encode("utf-8")
+        if len(encoded) > MAX_REQUEST_BYTES:
+            raise OpenAIHTTPError("Bounded OpenAI request is too large.")
+        headers = {
+            "Authorization": "Bearer " + credential,
+            "Content-Type": "application/json",
+        }
+        try:
+            with self.__session_factory() as session:
+                session.trust_env = False
+                session.headers.clear()
+                session.mount("https://", HTTPAdapter(max_retries=0))
+                session.mount("http://", HTTPAdapter(max_retries=0))
+                with session.post(
+                        self.__endpoint, data=encoded, headers=headers, stream=True,
+                        allow_redirects=False, timeout=self.__timeouts, verify=True) as response:
+                    if response.status_code != 200:
+                        raise OpenAIHTTPError("OpenAI returned a non-success HTTP status.")
+                    declared = response.headers.get("Content-Length")
+                    if declared is not None:
+                        try:
+                            if int(declared) > MAX_RESPONSE_BYTES:
+                                raise OpenAIHTTPError("OpenAI response exceeded the byte limit.")
+                        except ValueError:
+                            raise OpenAIHTTPError("OpenAI returned an invalid response length.") from None
+                    chunks = []
+                    total = 0
+                    for chunk in response.iter_content(chunk_size=_RESPONSE_CHUNK_BYTES):
+                        if not chunk:
+                            continue
+                        total += len(chunk)
+                        if total > MAX_RESPONSE_BYTES:
+                            raise OpenAIHTTPError("OpenAI response exceeded the byte limit.")
+                        chunks.append(chunk)
+                    return b"".join(chunks)
+        except OpenAIHTTPError:
+            raise
+        except requests.RequestException:
+            raise OpenAIHTTPError("OpenAI HTTP request failed closed.") from None

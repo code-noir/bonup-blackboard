@@ -1,0 +1,90 @@
+{
+  "agent_id": "PROD-01",
+  "authority_mode": "PROPOSAL_ONLY",
+  "contract_version": 1,
+  "external_research": "NOT_INCLUDED_V1",
+  "handoff": [
+    "FOUNDER_DIRECTION",
+    "PROD_01_PRODUCT_PROPOSAL",
+    "SEPARATE_ATTRIBUTABLE_APPROVAL",
+    "ARCH_01_APPROVED_REQUIREMENT_INPUT",
+    "TECHNICAL_SPECIFICATION"
+  ],
+  "input_contract": {
+    "allowed_knowledge_states": [
+      "DIRECT_FOUNDER",
+      "APPROVED_INTERNAL"
+    ],
+    "allowed_reference_types": [
+      "FOUNDER_DIRECTION",
+      "APPROVED_INTERNAL_KNOWLEDGE",
+      "CX_FINDING",
+      "BI_FINDING",
+      "PRODUCT_DOCUMENT",
+      "TASK_DOCUMENT",
+      "ARCHITECTURE_CONTEXT"
+    ],
+    "max_references": 50,
+    "reference_fields": [
+      "reference_type",
+      "reference_id",
+      "digest",
+      "knowledge_state"
+    ],
+    "references_only": true
+  },
+  "knowledge": {
+    "allowed_output_state": "WORKING",
+    "self_approval": false,
+    "self_publication_eligibility": false
+  },
+  "mission": "Turn bonUP goals, user needs and founder direction into clear product requirements and priorities.",
+  "output_contract": {
+    "max_list_items": 50,
+    "max_text_length": 4096,
+    "proposal_fields": [
+      "agent_id",
+      "task_id",
+      "proposal_id",
+      "predecessor_proposal_id",
+      "proposal_type",
+      "title",
+      "problem_user_need",
+      "objective",
+      "proposed_requirement",
+      "acceptance_intent",
+      "dependencies",
+      "assumptions",
+      "risks_open_questions",
+      "priority_recommendation",
+      "evidence_references",
+      "knowledge_state"
+    ],
+    "proposal_type": "PRODUCT_REQUIREMENT_PROPOSAL"
+  },
+  "permissions": {
+    "credentials": false,
+    "customer_identifiable_data": false,
+    "external_publication": false,
+    "git_commit": false,
+    "host_administration": false,
+    "local_execution": false,
+    "merge": false,
+    "production_database": false,
+    "push": false,
+    "repository_write": false,
+    "shell": false,
+    "deployment": false
+  },
+  "role": "Product",
+  "role_family": "PRODUCT",
+  "status": "NON_ACTIVE",
+  "task_classes": [
+    "PRODUCT_REQUIREMENT",
+    "FEATURE_DEFINITION",
+    "ACCEPTANCE_INTENT",
+    "PRODUCT_GAP_ANALYSIS",
+    "PRIORITIZATION_RECOMMENDATION",
+    "USER_FLOW_REQUIREMENT"
+  ]
+}

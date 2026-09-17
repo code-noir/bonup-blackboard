@@ -1,0 +1,38 @@
+{
+  "authority_effect": "PRODUCT_KNOWLEDGE_ONLY",
+  "contract_version": 1,
+  "decisions": [
+    "ACCEPT",
+    "REJECT",
+    "REQUEST_CHANGES"
+  ],
+  "founder_context": "ATTRIBUTABLE_REQUIRED_SYNTHETIC_ONLY_V1",
+  "knowledge_transitions": {
+    "ACCEPT": "APPROVED_INTERNAL",
+    "REJECT": "WORKING",
+    "REQUEST_CHANGES": "WORKING"
+  },
+  "proposal_type": "PRODUCT_REQUIREMENT_PROPOSAL",
+  "publication_eligible": false,
+  "review_fields": [
+    "review_version",
+    "decision_id",
+    "task_id",
+    "proposal_id",
+    "proposal_digest",
+    "proposal_predecessor_id",
+    "previous_review_id",
+    "reviewer",
+    "decision",
+    "reason",
+    "resulting_knowledge_state",
+    "review_digest"
+  ],
+  "reviewer": {
+    "actor_id": "FOUNDER",
+    "context_kind": "SYNTHETIC_TEST_ONLY",
+    "role": "FOUNDER"
+  },
+  "status": "NON_EXECUTABLE",
+  "version": 1
+}

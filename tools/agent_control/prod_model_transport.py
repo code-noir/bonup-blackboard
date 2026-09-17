@@ -11,6 +11,8 @@ MAX_RESPONSE_BYTES = 65536
 TIMEOUT_SECONDS = 30
 MAX_REQUESTS_PER_CYCLE = 1
 MAX_RETRIES = 0
+ALLOW_REDIRECTS = False
+TRUST_ENVIRONMENT = False
 TRUSTED_ENDPOINT = "https://api.openai.com/v1/responses"
 TRUSTED_MODEL = "PROD-01-STRUCTURED-MODEL-V1"
 
@@ -182,8 +184,8 @@ def run_product_model_cycle(task_input, transport, credential_provider=None):
             request=request_bytes,
             credential=credential,
             timeout_seconds=TIMEOUT_SECONDS,
-            allow_redirects=False,
-            trust_environment=False,
+            allow_redirects=ALLOW_REDIRECTS,
+            trust_environment=TRUST_ENVIRONMENT,
         )
     except Exception as error:
         if isinstance(error, (KeyboardInterrupt, SystemExit)):

@@ -5,7 +5,8 @@ import requests
 from requests.adapters import HTTPAdapter
 
 from .prod_model_transport import (
-    MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES, TIMEOUT_SECONDS, TRUSTED_ENDPOINT, TRUSTED_MODEL,
+    ALLOW_REDIRECTS, MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES, TIMEOUT_SECONDS,
+    TRUSTED_ENDPOINT, TRUSTED_MODEL, TRUST_ENVIRONMENT,
 )
 from .serialization import canonical_json, parse_json
 from .types import ValidationError
@@ -14,6 +15,7 @@ PROVIDER = "OpenAI"
 PROVIDER_MODEL = "gpt-5.6-luna"
 CONNECT_TIMEOUT_SECONDS = 5
 READ_TIMEOUT_SECONDS = TIMEOUT_SECONDS
+HTTP_MAX_RETRIES = 0
 _RESPONSE_CHUNK_BYTES = 8192
 
 
@@ -78,8 +80,8 @@ class OpenAIResponsesHTTPAdapter:
     def send(self, *, endpoint, model, request, credential, timeout_seconds,
              allow_redirects, trust_environment):
         if (endpoint != TRUSTED_ENDPOINT or model != TRUSTED_MODEL
-                or timeout_seconds != TIMEOUT_SECONDS or allow_redirects is not False
-                or trust_environment is not False):
+                or timeout_seconds != TIMEOUT_SECONDS or allow_redirects is not ALLOW_REDIRECTS
+                or trust_environment is not TRUST_ENVIRONMENT):
             raise OpenAIHTTPError("Trusted PROD-01 model transport binding mismatch.")
         if (type(request) is not bytes or not request or len(request) > MAX_REQUEST_BYTES):
             raise OpenAIHTTPError("Invalid bounded OpenAI request.")
@@ -111,11 +113,12 @@ class OpenAIResponsesHTTPAdapter:
             with self.__session_factory() as session:
                 session.trust_env = False
                 session.headers.clear()
-                session.mount("https://", HTTPAdapter(max_retries=0))
-                session.mount("http://", HTTPAdapter(max_retries=0))
+                session.mount("https://", HTTPAdapter(max_retries=HTTP_MAX_RETRIES))
+                session.mount("http://", HTTPAdapter(max_retries=HTTP_MAX_RETRIES))
                 with session.post(
                         self.__endpoint, data=encoded, headers=headers, stream=True,
-                        allow_redirects=False, timeout=self.__timeouts, verify=True) as response:
+                        allow_redirects=ALLOW_REDIRECTS, timeout=self.__timeouts,
+                        verify=True) as response:
                     if response.status_code != 200:
                         raise OpenAIHTTPError("OpenAI returned a non-success HTTP status.")
                     declared = response.headers.get("Content-Length")

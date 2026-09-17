@@ -13,6 +13,8 @@ MAX_REQUESTS_PER_CYCLE = 1
 MAX_RETRIES = 0
 ALLOW_REDIRECTS = False
 TRUST_ENVIRONMENT = False
+MAX_OUTPUT_ITEMS = 32
+MAX_CONTENT_PARTS = 8
 TRUSTED_ENDPOINT = "https://api.openai.com/v1/responses"
 TRUSTED_MODEL = "PROD-01-STRUCTURED-MODEL-V1"
 
@@ -138,15 +140,44 @@ def parse_product_model_response(raw):
         envelope = parse_json(raw.decode("utf-8"))
     except (UnicodeError, ValidationError):
         raise ValidationError("Malformed PROD-01 model response.") from None
-    if (type(envelope) is not dict or set(envelope) != {"status", "output"}
-            or envelope["status"] != "completed" or type(envelope["output"]) is not list
-            or len(envelope["output"]) != 1):
-        raise ValidationError("PROD-01 model response must contain exactly one structured output.")
-    item = envelope["output"][0]
-    if (type(item) is not dict or set(item) != {"type", "content"}
-            or item["type"] != "structured_json" or type(item["content"]) is not dict):
-        raise ValidationError("Invalid PROD-01 structured model output.")
-    return item["content"]
+    if (type(envelope) is not dict or envelope.get("status") != "completed"
+            or type(envelope.get("output")) is not list
+            or not envelope["output"] or len(envelope["output"]) > MAX_OUTPUT_ITEMS):
+        raise ValidationError("PROD-01 model response is incomplete or unbounded.")
+
+    proposal_texts = []
+    for item in envelope["output"]:
+        if type(item) is not dict or type(item.get("type")) is not str:
+            raise ValidationError("Invalid PROD-01 Responses output item.")
+        if item["type"] == "reasoning":
+            continue
+        if (item["type"] != "message" or item.get("role") != "assistant"
+                or item.get("status") != "completed"):
+            raise ValidationError("Unexpected non-assistant PROD-01 Responses output.")
+        content = item.get("content")
+        if (type(content) is not list or not content
+                or len(content) > MAX_CONTENT_PARTS):
+            raise ValidationError("Invalid bounded PROD-01 message content.")
+        for part in content:
+            if type(part) is not dict or type(part.get("type")) is not str:
+                raise ValidationError("Invalid PROD-01 message content part.")
+            if part["type"] == "refusal":
+                raise ValidationError("PROD-01 model refused the proposal request.")
+            if part["type"] != "output_text" or type(part.get("text")) is not str:
+                raise ValidationError("Unexpected PROD-01 message content type.")
+            proposal_texts.append(part["text"])
+
+    if len(proposal_texts) != 1:
+        raise ValidationError("PROD-01 response must contain exactly one proposal text.")
+    if not proposal_texts[0] or len(proposal_texts[0].encode("utf-8")) > MAX_RESPONSE_BYTES:
+        raise ValidationError("Invalid bounded PROD-01 proposal text.")
+    try:
+        candidate = parse_json(proposal_texts[0])
+    except ValidationError:
+        raise ValidationError("Malformed PROD-01 proposal JSON.") from None
+    if type(candidate) is not dict:
+        raise ValidationError("PROD-01 proposal JSON must be an object.")
+    return candidate
 
 
 def _audit(task_id, request_digest, classification, *, proposal_digest=None, reason=None):

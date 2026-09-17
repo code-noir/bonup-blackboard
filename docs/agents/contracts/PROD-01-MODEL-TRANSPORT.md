@@ -15,11 +15,12 @@ obtained through a trusted provider and passed only to the injected transport. I
 not serialized into context, requests, proposals, task documents, or audit metadata.
 
 Each cycle permits exactly one request, zero retries, no fallback, no repair call,
-and no autonomous loop. The response must be a bounded envelope containing exactly
-one structured `PRODUCT_REQUIREMENT_PROPOSAL`. Provider structure is not trusted:
-the candidate must pass `validate_product_proposal()`, retain `WORKING` knowledge
-state, and use only evidence references bound by the task. Failure is closed and
-returns only a bounded classification/reason suitable for future audit.
+and no autonomous loop. The bounded Responses envelope may contain reasoning before
+the result, but must contain exactly one completed assistant `message` with exactly
+one `output_text` part. That text is parsed as strict JSON and must pass
+`validate_product_proposal()`, retain `WORKING` knowledge state, and use only
+evidence references bound by the task. Refusals, incomplete responses, tool/function
+output, unknown content, and ambiguous proposal text fail closed.
 
 The bounded model module remains transport-neutral, and its tests use an injected
 in-memory transport and synthetic credential marker. The separate hardened HTTP
@@ -44,11 +45,15 @@ arguments. An underscored test-only factory accepts only an explicit numeric
 loopback host and the exact `/v1/responses` path; local-server tests do not contact
 external networks.
 
-Before one live request, the remaining prerequisites are an owner-approved production
+The committed `text.format` JSON Schema request shape remains
+**PRE-LIVE-UNVERIFIED** because official documentation could not be retrieved in the
+local review environment; no alternate shape was guessed. Before one live request,
+the remaining prerequisites are an owner-approved production
 credential source and composition mechanism that injects the OpenAI credential only
 into `InjectedOpenAICredentialProvider`, plus a transport-only pre-live fixture check
 against the current official Responses request/response envelope and confirmed
-account access to the owner-selected `gpt-5.6-luna` model. The offline parser is
+account access to the owner-selected `gpt-5.6-luna` model. Account access status is
+`ACCOUNT_ACCESS_REQUIRES_AUTHENTICATED_CHECK`. The offline parser is
 intentionally fail-closed; unverified provider-envelope behavior must not be assumed
 to work or bypass validation. No environment-variable, file, keyring, or
 service-secret source is selected by this contract.

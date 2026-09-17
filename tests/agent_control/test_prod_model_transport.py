@@ -38,16 +38,35 @@ class InMemoryTransport:
             raise self.error
         if self.raw is not None:
             return self.raw
-        return json.dumps({
-            "status": "completed",
-            "output": [{"type": "structured_json", "content": self.proposal}],
-        }, sort_keys=True, separators=(",", ":")).encode()
+        return response_bytes(self.proposal)
 
 
 def proposal(changes=None):
     value = DeterministicProductFake().propose(synthetic_task())
     value.update(changes or {})
     return value
+
+
+def response_envelope(candidate=None, *, output=None, status="completed"):
+    return {
+        "id": "resp_synthetic",
+        "status": status,
+        "output": output if output is not None else [{
+            "id": "msg_synthetic",
+            "type": "message",
+            "status": "completed",
+            "role": "assistant",
+            "content": [{
+                "type": "output_text",
+                "text": canonical_json(candidate or proposal()),
+                "annotations": [],
+            }],
+        }],
+    }
+
+
+def response_bytes(candidate=None, **kwargs):
+    return canonical_json(response_envelope(candidate, **kwargs)).encode()
 
 
 class ProductModelTransportTests(unittest.TestCase):
@@ -115,17 +134,38 @@ class ProductModelTransportTests(unittest.TestCase):
 
     def test_multiple_wrong_unstructured_and_unknown_outputs_are_rejected(self):
         envelopes = [
-            {"status": "completed", "output": [
-                {"type": "structured_json", "content": proposal()},
-                {"type": "structured_json", "content": proposal()},
-            ]},
-            {"status": "completed", "output": [{"type": "text", "content": "proposal"}]},
-            {"status": "completed", "output": [{"type": "structured_json", "content": proposal()}], "extra": True},
+            response_envelope(output=[]),
+            response_envelope(output=[{"type": "function_call", "name": "execute"}]),
+            response_envelope(output=[{"type": "unknown_provider_item"}]),
         ]
         for envelope in envelopes:
             transport = InMemoryTransport(raw=canonical_json(envelope).encode())
             with self.assertRaises(ProductModelFailure):
                 run_product_model_cycle(synthetic_task(), transport, SyntheticCredentialProvider())
+
+    def test_reasoning_before_completed_assistant_proposal_is_accepted(self):
+        message = response_envelope()["output"][0]
+        raw = response_bytes(output=[{"type": "reasoning", "id": "reasoning_synthetic"}, message])
+        result, _, _ = self.run_cycle(raw=raw)
+        self.assertEqual(validate_product_proposal(result.proposal), result.proposal)
+
+    def test_ambiguous_refused_incomplete_and_malformed_responses_are_rejected(self):
+        first = response_envelope()["output"][0]
+        second = dict(first, id="msg_synthetic_2")
+        two_parts = dict(first, content=first["content"] + first["content"])
+        refusal = dict(first, content=[{"type": "refusal", "refusal": "synthetic"}])
+        cases = [
+            response_bytes(output=[first, second]),
+            response_bytes(output=[two_parts]),
+            response_bytes(output=[refusal]),
+            response_bytes(status="incomplete"),
+            response_bytes(output=[dict(first, status="incomplete")]),
+            response_bytes(output=[dict(first, content=[{"type": "output_text", "text": "not-json"}])]),
+            response_bytes(output=[dict(first, content=[{"type": "tool_result", "text": "{}"}])]),
+        ]
+        for raw in cases:
+            with self.subTest(size=len(raw)), self.assertRaises(ProductModelFailure):
+                self.run_cycle(raw=raw)
 
     def test_authority_and_knowledge_claims_are_rejected(self):
         for changes in ({"approved": True}, {"execution_grant": "grant"},

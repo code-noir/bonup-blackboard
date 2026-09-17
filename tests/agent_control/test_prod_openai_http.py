@@ -82,8 +82,19 @@ def proposal(changes=None):
 
 def response_bytes(candidate=None):
     return canonical_json({
+        "id": "resp_synthetic",
         "status": "completed",
-        "output": [{"type": "structured_json", "content": candidate or proposal()}],
+        "output": [{
+            "id": "msg_synthetic",
+            "type": "message",
+            "status": "completed",
+            "role": "assistant",
+            "content": [{
+                "type": "output_text",
+                "text": canonical_json(candidate or proposal()),
+                "annotations": [],
+            }],
+        }],
     }).encode()
 
 

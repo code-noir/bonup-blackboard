@@ -12,7 +12,7 @@ from .prod_contract import load_contract
 from .prod_model_transport import (
     ALLOW_REDIRECTS, MAX_REQUESTS_PER_CYCLE, MAX_RESPONSE_BYTES, MAX_RETRIES,
     INITIAL_PREDECESSOR_INVALID, PRODUCT_PROPOSAL_SCHEMA_DIGEST, TIMEOUT_SECONDS,
-    TRUSTED_ENDPOINT, TRUSTED_MODEL,
+    SAFE_TRANSPORT_FAILURE_REASONS, TRUSTED_ENDPOINT, TRUSTED_MODEL,
     build_product_model_request, parse_product_model_response, run_product_model_cycle,
 )
 from .prod_openai_http import (
@@ -26,10 +26,10 @@ from .prod_prelive import (
 from .serialization import canonical_json, digest
 from .types import ValidationError
 
-EXPECTED_SCHEMA_DIGEST = "887a560a38cb99440990336afc17c1a0d8a2d19e882a9f7e2d9d467ab124880d"
+EXPECTED_SCHEMA_DIGEST = "c13b322dff0b8da89699966165b4d6f3ab69f50efbb0cc540ab8a75133e661ce"
 FROZEN_ATS_0701_WIRE_FIXTURE_DIGEST = "bdc532506e2d4ce59a4dd41af440a0a4ef3bba21a865df5d9060c58c638f759d"
-EXPECTED_ATS_1201_INTERNAL_REQUEST_DIGEST = "15bfd6e64c8fe14d17249bbf772af2da1244d2ce83283cb3f38627c638cbdf0e"
-EXPECTED_ATS_1201_WIRE_REQUEST_DIGEST = "7cc03beea3ee8bfe4d231055a1080cd868f7d6c6814225a4acaf032d2dbaa517"
+EXPECTED_ATS_1201_INTERNAL_REQUEST_DIGEST = "955d0900a989f64ee5eff07385d59cb4f0fa694c92b1ee775e396f51fdff853b"
+EXPECTED_ATS_1201_WIRE_REQUEST_DIGEST = "34225f802e9f0d7161a357e3b1cb5ab133baad99a53f31e59602a6c5a9089804"
 PARSER_CONTRACT = "RESPONSES_COMPLETED_ASSISTANT_SINGLE_OUTPUT_TEXT_V1"
 VALIDATOR_CONTRACT = "validate_product_proposal"
 
@@ -76,7 +76,7 @@ def stable_contract_digest(value=None):
 
 
 # Frozen only after deterministic regeneration from the reviewed implementation.
-EXPECTED_STABLE_CONTRACT_DIGEST = "3cdd12ead2c70b0fef92b3cf115dcb95e05730bde2195177bcf2f8e41ca21982"
+EXPECTED_STABLE_CONTRACT_DIGEST = "42abc180020e1d9815a2382556d27475717b13ffc2b3df38942005a3b8511759"
 
 
 @dataclass(frozen=True)
@@ -159,9 +159,11 @@ def _run_first_live(reviewed_source, tty_check, prompt_fn, transport_factory):
                 "TASK_BINDING_INVALID", "EVIDENCE_BINDING_INVALID",
                 "KNOWLEDGE_STATE_INVALID", "AUTHORITY_CLAIM_REJECTED",
                 "CONTENT_POLICY_REJECTED", INITIAL_PREDECESSOR_INVALID,
-            }
-            classification = (reason if metadata.get("result_classification") == "OUTPUT_REJECTED"
-                              and reason in safe_reasons else "PROVIDER_ERROR")
+            } | SAFE_TRANSPORT_FAILURE_REASONS
+            classification = (reason if type(reason) is str and reason in safe_reasons
+                              and metadata.get("result_classification") in {
+                                  "OUTPUT_REJECTED", "TRANSPORT_FAILED"}
+                              else "PROVIDER_ERROR")
             raise FirstLiveFailure(classification) from None
         return FirstLiveResult(current, cycle)
     finally:

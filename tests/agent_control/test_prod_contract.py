@@ -84,6 +84,12 @@ class ProductContractTests(unittest.TestCase):
         bad = proposal(); bad["acceptance_intent"] = ["x"] * 51
         with self.assertRaises(ValidationError):
             validate_product_proposal(bad)
+
+    def test_duplicate_dependencies_are_rejected_by_runtime_validator(self):
+        bad = proposal()
+        bad["dependencies"] = ["ATS-0001", "ATS-0001"]
+        with self.assertRaises(ValidationError):
+            validate_product_proposal(bad)
         for claim in ("approved", "assigned", "authorized", "deployed", "implemented",
                       "tested", "published"):
             bad = proposal(); bad["proposed_requirement"] = f"This proposal is {claim}."

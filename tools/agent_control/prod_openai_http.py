@@ -6,8 +6,12 @@ from requests.adapters import HTTPAdapter
 
 from .prod_model_transport import (
     ALLOW_REDIRECTS, MAX_REQUEST_BYTES, MAX_REQUESTS_PER_CYCLE, MAX_RESPONSE_BYTES,
-    MAX_RETRIES, PRODUCT_PROPOSAL_SCHEMA_DIGEST, TIMEOUT_SECONDS, TRUSTED_ENDPOINT,
-    TRUSTED_MODEL, TRUST_ENVIRONMENT,
+    MAX_RETRIES, PRODUCT_PROPOSAL_SCHEMA_DIGEST, PROVIDER_AUTH_ERROR,
+    PROVIDER_CONNECTION_ERROR, PROVIDER_ERROR, PROVIDER_NOT_FOUND,
+    PROVIDER_PERMISSION_ERROR, PROVIDER_RATE_LIMIT, PROVIDER_REQUEST_REJECTED,
+    PROVIDER_RESPONSE_TOO_LARGE, PROVIDER_SERVER_ERROR, PROVIDER_TIMEOUT,
+    SAFE_TRANSPORT_FAILURE_REASONS, TIMEOUT_SECONDS, TRUSTED_ENDPOINT, TRUSTED_MODEL,
+    TRUST_ENVIRONMENT, validate_provider_schema_subset,
 )
 from .serialization import canonical_json, digest, parse_json
 from .types import ValidationError
@@ -42,6 +46,7 @@ def project_openai_responses_request(request):
             or policy != {"max_requests": MAX_REQUESTS_PER_CYCLE,
                           "max_retries": MAX_RETRIES}):
         raise OpenAIHTTPError("Internal PROD-01 request contract mismatch.")
+    validate_provider_schema_subset(output["schema"])
     return {
         "model": PROVIDER_MODEL,
         "input": canonical_json(request["context"]),
@@ -58,6 +63,12 @@ def project_openai_responses_request(request):
 
 class OpenAIHTTPError(ValidationError):
     """Bounded transport failure. Messages never contain provider bodies or credentials."""
+
+    def __init__(self, message, *, failure_reason=PROVIDER_ERROR):
+        super().__init__(message)
+        self.failure_reason = (
+            failure_reason if type(failure_reason) is str
+            and failure_reason in SAFE_TRANSPORT_FAILURE_REASONS else PROVIDER_ERROR)
 
 
 class InjectedOpenAICredentialProvider:
@@ -151,14 +162,19 @@ class OpenAIResponsesHTTPAdapter:
                         allow_redirects=ALLOW_REDIRECTS, timeout=self.__timeouts,
                         verify=True) as response:
                     if response.status_code != 200:
-                        raise OpenAIHTTPError("OpenAI returned a non-success HTTP status.")
+                        raise OpenAIHTTPError(
+                            "OpenAI returned a non-success HTTP status.",
+                            failure_reason=_status_failure_reason(response.status_code))
                     declared = response.headers.get("Content-Length")
                     if declared is not None:
                         try:
-                            if int(declared) > MAX_RESPONSE_BYTES:
-                                raise OpenAIHTTPError("OpenAI response exceeded the byte limit.")
+                            declared_bytes = int(declared)
                         except ValueError:
                             raise OpenAIHTTPError("OpenAI returned an invalid response length.") from None
+                        if declared_bytes > MAX_RESPONSE_BYTES:
+                            raise OpenAIHTTPError(
+                                "OpenAI response exceeded the byte limit.",
+                                failure_reason=PROVIDER_RESPONSE_TOO_LARGE)
                     chunks = []
                     total = 0
                     for chunk in response.iter_content(chunk_size=_RESPONSE_CHUNK_BYTES):
@@ -166,10 +182,40 @@ class OpenAIResponsesHTTPAdapter:
                             continue
                         total += len(chunk)
                         if total > MAX_RESPONSE_BYTES:
-                            raise OpenAIHTTPError("OpenAI response exceeded the byte limit.")
+                            raise OpenAIHTTPError(
+                                "OpenAI response exceeded the byte limit.",
+                                failure_reason=PROVIDER_RESPONSE_TOO_LARGE)
                         chunks.append(chunk)
                     return b"".join(chunks)
         except OpenAIHTTPError:
             raise
-        except requests.RequestException:
-            raise OpenAIHTTPError("OpenAI HTTP request failed closed.") from None
+        except requests.exceptions.Timeout:
+            raise OpenAIHTTPError(
+                "OpenAI HTTP request timed out.", failure_reason=PROVIDER_TIMEOUT) from None
+        except requests.exceptions.SSLError:
+            raise OpenAIHTTPError(
+                "OpenAI TLS connection failed.",
+                failure_reason=PROVIDER_CONNECTION_ERROR) from None
+        except requests.exceptions.ConnectionError:
+            raise OpenAIHTTPError(
+                "OpenAI HTTP connection failed.",
+                failure_reason=PROVIDER_CONNECTION_ERROR) from None
+        except requests.exceptions.RequestException:
+            raise OpenAIHTTPError(
+                "OpenAI HTTP request failed closed.", failure_reason=PROVIDER_ERROR) from None
+
+
+def _status_failure_reason(status_code):
+    if status_code == 401:
+        return PROVIDER_AUTH_ERROR
+    if status_code == 403:
+        return PROVIDER_PERMISSION_ERROR
+    if status_code == 404:
+        return PROVIDER_NOT_FOUND
+    if status_code == 429:
+        return PROVIDER_RATE_LIMIT
+    if 300 <= status_code < 500:
+        return PROVIDER_REQUEST_REJECTED
+    if 500 <= status_code < 600:
+        return PROVIDER_SERVER_ERROR
+    return PROVIDER_ERROR

@@ -19,9 +19,10 @@ from tools.agent_control.prod_first_live import (
 )
 from tools.agent_control.prod_model_transport import (
     INITIAL_PREDECESSOR_INVALID, TRUSTED_ENDPOINT, TRUSTED_MODEL,
+    PROVIDER_RATE_LIMIT,
     build_product_model_request,
 )
-from tools.agent_control.prod_openai_http import project_openai_responses_request
+from tools.agent_control.prod_openai_http import OpenAIHTTPError, project_openai_responses_request
 from tools.agent_control.prod_prelive import (
     DevelopmentOneShotCredential, OwnerReviewedSource, synthetic_first_live_task,
 )
@@ -238,6 +239,26 @@ class ProductFirstLiveTests(unittest.TestCase):
                 _run_first_live_for_tests(reviewed(), lambda: True, lambda _: SECRET, factory)
             self.assertEqual(caught.exception.classification, classification)
             self.assertEqual(len(transports[0].calls), 1)
+
+    def test_bounded_transport_reason_reaches_first_live_without_body(self):
+        transports = []
+
+        def factory(provider):
+            transport = FakeFirstLiveTransport(
+                provider,
+                error=OpenAIHTTPError(
+                    "OpenAI returned a non-success HTTP status.",
+                    failure_reason=PROVIDER_RATE_LIMIT))
+            transports.append(transport)
+            return transport
+
+        with patch.object(prod_first_live, "_current_source_commit", return_value=CHECKPOINT):
+            with self.assertRaises(FirstLiveFailure) as caught:
+                _run_first_live_for_tests(
+                    reviewed(), lambda: True, lambda _: SECRET, factory)
+        self.assertEqual(caught.exception.classification, PROVIDER_RATE_LIMIT)
+        self.assertEqual(len(transports[0].calls), 1)
+        self.assertNotIn(SECRET, str(caught.exception))
 
     def test_safe_output_contains_proposal_not_secret_envelope_or_reasoning(self):
         result, _, _ = self.run_local()

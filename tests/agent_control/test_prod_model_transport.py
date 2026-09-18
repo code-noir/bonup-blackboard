@@ -12,7 +12,7 @@ from tools.agent_control.prod_model_transport import (
     PROVIDER_WIRE_COMPATIBILITY, TASK_ID_PATTERN, TIMEOUT_SECONDS,
     TRUSTED_ENDPOINT, TRUSTED_MODEL,
     ProductModelFailure, build_product_model_request, project_product_context,
-    run_product_model_cycle,
+    run_product_model_cycle, validate_provider_schema_subset,
 )
 from tools.agent_control.prod_review import SyntheticFounderReviewContext, create_product_review
 from tools.agent_control.serialization import canonical_json, digest
@@ -133,12 +133,13 @@ class ProductModelTransportTests(unittest.TestCase):
         self.assertEqual(output["schema"]["properties"]["task_id"]["pattern"],
                          TASK_ID_PATTERN)
         self.assertEqual(output["schema"]["properties"]["title"]["pattern"], "\\S")
-        self.assertTrue(output["schema"]["properties"]["dependencies"]["uniqueItems"])
+        self.assertNotIn("uniqueItems", output["schema"]["properties"]["dependencies"])
+        self.assertEqual(output["schema"]["properties"]["dependencies"]["maxItems"], 50)
         self.assertIn("pattern", output["schema"]["properties"]["evidence_references"]
                       ["items"]["properties"]["reference_id"])
         self.assertEqual(output["schema_digest"], PRODUCT_PROPOSAL_SCHEMA_DIGEST)
         self.assertEqual(PRODUCT_PROPOSAL_SCHEMA_DIGEST,
-                         "887a560a38cb99440990336afc17c1a0d8a2d19e882a9f7e2d9d467ab124880d")
+                         "c13b322dff0b8da89699966165b4d6f3ab69f50efbb0cc540ab8a75133e661ce")
         self.assertEqual(set(output["schema"]["required"]),
                          set(output["schema"]["properties"]))
         self.assertFalse({"approved", "execution_grant", "assignment", "command"}
@@ -153,6 +154,14 @@ class ProductModelTransportTests(unittest.TestCase):
         self.assertIs(LOCAL_CONTRACT_VALIDATED, True)
         self.assertEqual(PROVIDER_WIRE_COMPATIBILITY, "LIVE_OR_OFFICIAL_CHECK_REQUIRED")
         self.assertEqual(ACCOUNT_MODEL_ACCESS, "AUTHENTICATED_CHECK_REQUIRED")
+
+    def test_provider_schema_subset_rejects_unsupported_keywords(self):
+        schema = build_product_model_request(synthetic_task())[0]["output_contract"]["schema"]
+        validate_provider_schema_subset(schema)
+        unsupported = deepcopy(schema)
+        unsupported["properties"]["dependencies"]["uniqueItems"] = True
+        with self.assertRaises(ValidationError):
+            validate_provider_schema_subset(unsupported)
 
     def test_provider_task_id_pattern_matches_runtime_bounds(self):
         schema = build_product_model_request(synthetic_task())[0]["output_contract"]["schema"]

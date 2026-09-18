@@ -2,6 +2,7 @@ import json
 import io
 import logging
 import os
+import requests
 import threading
 import time
 import unittest
@@ -12,7 +13,10 @@ from unittest.mock import patch
 from prod_cycle_fixtures import DeterministicProductFake
 from test_prod_cycle import synthetic_task
 from tools.agent_control.prod_model_transport import (
-    MAX_RESPONSE_BYTES, TRUSTED_ENDPOINT, TRUSTED_MODEL, ProductModelFailure,
+    MAX_RESPONSE_BYTES, PROVIDER_AUTH_ERROR, PROVIDER_CONNECTION_ERROR,
+    PROVIDER_NOT_FOUND, PROVIDER_PERMISSION_ERROR, PROVIDER_RATE_LIMIT,
+    PROVIDER_REQUEST_REJECTED, PROVIDER_RESPONSE_TOO_LARGE, PROVIDER_SERVER_ERROR,
+    PROVIDER_TIMEOUT, TRUSTED_ENDPOINT, TRUSTED_MODEL, ProductModelFailure,
     build_product_model_request, project_product_context, run_product_model_cycle,
 )
 from tools.agent_control.prod_cycle import run_synthetic_product_cycle
@@ -60,6 +64,27 @@ class _Handler(BaseHTTPRequestHandler):
             pass
 
 
+class _ConnectionFailureSession:
+    calls = 0
+
+    def __init__(self):
+        self.headers = {}
+        self.trust_env = True
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return False
+
+    def mount(self, *args, **kwargs):
+        pass
+
+    def post(self, *args, **kwargs):
+        type(self).calls += 1
+        raise requests.ConnectionError("synthetic connection failure")
+
+
 @contextmanager
 def fake_server(behavior):
     server = _Server(("127.0.0.1", 0), _Handler)
@@ -100,11 +125,12 @@ def response_bytes(candidate=None):
 
 
 class ProductOpenAIHTTPTests(unittest.TestCase):
-    def run_local(self, behavior, *, timeouts=None, candidate_task=None):
+    def run_local(self, behavior, *, timeouts=None, candidate_task=None,
+                  session_factory=None):
         with fake_server(behavior) as (server, endpoint):
             provider = InjectedOpenAICredentialProvider(SECRET)
             adapter = OpenAIResponsesHTTPAdapter._for_loopback_tests(
-                endpoint, provider, timeouts=timeouts)
+                endpoint, provider, timeouts=timeouts, session_factory=session_factory)
             result = run_product_model_cycle(candidate_task or synthetic_task(), adapter)
             return result, server.calls, adapter
 
@@ -128,7 +154,7 @@ class ProductOpenAIHTTPTests(unittest.TestCase):
         second = project_openai_responses_request(internal)
         self.assertEqual(canonical_json(first), canonical_json(second))
         self.assertEqual(digest(first),
-                         "5e8b35fb4e832b95c6335d386aa69bd91e6da41bb1edeec551bdcc4a61e7ffe8")
+                         "4bd64360e927453e82875da68beeb4dfa4bf04cb634c3d93c6070db2dec0bb36")
         self.assertEqual(first["model"], PROVIDER_MODEL)
         self.assertEqual(first["tools"], [])
         self.assertEqual(first["text"]["format"]["type"], "json_schema")
@@ -177,7 +203,16 @@ class ProductOpenAIHTTPTests(unittest.TestCase):
         self.assertEqual(len(server.calls), 1)
 
     def test_redirect_rate_limit_and_server_error_do_not_retry(self):
-        for status in (302, 429, 500):
+        cases = (
+            (302, PROVIDER_REQUEST_REJECTED),
+            (400, PROVIDER_REQUEST_REJECTED),
+            (401, PROVIDER_AUTH_ERROR),
+            (403, PROVIDER_PERMISSION_ERROR),
+            (404, PROVIDER_NOT_FOUND),
+            (429, PROVIDER_RATE_LIMIT),
+            (500, PROVIDER_SERVER_ERROR),
+        )
+        for status, reason in cases:
             with self.subTest(status=status), fake_server({
                     "status": status, "location": "http://127.0.0.1:1/denied", "body": b"secret provider body"
                     }) as (server, endpoint):
@@ -186,6 +221,7 @@ class ProductOpenAIHTTPTests(unittest.TestCase):
                 with self.assertRaises(ProductModelFailure) as caught:
                     run_product_model_cycle(synthetic_task(), adapter)
                 self.assertEqual(len(server.calls), 1)
+                self.assertEqual(caught.exception.audit_metadata["failure_reason"], reason)
                 self.assertNotIn(SECRET, str(caught.exception))
                 self.assertNotIn("provider body", str(caught.exception))
 
@@ -197,25 +233,46 @@ class ProductOpenAIHTTPTests(unittest.TestCase):
             with self.assertRaises(ProductModelFailure) as caught:
                 run_product_model_cycle(synthetic_task(), adapter)
             self.assertEqual(len(server.calls), 1)
+            self.assertEqual(caught.exception.audit_metadata["failure_reason"], PROVIDER_TIMEOUT)
             self.assertNotIn(SECRET, str(caught.exception))
+
+    def test_connection_failure_is_bounded_and_does_not_retry(self):
+        _ConnectionFailureSession.calls = 0
+        with fake_server({"body": response_bytes()}) as (server, endpoint):
+            provider = InjectedOpenAICredentialProvider(SECRET)
+            adapter = OpenAIResponsesHTTPAdapter._for_loopback_tests(
+                endpoint, provider, session_factory=_ConnectionFailureSession)
+            with self.assertRaises(ProductModelFailure) as caught:
+                run_product_model_cycle(synthetic_task(), adapter)
+        self.assertEqual(_ConnectionFailureSession.calls, 1)
+        self.assertEqual(server.calls, [])
+        self.assertEqual(caught.exception.audit_metadata["failure_reason"],
+                         PROVIDER_CONNECTION_ERROR)
+        self.assertNotIn(SECRET, str(caught.exception))
 
     def test_oversized_response_fails_closed(self):
         with fake_server({"body": b"x" * (MAX_RESPONSE_BYTES + 1)}) as (server, endpoint):
             provider = InjectedOpenAICredentialProvider(SECRET)
             adapter = OpenAIResponsesHTTPAdapter._for_loopback_tests(endpoint, provider)
-            with self.assertRaises(ProductModelFailure):
+            with self.assertRaises(ProductModelFailure) as caught:
                 run_product_model_cycle(synthetic_task(), adapter)
             self.assertEqual(len(server.calls), 1)
+            self.assertEqual(caught.exception.audit_metadata["failure_reason"],
+                             PROVIDER_RESPONSE_TOO_LARGE)
 
     def test_malformed_json_and_proposal_do_not_retry(self):
-        cases = (b"not-json", response_bytes(proposal({"approved": True})))
-        for body in cases:
+        cases = (
+            (b"not-json", "PROVIDER_ENVELOPE_INVALID"),
+            (response_bytes(proposal({"approved": True})), "PROPOSAL_SCHEMA_MISMATCH"),
+        )
+        for body, reason in cases:
             with self.subTest(size=len(body)), fake_server({"body": body}) as (server, endpoint):
                 provider = InjectedOpenAICredentialProvider(SECRET)
                 adapter = OpenAIResponsesHTTPAdapter._for_loopback_tests(endpoint, provider)
-                with self.assertRaises(ProductModelFailure):
+                with self.assertRaises(ProductModelFailure) as caught:
                     run_product_model_cycle(synthetic_task(), adapter)
                 self.assertEqual(len(server.calls), 1)
+                self.assertEqual(caught.exception.audit_metadata["failure_reason"], reason)
 
     def test_caller_cannot_override_production_endpoint_or_model(self):
         provider = InjectedOpenAICredentialProvider(SECRET)

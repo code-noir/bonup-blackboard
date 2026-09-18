@@ -19,6 +19,27 @@ INITIAL_PREDECESSOR_INVALID = "INITIAL_PREDECESSOR_INVALID"
 TASK_ID_PATTERN = (
     r"^ATS-(?:[0-9]{3}[1-9]|[0-9]{2}[1-9][0-9]|[0-9][1-9][0-9]{2}|[1-9][0-9]{3,})$"
 )
+PROVIDER_ERROR = "PROVIDER_ERROR"
+PROVIDER_AUTH_ERROR = "PROVIDER_AUTH_ERROR"
+PROVIDER_PERMISSION_ERROR = "PROVIDER_PERMISSION_ERROR"
+PROVIDER_NOT_FOUND = "PROVIDER_NOT_FOUND"
+PROVIDER_RATE_LIMIT = "PROVIDER_RATE_LIMIT"
+PROVIDER_REQUEST_REJECTED = "PROVIDER_REQUEST_REJECTED"
+PROVIDER_SERVER_ERROR = "PROVIDER_SERVER_ERROR"
+PROVIDER_TIMEOUT = "PROVIDER_TIMEOUT"
+PROVIDER_CONNECTION_ERROR = "PROVIDER_CONNECTION_ERROR"
+PROVIDER_RESPONSE_TOO_LARGE = "PROVIDER_RESPONSE_TOO_LARGE"
+SAFE_TRANSPORT_FAILURE_REASONS = frozenset({
+    PROVIDER_ERROR, PROVIDER_AUTH_ERROR, PROVIDER_PERMISSION_ERROR,
+    PROVIDER_NOT_FOUND, PROVIDER_RATE_LIMIT, PROVIDER_REQUEST_REJECTED,
+    PROVIDER_SERVER_ERROR, PROVIDER_TIMEOUT, PROVIDER_CONNECTION_ERROR,
+    PROVIDER_RESPONSE_TOO_LARGE,
+})
+_PROVIDER_SCHEMA_KEYWORDS = frozenset({
+    "type", "additionalProperties", "required", "properties", "items",
+    "pattern", "format", "minLength", "maxLength", "minItems", "maxItems",
+    "enum", "const", "anyOf",
+})
 TRUSTED_ENDPOINT = "https://api.openai.com/v1/responses"
 TRUSTED_MODEL = "PROD-01-STRUCTURED-MODEL-V1"
 LOCAL_CONTRACT_VALIDATED = True
@@ -41,6 +62,31 @@ _REFERENCE_SCHEMA = {
 }
 _TEXT = {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "\\S"}
 _TEXT_LIST = {"type": "array", "maxItems": 50, "items": _TEXT}
+
+
+def validate_provider_schema_subset(schema):
+    """Reject provider-schema keywords outside the reviewed local subset."""
+    def visit(value):
+        if type(value) is not dict or not set(value) <= _PROVIDER_SCHEMA_KEYWORDS:
+            raise ValidationError("Unsupported PROD-01 provider schema keyword.")
+        properties = value.get("properties")
+        if properties is not None:
+            if type(properties) is not dict:
+                raise ValidationError("Malformed PROD-01 provider schema properties.")
+            for child in properties.values():
+                visit(child)
+        if "items" in value:
+            visit(value["items"])
+        if "anyOf" in value:
+            alternatives = value["anyOf"]
+            if type(alternatives) is not list:
+                raise ValidationError("Malformed PROD-01 provider schema alternatives.")
+            for child in alternatives:
+                visit(child)
+
+    visit(schema)
+
+
 _PROPOSAL_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -61,7 +107,7 @@ _PROPOSAL_SCHEMA = {
         "objective": _TEXT,
         "proposed_requirement": _TEXT,
         "acceptance_intent": _TEXT_LIST,
-        "dependencies": {"type": "array", "maxItems": 50, "uniqueItems": True,
+        "dependencies": {"type": "array", "maxItems": 50,
                          "items": {"type": "string", "pattern": TASK_ID_PATTERN}},
         "assumptions": _TEXT_LIST,
         "risks_open_questions": _TEXT_LIST,
@@ -70,6 +116,7 @@ _PROPOSAL_SCHEMA = {
         "knowledge_state": {"type": "string", "const": "WORKING"},
     },
 }
+validate_provider_schema_subset(_PROPOSAL_SCHEMA)
 PRODUCT_PROPOSAL_SCHEMA_DIGEST = digest(_PROPOSAL_SCHEMA)
 
 
@@ -142,6 +189,7 @@ def project_product_context(task):
 
 
 def build_product_model_request(task):
+    validate_provider_schema_subset(_PROPOSAL_SCHEMA)
     context = project_product_context(task)
     request = {
         "contract_version": 1,
@@ -244,6 +292,13 @@ def _audit(task_id, request_digest, classification, *, proposal_digest=None, rea
     return parse_json(canonical_json(value))
 
 
+def _transport_failure_reason(error):
+    reason = getattr(error, "failure_reason", None)
+    if type(reason) is str and reason in SAFE_TRANSPORT_FAILURE_REASONS:
+        return reason
+    return PROVIDER_ERROR
+
+
 def run_product_model_cycle(task_input, transport, credential_provider=None, *,
                             require_initial_predecessor_null=False):
     """Perform one bounded model call and stop; create no authority or registry state."""
@@ -274,7 +329,7 @@ def run_product_model_cycle(task_input, transport, credential_provider=None, *,
         if isinstance(error, (KeyboardInterrupt, SystemExit)):
             raise
         metadata = _audit(task["task_id"], request_digest, "TRANSPORT_FAILED",
-                          reason="TRANSPORT_ERROR")
+                          reason=_transport_failure_reason(error))
         raise ProductModelFailure("PROD-01 model transport failed closed.", metadata) from None
     try:
         candidate = parse_product_model_response(raw)

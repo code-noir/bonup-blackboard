@@ -33,9 +33,11 @@ The request also instructs the model to copy the task identity exactly, use only
 input-bound evidence references, emit canonical UUID proposal identities, keep an
 initial predecessor null, avoid authority-status claims, and omit secrets. The
 schema rejects `ATS-0000`, whitespace-only text, malformed reference identities, and
-duplicate dependencies. These provider constraints are defense in depth: exact
-task/evidence binding, authority language, secret patterns, and all generic proposal
-rules remain enforced after receipt by `validate_product_proposal()` and the cycle
+invalid reference data, while duplicate dependencies remain a runtime-only
+invariant because `uniqueItems` is outside the reviewed provider subset. These
+provider constraints are defense in depth: exact task/evidence binding, authority
+language, secret patterns, duplicate dependencies, and all generic proposal rules
+remain enforced after receipt by `validate_product_proposal()` and the cycle
 boundary. The generic validator permits a valid predecessor for later
 `REQUEST_CHANGES` revisions; the first-live boundary separately requires a null
 predecessor and rejects `INITIAL_PREDECESSOR_INVALID` before accepting ATS-1201.
@@ -53,6 +55,15 @@ proposal-schema, proposal-identity, task-binding, evidence-binding, knowledge-st
 authority-claim, content-policy, and initial-predecessor rejection. This improves
 future diagnostics but cannot retrospectively identify a reason that an earlier
 execution discarded.
+
+Transport failures retain only an allowlisted code-owned classification. HTTP
+401, 403, 404, 429, other 4xx, and 5xx responses map respectively to bounded
+authentication, permission, not-found, rate-limit, request-rejected, and
+server-error classes. Timeout, connection/TLS, and response-size failures are
+separate bounded classes; unknown adapter failures remain `PROVIDER_ERROR`.
+Provider bodies, status text, request content, credentials, and response metadata
+are never included in diagnostics. A non-200 response still makes exactly one
+attempt and never triggers a retry or repair request.
 
 The bounded model module remains transport-neutral, and its tests use an injected
 in-memory transport and synthetic credential marker. The separate hardened HTTP

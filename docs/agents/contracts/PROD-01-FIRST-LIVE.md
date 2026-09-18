@@ -28,7 +28,8 @@ Founder procedure:
 3. Allow source and dual contract/request bindings to verify before the prompt.
 4. Enter the dedicated bonUP OpenAI key only at the hidden prompt.
 5. The command may make exactly one inference request with zero tools and retries.
-6. The response is strictly parsed and validated as a WORKING proposal.
+6. The response is strictly parsed and validated as a WORKING proposal with a null
+   `predecessor_proposal_id`; a non-null initial predecessor is rejected.
 7. Review the bounded proposal output; it is not Founder approval.
 8. Allow the process to exit after the single cycle.
 9. Report only safe output, never the API key, to ChatGPT or Codex.
@@ -36,3 +37,10 @@ Founder procedure:
 The command creates no AgentRecord, grant, assignment, registry state, task document,
 ARCH routing, deployment, or application change. Python reference disposal is not a
 claim of physical memory zeroization.
+
+Failed output is reported only through a bounded, code-owned classification. No raw
+provider envelope, model text, hidden reasoning, credential, or rejected field value
+is printed or persisted. A classification identifies the validation stage only; it
+does not make rejected output recoverable or authorize a retry. The generic proposal
+validator continues to support non-null predecessor linkage for later,
+separately reviewed `REQUEST_CHANGES` revisions.

@@ -7,10 +7,12 @@ import inspect
 import json
 import sys
 
-from .prod_contract import load_contract, validate_product_proposal
+from . import prod_contract
+from .prod_contract import load_contract
 from .prod_model_transport import (
     ALLOW_REDIRECTS, MAX_REQUESTS_PER_CYCLE, MAX_RESPONSE_BYTES, MAX_RETRIES,
-    PRODUCT_PROPOSAL_SCHEMA_DIGEST, TIMEOUT_SECONDS, TRUSTED_ENDPOINT, TRUSTED_MODEL,
+    INITIAL_PREDECESSOR_INVALID, PRODUCT_PROPOSAL_SCHEMA_DIGEST, TIMEOUT_SECONDS,
+    TRUSTED_ENDPOINT, TRUSTED_MODEL,
     build_product_model_request, parse_product_model_response, run_product_model_cycle,
 )
 from .prod_openai_http import (
@@ -24,10 +26,10 @@ from .prod_prelive import (
 from .serialization import canonical_json, digest
 from .types import ValidationError
 
-EXPECTED_SCHEMA_DIGEST = "ddb3255919710a5176ad78435ac29ae18fafc48d41c508e0c7f3ca91b62612a3"
+EXPECTED_SCHEMA_DIGEST = "887a560a38cb99440990336afc17c1a0d8a2d19e882a9f7e2d9d467ab124880d"
 FROZEN_ATS_0701_WIRE_FIXTURE_DIGEST = "bdc532506e2d4ce59a4dd41af440a0a4ef3bba21a865df5d9060c58c638f759d"
-EXPECTED_ATS_1201_INTERNAL_REQUEST_DIGEST = "4cf5c556872bde119b795feb2d54224d55494c767b9a0c1fc782bd37ac43a099"
-EXPECTED_ATS_1201_WIRE_REQUEST_DIGEST = "89a5886a40a1f6c64c6a587bbdcb960aa80e68cf53634023a2d1d026d2dac851"
+EXPECTED_ATS_1201_INTERNAL_REQUEST_DIGEST = "15bfd6e64c8fe14d17249bbf772af2da1244d2ce83283cb3f38627c638cbdf0e"
+EXPECTED_ATS_1201_WIRE_REQUEST_DIGEST = "7cc03beea3ee8bfe4d231055a1080cd868f7d6c6814225a4acaf032d2dbaa517"
 PARSER_CONTRACT = "RESPONSES_COMPLETED_ASSISTANT_SINGLE_OUTPUT_TEXT_V1"
 VALIDATOR_CONTRACT = "validate_product_proposal"
 
@@ -57,15 +59,16 @@ def stable_contract_identity():
             parse_product_model_response),
         "proposal_validator": VALIDATOR_CONTRACT,
         "proposal_validator_implementation_digest": _implementation_digest(
-            validate_product_proposal),
+            prod_contract),
         "resulting_knowledge_state": "WORKING",
+        "initial_proposal_predecessor_null": True,
         "founder_auto_approval": False,
         "arch_routing": False,
     }
 
 
-def _implementation_digest(function):
-    return hashlib.sha256(inspect.getsource(function).encode("utf-8")).hexdigest()
+def _implementation_digest(source_object):
+    return hashlib.sha256(inspect.getsource(source_object).encode("utf-8")).hexdigest()
 
 
 def stable_contract_digest(value=None):
@@ -73,7 +76,7 @@ def stable_contract_digest(value=None):
 
 
 # Frozen only after deterministic regeneration from the reviewed implementation.
-EXPECTED_STABLE_CONTRACT_DIGEST = "ee8941ad27878adeac05f686c26aa4bee296a0b6c0c1e66bdab2c385d73f5b74"
+EXPECTED_STABLE_CONTRACT_DIGEST = "3cdd12ead2c70b0fef92b3cf115dcb95e05730bde2195177bcf2f8e41ca21982"
 
 
 @dataclass(frozen=True)
@@ -145,12 +148,20 @@ def _run_first_live(reviewed_source, tty_check, prompt_fn, transport_factory):
         provider = DevelopmentOneShotCredential.prompt_hidden(prompt_fn)
         transport = transport_factory(provider)
         try:
-            cycle = run_product_model_cycle(bindings.task, transport)
+            cycle = run_product_model_cycle(
+                bindings.task, transport, require_initial_predecessor_null=True)
         except ValidationError as error:
             metadata = getattr(error, "audit_metadata", {})
-            classification = ("PROPOSAL_VALIDATION_FAILED"
-                              if metadata.get("result_classification") == "OUTPUT_REJECTED"
-                              else "PROVIDER_ERROR")
+            reason = metadata.get("failure_reason")
+            safe_reasons = {
+                "PROVIDER_ENVELOPE_INVALID", "STRUCTURED_JSON_INVALID",
+                "PROPOSAL_SCHEMA_MISMATCH", "PROPOSAL_ID_INVALID",
+                "TASK_BINDING_INVALID", "EVIDENCE_BINDING_INVALID",
+                "KNOWLEDGE_STATE_INVALID", "AUTHORITY_CLAIM_REJECTED",
+                "CONTENT_POLICY_REJECTED", INITIAL_PREDECESSOR_INVALID,
+            }
+            classification = (reason if metadata.get("result_classification") == "OUTPUT_REJECTED"
+                              and reason in safe_reasons else "PROVIDER_ERROR")
             raise FirstLiveFailure(classification) from None
         return FirstLiveResult(current, cycle)
     finally:

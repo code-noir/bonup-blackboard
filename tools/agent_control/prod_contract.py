@@ -33,8 +33,30 @@ _SECRET_PATTERNS = (
     re.compile(r"\b(?:sk|ghp|xox[baprs])-[A-Za-z0-9_-]{16,}\b"),
     re.compile(r"(?i)\b(?:password|api[_ -]?key|private[_ -]?key|client[_ -]?secret)\s*[:=]\s*\S+"),
 )
+_AUTHORITY_STATUS = r"(?:approved|assigned|authorized|deployed|implemented|tested|published|complete|completed|passed)"
+_AUTHORITY_QUALIFIER = r"(?:already|currently|successfully|now|fully|finally|all)"
+_AUTHORITY_SUBJECT = (
+    r"(?:this(?:\s+(?:feature|implementation|deployment|execution|task|proposal|"
+    r"requirement|code|system|change))?|"
+    r"(?:the|a|an)\s+(?:feature|implementation|deployment|execution|task|proposal|"
+    r"requirement|code|system|change|tests?|test\s+suite|checks?|validation)|"
+    r"(?:feature|implementation|deployment|execution|task|proposal|requirement|"
+    r"code|system|change|tests?|test\s+suite|checks?|validation))"
+)
 _AUTHORITY_CLAIM = re.compile(
-    r"(?i)\b(?:approved|assigned|authorized|deployed|implemented|tested|published)\b"
+    rf"^(?:already\s+)?{_AUTHORITY_STATUS}\b|"
+    rf"\b{_AUTHORITY_SUBJECT}\s+(?:"
+    rf"(?:is|are|was|were)\s+(?:not\s+)?(?:{_AUTHORITY_QUALIFIER}\s+)?|"
+    rf"(?:has|have|had)\s+(?:not\s+)?(?:{_AUTHORITY_QUALIFIER}\s+)?"
+    rf"(?:been\s+)?(?:{_AUTHORITY_QUALIFIER}\s+)?|"
+    rf"{_AUTHORITY_QUALIFIER}\s+|"
+    rf"){_AUTHORITY_STATUS}\b",
+    re.IGNORECASE,
+)
+_HYPOTHETICAL_STATUS_CONTEXT = re.compile(
+    r"(?:^|\s)(?:whether|if|when|before|after|until|once|that)\s+"
+    r"(?:this|that|the|a|an)?\s*$",
+    re.IGNORECASE,
 )
 
 
@@ -53,7 +75,10 @@ def _safe_text(value, field, *, maximum=4096):
 
 def _proposal_text(value, field):
     value = _safe_text(value, field)
-    if _AUTHORITY_CLAIM.search(value):
+    authority_text = re.sub(r"[\W_]+", " ", value, flags=re.UNICODE).strip()
+    if any(
+            not _HYPOTHETICAL_STATUS_CONTEXT.search(authority_text[:match.start()])
+            for match in _AUTHORITY_CLAIM.finditer(authority_text)):
         _reject("PROD-01 proposal cannot claim approval, authority, execution, or publication.")
     return value
 

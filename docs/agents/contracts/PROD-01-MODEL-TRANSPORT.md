@@ -29,6 +29,31 @@ one `output_text` part. That text is parsed as strict JSON and must pass
 evidence references bound by the task. Refusals, incomplete responses, tool/function
 output, unknown content, and ambiguous proposal text fail closed.
 
+The request also instructs the model to copy the task identity exactly, use only
+input-bound evidence references, emit canonical UUID proposal identities, keep an
+initial predecessor null, avoid authority-status claims, and omit secrets. The
+schema rejects `ATS-0000`, whitespace-only text, malformed reference identities, and
+duplicate dependencies. These provider constraints are defense in depth: exact
+task/evidence binding, authority language, secret patterns, and all generic proposal
+rules remain enforced after receipt by `validate_product_proposal()` and the cycle
+boundary. The generic validator permits a valid predecessor for later
+`REQUEST_CHANGES` revisions; the first-live boundary separately requires a null
+predecessor and rejects `INITIAL_PREDECESSOR_INVALID` before accepting ATS-1201.
+
+Narrative authority protection rejects bounded assertions that work or authority is
+already complete or granted, including implemented, tested, approved, authorized,
+deployed, assigned, published, complete, and passed status forms. Future
+requirements and acceptance conditions using modal or hypothetical language remain
+valid. Explicit authority-like fields remain rejected by the closed proposal field
+set regardless of narrative wording.
+
+Output failures retain only a bounded code-owned reason, never provider text or
+field values. Current reasons distinguish provider-envelope, structured-JSON,
+proposal-schema, proposal-identity, task-binding, evidence-binding, knowledge-state,
+authority-claim, content-policy, and initial-predecessor rejection. This improves
+future diagnostics but cannot retrospectively identify a reason that an earlier
+execution discarded.
+
 The bounded model module remains transport-neutral, and its tests use an injected
 in-memory transport and synthetic credential marker. The separate hardened HTTP
 adapter described below is tested only against a loopback fake server. No live

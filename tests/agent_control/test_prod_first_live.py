@@ -18,7 +18,8 @@ from tools.agent_control.prod_first_live import (
     stable_contract_digest, stable_contract_identity,
 )
 from tools.agent_control.prod_model_transport import (
-    TRUSTED_ENDPOINT, TRUSTED_MODEL, build_product_model_request,
+    INITIAL_PREDECESSOR_INVALID, TRUSTED_ENDPOINT, TRUSTED_MODEL,
+    build_product_model_request,
 )
 from tools.agent_control.prod_openai_http import project_openai_responses_request
 from tools.agent_control.prod_prelive import (
@@ -107,7 +108,9 @@ class ProductFirstLiveTests(unittest.TestCase):
                          digest(build_product_model_request(synthetic_first_live_task())[0]))
         old_internal, _ = build_product_model_request(ats_0701_task())
         old_wire = project_openai_responses_request(old_internal)
-        self.assertEqual(digest(old_wire), FROZEN_ATS_0701_WIRE_FIXTURE_DIGEST)
+        self.assertEqual(FROZEN_ATS_0701_WIRE_FIXTURE_DIGEST,
+                         "bdc532506e2d4ce59a4dd41af440a0a4ef3bba21a865df5d9060c58c638f759d")
+        self.assertNotEqual(digest(old_wire), FROZEN_ATS_0701_WIRE_FIXTURE_DIGEST)
         self.assertNotEqual(digest(old_wire), bindings.wire_request_digest)
         self.assertEqual(stable_contract_digest(), bindings.stable_contract_digest)
 
@@ -185,18 +188,44 @@ class ProductFirstLiveTests(unittest.TestCase):
         self.assertEqual(request["request_policy"], {"max_requests": 1, "max_retries": 0})
         self.assertEqual(result.cycle.proposal["knowledge_state"], "WORKING")
         self.assertEqual(result.cycle.task["task_id"], "ATS-1201")
+        self.assertIsNone(result.cycle.proposal["predecessor_proposal_id"])
         with self.assertRaises(ValidationError):
             transport.provider.credential()
 
+    def test_initial_non_null_predecessor_is_rejected_without_review_or_routing(self):
+        authority = {"agents": [], "grants": [], "assignments": [], "registry": {}}
+        before = deepcopy(authority)
+        transports = []
+
+        def factory(provider):
+            transport = FakeFirstLiveTransport(
+                provider,
+                raw=response_bytes(proposal({
+                    "predecessor_proposal_id":
+                    "00000000-0000-4000-8000-000000000702"})))
+            transports.append(transport)
+            return transport
+
+        with patch.object(prod_first_live, "_current_source_commit", return_value=CHECKPOINT), \
+                patch("tools.agent_control.prod_review.create_product_review") as review:
+            with self.assertRaises(FirstLiveFailure) as caught:
+                _run_first_live_for_tests(reviewed(), lambda: True, lambda _: SECRET, factory)
+        self.assertEqual(caught.exception.classification, INITIAL_PREDECESSOR_INVALID)
+        self.assertEqual(len(transports[0].calls), 1)
+        review.assert_not_called()
+        self.assertEqual(authority, before)
+
     def test_refusal_malformed_invalid_authority_and_self_promotion_stop_once(self):
         cases = [
-            response_bytes(refusal=True),
-            b"not-json",
-            response_bytes(proposal({"title": ""})),
-            response_bytes(proposal({"execution_grant": "grant"})),
-            response_bytes(proposal({"knowledge_state": "APPROVED_INTERNAL"})),
+            (response_bytes(refusal=True), "PROVIDER_ENVELOPE_INVALID"),
+            (b"not-json", "PROVIDER_ENVELOPE_INVALID"),
+            (response_bytes(proposal({"title": ""})), "PROPOSAL_SCHEMA_MISMATCH"),
+            (response_bytes(proposal({"execution_grant": "grant"})),
+             "PROPOSAL_SCHEMA_MISMATCH"),
+            (response_bytes(proposal({"knowledge_state": "APPROVED_INTERNAL"})),
+             "KNOWLEDGE_STATE_INVALID"),
         ]
-        for raw in cases:
+        for raw, classification in cases:
             transports = []
 
             def factory(provider):
@@ -205,8 +234,9 @@ class ProductFirstLiveTests(unittest.TestCase):
                 return transport
 
             with self.subTest(size=len(raw)), patch.object(
-                    prod_first_live, "_current_source_commit", return_value=CHECKPOINT), self.assertRaises(FirstLiveFailure):
+                    prod_first_live, "_current_source_commit", return_value=CHECKPOINT), self.assertRaises(FirstLiveFailure) as caught:
                 _run_first_live_for_tests(reviewed(), lambda: True, lambda _: SECRET, factory)
+            self.assertEqual(caught.exception.classification, classification)
             self.assertEqual(len(transports[0].calls), 1)
 
     def test_safe_output_contains_proposal_not_secret_envelope_or_reasoning(self):

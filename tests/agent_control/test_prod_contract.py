@@ -53,6 +53,14 @@ class ProductContractTests(unittest.TestCase):
                 self.assertEqual(validate_product_task(task(task_class))["task_class"], task_class)
         with self.assertRaises(ValidationError):
             validate_product_task(task("DEPLOYMENT"))
+        for task_id in ("ATS-0000", "ATS-00001"):
+            with self.subTest(task_id=task_id), self.assertRaises(ValidationError):
+                value = task(); value["task_id"] = task_id
+                validate_product_task(value)
+        for task_id in ("ATS-0001", "ATS-1201", "ATS-10000"):
+            with self.subTest(task_id=task_id):
+                value = task(); value["task_id"] = task_id
+                self.assertEqual(validate_product_task(value)["task_id"], task_id)
 
     def test_task_references_only_approved_bounded_inputs(self):
         founder = reference("FOUNDER_DIRECTION")
@@ -67,7 +75,9 @@ class ProductContractTests(unittest.TestCase):
 
     def test_proposal_is_bounded_and_cannot_claim_authority(self):
         validate_product_proposal(proposal())
-        for field in ("approved", "grant", "assignment", "execution", "deployment", "status"):
+        for field in ("approved", "authorized", "execution_grant", "assignment",
+                      "deployment_status", "implementation_status", "grant", "execution",
+                      "deployment", "status"):
             bad = proposal(); bad[field] = True
             with self.subTest(field=field), self.assertRaises(ValidationError):
                 validate_product_proposal(bad)
@@ -79,6 +89,51 @@ class ProductContractTests(unittest.TestCase):
             bad = proposal(); bad["proposed_requirement"] = f"This proposal is {claim}."
             with self.subTest(claim=claim), self.assertRaises(ValidationError):
                 validate_product_proposal(bad)
+
+    def test_current_status_claims_are_denied_but_future_requirements_are_allowed(self):
+        rejected = (
+            "Implementation is complete.",
+            "This feature has been implemented.",
+            "Tests passed.",
+            "This was tested successfully.",
+            "Deployment completed.",
+            "This is approved.",
+            "Execution was authorized.",
+            "The task was assigned.",
+            "The feature is already implemented!",
+            "THE FEATURE WAS TESTED SUCCESSFULLY.",
+            "The deployment has completed.",
+            "The feature\twas\nimplemented.",
+            "Tests have passed.",
+            "Deployment was completed successfully.",
+            "The feature has already been implemented.",
+            "The task had been successfully assigned.",
+            "All tests have passed.",
+        )
+        for claim in rejected:
+            bad = proposal(); bad["proposed_requirement"] = claim
+            with self.subTest(claim=claim), self.assertRaises(ValidationError):
+                validate_product_proposal(bad)
+
+        allowed = (
+            "The criterion must be tested before release.",
+            "The feature should be implemented behind a feature flag.",
+            "Deployment must require Founder approval.",
+            "The requirement should be tested on mobile.",
+            "Implementation should preserve task history.",
+            "The UI should show whether a task was tested.",
+            "Acceptance requires the feature to be deployed safely.",
+        )
+        for requirement in allowed:
+            value = proposal(); value["proposed_requirement"] = requirement
+            with self.subTest(requirement=requirement):
+                self.assertEqual(validate_product_proposal(value)["proposed_requirement"],
+                                 requirement)
+
+    def test_revision_predecessor_remains_valid_outside_initial_first_live(self):
+        value = proposal()
+        value["predecessor_proposal_id"] = "00000000-0000-4000-8000-000000000002"
+        self.assertEqual(validate_product_proposal(value), value)
 
     def test_secrets_and_credentials_are_rejected(self):
         for secret in ("API_KEY=synthetic-secret", "password: synthetic-secret",

@@ -1,4 +1,5 @@
 import json
+import re
 import unittest
 from copy import deepcopy
 
@@ -7,7 +8,8 @@ from test_prod_cycle import synthetic_task
 from tools.agent_control.prod_contract import load_contract, validate_product_proposal
 from tools.agent_control.prod_model_transport import (
     ACCOUNT_MODEL_ACCESS, LOCAL_CONTRACT_VALIDATED, MAX_RESPONSE_BYTES,
-    PRODUCT_PROPOSAL_SCHEMA_DIGEST, PROVIDER_WIRE_COMPATIBILITY, TIMEOUT_SECONDS,
+    INITIAL_PREDECESSOR_INVALID, PRODUCT_PROPOSAL_SCHEMA_DIGEST,
+    PROVIDER_WIRE_COMPATIBILITY, TASK_ID_PATTERN, TIMEOUT_SECONDS,
     TRUSTED_ENDPOINT, TRUSTED_MODEL,
     ProductModelFailure, build_product_model_request, project_product_context,
     run_product_model_cycle,
@@ -128,9 +130,15 @@ class ProductModelTransportTests(unittest.TestCase):
         self.assertFalse(output["schema"]["additionalProperties"])
         self.assertEqual(output["schema"]["properties"]["knowledge_state"],
                          {"type": "string", "const": "WORKING"})
+        self.assertEqual(output["schema"]["properties"]["task_id"]["pattern"],
+                         TASK_ID_PATTERN)
+        self.assertEqual(output["schema"]["properties"]["title"]["pattern"], "\\S")
+        self.assertTrue(output["schema"]["properties"]["dependencies"]["uniqueItems"])
+        self.assertIn("pattern", output["schema"]["properties"]["evidence_references"]
+                      ["items"]["properties"]["reference_id"])
         self.assertEqual(output["schema_digest"], PRODUCT_PROPOSAL_SCHEMA_DIGEST)
         self.assertEqual(PRODUCT_PROPOSAL_SCHEMA_DIGEST,
-                         "ddb3255919710a5176ad78435ac29ae18fafc48d41c508e0c7f3ca91b62612a3")
+                         "887a560a38cb99440990336afc17c1a0d8a2d19e882a9f7e2d9d467ab124880d")
         self.assertEqual(set(output["schema"]["required"]),
                          set(output["schema"]["properties"]))
         self.assertFalse({"approved", "execution_grant", "assignment", "command"}
@@ -145,6 +153,42 @@ class ProductModelTransportTests(unittest.TestCase):
         self.assertIs(LOCAL_CONTRACT_VALIDATED, True)
         self.assertEqual(PROVIDER_WIRE_COMPATIBILITY, "LIVE_OR_OFFICIAL_CHECK_REQUIRED")
         self.assertEqual(ACCOUNT_MODEL_ACCESS, "AUTHENTICATED_CHECK_REQUIRED")
+
+    def test_provider_task_id_pattern_matches_runtime_bounds(self):
+        schema = build_product_model_request(synthetic_task())[0]["output_contract"]["schema"]
+        pattern = schema["properties"]["task_id"]["pattern"]
+        for task_id in ("ATS-0001", "ATS-1201", "ATS-10000"):
+            with self.subTest(task_id=task_id):
+                self.assertIsNotNone(re.fullmatch(pattern, task_id))
+        for task_id in ("ATS-0000", "ATS-00001", "ATS-01234"):
+            with self.subTest(task_id=task_id):
+                self.assertIsNone(re.fullmatch(pattern, task_id))
+
+    def test_request_states_runtime_only_task_and_evidence_constraints(self):
+        context = project_product_context(synthetic_task())
+        behavior = set(context["behavior_contract"])
+        self.assertIn("COPY_TASK_ID_EXACTLY", behavior)
+        self.assertIn("EVIDENCE_REFERENCES_MUST_BE_SUBSET_OF_INPUT_REFERENCES", behavior)
+        self.assertIn("DO_NOT_INCLUDE_SENSITIVE_AUTHENTICATION_MATERIAL", behavior)
+        schema = context["required_output_schema"]
+        self.assertNotIn("const", schema["properties"]["task_id"])
+        reference_properties = schema["properties"]["evidence_references"]["items"]["properties"]
+        self.assertNotIn("const", reference_properties["reference_id"])
+
+    def test_initial_predecessor_gate_is_local_and_revision_linkage_remains_valid(self):
+        revision = proposal({
+            "predecessor_proposal_id": "00000000-0000-4000-8000-000000000002"})
+        result, _, _ = self.run_cycle(candidate=revision)
+        self.assertEqual(result.proposal["predecessor_proposal_id"],
+                         revision["predecessor_proposal_id"])
+        transport = InMemoryTransport(revision)
+        with self.assertRaises(ProductModelFailure) as caught:
+            run_product_model_cycle(
+                synthetic_task(), transport, SyntheticCredentialProvider(),
+                require_initial_predecessor_null=True)
+        self.assertEqual(len(transport.calls), 1)
+        self.assertEqual(caught.exception.audit_metadata["failure_reason"],
+                         INITIAL_PREDECESSOR_INVALID)
 
     def test_timeout_transport_and_malformed_output_make_no_retry(self):
         cases = [
@@ -212,6 +256,38 @@ class ProductModelTransportTests(unittest.TestCase):
                         {"knowledge_state": "PUBLICATION_ELIGIBLE"}):
             with self.subTest(changes=changes), self.assertRaises(ProductModelFailure):
                 self.run_cycle(candidate=proposal(changes))
+
+    def test_output_rejections_have_bounded_stage_reasons(self):
+        cases = [
+            (b"not-json", "PROVIDER_ENVELOPE_INVALID"),
+            (response_bytes(output=[dict(
+                response_envelope()["output"][0],
+                content=[{"type": "output_text", "text": "not-json"}])]),
+             "STRUCTURED_JSON_INVALID"),
+            (response_bytes(proposal({"title": ""})), "PROPOSAL_SCHEMA_MISMATCH"),
+            (response_bytes(proposal({"proposal_id": "not-a-uuid"})),
+             "PROPOSAL_ID_INVALID"),
+            (response_bytes(proposal({"knowledge_state": "APPROVED_INTERNAL"})),
+             "KNOWLEDGE_STATE_INVALID"),
+            (response_bytes(proposal({"title": "This was approved."})),
+             "AUTHORITY_CLAIM_REJECTED"),
+            (response_bytes(proposal({"title": "api_key=synthetic-secret-value"})),
+             "CONTENT_POLICY_REJECTED"),
+            (response_bytes(proposal({"task_id": "ATS-9999"})),
+             "TASK_BINDING_INVALID"),
+        ]
+        unbound = deepcopy(proposal())
+        unbound["evidence_references"][0]["reference_id"] = "UNBOUND-REFERENCE"
+        cases.append((response_bytes(unbound), "EVIDENCE_BINDING_INVALID"))
+        for raw, reason in cases:
+            with self.subTest(reason=reason), self.assertRaises(ProductModelFailure) as caught:
+                self.run_cycle(raw=raw)
+            self.assertEqual(caught.exception.audit_metadata["failure_reason"], reason)
+            metadata = canonical_json(caught.exception.audit_metadata)
+            for forbidden in (
+                    "synthetic-secret-value", "This was approved.",
+                    "The feature has been implemented."):
+                self.assertNotIn(forbidden, metadata)
 
     def test_state_is_unchanged_and_proposal_supports_founder_review(self):
         task = synthetic_task()

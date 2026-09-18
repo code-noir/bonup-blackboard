@@ -15,6 +15,10 @@ ALLOW_REDIRECTS = False
 TRUST_ENVIRONMENT = False
 MAX_OUTPUT_ITEMS = 32
 MAX_CONTENT_PARTS = 8
+INITIAL_PREDECESSOR_INVALID = "INITIAL_PREDECESSOR_INVALID"
+TASK_ID_PATTERN = (
+    r"^ATS-(?:[0-9]{3}[1-9]|[0-9]{2}[1-9][0-9]|[0-9][1-9][0-9]{2}|[1-9][0-9]{3,})$"
+)
 TRUSTED_ENDPOINT = "https://api.openai.com/v1/responses"
 TRUSTED_MODEL = "PROD-01-STRUCTURED-MODEL-V1"
 LOCAL_CONTRACT_VALIDATED = True
@@ -27,12 +31,15 @@ _REFERENCE_SCHEMA = {
     "required": ["reference_type", "reference_id", "digest", "knowledge_state"],
     "properties": {
         "reference_type": {"type": "string", "enum": list(REFERENCE_TYPES)},
-        "reference_id": {"type": "string", "maxLength": 128},
+        "reference_id": {
+            "type": "string", "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
+        },
         "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "knowledge_state": {"type": "string", "enum": ["DIRECT_FOUNDER", "APPROVED_INTERNAL"]},
     },
 }
-_TEXT = {"type": "string", "minLength": 1, "maxLength": 4096}
+_TEXT = {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "\\S"}
 _TEXT_LIST = {"type": "array", "maxItems": 50, "items": _TEXT}
 _PROPOSAL_SCHEMA = {
     "type": "object",
@@ -45,7 +52,7 @@ _PROPOSAL_SCHEMA = {
     ],
     "properties": {
         "agent_id": {"type": "string", "const": "PROD-01"},
-        "task_id": {"type": "string", "pattern": "^ATS-(?:[0-9]{4}|[1-9][0-9]{4,})$"},
+        "task_id": {"type": "string", "pattern": TASK_ID_PATTERN},
         "proposal_id": {"type": "string", "format": "uuid"},
         "predecessor_proposal_id": {"anyOf": [{"type": "string", "format": "uuid"}, {"type": "null"}]},
         "proposal_type": {"type": "string", "const": "PRODUCT_REQUIREMENT_PROPOSAL"},
@@ -54,7 +61,8 @@ _PROPOSAL_SCHEMA = {
         "objective": _TEXT,
         "proposed_requirement": _TEXT,
         "acceptance_intent": _TEXT_LIST,
-        "dependencies": {"type": "array", "maxItems": 50, "items": {"type": "string", "pattern": "^ATS-(?:[0-9]{4}|[1-9][0-9]{4,})$"}},
+        "dependencies": {"type": "array", "maxItems": 50, "uniqueItems": True,
+                         "items": {"type": "string", "pattern": TASK_ID_PATTERN}},
         "assumptions": _TEXT_LIST,
         "risks_open_questions": _TEXT_LIST,
         "priority_recommendation": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]},
@@ -86,6 +94,18 @@ class ProductModelFailure(ValidationError):
         self.audit_metadata = parse_json(canonical_json(audit_metadata))
 
 
+class ProductOutputFailure(ValidationError):
+    """Internal output rejection carrying only a bounded, code-owned reason."""
+
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def _reject_output(reason):
+    raise ProductOutputFailure(reason)
+
+
 @dataclass(frozen=True)
 class ProductModelCycle:
     task: dict
@@ -110,6 +130,12 @@ def project_product_context(task):
             "PRODUCE_PRODUCT_REQUIREMENT_PROPOSAL_ONLY",
             "CANNOT_APPROVE", "CANNOT_ASSIGN", "CANNOT_GRANT_AUTHORITY", "CANNOT_EXECUTE",
             "CANNOT_DEPLOY", "CANNOT_PUBLISH", "CANNOT_ACTIVATE_AGENTS",
+            "COPY_TASK_ID_EXACTLY",
+            "EVIDENCE_REFERENCES_MUST_BE_SUBSET_OF_INPUT_REFERENCES",
+            "USE_CANONICAL_UUID_PROPOSAL_IDENTITIES",
+            "INITIAL_PROPOSAL_PREDECESSOR_MUST_BE_NULL",
+            "DO_NOT_USE_APPROVED_ASSIGNED_AUTHORIZED_DEPLOYED_IMPLEMENTED_TESTED_PUBLISHED_AS_STATUS_CLAIMS",
+            "DO_NOT_INCLUDE_SENSITIVE_AUTHENTICATION_MATERIAL",
         ],
         "required_output_schema": parse_json(canonical_json(_PROPOSAL_SCHEMA)),
     }
@@ -144,49 +170,65 @@ def build_product_model_request(task):
 
 def parse_product_model_response(raw):
     if type(raw) is not bytes or not raw or len(raw) > MAX_RESPONSE_BYTES:
-        raise ValidationError("Invalid bounded PROD-01 model response.")
+        _reject_output("PROVIDER_ENVELOPE_INVALID")
     try:
         envelope = parse_json(raw.decode("utf-8"))
     except (UnicodeError, ValidationError):
-        raise ValidationError("Malformed PROD-01 model response.") from None
+        _reject_output("PROVIDER_ENVELOPE_INVALID")
     if (type(envelope) is not dict or envelope.get("status") != "completed"
             or type(envelope.get("output")) is not list
             or not envelope["output"] or len(envelope["output"]) > MAX_OUTPUT_ITEMS):
-        raise ValidationError("PROD-01 model response is incomplete or unbounded.")
+        _reject_output("PROVIDER_ENVELOPE_INVALID")
 
     proposal_texts = []
     for item in envelope["output"]:
         if type(item) is not dict or type(item.get("type")) is not str:
-            raise ValidationError("Invalid PROD-01 Responses output item.")
+            _reject_output("PROVIDER_ENVELOPE_INVALID")
         if item["type"] == "reasoning":
             continue
         if (item["type"] != "message" or item.get("role") != "assistant"
                 or item.get("status") != "completed"):
-            raise ValidationError("Unexpected non-assistant PROD-01 Responses output.")
+            _reject_output("PROVIDER_ENVELOPE_INVALID")
         content = item.get("content")
         if (type(content) is not list or not content
                 or len(content) > MAX_CONTENT_PARTS):
-            raise ValidationError("Invalid bounded PROD-01 message content.")
+            _reject_output("PROVIDER_ENVELOPE_INVALID")
         for part in content:
             if type(part) is not dict or type(part.get("type")) is not str:
-                raise ValidationError("Invalid PROD-01 message content part.")
+                _reject_output("PROVIDER_ENVELOPE_INVALID")
             if part["type"] == "refusal":
-                raise ValidationError("PROD-01 model refused the proposal request.")
+                _reject_output("PROVIDER_ENVELOPE_INVALID")
             if part["type"] != "output_text" or type(part.get("text")) is not str:
-                raise ValidationError("Unexpected PROD-01 message content type.")
+                _reject_output("PROVIDER_ENVELOPE_INVALID")
             proposal_texts.append(part["text"])
 
     if len(proposal_texts) != 1:
-        raise ValidationError("PROD-01 response must contain exactly one proposal text.")
+        _reject_output("PROVIDER_ENVELOPE_INVALID")
     if not proposal_texts[0] or len(proposal_texts[0].encode("utf-8")) > MAX_RESPONSE_BYTES:
-        raise ValidationError("Invalid bounded PROD-01 proposal text.")
+        _reject_output("PROVIDER_ENVELOPE_INVALID")
     try:
         candidate = parse_json(proposal_texts[0])
     except ValidationError:
-        raise ValidationError("Malformed PROD-01 proposal JSON.") from None
+        _reject_output("STRUCTURED_JSON_INVALID")
     if type(candidate) is not dict:
-        raise ValidationError("PROD-01 proposal JSON must be an object.")
+        _reject_output("STRUCTURED_JSON_INVALID")
     return candidate
+
+
+def _proposal_rejection_reason(error):
+    """Map trusted validator messages to bounded codes without returning content."""
+    message = str(error)
+    if message == "PROD-01 proposal cannot claim approval, authority, execution, or publication.":
+        return "AUTHORITY_CLAIM_REJECTED"
+    if message == "PROD-01 content cannot contain secrets or credentials.":
+        return "CONTENT_POLICY_REJECTED"
+    if message == "PROD-01 cannot self-promote proposal knowledge.":
+        return "KNOWLEDGE_STATE_INVALID"
+    if message in {
+            "PROD-01 proposal identity mismatch.",
+            "Invalid PROD-01 predecessor proposal identity."}:
+        return "PROPOSAL_ID_INVALID"
+    return "PROPOSAL_SCHEMA_MISMATCH"
 
 
 def _audit(task_id, request_digest, classification, *, proposal_digest=None, reason=None):
@@ -202,7 +244,8 @@ def _audit(task_id, request_digest, classification, *, proposal_digest=None, rea
     return parse_json(canonical_json(value))
 
 
-def run_product_model_cycle(task_input, transport, credential_provider=None):
+def run_product_model_cycle(task_input, transport, credential_provider=None, *,
+                            require_initial_predecessor_null=False):
     """Perform one bounded model call and stop; create no authority or registry state."""
     task = validate_product_task(task_input)
     request, request_bytes = build_product_model_request(task)
@@ -235,15 +278,29 @@ def run_product_model_cycle(task_input, transport, credential_provider=None):
         raise ProductModelFailure("PROD-01 model transport failed closed.", metadata) from None
     try:
         candidate = parse_product_model_response(raw)
-        proposal = validate_product_proposal(candidate)
-        if proposal["task_id"] != task["task_id"]:
-            raise ValidationError("PROD-01 model proposal belongs to another task.")
-        available = {canonical_json(item) for item in task["input_references"]}
-        if any(canonical_json(item) not in available for item in proposal["evidence_references"]):
-            raise ValidationError("PROD-01 model proposal introduced an unbound evidence reference.")
-    except ValidationError:
+    except ProductOutputFailure as error:
         metadata = _audit(task["task_id"], request_digest, "OUTPUT_REJECTED",
-                          reason="INVALID_STRUCTURED_PROPOSAL")
+                          reason=error.reason)
+        raise ProductModelFailure("PROD-01 model output failed strict validation.", metadata) from None
+    try:
+        proposal = validate_product_proposal(candidate)
+    except ValidationError as error:
+        metadata = _audit(task["task_id"], request_digest, "OUTPUT_REJECTED",
+                          reason=_proposal_rejection_reason(error))
+        raise ProductModelFailure("PROD-01 model output failed strict validation.", metadata) from None
+    if proposal["task_id"] != task["task_id"]:
+        metadata = _audit(task["task_id"], request_digest, "OUTPUT_REJECTED",
+                          reason="TASK_BINDING_INVALID")
+        raise ProductModelFailure("PROD-01 model output failed strict validation.", metadata) from None
+    if (require_initial_predecessor_null
+            and proposal["predecessor_proposal_id"] is not None):
+        metadata = _audit(task["task_id"], request_digest, "OUTPUT_REJECTED",
+                          reason=INITIAL_PREDECESSOR_INVALID)
+        raise ProductModelFailure("PROD-01 model output failed strict validation.", metadata) from None
+    available = {canonical_json(item) for item in task["input_references"]}
+    if any(canonical_json(item) not in available for item in proposal["evidence_references"]):
+        metadata = _audit(task["task_id"], request_digest, "OUTPUT_REJECTED",
+                          reason="EVIDENCE_BINDING_INVALID")
         raise ProductModelFailure("PROD-01 model output failed strict validation.", metadata) from None
     proposal_bytes = (canonical_json(proposal) + "\n").encode("utf-8")
     proposal_digest = digest(proposal)

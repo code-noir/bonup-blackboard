@@ -128,7 +128,7 @@ class ProductOpenAIHTTPTests(unittest.TestCase):
         second = project_openai_responses_request(internal)
         self.assertEqual(canonical_json(first), canonical_json(second))
         self.assertEqual(digest(first),
-                         "bdc532506e2d4ce59a4dd41af440a0a4ef3bba21a865df5d9060c58c638f759d")
+                         "5e8b35fb4e832b95c6335d386aa69bd91e6da41bb1edeec551bdcc4a61e7ffe8")
         self.assertEqual(first["model"], PROVIDER_MODEL)
         self.assertEqual(first["tools"], [])
         self.assertEqual(first["text"]["format"]["type"], "json_schema")

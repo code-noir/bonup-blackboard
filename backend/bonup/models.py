@@ -161,3 +161,79 @@ class SoulEntity(models.Model):
 
     def __str__(self):
         return f"SoulEntity(soul={self.soul_id}, entity={self.entity_id})"
+
+
+class ProductDirectionTask(models.Model):
+    """Application-owned input for a future bounded PROD-01 run.
+
+    This is deliberately not an Agent Control task or authority record.  A
+    later trusted runtime integration may bind ``agent_control_task_id`` after
+    it accepts this application input.
+    """
+
+    AGENT_ID = "PROD-01"
+
+    STATUS_SUBMITTED = "SUBMITTED"
+    STATUS_RUNNING = "RUNNING"
+    STATUS_WORKING_PROPOSAL = "WORKING_PROPOSAL"
+    STATUS_AWAITING_FOUNDER_REVIEW = "AWAITING_FOUNDER_REVIEW"
+    STATUS_APPROVED_INTERNAL = "APPROVED_INTERNAL"
+    STATUS_REJECTED = "REJECTED"
+    STATUS_CHANGES_REQUESTED = "CHANGES_REQUESTED"
+    STATUS_BLOCKED = "BLOCKED"
+
+    STATUS_CHOICES = [
+        (STATUS_SUBMITTED, "Submitted"),
+        (STATUS_RUNNING, "Running"),
+        (STATUS_WORKING_PROPOSAL, "Working proposal"),
+        (STATUS_AWAITING_FOUNDER_REVIEW, "Awaiting Founder review"),
+        (STATUS_APPROVED_INTERNAL, "Approved internal"),
+        (STATUS_REJECTED, "Rejected"),
+        (STATUS_CHANGES_REQUESTED, "Changes requested"),
+        (STATUS_BLOCKED, "Blocked"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    agent_control_task_id = models.CharField(
+        max_length=64,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text="Set only by a future trusted Agent Control integration.",
+    )
+    agent_id = models.CharField(
+        max_length=16,
+        default=AGENT_ID,
+        editable=False,
+    )
+    objective = models.CharField(max_length=4096)
+    status = models.CharField(
+        max_length=32,
+        choices=STATUS_CHOICES,
+        default=STATUS_SUBMITTED,
+    )
+    created_by = models.ForeignKey(
+        "operator.AdministratorAccount",
+        on_delete=models.PROTECT,
+        related_name="product_direction_tasks",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(
+                fields=["status", "-created_at"],
+                name="bonup_prod_dir_status_idx",
+            ),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(agent_id="PROD-01"),
+                name="product_direction_agent_prod01",
+            ),
+        ]
+
+    def __str__(self):
+        return f"ProductDirectionTask({self.id}, {self.status})"

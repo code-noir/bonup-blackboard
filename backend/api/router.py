@@ -16,6 +16,7 @@ urlpatterns = [
     path("obligations/", include("backend.api.obligations.urls")),
     path("operator/", include("backend.api.operator.urls")),
     path("payments/", include("backend.api.payments.urls")),
+    path("product-direction/", include("backend.api.product_direction.urls")),
     path("prep/", include("backend.api.prep.urls")),
     path("search/", include("backend.api.search.urls")),
     path("sessions/", include("backend.api.sessions.urls")),
@@ -28,5 +29,4 @@ urlpatterns = [
     path("users/", include("backend.api.users.urls")),
     path("workspace/", include("backend.api.workspace.urls")),
 ]
-
 

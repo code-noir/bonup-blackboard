@@ -1,4 +1,4 @@
-# bonUP Blackboard Product Direction API — M1
+# bonUP Blackboard Product Direction API — M1/M2
 
 ## Scope
 
@@ -53,6 +53,10 @@ Returns the safe task representation for one application task.
 - `agent_id` (`PROD-01`)
 - `objective`
 - `status`
+- `proposal_artifact_id`
+- `proposal_id`
+- `proposal_digest`
+- `runtime_failure_reason`
 - bounded creator identity
 - `created_at`
 - `updated_at`
@@ -70,3 +74,38 @@ Control authority state machine:
 
 M1 creates only `SUBMITTED`. Later milestones must derive transitions from
 trusted runtime/review evidence rather than allowing browser-supplied status.
+
+## M2 trusted runtime submission
+
+M2 adds a separate submit action:
+
+```text
+POST /api/product-direction/tasks/<task_id>/submit/
+```
+
+The request body must be empty. The action accepts no model, endpoint, tools,
+retry, credential, prompt, Founder, knowledge-state, or ARCH fields.
+
+On the first submission, the application derives one stable Agent Control task
+identity (`ATS-` followed by the decimal value of the application UUID), sets
+the application projection to `RUNNING`, and sends only the bounded task
+projection to the trusted PROD-01 runtime. A second submission for a task that
+is `RUNNING`, `WORKING_PROPOSAL`, or `BLOCKED` is rejected; no automatic retry
+is performed.
+
+The trusted runtime is responsible for `validate_product_task()`, fixed
+PROD-01 routing, the fixed model/provider policy, zero tools, one request,
+zero retries, proposal validation, and mandatory immutable artifact
+persistence. Its transport owns the provider credential. Django stores only
+bounded result identity (`proposal_artifact_id`, `proposal_id`, and
+`proposal_digest`) and never receives a provider envelope or credential.
+
+Successful execution transitions `SUBMITTED → RUNNING → WORKING_PROPOSAL`.
+Unavailable or failed runtime execution transitions `SUBMITTED → RUNNING →
+BLOCKED` with a bounded application reason. M2 does not perform Founder review,
+set `APPROVED_INTERNAL`, route to ARCH, or create execution authority.
+
+The current non-provisioned application composition fails closed with
+`RUNTIME_UNAVAILABLE`. A future trusted controller/runtime composition must
+replace that seam; it must not be configured from browser input or ordinary
+task fields.

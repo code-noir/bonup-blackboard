@@ -1,9 +1,14 @@
 from django.urls import path
 
-from .views import ProductDirectionTaskDetailView, ProductDirectionTaskListCreateView
+from .views import (
+    ProductDirectionTaskDetailView,
+    ProductDirectionTaskListCreateView,
+    ProductDirectionTaskSubmitView,
+)
 
 
 urlpatterns = [
     path("tasks/", ProductDirectionTaskListCreateView.as_view(), name="product-direction-task-list"),
     path("tasks/<uuid:task_id>/", ProductDirectionTaskDetailView.as_view(), name="product-direction-task-detail"),
+    path("tasks/<uuid:task_id>/submit/", ProductDirectionTaskSubmitView.as_view(), name="product-direction-task-submit"),
 ]

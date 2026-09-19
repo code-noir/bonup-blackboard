@@ -207,6 +207,10 @@ class ProductDirectionTask(models.Model):
         editable=False,
     )
     objective = models.CharField(max_length=4096)
+    proposal_artifact_id = models.CharField(max_length=64, null=True, blank=True)
+    proposal_id = models.UUIDField(null=True, blank=True)
+    proposal_digest = models.CharField(max_length=64, null=True, blank=True)
+    runtime_failure_reason = models.CharField(max_length=64, null=True, blank=True)
     status = models.CharField(
         max_length=32,
         choices=STATUS_CHOICES,

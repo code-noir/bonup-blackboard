@@ -4,7 +4,9 @@ import re
 from typing import Protocol
 
 from .prod_contract import REFERENCE_TYPES, validate_product_proposal, validate_product_task
-from .serialization import JSONDecodeFailure, canonical_json, digest, parse_json
+from .serialization import (
+    JSONDecodeFailure, StrictJSONValidationFailure, canonical_json, digest, parse_json,
+)
 from .types import ValidationError
 
 MAX_REQUEST_BYTES = 65536
@@ -350,6 +352,11 @@ def parse_product_model_response(raw, *, response_metadata=None):
             structure["http_response"]["json_decode_success"] = False
         structure["json_error"] = _json_error_metadata(error, len(raw))
         _reject_output("RESPONSE_JSON_INVALID", structure=structure)
+    except StrictJSONValidationFailure:
+        if "http_response" in structure:
+            structure["http_response"]["utf8_decode_success"] = True
+            structure["http_response"]["json_decode_success"] = True
+        _reject_output("STRICT_JSON_VALIDATION_FAILED", structure=structure)
     except ValidationError:
         if "http_response" in structure:
             structure["http_response"]["utf8_decode_success"] = True

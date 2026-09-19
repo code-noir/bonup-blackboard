@@ -21,6 +21,13 @@ class JSONDecodeFailure(ValidationError):
         self.character_count = character_count
 
 
+class StrictJSONValidationFailure(ValidationError):
+    """Strict canonical JSON rejection without provider-derived detail."""
+
+    def __init__(self):
+        super().__init__("Strict JSON validation failed.")
+
+
 def _json_error_category(message):
     if message == "Expecting value":
         return "EXPECTING_VALUE"
@@ -47,7 +54,7 @@ def _json_value(value):
             try:
                 value.encode("utf-8")
             except UnicodeError:
-                raise ValidationError("Invalid Unicode in record.") from None
+                raise StrictJSONValidationFailure() from None
         return
     if type(value) is list:
         for item in value:
@@ -58,7 +65,7 @@ def _json_value(value):
             _json_value(key)
             _json_value(item)
         return
-    raise ValidationError("Record contains a non-JSON or non-integer numeric value.")
+    raise StrictJSONValidationFailure()
 
 
 def canonical_json(value):
@@ -75,7 +82,7 @@ def parse_json(text):
         result = {}
         for key, value in items:
             if key in result:
-                raise ValidationError("Duplicate JSON field.")
+                raise StrictJSONValidationFailure()
             result[key] = value
         return result
 
@@ -89,4 +96,4 @@ def parse_json(text):
             error.pos, len(text) if type(text) is str else 0,
         ) from None
     except (ValueError, TypeError, RecursionError):
-        raise ValidationError("Invalid control JSON.") from None
+        raise StrictJSONValidationFailure() from None

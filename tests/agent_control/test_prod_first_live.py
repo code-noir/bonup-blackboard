@@ -268,7 +268,7 @@ class ProductFirstLiveTests(unittest.TestCase):
 
     def test_malformed_provider_json_reaches_founder_serialized_result(self):
         sentinel = "synthetic-provider-secret-model-sentinel"
-        raw = b'{"malformed":"' + sentinel.encode()
+        raw = (b'{"malformed":"' + sentinel.encode()).ljust(11834, b" ")
         response_metadata = {
             "http_status": 200,
             "content_type": "APPLICATION_JSON",
@@ -312,6 +312,45 @@ class ProductFirstLiveTests(unittest.TestCase):
             self.assertGreaterEqual(diagnostic[key], 0)
         self.assertNotIn(sentinel, rendered)
         self.assertNotIn("malformed", rendered)
+
+    def test_strict_json_validation_reaches_founder_as_bounded_failure(self):
+        sentinel = "synthetic-strict-json-secret-sentinel"
+        raw = b'{"duplicate":"' + sentinel.encode() + b'","duplicate":"x"}'
+        response_metadata = {
+            "http_status": 200,
+            "content_type": "APPLICATION_JSON",
+            "content_encoding": "GZIP",
+            "body_bytes": 11834,
+            "body_empty": False,
+            "content_length_present": True,
+            "declared_content_length": 11834,
+            "declared_content_length_valid": True,
+            "declared_length_matches": True,
+            "utf8_decode_success": True,
+            "json_decode_success": None,
+        }
+
+        def factory(provider):
+            return FakeFirstLiveTransport(
+                provider, raw=raw, response_metadata=response_metadata)
+
+        with patch.object(prod_first_live, "_current_source_commit", return_value=CHECKPOINT):
+            with self.assertRaises(FirstLiveFailure) as caught:
+                _run_first_live_for_tests(
+                    reviewed(), lambda: True, lambda _: SECRET, factory)
+
+        error = caught.exception
+        blocked = {"status": "BLOCKED", "classification": error.classification}
+        if error.provider_structure is not None:
+            blocked["provider_structure"] = error.provider_structure
+        rendered = json.dumps(blocked, sort_keys=True, separators=(",", ":"))
+        structure = blocked["provider_structure"]
+        self.assertEqual(blocked["classification"], "PROVIDER_ENVELOPE_INVALID")
+        self.assertEqual(structure["reason"], "STRICT_JSON_VALIDATION_FAILED")
+        self.assertTrue(structure["http_response"]["json_decode_success"])
+        self.assertNotIn("json_error", structure)
+        self.assertNotIn(sentinel, rendered)
+        self.assertNotIn("duplicate", rendered)
 
     def test_bounded_transport_reason_reaches_first_live_without_body(self):
         transports = []

@@ -30,10 +30,11 @@ class SyntheticCredentialProvider:
 
 
 class InMemoryTransport:
-    def __init__(self, proposal=None, *, raw=None, error=None):
+    def __init__(self, proposal=None, *, raw=None, error=None, response_metadata=None):
         self.proposal = proposal
         self.raw = raw
         self.error = error
+        self.response_metadata = response_metadata
         self.calls = []
 
     def send(self, **kwargs):
@@ -74,8 +75,11 @@ def response_bytes(candidate=None, **kwargs):
 
 
 class ProductModelTransportTests(unittest.TestCase):
-    def run_cycle(self, *, candidate=None, raw=None, error=None, task=None):
-        transport = InMemoryTransport(candidate or proposal(), raw=raw, error=error)
+    def run_cycle(self, *, candidate=None, raw=None, error=None, task=None,
+                  response_metadata=None):
+        transport = InMemoryTransport(
+            candidate or proposal(), raw=raw, error=error,
+            response_metadata=response_metadata)
         credentials = SyntheticCredentialProvider()
         result = run_product_model_cycle(task or synthetic_task(), transport, credentials)
         return result, transport, credentials
@@ -256,6 +260,47 @@ class ProductModelTransportTests(unittest.TestCase):
                               canonical_json(caught.exception.audit_metadata)))
         self.assertNotIn(sentinel, rendered)
         self.assertNotIn("malformed", rendered)
+
+    def test_strict_json_validation_is_bounded_and_distinct_from_syntax(self):
+        sentinel = "synthetic-strict-json-secret-sentinel"
+        response_metadata = {
+            "http_status": 200,
+            "content_type": "APPLICATION_JSON",
+            "content_encoding": "GZIP",
+            "body_bytes": 11834,
+            "body_empty": False,
+            "content_length_present": True,
+            "declared_content_length": 11834,
+            "declared_content_length_valid": True,
+            "declared_length_matches": True,
+            "utf8_decode_success": True,
+            "json_decode_success": None,
+        }
+        deep = b"[" * 2048 + b"]" * 2048
+        cases = (
+            b'{"duplicate":"' + sentinel.encode() + b'","duplicate":"x"}',
+            b'{"number":NaN}',
+            b'{"number":Infinity}',
+            b'{"unicode":"\\ud800"}',
+            deep,
+        )
+        for raw in cases:
+            with self.subTest(raw=raw[:24]), self.assertRaises(ProductModelFailure) as caught:
+                self.run_cycle(raw=raw, response_metadata=response_metadata)
+            metadata = caught.exception.audit_metadata
+            structure = metadata["provider_structure"]
+            self.assertEqual(metadata["failure_reason"], "PROVIDER_ENVELOPE_INVALID")
+            self.assertEqual(structure["reason"], "STRICT_JSON_VALIDATION_FAILED")
+            self.assertNotIn("json_error", structure)
+            self.assertTrue(structure["http_response"]["json_decode_success"])
+            rendered = canonical_json(metadata)
+            self.assertNotIn(sentinel, rendered)
+        with self.assertRaises(ProductModelFailure) as caught:
+            self.run_cycle(raw=b'{"syntax":}', response_metadata=response_metadata)
+        structure = caught.exception.audit_metadata["provider_structure"]
+        self.assertEqual(structure["reason"], "RESPONSE_JSON_INVALID")
+        self.assertIn("json_error", structure)
+        self.assertFalse(structure["http_response"]["json_decode_success"])
 
     def test_oversized_input_stops_before_transport_and_response_is_bounded(self):
         task = synthetic_task()

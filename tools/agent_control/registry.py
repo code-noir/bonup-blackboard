@@ -6,30 +6,43 @@ as an unauthenticated declaration, never founder authorization.
 """
 import hashlib
 import sqlite3
-from uuid import uuid4
+from datetime import datetime, timezone
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from .authority import AuthenticatedContext, require_context, validate_actor
 from .lifecycle import transition_task, revise_spec
 from .records import (Task, AgentRecord, ExecutionGrant, Record, Approval,
-                      IntegrationCandidate, TestEvidence, CandidateEvent, AuditEvent,
+                      IntegrationCandidate, TestEvidence, CandidateEvent, ProductReviewRecord,
+                      AuditEvent,
                       SPEC_FIELDS, task_spec_digest)
 from .schema import document, validate_schema, valid_format
 from .serialization import canonical_json, digest, parse_json
 from .storage import DB_VERSION, DDL, RegistryBlocked, connect, create_database, external_path, utc_now
 from .types import Role, ValidationError, AuthorityError
 from .publication import GitHistory
+from .founder_session import ProductReviewAuthentication
 
 
 TABLES = {'ExecutionGrant':('executions','execution_id'), 'Record':('records','record_id'),
           'Approval':('approvals','approval_id'), 'IntegrationCandidate':('candidates','candidate_id'),
-          'TestEvidence':('evidence','evidence_id'), 'CandidateEvent':('candidate_events','event_id')}
-CLASSES = {c.__name__:c for c in (ExecutionGrant,Record,Approval,IntegrationCandidate,TestEvidence,CandidateEvent)}
+          'TestEvidence':('evidence','evidence_id'), 'CandidateEvent':('candidate_events','event_id'),
+          'ProductReviewRecord':('product_reviews','review_id')}
+CLASSES = {c.__name__:c for c in (ExecutionGrant,Record,Approval,IntegrationCandidate,TestEvidence,
+                                  CandidateEvent,ProductReviewRecord)}
 
 
 def context_data(context):
     if context is None:return None
     require_context(context)
     return dict(context.actor(), authenticated_unix_uid=context.authenticated_unix_uid)
+
+
+def founder_time(value):
+    try:
+        return datetime.fromisoformat(value).astimezone(timezone.utc).isoformat(
+            timespec='microseconds').replace('+00:00', 'Z')
+    except (TypeError, ValueError, OverflowError):
+        raise AuthorityError('Founder freshness evidence is invalid.') from None
 
 
 def stored_context(data):
@@ -133,7 +146,7 @@ class Registry:
     def _version(self):
         from .runtime_schema import check_version
         try:
-            check_version(self.db)
+            return check_version(self.db)
         except sqlite3.DatabaseError:
             raise RegistryBlocked('Control schema is missing or invalid.') from None
 
@@ -371,7 +384,8 @@ class Registry:
                 raise ValidationError('Supersession belongs to another approval subject.')
 
     def put_metadata(self,kind,data,*,operation_id,context):
-        if kind not in TABLES or kind=='Record':raise ValidationError('Use dedicated record operations.')
+        if kind not in TABLES or kind in {'Record','ProductReviewRecord'}:
+            raise ValidationError('Use dedicated record operations.')
         require_context(context)
         def save(now,changed):
             obj=CLASSES[kind](data,context=context);d=obj.to_dict();t=self.get_task(d['task_id'])
@@ -434,6 +448,95 @@ class Registry:
         result=self._operation(operation_id,'metadata.'+kind,data,context,save,typ)
         return CLASSES[kind](result,context=context)
 
+    def create_product_review(self, artifact, binding, authentication, *, operation_id):
+        """Persist one verified product review through the controller transaction."""
+        from .founder_review_auth import ProductProposalReviewBinding
+        from .prod_artifact import ProposalArtifact
+        if (type(artifact) is not ProposalArtifact
+                or type(binding) is not ProductProposalReviewBinding
+                or type(authentication) is not ProductReviewAuthentication):
+            raise AuthorityError('Verified product review inputs required.')
+        if self._version() != 2:
+            raise RegistryBlocked('Product review registry schema is not installed.')
+        context=authentication.context
+        require_context(context, roles={Role.FOUNDER}, actor_id='FOUNDER')
+        artifact_value=artifact.value
+        metadata=binding.to_dict()
+        expected=ProductProposalReviewBinding.from_artifact(
+            artifact, decision=metadata['decision'], reason=metadata['reason'])
+        if expected.canonical_json()!=binding.canonical_json():
+            raise AuthorityError('Product review artifact binding mismatch.')
+        challenge=authentication.challenge
+        if (challenge.get('purpose') != 'PROD_PROPOSAL_REVIEW'
+                or challenge.get('binding') != metadata):
+            raise AuthorityError('Product review session binding mismatch.')
+        challenge_digest=digest(challenge)
+        if (type(authentication.proof) is not str
+                or not valid_format('sha256', authentication.proof)):
+            raise AuthorityError('Product review signature proof is invalid.')
+
+        def create(now, changed):
+            body={
+                'record_version': 1,
+                'review_id': str(uuid5(
+                    NAMESPACE_URL,
+                    'bonUP:PROD_PROPOSAL_REVIEW:' + binding.binding_digest)),
+                'artifact_id': artifact_value['artifact_id'],
+                'artifact_digest': artifact_value['artifact_digest'],
+                'task_id': artifact_value['task_id'],
+                'agent_id': artifact_value['agent_id'],
+                'proposal_id': artifact_value['proposal_id'],
+                'proposal_digest': artifact_value['proposal_digest'],
+                'proposal_predecessor_id': artifact_value['proposal']['predecessor_proposal_id'],
+                'founder': {
+                    'actor_id': context.actor_id,
+                    'key_id': challenge['key_id'],
+                    'root_digest': challenge['root_digest'],
+                    'root_generation': challenge['root_generation'],
+                    'authenticated_unix_uid': context.authenticated_unix_uid,
+                    'enrollment_generation': challenge['enrollment_generation'],
+                },
+                'authentication': {
+                    'purpose': challenge['purpose'],
+                    'binding_digest': binding.binding_digest,
+                    'challenge_digest': challenge_digest,
+                    'session_id': challenge_digest,
+                    'signature_decision_digest': authentication.proof,
+                    'issued_at': founder_time(challenge['issued_at']),
+                    'expires_at': founder_time(challenge['expires_at']),
+                },
+                'decision': metadata['decision'],
+                'reason': metadata['reason'],
+                'prior_knowledge_state': artifact_value['knowledge_state'],
+                'resulting_knowledge_state': {
+                    'ACCEPT': 'APPROVED_INTERNAL',
+                    'REJECT': 'WORKING',
+                    'REQUEST_CHANGES': 'WORKING',
+                }[metadata['decision']],
+                'reviewed_at': now,
+            }
+            body['review_digest']=digest(body)
+            record=ProductReviewRecord(body,context=context)
+            d=record.to_dict();review_id=d['review_id']
+            if self.db.execute('SELECT 1 FROM product_reviews WHERE record_id=? OR binding_digest=?',
+                               (review_id, binding.binding_digest)).fetchone():
+                raise AuthorityError('Product review authorization was already used.')
+            self.db.execute(
+                '''INSERT INTO product_reviews(
+                   record_id,task_id,artifact_id,artifact_digest,proposal_id,proposal_digest,
+                   binding_digest,payload,payload_digest,context)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)''',
+                (review_id,d['task_id'],d['artifact_id'],d['artifact_digest'],d['proposal_id'],
+                 d['proposal_digest'],binding.binding_digest,record.canonical_json(),digest(d),
+                 canonical_json(context_data(context))))
+            changed.append(('ProductReviewRecord',review_id,
+                            f'product-reviews/{review_id}.json',d))
+            return d,d['task_id']
+
+        result=self._operation(operation_id,'product_review.create',binding.to_dict(),context,
+                               create,'PROD_PROPOSAL_REVIEW_RECORDED')
+        return ProductReviewRecord(result,context=context)
+
     def create_record(self,body,*,operation_id,context):
         require_context(context)
         if 'record_id' in body:raise ValidationError('Record IDs are registry-allocated.')
@@ -485,7 +588,7 @@ class Registry:
         owns_transaction=not self.db.in_transaction
         if owns_transaction:self.db.execute('BEGIN IMMEDIATE')
         try:
-            self._version()
+            version=self._version()
             if self.db.execute('PRAGMA integrity_check').fetchone()[0]!='ok':raise RegistryBlocked('SQLite integrity check failed.')
             if self.db.execute('PRAGMA foreign_key_check').fetchall():raise RegistryBlocked('Foreign-key integrity failed.')
             if self.meta('policy_digest')!=digest(document('policy.json')):raise RegistryBlocked('Registry policy differs from installed policy.')
@@ -494,12 +597,18 @@ class Registry:
             if {a['agent_id'] for a in agents}!=set(document('policy.json')['agents']):raise RegistryBlocked('Phase I agent inventory mismatch.')
             if any(a['status']!='DISABLED' or a['session_ids'] or a['current_task'] for a in agents):
                 raise RegistryBlocked('Milestone 2 cannot activate agents.')
-            for table in ('tasks','agents',*(v[0] for v in TABLES.values())):
+            available_tables={row[0] for row in self.db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+            table_specs=(('Task','tasks'),('AgentRecord','agents'),
+                         *((kind, values[0]) for kind, values in TABLES.items()
+                           if values[0] in available_tables))
+            if version == 1 and 'product_reviews' in available_tables:
+                raise RegistryBlocked('Product review table requires the v2 schema.')
+            for kind,table in table_specs:
                 for row in self.db.execute(f'SELECT * FROM {table}'):
                     data=parse_json(row['payload'])
                     if digest(data)!=row['payload_digest']:raise RegistryBlocked('Stored record digest mismatch.')
                     if table not in {'tasks','agents'}:
-                        kind=next(k for k,v in TABLES.items() if v[0]==table)
                         obj=self.load(kind,row['record_id'])
                         if obj[TABLES[kind][1]]!=row['record_id'] or obj['task_id']!=row['task_id']:
                             raise RegistryBlocked('Record identity mismatch.')
@@ -517,9 +626,9 @@ class Registry:
                                     'tested_tree':c['prepared_tree'],'task_id':c['task_id'],'spec_digest':c['spec_digest']}.items()):
                                     raise RegistryBlocked('Evidence candidate mismatch.')
                     # Latest durable snapshot must corroborate current mutable/immutable records.
-                    kind = 'Task' if table=='tasks' else 'AgentRecord' if table=='agents' else kind
+                    snapshot_kind = 'Task' if table=='tasks' else 'AgentRecord' if table=='agents' else kind
                     identifier=data['task_id'] if table=='tasks' else data['agent_id'] if table=='agents' else row['record_id']
-                    snapshot=self.db.execute('SELECT source_digest FROM outbox WHERE record_type=? AND record_id=? ORDER BY outbox_id DESC LIMIT 1',(kind,identifier)).fetchone()
+                    snapshot=self.db.execute('SELECT source_digest FROM outbox WHERE record_type=? AND record_id=? ORDER BY outbox_id DESC LIMIT 1',(snapshot_kind,identifier)).fetchone()
                     if snapshot is None or snapshot[0]!=digest(data):raise RegistryBlocked('Record differs from durable publication snapshot.')
             for row in self.db.execute('SELECT * FROM task_specs'):
                 snapshot=Task(parse_json(row['payload']))

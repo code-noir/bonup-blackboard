@@ -2202,7 +2202,8 @@
             "HOST_TEST_CLOSURE_REQUESTED",
             "HOST_TEST_SUPERVISOR_CLOSED",
             "HOST_TEST_CLOSURE_UNCERTAIN",
-            "HOST_TEST_AUTHORITY_CONSUMED"
+            "HOST_TEST_AUTHORITY_CONSUMED",
+            "PROD_PROPOSAL_REVIEW_RECORDED"
           ]
         },
         "task_id": {
@@ -2344,6 +2345,169 @@
         "reason_code",
         "previous_event_digest",
         "event_digest"
+      ],
+      "additionalProperties": false
+    },
+    "ProductReviewRecord": {
+      "type": "object",
+      "properties": {
+        "record_version": {
+          "$ref": "#/$defs/Version"
+        },
+        "review_id": {
+          "$ref": "#/$defs/UUID"
+        },
+        "artifact_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "artifact_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "task_id": {
+          "$ref": "#/$defs/TaskID"
+        },
+        "agent_id": {
+          "$ref": "#/$defs/AgentID"
+        },
+        "proposal_id": {
+          "$ref": "#/$defs/UUID"
+        },
+        "proposal_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "proposal_predecessor_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UUID"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "founder": {
+          "type": "object",
+          "properties": {
+            "actor_id": {
+              "const": "FOUNDER",
+              "type": "string"
+            },
+            "key_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "root_digest": {
+              "$ref": "#/$defs/Digest"
+            },
+            "root_generation": {
+              "$ref": "#/$defs/Positive"
+            },
+            "authenticated_unix_uid": {
+              "$ref": "#/$defs/Positive"
+            },
+            "enrollment_generation": {
+              "$ref": "#/$defs/UUID"
+            }
+          },
+          "required": [
+            "actor_id",
+            "key_id",
+            "root_digest",
+            "root_generation",
+            "authenticated_unix_uid",
+            "enrollment_generation"
+          ],
+          "additionalProperties": false
+        },
+        "authentication": {
+          "type": "object",
+          "properties": {
+            "purpose": {
+              "const": "PROD_PROPOSAL_REVIEW",
+              "type": "string"
+            },
+            "binding_digest": {
+              "$ref": "#/$defs/Digest"
+            },
+            "challenge_digest": {
+              "$ref": "#/$defs/Digest"
+            },
+            "session_id": {
+              "$ref": "#/$defs/Digest"
+            },
+            "signature_decision_digest": {
+              "$ref": "#/$defs/Digest"
+            },
+            "issued_at": {
+              "$ref": "#/$defs/Time"
+            },
+            "expires_at": {
+              "$ref": "#/$defs/Time"
+            }
+          },
+          "required": [
+            "purpose",
+            "binding_digest",
+            "challenge_digest",
+            "session_id",
+            "signature_decision_digest",
+            "issued_at",
+            "expires_at"
+          ],
+          "additionalProperties": false
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "ACCEPT",
+            "REJECT",
+            "REQUEST_CHANGES"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "prior_knowledge_state": {
+          "const": "WORKING",
+          "type": "string"
+        },
+        "resulting_knowledge_state": {
+          "type": "string",
+          "enum": [
+            "WORKING",
+            "APPROVED_INTERNAL"
+          ]
+        },
+        "reviewed_at": {
+          "$ref": "#/$defs/Time"
+        },
+        "review_digest": {
+          "$ref": "#/$defs/Digest"
+        }
+      },
+      "required": [
+        "record_version",
+        "review_id",
+        "artifact_id",
+        "artifact_digest",
+        "task_id",
+        "agent_id",
+        "proposal_id",
+        "proposal_digest",
+        "proposal_predecessor_id",
+        "founder",
+        "authentication",
+        "decision",
+        "reason",
+        "prior_knowledge_state",
+        "resulting_knowledge_state",
+        "reviewed_at",
+        "review_digest"
       ],
       "additionalProperties": false
     },

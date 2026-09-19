@@ -1,6 +1,6 @@
 """Process-bound external-signature enrollment; no private signer or activation."""
 from copy import deepcopy
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime,timezone,timedelta
 import base64
 import secrets
@@ -12,12 +12,42 @@ from .founder_crypto import (FounderRoot, OpenSSLVerifier, PROD_PROPOSAL_REVIEW,
                              PURPOSES, load_founder_root)
 from .identity import PeerIdentity,ProcessIdentity,founder_context
 from .installation_approval import validate_proposal,approval_record
-from .serialization import canonical_json,digest
+from .serialization import canonical_json,digest,parse_json
 from .types import AuthorityError,ValidationError
 
 
 def wall():return datetime.now(timezone.utc)
 def elapsed():return time.clock_gettime(time.CLOCK_BOOTTIME)
+
+
+_PRODUCT_REVIEW_AUTH_MARKER = object()
+
+
+@dataclass(frozen=True)
+class ProductReviewAuthentication:
+    """Opaque proof produced only after FounderSessions consumes one session."""
+
+    _challenge_payload: str
+    _proof: str
+    _context: object
+
+    @classmethod
+    def _from_verified_session(cls, challenge, proof, context, marker):
+        if marker is not _PRODUCT_REVIEW_AUTH_MARKER:
+            raise AuthorityError('Verified product review session required.')
+        return cls(canonical_json(challenge), proof, context)
+
+    @property
+    def challenge(self):
+        return parse_json(self._challenge_payload)
+
+    @property
+    def proof(self):
+        return self._proof
+
+    @property
+    def context(self):
+        return self._context
 
 
 class FounderSessions:
@@ -144,6 +174,29 @@ class FounderSessions:
 
     def consume_product_review(self, session, binding):
         return self.consume(session, PROD_PROPOSAL_REVIEW, binding)
+
+    def consume_product_review_authenticated(self, session, binding):
+        """Consume review authority and mint the controller-owned Founder context."""
+        with self.lock:
+            if type(session) is not str or session not in self.sessions:
+                raise AuthorityError('Founder session required.')
+            deadline = self.sessions[session][1]
+            challenge, proof = self.consume_product_review(session, binding)
+            enrolled = ProcessIdentity(**challenge['process'])
+            peer = PeerIdentity(**challenge['peer'])
+
+            def reader(pid):
+                self._live(challenge, deadline)
+                observed = self._peer()[1]
+                if observed.pid != pid:
+                    raise AuthorityError('Founder process changed.')
+                return observed
+
+            context = founder_context(
+                peer, founder_uid=1000, enrolled_process=enrolled, reader=reader)
+            self._live(challenge, deadline)
+            return ProductReviewAuthentication._from_verified_session(
+                challenge, proof, context, _PRODUCT_REVIEW_AUTH_MARKER)
 
     def delegate(self,session,purpose,binding,*,installation_receipt_digest=None):
         """Consume once and retain the original process/BOOTTIME ceiling."""

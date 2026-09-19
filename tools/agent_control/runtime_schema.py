@@ -4,6 +4,17 @@ import sqlite3
 from .storage import DDL, RegistryBlocked, utc_now
 
 DDL_V2 = (
+    '''CREATE TABLE product_reviews(
+        record_id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL REFERENCES tasks(task_id),
+        artifact_id TEXT NOT NULL UNIQUE,
+        artifact_digest TEXT NOT NULL,
+        proposal_id TEXT NOT NULL UNIQUE,
+        proposal_digest TEXT NOT NULL,
+        binding_digest TEXT NOT NULL UNIQUE,
+        payload TEXT NOT NULL,
+        payload_digest TEXT NOT NULL,
+        context TEXT NOT NULL)''',
     '''CREATE TABLE identity_enrollments(
         enrollment_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(agent_id),
         username TEXT NOT NULL UNIQUE, uid INTEGER NOT NULL UNIQUE CHECK(uid>0),
@@ -57,6 +68,11 @@ DDL_V2 += tuple(
     f'''CREATE TRIGGER immutable_{table}_{action.lower()} BEFORE {action} ON {table}
         BEGIN SELECT RAISE(ABORT,'Immutable runtime enrollment/profile'); END'''
     for table in ('identity_enrollments','execution_profiles') for action in ('UPDATE','DELETE')
+)
+DDL_V2 += tuple(
+    f'''CREATE TRIGGER immutable_product_reviews_{action.lower()} BEFORE {action} ON product_reviews
+        BEGIN SELECT RAISE(ABORT,'Product review records are immutable'); END'''
+    for action in ('UPDATE', 'DELETE')
 )
 
 

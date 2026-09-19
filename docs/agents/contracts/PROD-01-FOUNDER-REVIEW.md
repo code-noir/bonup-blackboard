@@ -50,3 +50,13 @@ must load and verify the immutable artifact before requesting the challenge;
 this contract does not create a review record, change `WORKING`, create
 authority, or route to ARCH. `SyntheticFounderReviewContext` remains
 `SYNTHETIC_TEST_ONLY` and is never production authentication.
+
+The software-side production adapter is `ProductionProductReviewAdapter`. It
+loads the artifact through `ProposalArtifactStore`, consumes the one-use
+session through `FounderSessions`, and writes a typed immutable
+`ProductReviewRecord` through the controller Registry v2 transaction. The
+record is published through the existing audit/outbox chain and contains only
+the artifact/proposal binding, Founder root/session evidence, decision, bounded
+reason, and knowledge-state result. Registry v2 migration is an explicit
+precondition; it does not provision Founder authentication. No review is
+accepted before the installed Founder transport can establish that session.

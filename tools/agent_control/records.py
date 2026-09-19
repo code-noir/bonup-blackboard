@@ -4,6 +4,9 @@ These definitions do not establish persistence uniqueness, authentic evidence,
 Git ancestry, resource acquisition, or Unix authentication. Explicit binding and
 authority functions must be used by the future trusted controller.
 """
+import re
+from uuid import NAMESPACE_URL, uuid5
+
 from .authority import (ENGINEERS, authorize_resolution, authorize_resource,
                         phase_one_role, require_context, validate_actor,
                         validate_write_scope)
@@ -11,6 +14,12 @@ from .paths import PathRule, contained_by, overlaps, permits_write
 from .schema import document, timestamp, validate_schema
 from .serialization import canonical_json, digest, parse_json
 from .types import ApprovalAction, AuthorityError, Role, TaskState, ValidationError
+
+PRODUCT_REVIEW_NAMESPACE = NAMESPACE_URL
+PRODUCT_REVIEW_DECISIONS = ("ACCEPT", "REJECT", "REQUEST_CHANGES")
+_PRODUCT_REVIEW_SECRET = re.compile(
+    r"(?i)\b(?:password|api[_ -]?key|private[_ -]?key|client[_ -]?secret)\s*[:=]\s*\S+"
+)
 
 SPEC_FIELDS = (
     "task_id", "task_uuid", "title", "objective", "acceptance_criteria", "priority",
@@ -103,6 +112,45 @@ class ImmutableRecord:
 
     def __getitem__(self, key):
         return self.to_dict()[key]
+
+
+class ProductReviewRecord(ImmutableRecord):
+    """Immutable Founder product-knowledge review; never execution authority."""
+
+    __slots__ = ()
+    schema_name = "ProductReviewRecord"
+
+    def _validate(self, d, context):
+        require_context(context, roles={Role.FOUNDER}, actor_id="FOUNDER")
+        expected_review_id = str(uuid5(
+            PRODUCT_REVIEW_NAMESPACE,
+            "bonUP:PROD_PROPOSAL_REVIEW:" + d["authentication"]["binding_digest"],
+        ))
+        if (d["review_id"] != expected_review_id
+                or d["agent_id"] != "PROD-01"
+                or d["artifact_id"] != "PROD-01-" + d["proposal_id"]
+                or d["decision"] not in PRODUCT_REVIEW_DECISIONS
+                or d["prior_knowledge_state"] != "WORKING"
+                or d["resulting_knowledge_state"] != {
+                    "ACCEPT": "APPROVED_INTERNAL",
+                    "REJECT": "WORKING",
+                    "REQUEST_CHANGES": "WORKING",
+                }[d["decision"]]
+                or d["resulting_knowledge_state"] == "PUBLICATION_ELIGIBLE"):
+            raise AuthorityError("Product review record binding or state is invalid.")
+        if (d["founder"]["actor_id"] != "FOUNDER"
+                or d["founder"]["authenticated_unix_uid"] != context.authenticated_unix_uid):
+            raise AuthorityError("Product review Founder identity mismatch.")
+        authentication = d["authentication"]
+        if (authentication["purpose"] != "PROD_PROPOSAL_REVIEW"
+                or authentication["session_id"] != authentication["challenge_digest"]):
+            raise AuthorityError("Product review authentication binding is invalid.")
+        if (not d["reason"].strip() or d["reason"] != d["reason"].strip()
+                or len(d["reason"]) > 2048 or _PRODUCT_REVIEW_SECRET.search(d["reason"])):
+            raise ValidationError("Product review reason is invalid.")
+        body = {key: value for key, value in d.items() if key != "review_digest"}
+        if digest(body) != d["review_digest"]:
+            raise ValidationError("Product review record digest mismatch.")
 
 
 class Task(ImmutableRecord):
@@ -344,7 +392,8 @@ class AuditEvent(ImmutableRecord):
 
     def _validate(self, d, context):
         require_context(context, actor_id=d["actor"]["actor_id"])
-        if d["event_type"] in {"TASK_APPROVED", "FOUNDER_APPROVED", "APPROVAL_REVOKED", "INTEGRATED", "PUSHED"}:
+        if d["event_type"] in {"TASK_APPROVED", "FOUNDER_APPROVED", "APPROVAL_REVOKED", "INTEGRATED", "PUSHED",
+                                "PROD_PROPOSAL_REVIEW_RECORDED"}:
             require_context(context, roles={Role.FOUNDER})
         if d["event_type"] == "QA_PASSED":
             require_context(context, roles={Role.INTEGRATION_QA})

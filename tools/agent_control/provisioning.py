@@ -11,11 +11,20 @@ PREFIX='/usr/lib/bonup-agent-control'
 ENTRYPOINT=PREFIX+'/supervisor'
 MANIFEST='/etc/bonup-agent-control/approved-installation.json'
 CAPABILITIES=['CAP_SETUID','CAP_SETGID','CAP_KILL']
-# Closed source inventory. Adding an installed import requires explicit policy review.
-MODULES=('__init__','__main__','authority','confinement','execution','gate_entry','identity',
-         'lifecycle','model_client','paths','protocol','provisioning','publication','records',
-         'registry','release_gate','runtime','runtime_schema','schema','serialization',
-         'storage','supervisor','supervisor_linux','types')
+# Explicit roots for the current installed-runtime dependency closure. The
+# builder resolves their local imports from the selected Git tree; this is not
+# itself an installed-file inventory.
+RUNTIME_ENTRYPOINTS=('controller_entry','supervisor_entry','bootstrap_entry','gate_entry',
+                     'installed_runtime','founder_genesis','founder_intake','founder_transport',
+                     'prod_review_adapter','prod_artifact')
+
+# Legacy v2/v3 attestation compatibility only. Current v4 candidates derive
+# their inventory from the reviewed closure in installation_bundle.py.
+LEGACY_MODULES=('__init__','__main__','authority','confinement','execution','gate_entry','identity',
+                'lifecycle','model_client','paths','protocol','provisioning','publication','records',
+                'registry','release_gate','runtime','runtime_schema','schema','serialization',
+                'storage','supervisor','supervisor_linux','types')
+MODULES=LEGACY_MODULES
 POLICIES=('document-authority','policy','schemas')
 
 

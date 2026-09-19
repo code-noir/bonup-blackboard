@@ -9,12 +9,14 @@ from dataclasses import asdict
 import hashlib
 import os
 from pathlib import Path
+import re
 import stat
+import subprocess
 import sys
 
 from .integration_policy import IntegrationPolicy, SUPERVISOR_CAPABILITIES
 from .operational_enrollment import installation_spec
-from .provisioning import MODULES, POLICIES, NAMES
+from .provisioning import LEGACY_MODULES, POLICIES, NAMES, RUNTIME_ENTRYPOINTS
 from .schema import valid_format, timestamp
 from .serialization import canonical_json, digest, parse_json
 from .types import AuthorityError, ValidationError
@@ -22,12 +24,29 @@ from .types import AuthorityError, ValidationError
 PREFIX = '/usr/lib/bonup-agent-control'
 ETC = '/etc/bonup-agent-control'
 MANIFEST = ETC + '/approved-installation.json'
-SOURCE_COMMIT = 'be8270ea2c067612843504d5835aee6cc772f940'
-ADDITIONS = ('bootstrap_entry','composition','composition_protocol','controller_entry',
+SOURCE_COMMIT = 'fd27391978b67077b0ad4550fd49da5f761e6b3d'
+REVIEWED_RUNTIME_MODULES = (
+    '__init__','authority','authority_installation','authority_journal','bootstrap_entry',
+    'composition','composition_protocol','confinement','controller_entry','exec_start',
+    'execution','filesystem_evidence','founder_crypto','founder_genesis','founder_intake',
+    'founder_key_validation','founder_review_auth','founder_session','founder_transport',
+    'gate_entry','host_test_catalog','host_test_launch','host_test_observation',
+    'host_test_runtime','identity','installation_approval','installation_bundle',
+    'installed_config','installed_runtime','installed_transport','integration_policy',
+    'interruption','lifecycle','operational_enrollment','paths','prod_artifact',
+    'prod_contract','prod_review_adapter','protocol','provisioning','publication','records',
+    'registry','release_gate','resource_supervision','runtime','runtime_schema','schema',
+    'serialization','service_evidence','service_runtime','storage','successor_config',
+    'supervisor','supervisor_entry','supervisor_linux','types')
+PRODUCTION_MODULES = REVIEWED_RUNTIME_MODULES
+LEGACY_ADDITIONS = ('bootstrap_entry','composition','composition_protocol','controller_entry',
     'filesystem_evidence','installed_config','installed_transport','installed_runtime',
     'integration_policy','resource_supervision','service_runtime','supervisor_entry',
     'operational_enrollment','installation_bundle','exec_start')
-PRODUCTION_MODULES = tuple(sorted(set(MODULES + ADDITIONS)))
+LEGACY_PRODUCTION_MODULES = tuple(sorted(set(LEGACY_MODULES + LEGACY_ADDITIONS)))
+GIT_OID = re.compile(r'[0-9a-f]{40}')
+MAX_SOURCE_BYTES = 1048576
+DECLARED_EXTERNAL_MODULES = ()
 HOST_TESTS = ('uid_gid_drop','empty_groups','capability_bounds','bwrap_apparmor',
     'pinned_mounts','confined_release_gate','cgroup_limits','descendant_kill','bounded_output',
     'tmpfs_limits','socket_activation','kernel_peer_enrollment','watchdog','controller_crash',
@@ -145,9 +164,9 @@ def units():
     return result
 
 
-def wrapper(component):
+def wrapper(component, modules=None):
     if component not in ('controller','supervisor'):raise ValidationError('Unknown wrapper.')
-    paths=[a['destination'] for a in artifact_spec() if a['destination'].startswith(PREFIX+'/')]
+    paths=[a['destination'] for a in artifact_spec(modules) if a['destination'].startswith(PREFIX+'/')]
     template='''#!/usr/bin/python3 -I
 import hashlib
 import json
@@ -203,7 +222,7 @@ main()
     return template.replace('COMPONENT',component).replace('PATH_INVENTORY',repr(paths)).encode()
 
 
-def policy_sections():
+def policy_sections(modules=None):
     return dict(identity_map=identities(),directories=directories(),sockets=sockets(),services=services(),
         capabilities=dict(supervisor=list(SUPERVISOR_CAPABILITIES),controller=[],worker=[],ambient=[]),
         resource_profile=asdict(IntegrationPolicy()),
@@ -231,7 +250,7 @@ def policy_sections():
             verify_os_dependencies=True,read_only=True),
         post_installation_evidence=[dict(path=ETC+'/'+n+'.json',owner='root',group=NAMES[0],mode='0440',
             role='EVIDENCE_NOT_AUTHORITY') for n in ('installation-receipt','host-tests')],
-        host_preflight_commands=preflight_commands(),
+        host_preflight_commands=preflight_commands(modules),
         host_test_required=list(HOST_TESTS),
         activation_prerequisites=['VERIFIED_INSTALLATION_RECEIPT','ALL_REQUIRED_HOST_TESTS',
             'EXPLICIT_FOUNDER_APPROVAL','FRESH_OPERATIONAL_ENROLLMENT','RECONCILIATION'],
@@ -244,12 +263,13 @@ def policy_sections():
             'SEPARATE_APPROVAL_FOR_INTEGRATION_SERVICES','RUN_HOST_TESTS','SEPARATE_ACTIVATION_APPROVAL'])
 
 
-def artifact_spec():
+def artifact_spec(modules=None):
+    modules = LEGACY_PRODUCTION_MODULES if modules is None else tuple(modules)
     result=[]
     def add(source,destination,kind='regular',mode='0444',group='root'):
         result.append(dict(artifact_id=destination,source=source,destination=destination,
             artifact_type=kind,owner='root',group=group,mode=mode,provisioning_generation=1,required=True))
-    for n in PRODUCTION_MODULES:add('tools/agent_control/'+n+'.py',PREFIX+'/tools/agent_control/'+n+'.py')
+    for n in modules:add('tools/agent_control/'+n+'.py',PREFIX+'/tools/agent_control/'+n+'.py')
     for n in POLICIES:add('docs/agent-control/'+n+'.json',PREFIX+'/docs/agent-control/'+n+'.json')
     for n in ('bootstrap_entry.py','gate_entry.py'):add('tools/agent_control/'+n,PREFIX+'/'+n)
     add('generated/tools-init.py',PREFIX+'/tools/__init__.py')
@@ -276,8 +296,8 @@ def rollback_policy(artifacts):
         protected_retention=['/var/lib/bonup-agent-control','/var/lib/bonup-agent-control/history.git'])
 
 
-def generated_payloads():
-    result={PREFIX+'/'+n:wrapper(n) for n in ('controller','supervisor')}
+def generated_payloads(modules=None):
+    result={PREFIX+'/'+n:wrapper(n,modules) for n in ('controller','supervisor')}
     result[PREFIX+'/tools/__init__.py']=b'"""Immutable bonUP installed package namespace."""\n'
     result[ETC+'/identity-map.json']=json_bytes(identities())
     for n,c in configurations().items():result[ETC+'/'+n+'.json']=json_bytes(c)
@@ -293,38 +313,51 @@ def seal(manifest):
     return manifest
 
 
-def candidate(artifacts, source_commit):
+def candidate(artifacts, source_commit, modules=None):
     if not valid_format('git-oid',source_commit):raise ValidationError('Exact source commit required.')
+    modules = None if modules is None else tuple(modules)
     result=dict(version=4,source_mode='COMMITTED_BASE_PLUS_REVIEWED_PAYLOAD_HASHES',approved=False,activation=False,integration_services_approved=False,
-        provisioning_generation=1,source_commit=source_commit,**policy_sections(),artifacts=artifacts,
+        provisioning_generation=1,source_commit=source_commit,**policy_sections(modules),artifacts=artifacts,
         manifest_artifact=manifest_spec(),identity_map_digest=digest(identities()),
         configuration_digests={k:digest(v) for k,v in configurations().items()},
         files={a['destination']:a['sha256'] for a in artifacts if a['destination'].startswith(PREFIX+'/')},
         resource_digest=IntegrationPolicy().policy_digest,rollback=rollback_policy(artifacts))
+    if modules is not None:
+        result['runtime_modules'] = list(modules)
     return seal(result)
 
 
 def validate_manifest(manifest):
     if type(manifest) is not dict:raise ValidationError('Manifest object required.')
-    keys(manifest,candidate([],SOURCE_COMMIT))
+    legacy = 'runtime_modules' not in manifest
+    expected_keys = set(candidate([],SOURCE_COMMIT))
+    if not legacy:
+        expected_keys.add('runtime_modules')
+    if set(manifest) != expected_keys:
+        raise ValidationError('Unexpected manifest fields.')
+    modules = tuple(LEGACY_PRODUCTION_MODULES if legacy else manifest['runtime_modules'])
+    if (not modules or tuple(sorted(set(modules))) != modules or
+            any(type(name) is not str or not re.fullmatch(r'[a-zA-Z_][a-zA-Z0-9_]*',name)
+                for name in modules)):
+        raise ValidationError('Invalid reviewed runtime module closure.')
     if (type(manifest['version']) is not int or manifest['version']!=4 or
             type(manifest['provisioning_generation']) is not int or manifest['provisioning_generation']!=1 or
             any(type(manifest[k]) is not bool for k in ('approved','activation','integration_services_approved')) or
             not valid_format('git-oid',manifest['source_commit'])):
         raise ValidationError('Unsupported or incomplete manifest.')
-    for name,expected in policy_sections().items():same(manifest[name],expected,name)
-    specs=artifact_spec();artifacts=manifest['artifacts']
+    for name,expected in policy_sections(None if legacy else modules).items():same(manifest[name],expected,name)
+    specs=artifact_spec(modules);artifacts=manifest['artifacts']
     if type(artifacts) is not list or len(artifacts)!=len(specs):raise ValidationError('Incomplete artifact closure.')
     for actual,expected in zip(artifacts,specs):
         keys(actual,(*expected,'sha256'))
         same({k:v for k,v in actual.items() if k!='sha256'},expected,'artifact')
         if not valid_format('sha256',actual['sha256']) or actual['sha256']=='0'*64:
             raise ValidationError('Unresolved artifact hash.')
-    expected=candidate(artifacts,manifest['source_commit'])
+    expected=candidate(artifacts,manifest['source_commit'],None if legacy else modules)
     for k in ('approved','activation','integration_services_approved'):expected[k]=manifest[k]
     seal(expected)
     same(manifest,expected,'manifest binding')
-    generated=generated_payloads()
+    generated=generated_payloads(modules)
     for a in artifacts:
         if a['destination'] in generated and a['sha256']!=sha(generated[a['destination']]):
             raise ValidationError('Generated privileged artifact differs from fixed policy.')
@@ -342,31 +375,164 @@ def verify_payloads(manifest,payloads):
     for a in manifest['artifacts']:
         if type(payloads[a['destination']]) is not bytes or sha(payloads[a['destination']])!=a['sha256']:
             raise ValidationError('Artifact content hash mismatch.')
-    dependency_closure(payloads)
+    modules=tuple(LEGACY_PRODUCTION_MODULES if 'runtime_modules' not in manifest else manifest['runtime_modules'])
+    dependency_closure(payloads,modules)
 
 
-def dependency_closure(payloads):
-    """Closed import graph: explicit local modules or declared Python stdlib only."""
-    available=set(PRODUCTION_MODULES)
-    for n in PRODUCTION_MODULES:
+def dependency_closure(payloads, modules=None):
+    """Validate a closed local import graph against an explicit module set."""
+    modules = LEGACY_PRODUCTION_MODULES if modules is None else tuple(modules)
+    available=set(modules)
+    for n in modules:
         path=PREFIX+'/tools/agent_control/'+n+'.py'
         if path not in payloads:raise ValidationError('Unresolved production module.')
         tree=ast.parse(payloads[path],filename=path)
         for node in ast.walk(tree):
             if isinstance(node,ast.ImportFrom):
                 if node.level:
-                    if node.level!=1 or not node.module or node.module.split('.')[0] not in available:
+                    if node.level!=1:
+                        raise ValidationError('Unresolved relative import.')
+                    names = ([node.module.split('.')[0]] if node.module else
+                             [alias.name.split('.')[0] for alias in node.names])
+                    if any(name not in available for name in names):
                         raise ValidationError('Unresolved relative import.')
                 elif node.module and node.module.startswith('tools.agent_control.'):
-                    if node.module.split('.')[2] not in available:raise ValidationError('Unresolved installed import.')
+                    if node.module.split('.')[2] not in available:
+                        raise ValidationError('Unresolved installed import.')
                 elif node.module and node.module.split('.')[0] not in sys.stdlib_module_names:
-                    raise ValidationError('Undeclared runtime dependency.')
+                    if node.module.split('.')[0] not in DECLARED_EXTERNAL_MODULES:
+                        raise ValidationError('Undeclared runtime dependency.')
             elif isinstance(node,ast.Import):
                 for alias in node.names:
-                    if alias.name.split('.')[0] not in sys.stdlib_module_names:
+                    top=alias.name.split('.')[0]
+                    if top.startswith('tools.agent_control'):
+                        if top.rsplit('.',1)[-1] not in available:
+                            raise ValidationError('Unresolved installed import.')
+                    elif top not in sys.stdlib_module_names and top not in DECLARED_EXTERNAL_MODULES:
                         raise ValidationError('Undeclared runtime import.')
             elif isinstance(node,ast.Call) and isinstance(node.func,ast.Name) and node.func.id=='__import__':
-                raise ValidationError('Dynamic runtime dependency.')
+                if not node.args or not isinstance(node.args[0],ast.Constant) or not isinstance(node.args[0].value,str):
+                    raise ValidationError('Dynamic runtime dependency.')
+                name=node.args[0].value.split('.')[0]
+                if node.args[0].value.startswith('tools.agent_control'):
+                    if node.args[0].value.rsplit('.',1)[-1] not in available:
+                        raise ValidationError('Unresolved installed import.')
+                elif name not in sys.stdlib_module_names and name not in DECLARED_EXTERNAL_MODULES:
+                    raise ValidationError('Undeclared dynamic dependency.')
+
+
+def _git_environment():
+    return {'PATH':'/usr/bin:/bin','LANG':'C','LC_ALL':'C',
+            'GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':'/dev/null',
+            'GIT_OPTIONAL_LOCKS':'0','GIT_TERMINAL_PROMPT':'0',
+            'GIT_NO_REPLACE_OBJECTS':'1'}
+
+
+def _git(root, *args):
+    return subprocess.run(['/usr/bin/git','-C',str(root),*args],check=True,
+        capture_output=True,env=_git_environment()).stdout
+
+
+def validate_source_commit(repository, source_commit):
+    """Return the exact repository and tree for one full commit object."""
+    if type(source_commit) is not str or not GIT_OID.fullmatch(source_commit):
+        raise ValidationError('Full lowercase Git commit required.')
+    root=Path(repository).absolute()
+    if root.is_symlink() or any(p.is_symlink() for p in root.parents):
+        raise ValidationError('Symlinked repository root.')
+    if not root.is_dir():
+        raise ValidationError('Repository root required.')
+    try:
+        top=_git(root,'rev-parse','--show-toplevel').decode().strip()
+        kind=_git(root,'cat-file','-t',source_commit).decode().strip()
+        tree=_git(root,'rev-parse','--verify','--end-of-options',source_commit+'^{tree}').decode().strip()
+    except (OSError,subprocess.CalledProcessError,UnicodeDecodeError):
+        raise ValidationError('Committed Git source is unavailable.') from None
+    if Path(top).absolute()!=root or kind!='commit' or not GIT_OID.fullmatch(tree):
+        raise ValidationError('Exact committed Git source required.')
+    return root,tree
+
+
+def _source_path(relative):
+    if (type(relative) is not str or not relative or relative.startswith('/') or
+            '\\' in relative or relative.startswith('.git/') or '/.git/' in relative or
+            relative == '.git' or relative.endswith('/.git') or
+            any(part in ('','.','..') for part in relative.split('/')) or
+            relative == '.env' or relative.startswith('.env.') or '/.env' in relative or
+            any(token in relative.lower() for token in ('credential','secret','private-key'))):
+        raise ValidationError('Unsafe repository source path.')
+    return relative
+
+
+def committed_source_bytes(repository, source_commit, relative):
+    """Read one regular blob directly from the selected Git tree."""
+    root, _ = validate_source_commit(repository,source_commit)
+    relative=_source_path(relative)
+    try:
+        rows=_git(root,'ls-tree','-z','-r','--full-tree',source_commit,'--',relative).split(b'\0')
+        rows=[row for row in rows if row]
+        if len(rows)!=1:
+            raise ValidationError('Committed source path is missing or ambiguous.')
+        header,path=rows[0].split(b'\t',1)
+        mode,kind,oid=header.decode('ascii').split(' ')
+        if path.decode('utf-8')!=relative or kind!='blob' or mode not in ('100644','100755') or not GIT_OID.fullmatch(oid):
+            raise ValidationError('Non-regular or ambiguous committed source path.')
+        raw=_git(root,'cat-file','blob',oid)
+    except (OSError,subprocess.CalledProcessError,UnicodeDecodeError,ValueError):
+        raise ValidationError('Committed source blob is unavailable.') from None
+    if len(raw)>MAX_SOURCE_BYTES:
+        raise ValidationError('Committed source artifact is too large.')
+    return raw
+
+
+def _module_dependencies(raw, module):
+    try: tree=ast.parse(raw,filename=module)
+    except SyntaxError: raise ValidationError('Invalid committed Python source.') from None
+    deps=set()
+    for node in ast.walk(tree):
+        if isinstance(node,ast.ImportFrom) and node.level:
+            if node.level!=1: raise ValidationError('Unsupported local import level.')
+            if node.module:
+                deps.add(node.module.split('.')[0])
+            else:
+                deps.update(alias.name.split('.')[0] for alias in node.names)
+        elif isinstance(node,ast.Import):
+            for alias in node.names:
+                if alias.name.startswith('tools.agent_control.'):
+                    deps.add(alias.name.rsplit('.',1)[-1])
+        elif isinstance(node,ast.Call) and isinstance(node.func,ast.Name) and node.func.id=='__import__':
+            if not node.args or not isinstance(node.args[0],ast.Constant) or not isinstance(node.args[0].value,str):
+                raise ValidationError('Dynamic local import is not reviewable.')
+            name=node.args[0].value
+            if name.startswith('tools.agent_control.'):
+                deps.add(name.rsplit('.',1)[-1])
+    return deps
+
+
+def dependency_modules(repository, source_commit):
+    """Compute the reviewed closure from explicit installed-runtime roots."""
+    validate_source_commit(repository,source_commit)
+    cache={}
+    def read(name):
+        if name not in cache:
+            cache[name]=committed_source_bytes(repository,source_commit,'tools/agent_control/'+name+'.py')
+        return cache[name]
+    available=set()
+    tree_paths=_git(Path(repository).absolute(),'ls-tree','-r','--name-only',source_commit,'--','tools/agent_control').decode().splitlines()
+    for path in tree_paths:
+        if path.startswith('tools/agent_control/') and path.endswith('.py'):
+            available.add(path.rsplit('/',1)[-1][:-3])
+    modules={'__init__'}
+    pending=list(RUNTIME_ENTRYPOINTS)
+    while pending:
+        name=pending.pop()
+        if name in modules:continue
+        if name not in available:raise ValidationError('Required runtime entrypoint is missing.')
+        modules.add(name)
+        for dep in _module_dependencies(read(name),name):
+            if dep not in available:raise ValidationError('Required local dependency is missing.')
+            pending.append(dep)
+    return tuple(sorted(modules))
 
 
 def source_bytes(root,relative):
@@ -398,15 +564,16 @@ def source_bytes(root,relative):
 
 
 def build(repository, *, source_commit):
-    # Generation 1 is historical. Rehydrate its reviewed bytes, never incorporate
-    # successor source files under its provisioning generation or old identities.
-    repository = Path(repository) / 'docs/agent-control/review/m3-generation-1/payload'
-    payloads=generated_payloads();artifacts=[]
-    for spec in artifact_spec():
+    """Build only from the exact committed Git tree; never from checkout bytes."""
+    root,_=validate_source_commit(repository,source_commit)
+    modules=dependency_modules(root,source_commit)
+    payloads=generated_payloads(modules);artifacts=[]
+    for spec in artifact_spec(modules):
         path=spec['destination']
-        if path not in payloads:payloads[path]=source_bytes(repository,path.lstrip('/'))
+        if path not in payloads:
+            payloads[path]=committed_source_bytes(root,source_commit,spec['source'])
         artifacts.append(dict(spec,sha256=sha(payloads[path])))
-    manifest=candidate(artifacts,source_commit)
+    manifest=candidate(artifacts,source_commit,modules)
     verify_payloads(manifest,payloads)
     return manifest,payloads
 
@@ -584,7 +751,7 @@ def rollback_file(manifest,receipt,path,observation,*,cleanup_confirmed):
     return dict(action='UNLINK_VERIFIED_FILE',path=path,recursive=False,device=expected['device'],inode=expected['inode'])
 
 
-def preflight_commands():
+def preflight_commands(modules=None):
     """Review-only fixed argv. The collector must interpret absence, not auto-approve."""
     result=[['/usr/bin/git','-C','/home/bonup/bonup-blackboard','rev-parse','HEAD'],
         ['/usr/bin/getent','passwd','bonup'],['/usr/bin/bwrap','--version'],
@@ -598,7 +765,13 @@ def preflight_commands():
     for i,name in enumerate(NAMES):
         result.extend([['/usr/bin/getent','passwd',name],['/usr/bin/getent','passwd',str(3000+i)],
             ['/usr/bin/getent','group',name],['/usr/bin/getent','group',str(3000+i)]])
-    # Fixed targets only. Existing targets fail preflight; errors require review.
-    targets=[d['path'] for d in directories()]+[a['destination'] for a in artifact_spec()]+[MANIFEST]
+    # Preserve the historical fixture's exact target list. For a current
+    # closure, exact file targets are derived from the reviewed artifact
+    # inventory by the installer; duplicating every source path here would make
+    # the bounded manifest exceed the protocol limit as the closure grows.
+    targets=[d['path'] for d in directories()]
+    if modules is None:
+        targets += [a['destination'] for a in artifact_spec()]
+    targets += [MANIFEST]
     result.append(['/usr/bin/stat','--format=%n %F %u %g %a','--',*targets])
     return result

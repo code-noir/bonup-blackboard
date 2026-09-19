@@ -4,6 +4,33 @@ Block 4 generates and verifies a repository review artifact. It does not install
 provision, start services, enroll tasks or activate workers. Host integration remains
 required. The existing founder Codex workflow is unchanged.
 
+## Committed-source builder
+
+The provisioning source is one explicit full Git commit, not the working tree.
+`build(repository, source_commit=...)` validates the lowercase 40-character commit,
+resolves its tree, and reads each reviewed source blob with bounded Git-object
+operations. Dirty, deleted and untracked checkout files are not build inputs.
+Branches, tags, `HEAD`, unsafe paths, symlinks, non-regular blobs and unresolved
+local imports fail closed.
+
+The current reviewed roots are the installed controller/supervisor/bootstrap,
+Founder/Genesis transport, and product-review/artifact adapters. Their local
+imports form the deterministic closure; standard-library imports are not copied,
+and undeclared external imports are rejected. The resulting manifest records the
+closure and hashes every generated or committed payload byte.
+
+The controlled sequence is:
+
+COMMITTED SOURCE
+→ REVIEWED DEPENDENCY CLOSURE
+→ GENERATED CANDIDATE
+→ INDEPENDENT REVIEW
+→ FOUNDER APPROVAL
+→ INSTALLATION
+
+The current-source builder change is a builder checkpoint only. It does not create
+the next provisioning candidate, perform Genesis, or authorize installation.
+
 Generation-1 installation approval is now governed by
 [installation-approval.md](installation-approval.md). The historical candidate and
 its inventory remain unchanged. Future installers must use the separate approved
@@ -15,21 +42,20 @@ not the complete approval gate.
 
 `tools/agent_control/installation_bundle.py` exposes `build`, `write_review`,
 `validate_manifest`, `verify_payloads` and the installation/receipt/rollback contracts.
-The generated candidate is at `review/m3-generation-1/` alongside this document.
-To regenerate into a **new** review directory, run from the repository as an
-unprivileged user:
+The historical candidate at `review/m3-generation-1/` is preserved unchanged.
+Future generation must use a new review directory and an explicit committed
+source object, run as an unprivileged user:
 
 ```python
-from tools.agent_control.installation_bundle import write_review, SOURCE_COMMIT
+from tools.agent_control.installation_bundle import write_review
 write_review('/home/bonup/bonup-blackboard',
-             '/home/bonup/bonup-blackboard/docs/agent-control/review/m3-generation-1',
-             source_commit=SOURCE_COMMIT)
+             '/home/bonup/bonup-blackboard/docs/agent-control/review/m3-generation-1-current-head',
+             source_commit='FULL_40_CHARACTER_COMMIT')
 ```
 
 Generation rejects existing output destinations. The recorded commit is the
-committed base, `be8270ea2c067612843504d5835aee6cc772f940`. The accumulated uncommitted
-implementation is bound by exact payload hashes, not falsely attributed to that
-commit. Source mode is `COMMITTED_BASE_PLUS_REVIEWED_PAYLOAD_HASHES`. Any later
+exact caller-supplied committed source; no permanent historical payload directory
+is read. Source mode is `COMMITTED_BASE_PLUS_REVIEWED_PAYLOAD_HASHES`. Any later
 source change requires a fresh candidate and review.
 
 The fixed production import inventory includes installed adapters and operational

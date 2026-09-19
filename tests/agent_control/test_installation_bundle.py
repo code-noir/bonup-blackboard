@@ -1,6 +1,7 @@
 """Block 4 is generation/validation only: no installer or host activation."""
 from copy import deepcopy
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -89,6 +90,64 @@ class BundleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             os.mkfifo(Path(d)/'fifo')
             with self.assertRaises(ValidationError):b.source_bytes(d,'fifo')
+
+    def test_committed_source_ignores_dirty_untracked_and_deleted_worktree(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            subprocess.run(['/usr/bin/git','init','-q',str(root)],check=True)
+            subprocess.run(['/usr/bin/git','-C',str(root),'config','user.email','test@example.invalid'],check=True)
+            subprocess.run(['/usr/bin/git','-C',str(root),'config','user.name','test'],check=True)
+            (root/'tracked.py').write_bytes(b'A')
+            (root/'deleted.py').write_bytes(b'D')
+            subprocess.run(['/usr/bin/git','-C',str(root),'add','tracked.py','deleted.py'],check=True)
+            subprocess.run(['/usr/bin/git','-C',str(root),'commit','-qm','source'],check=True)
+            commit=subprocess.check_output(['/usr/bin/git','-C',str(root),'rev-parse','HEAD'],text=True).strip()
+            (root/'tracked.py').write_bytes(b'B')
+            (root/'untracked.py').write_bytes(b'UNTRACKED')
+            (root/'deleted.py').unlink()
+            self.assertEqual(b.committed_source_bytes(root,commit,'tracked.py'),b'A')
+            self.assertEqual(b.committed_source_bytes(root,commit,'deleted.py'),b'D')
+            with self.assertRaises(ValidationError):b.committed_source_bytes(root,commit,'untracked.py')
+
+    def test_commit_identity_and_source_path_validation(self):
+        with self.assertRaises(ValidationError):b.validate_source_commit(self.repo,'HEAD')
+        with self.assertRaises(ValidationError):b.validate_source_commit(self.repo,'a'*40)
+        blob=subprocess.check_output(['/usr/bin/git','-C',str(self.repo),'rev-parse',b.SOURCE_COMMIT+':tools/agent_control/records.py'],text=True).strip()
+        with self.assertRaises(ValidationError):b.validate_source_commit(self.repo,blob)
+        for path in ('/etc/passwd','../records.py','tools/../records.py','.git/config','.env','tools/agent_control/secret.py'):
+            with self.assertRaises(ValidationError):b.committed_source_bytes(self.repo,b.SOURCE_COMMIT,path)
+
+    def test_candidate_uses_git_object_source_bytes(self):
+        for name in ('records','registry','runtime_schema','founder_session','founder_review_auth',
+                     'prod_artifact','prod_review_adapter'):
+            destination=b.PREFIX+'/tools/agent_control/'+name+'.py'
+            expected=subprocess.check_output(['/usr/bin/git','-C',str(self.repo),'show',
+                b.SOURCE_COMMIT+':tools/agent_control/'+name+'.py'])
+            self.assertEqual(self.payloads[destination],expected)
+
+    def test_current_reviewed_closure_and_registry_support(self):
+        modules=tuple(self.m['runtime_modules'])
+        self.assertEqual(modules,tuple(sorted(modules)))
+        for name in ('founder_crypto','founder_genesis','founder_session','founder_review_auth',
+                     'founder_intake','founder_transport','prod_artifact','prod_review_adapter',
+                     'records','registry','runtime_schema','serialization','types'):
+            self.assertIn(name,modules)
+        self.assertIn('/usr/lib/bonup-agent-control/docs/agent-control/schemas.json',
+                      {a['destination'] for a in self.m['artifacts']})
+
+    def test_historical_payload_is_not_source(self):
+        old=(self.repo/'docs/agent-control/review/m3-generation-1/payload/usr/lib/bonup-agent-control/tools/agent_control/records.py').read_bytes()
+        self.assertNotEqual(self.payloads[b.PREFIX+'/tools/agent_control/records.py'],old)
+
+    def test_unresolved_local_dependency_fails_closed(self):
+        payload=dict(self.payloads)
+        payload[b.PREFIX+'/tools/agent_control/authority.py']=b'from .missing_runtime import value\n'
+        with self.assertRaises(ValidationError):b.dependency_closure(payload,self.m['runtime_modules'])
+
+    def test_old_historical_approval_cannot_accept_current_candidate(self):
+        from tools.agent_control import installation_approval
+        with self.assertRaises((AuthorityError,ValidationError)):
+            installation_approval.candidate(b.json_bytes(self.m))
     def test_generated_wrapper_tamper(self):
         a=next(a for a in self.m['artifacts'] if a['destination']==b.PREFIX+'/controller')
         a['sha256']='a'*64;self.invalid()
@@ -148,7 +207,7 @@ class BundleTests(unittest.TestCase):
         self.approved();plan=b.installation_plan(self.m,self.payloads,self.preflight(),context=FOUNDER)
         self.assertFalse(plan['automatic_service_start']);self.assertFalse(plan['execute_checkout'])
         self.assertFalse(plan['automatic_approval']);self.assertFalse(hasattr(b,'execute_installation'))
-        self.assertEqual(len(plan['copy_map']),57)
+        self.assertEqual(len(plan['copy_map']),len(b.detached_inventory(self.m)['artifacts']))
     def test_wrong_source_commit(self):
         self.approved();p=self.preflight();p['source_commit']='a'*40
         with self.assertRaises(AuthorityError):b.installation_plan(self.m,self.payloads,p,context=FOUNDER)

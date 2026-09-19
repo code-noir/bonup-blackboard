@@ -48,6 +48,12 @@ installer review/evidence records, not extra runtime imports or a replacement
 runtime bundle. New tooling must later be installed into root-controlled installer
 staging and verified before privileged execution, never run from the checkout.
 
+Future candidates are not accepted by these historical constants. Their approval
+identity must be derived from the exact candidate bytes and bind the selected
+source commit, manifest digest, bundle digest, artifact inventory, provisioning
+generation and policy digests. A historical approval therefore cannot authorize a
+new candidate.
+
 Candidate manifest byte SHA-256:
 `034036d04043c470e67a050e827f1312445017069e1f234e3f096fa5864adbb6`
 

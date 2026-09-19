@@ -12,25 +12,47 @@ from .schema import timestamp
 from .serialization import parse_json
 from .types import AuthorityError, ValidationError
 
-SOURCE_COMMIT = '3e0749cf0d323952b2f6f3f7945e8fda1b258b51'
-CANDIDATE_SHA256 = '034036d04043c470e67a050e827f1312445017069e1f234e3f096fa5864adbb6'
-CANDIDATE_BUNDLE = 'cdaf9528de71fd64cf60c44d916cb0d3632adf5e7245b3cc5e11b4a782ea72e4'
+HISTORICAL_SOURCE_COMMIT = '3e0749cf0d323952b2f6f3f7945e8fda1b258b51'
+HISTORICAL_CANDIDATE_SHA256 = '034036d04043c470e67a050e827f1312445017069e1f234e3f096fa5864adbb6'
+HISTORICAL_CANDIDATE_BUNDLE = 'cdaf9528de71fd64cf60c44d916cb0d3632adf5e7245b3cc5e11b4a782ea72e4'
+SOURCE_COMMIT = HISTORICAL_SOURCE_COMMIT
+CANDIDATE_SHA256 = HISTORICAL_CANDIDATE_SHA256
+CANDIDATE_BUNDLE = HISTORICAL_CANDIDATE_BUNDLE
 
 
-def candidate(raw):
-    if type(raw) is not bytes or bundle.sha(raw) != CANDIDATE_SHA256:
+def _identity(raw, value, expected):
+    if type(expected) is not dict or set(expected) != {
+            'source_commit','candidate_manifest_digest','candidate_bundle_digest'}:
+        raise ValidationError('Closed candidate identity required.')
+    historical=(bundle.sha(raw)==HISTORICAL_CANDIDATE_SHA256 and
+                expected['source_commit']==HISTORICAL_SOURCE_COMMIT and
+                expected['candidate_bundle_digest']==HISTORICAL_CANDIDATE_BUNDLE)
+    if (expected['candidate_manifest_digest'] != bundle.sha(raw) or
+            expected['candidate_bundle_digest'] != value['bundle_digest'] or
+            (expected['source_commit'] != value['source_commit'] and
+             not historical)):
+        raise ValidationError('Candidate identity mismatch.')
+    return expected
+
+
+def candidate(raw, *, expected=None):
+    if type(raw) is not bytes:
         raise ValidationError('Exact committed candidate bytes required.')
     value = parse_json(raw)
-    if (bundle.validate_manifest(value) != 'COMPLETE_BUT_UNAPPROVED' or
-            value['bundle_digest'] != CANDIDATE_BUNDLE or value['activation'] or
+    if (bundle.validate_manifest(value) != 'COMPLETE_BUT_UNAPPROVED' or value['activation'] or
             value['integration_services_approved'] or value['provisioning_generation'] != 1):
         raise ValidationError('Candidate identity mismatch.')
+    if expected is None:
+        expected={'source_commit':HISTORICAL_SOURCE_COMMIT,
+            'candidate_manifest_digest':HISTORICAL_CANDIDATE_SHA256,
+            'candidate_bundle_digest':HISTORICAL_CANDIDATE_BUNDLE}
+    _identity(raw,value,expected)
     return value
 
 
-def propose(raw):
+def propose(raw, *, expected=None):
     """No approval input, timestamps, entropy, IO or authoritative side effects."""
-    original = candidate(raw)
+    original = candidate(raw, expected=expected)
     approved = deepcopy(original)
     approved['approved'] = True
     # bundle_digest is derived metadata, never an independent policy change.
@@ -38,10 +60,11 @@ def propose(raw):
     inventory = bundle.detached_inventory(approved)
     old = bundle.detached_inventory(original)
     changed = [a['destination'] for a, b in zip(inventory['artifacts'], old['artifacts']) if a != b]
-    if len(inventory['artifacts']) != 57 or changed != [bundle.MANIFEST]:
-        raise ValidationError('Expected 56 unchanged artifacts and one replacement manifest.')
-    binding = dict(source_commit=SOURCE_COMMIT, provisioning_generation=1,
-        candidate_manifest_digest=CANDIDATE_SHA256, candidate_bundle_digest=CANDIDATE_BUNDLE,
+    if len(inventory['artifacts']) != len(old['artifacts']) or changed != [bundle.MANIFEST]:
+        raise ValidationError('Candidate approval must change only the manifest artifact.')
+    binding = dict(source_commit=(HISTORICAL_SOURCE_COMMIT if bundle.sha(raw)==HISTORICAL_CANDIDATE_SHA256
+                                 else original['source_commit']), provisioning_generation=1,
+        candidate_manifest_digest=bundle.sha(raw), candidate_bundle_digest=original['bundle_digest'],
         approved_manifest_digest=bundle.sha(bundle.json_bytes(approved)),
         approved_inventory_digest=bundle.sha(bundle.json_bytes(inventory)))
     return dict(version=1, state='PROPOSED_APPROVAL_STAGE', binding=binding,
@@ -49,7 +72,10 @@ def propose(raw):
 
 
 def validate_proposal(raw, proposal):
-    bundle.same(proposal, propose(raw), 'closed approval transformation')
+    binding=proposal.get('binding') if type(proposal) is dict else None
+    expected={k:binding.get(k) for k in ('source_commit','candidate_manifest_digest','candidate_bundle_digest')} \
+        if type(binding) is dict else None
+    bundle.same(proposal, propose(raw, expected=expected), 'closed approval transformation')
     return proposal['binding']
 
 
@@ -80,7 +106,7 @@ def require_approval(raw, proposal, decision, *, context):
 
 
 def verify_installation_payloads(raw, proposal, payloads):
-    """All 57 installed bytes must match the APPROVED inventory, not the candidate."""
+    """All installed bytes must match the APPROVED inventory, not the candidate."""
     validate_proposal(raw, proposal)
     items = proposal['installation_inventory']['artifacts']
     if type(payloads) is not dict or set(payloads) != {a['destination'] for a in items}:
@@ -100,7 +126,7 @@ def installation_plan(raw, proposal, decision, payloads, preflight, *, context):
     # The historical candidate records its earlier base commit; this outer binding
     # requires the actual committed composition checkpoint as well.
     bundle.keys(preflight, ('review_source_commit', 'candidate_preflight'))
-    if preflight['review_source_commit'] != SOURCE_COMMIT:
+    if preflight['review_source_commit'] != proposal['binding']['source_commit']:
         raise AuthorityError('Wrong reviewed composition commit.')
     inner = proposal['installation_manifest']
     plan = bundle.installation_plan(inner,

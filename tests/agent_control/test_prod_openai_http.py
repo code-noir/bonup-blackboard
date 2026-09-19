@@ -178,6 +178,41 @@ class ProductOpenAIHTTPTests(unittest.TestCase):
         self.assertEqual(calls[0]["headers"]["Authorization"], "Bearer " + SECRET)
         self.assertEqual(result.proposal["knowledge_state"], "WORKING")
 
+    def test_provider_metadata_uses_ordinary_json_but_proposal_uses_strict_json(self):
+        sentinel = "synthetic-provider-metadata-sentinel"
+        envelope = json.loads(response_bytes().decode())
+        envelope["provider_metadata"] = {
+            "fractional": 1.25,
+            "nonfinite": float("nan"),
+            "sentinel": sentinel,
+        }
+        provider_raw = json.dumps(
+            envelope, ensure_ascii=False, separators=(",", ":"), allow_nan=True,
+        ).encode()
+        result, calls, _ = self.run_local({"body": provider_raw})
+        self.assertEqual(result.proposal["knowledge_state"], "WORKING")
+        self.assertEqual(len(calls), 1)
+
+        invalid = proposal({"canonical_violation": 1.25})
+        invalid_envelope = json.loads(response_bytes().decode())
+        invalid_envelope["output"][0]["content"][0]["text"] = json.dumps(
+            invalid, ensure_ascii=False, separators=(",", ":"), allow_nan=True,
+        )
+        invalid_raw = json.dumps(
+            invalid_envelope, ensure_ascii=False, separators=(",", ":"), allow_nan=True,
+        ).encode()
+        with fake_server({"body": invalid_raw}) as (server, endpoint):
+            provider = InjectedOpenAICredentialProvider(SECRET)
+            adapter = OpenAIResponsesHTTPAdapter._for_loopback_tests(endpoint, provider)
+            with self.assertRaises(ProductModelFailure) as caught:
+                run_product_model_cycle(synthetic_task(), adapter)
+        self.assertEqual(
+            caught.exception.audit_metadata["failure_reason"],
+            "STRUCTURED_JSON_INVALID",
+        )
+        self.assertEqual(len(server.calls), 1)
+        self.assertNotIn(sentinel, json.dumps(caught.exception.audit_metadata))
+
     def test_response_bytes_variants_use_exact_http_adapter_path(self):
         for label, behavior in (
                 ("plain", {"body": response_bytes()}),

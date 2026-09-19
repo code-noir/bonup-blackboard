@@ -1,11 +1,12 @@
 """Bounded PROD-01 model transport; proposals only, with no execution authority."""
 from dataclasses import dataclass
+import json
 import re
 from typing import Protocol
 
 from .prod_contract import REFERENCE_TYPES, validate_product_proposal, validate_product_task
 from .serialization import (
-    JSONDecodeFailure, StrictJSONValidationFailure, canonical_json, digest, parse_json,
+    canonical_json, digest, parse_json,
 )
 from .types import ValidationError
 
@@ -243,18 +244,37 @@ def _bounded_response_metadata(value):
     return result
 
 
-def _json_error_metadata(error, body_bytes):
+def _json_error_metadata(error, body_bytes, character_count):
     """Project only bounded JSON decoder positions and code-owned categories."""
     def bounded(value):
         return min(max(value if type(value) is int else 0, 0), MAX_RESPONSE_BYTES)
 
-    category = error.category if error.category in _JSON_ERROR_CATEGORIES else "OTHER_JSON_SYNTAX"
+    category = getattr(error, "category", None)
+    if category not in _JSON_ERROR_CATEGORIES:
+        category = {
+            "Expecting value": "EXPECTING_VALUE",
+            "Expecting property name enclosed in double quotes": "EXPECTING_PROPERTY_NAME",
+            "Expecting ':' delimiter": "EXPECTING_COLON",
+            "Expecting ',' delimiter": "EXPECTING_COMMA",
+        }.get(getattr(error, "msg", None), "OTHER_JSON_SYNTAX")
+        if getattr(error, "msg", "").startswith("Unterminated string"):
+            category = "UNTERMINATED_STRING"
+        elif getattr(error, "msg", "").startswith("Invalid \\escape"):
+            category = "INVALID_ESCAPE"
+        elif getattr(error, "msg", "").startswith("Invalid control character"):
+            category = "INVALID_CONTROL_CHARACTER"
+        elif getattr(error, "msg", None) == "Extra data":
+            category = "EXTRA_DATA"
+    line = getattr(error, "line", getattr(error, "lineno", 0))
+    column = getattr(error, "column", getattr(error, "colno", 0))
+    position = getattr(error, "position", getattr(error, "pos", 0))
+    character_count = getattr(error, "character_count", character_count)
     return {
         "category": category,
-        "line": bounded(error.line),
-        "column": bounded(error.column),
-        "position": bounded(error.position),
-        "character_count": bounded(error.character_count),
+        "line": bounded(line),
+        "column": bounded(column),
+        "position": bounded(position),
+        "character_count": bounded(character_count),
         "body_bytes": bounded(body_bytes),
     }
 
@@ -340,24 +360,24 @@ def parse_product_model_response(raw, *, response_metadata=None):
     if len(raw) > MAX_RESPONSE_BYTES:
         _reject_output("RESPONSE_TOO_LARGE", structure=structure)
     try:
-        envelope = parse_json(raw.decode("utf-8"))
+        text = raw.decode("utf-8")
     except UnicodeError:
         if "http_response" in structure:
             structure["http_response"]["utf8_decode_success"] = False
             structure["http_response"]["json_decode_success"] = False
         _reject_output("INVALID_UTF8", structure=structure)
-    except JSONDecodeFailure as error:
+    try:
+        # The provider envelope is third-party transport data.  It must not be
+        # subjected to bonUP's canonical record rules; those begin at the
+        # extracted model-produced proposal below.
+        envelope = json.loads(text)
+    except json.JSONDecodeError as error:
         if "http_response" in structure:
             structure["http_response"]["utf8_decode_success"] = True
             structure["http_response"]["json_decode_success"] = False
-        structure["json_error"] = _json_error_metadata(error, len(raw))
+        structure["json_error"] = _json_error_metadata(error, len(raw), len(text))
         _reject_output("RESPONSE_JSON_INVALID", structure=structure)
-    except StrictJSONValidationFailure:
-        if "http_response" in structure:
-            structure["http_response"]["utf8_decode_success"] = True
-            structure["http_response"]["json_decode_success"] = True
-        _reject_output("STRICT_JSON_VALIDATION_FAILED", structure=structure)
-    except ValidationError:
+    except (RecursionError, TypeError, ValueError):
         if "http_response" in structure:
             structure["http_response"]["utf8_decode_success"] = True
             structure["http_response"]["json_decode_success"] = False

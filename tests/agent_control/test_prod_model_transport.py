@@ -52,8 +52,8 @@ def proposal(changes=None):
     return value
 
 
-def response_envelope(candidate=None, *, output=None, status="completed"):
-    return {
+def response_envelope(candidate=None, *, output=None, status="completed", metadata=None):
+    envelope = {
         "id": "resp_synthetic",
         "status": status,
         "output": output if output is not None else [{
@@ -68,6 +68,9 @@ def response_envelope(candidate=None, *, output=None, status="completed"):
             }],
         }],
     }
+    if metadata is not None:
+        envelope["provider_metadata"] = metadata
+    return envelope
 
 
 def response_bytes(candidate=None, **kwargs):
@@ -261,7 +264,7 @@ class ProductModelTransportTests(unittest.TestCase):
         self.assertNotIn(sentinel, rendered)
         self.assertNotIn("malformed", rendered)
 
-    def test_strict_json_validation_is_bounded_and_distinct_from_syntax(self):
+    def test_provider_metadata_is_not_canonicalized_but_proposal_remains_strict(self):
         sentinel = "synthetic-strict-json-secret-sentinel"
         response_metadata = {
             "http_status": 200,
@@ -276,31 +279,37 @@ class ProductModelTransportTests(unittest.TestCase):
             "utf8_decode_success": True,
             "json_decode_success": None,
         }
-        deep = b"[" * 2048 + b"]" * 2048
-        cases = (
-            b'{"duplicate":"' + sentinel.encode() + b'","duplicate":"x"}',
-            b'{"number":NaN}',
-            b'{"number":Infinity}',
-            b'{"unicode":"\\ud800"}',
-            deep,
+        provider_metadata = {
+            "fractional": 1.25,
+            "nonfinite": float("nan"),
+            "sentinel": sentinel,
+        }
+        raw = json.dumps(
+            response_envelope(metadata=provider_metadata),
+            ensure_ascii=False, separators=(",", ":"), allow_nan=True,
+        ).encode()
+        result, _, _ = self.run_cycle(raw=raw, response_metadata=response_metadata)
+        self.assertEqual(result.proposal["knowledge_state"], "WORKING")
+
+        invalid_proposal = proposal({"canonical_violation": 1.25})
+        invalid_envelope = response_envelope()
+        invalid_envelope["output"][0]["content"][0]["text"] = json.dumps(
+            invalid_proposal, ensure_ascii=False, separators=(",", ":"), allow_nan=True,
         )
-        for raw in cases:
-            with self.subTest(raw=raw[:24]), self.assertRaises(ProductModelFailure) as caught:
-                self.run_cycle(raw=raw, response_metadata=response_metadata)
-            metadata = caught.exception.audit_metadata
-            structure = metadata["provider_structure"]
-            self.assertEqual(metadata["failure_reason"], "PROVIDER_ENVELOPE_INVALID")
-            self.assertEqual(structure["reason"], "STRICT_JSON_VALIDATION_FAILED")
-            self.assertNotIn("json_error", structure)
-            self.assertTrue(structure["http_response"]["json_decode_success"])
-            rendered = canonical_json(metadata)
-            self.assertNotIn(sentinel, rendered)
+        raw = json.dumps(
+            invalid_envelope,
+            ensure_ascii=False, separators=(",", ":"), allow_nan=True,
+        ).encode()
         with self.assertRaises(ProductModelFailure) as caught:
-            self.run_cycle(raw=b'{"syntax":}', response_metadata=response_metadata)
+            self.run_cycle(raw=raw, response_metadata=response_metadata)
         structure = caught.exception.audit_metadata["provider_structure"]
-        self.assertEqual(structure["reason"], "RESPONSE_JSON_INVALID")
-        self.assertIn("json_error", structure)
-        self.assertFalse(structure["http_response"]["json_decode_success"])
+        self.assertEqual(caught.exception.audit_metadata["failure_reason"],
+                         "STRUCTURED_JSON_INVALID")
+        self.assertEqual(structure["reason"], "STRUCTURED_JSON_INVALID")
+        self.assertTrue(structure["http_response"]["json_decode_success"])
+        self.assertNotIn("json_error", structure)
+        rendered = canonical_json(caught.exception.audit_metadata)
+        self.assertNotIn(sentinel, rendered)
 
     def test_oversized_input_stops_before_transport_and_response_is_bounded(self):
         task = synthetic_task()

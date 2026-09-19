@@ -1,5 +1,6 @@
 import inspect
 import io
+import json
 import unittest
 from copy import deepcopy
 from contextlib import redirect_stderr
@@ -62,10 +63,11 @@ class FakeFirstLiveTransport:
     credential_owned = True
     test_only = True
 
-    def __init__(self, provider, *, raw=None, error=None):
+    def __init__(self, provider, *, raw=None, error=None, response_metadata=None):
         self.provider = provider
         self.raw = raw if raw is not None else response_bytes()
         self.error = error
+        self.response_metadata = response_metadata
         self.calls = []
 
     def send(self, **kwargs):
@@ -263,6 +265,53 @@ class ProductFirstLiveTests(unittest.TestCase):
         self.assertNotIn(HIDDEN_REASONING, diagnostic)
         self.assertNotIn("resp_first_live_synthetic", diagnostic)
         self.assertEqual(len(transports[0].calls), 1)
+
+    def test_malformed_provider_json_reaches_founder_serialized_result(self):
+        sentinel = "synthetic-provider-secret-model-sentinel"
+        raw = b'{"malformed":"' + sentinel.encode()
+        response_metadata = {
+            "http_status": 200,
+            "content_type": "APPLICATION_JSON",
+            "content_encoding": "GZIP",
+            "body_bytes": 11834,
+            "body_empty": False,
+            "content_length_present": True,
+            "declared_content_length": 11834,
+            "declared_content_length_valid": True,
+            "declared_length_matches": True,
+            "utf8_decode_success": True,
+            "json_decode_success": None,
+        }
+
+        def factory(provider):
+            return FakeFirstLiveTransport(
+                provider, raw=raw, response_metadata=response_metadata)
+
+        with patch.object(prod_first_live, "_current_source_commit", return_value=CHECKPOINT):
+            with self.assertRaises(FirstLiveFailure) as caught:
+                _run_first_live_for_tests(
+                    reviewed(), lambda: True, lambda _: SECRET, factory)
+
+        error = caught.exception
+        blocked = {"status": "BLOCKED", "classification": error.classification}
+        if error.provider_structure is not None:
+            blocked["provider_structure"] = error.provider_structure
+        rendered = json.dumps(blocked, sort_keys=True, separators=(",", ":"))
+        structure = blocked["provider_structure"]
+        self.assertEqual(blocked["classification"], "PROVIDER_ENVELOPE_INVALID")
+        self.assertEqual(structure["reason"], "RESPONSE_JSON_INVALID")
+        self.assertEqual(structure["http_response"]["http_status"], 200)
+        self.assertEqual(structure["http_response"]["content_type"], "APPLICATION_JSON")
+        self.assertEqual(structure["http_response"]["content_encoding"], "GZIP")
+        self.assertEqual(structure["http_response"]["body_bytes"], 11834)
+        diagnostic = structure["json_error"]
+        self.assertEqual(diagnostic["category"], "UNTERMINATED_STRING")
+        self.assertEqual(diagnostic["body_bytes"], 11834)
+        for key in ("line", "column", "position", "character_count", "body_bytes"):
+            self.assertIsInstance(diagnostic[key], int)
+            self.assertGreaterEqual(diagnostic[key], 0)
+        self.assertNotIn(sentinel, rendered)
+        self.assertNotIn("malformed", rendered)
 
     def test_bounded_transport_reason_reaches_first_live_without_body(self):
         transports = []

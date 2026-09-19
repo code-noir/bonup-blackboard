@@ -19,6 +19,9 @@ from .prod_openai_http import (
     CONNECT_TIMEOUT_SECONDS, PROVIDER, PROVIDER_MODEL, OpenAIResponsesHTTPAdapter,
     project_openai_responses_request,
 )
+from .prod_response_capture import (
+    CAPTURE_MODE, PrivateResponseCapture, cleanup_private_response_captures,
+)
 from .prod_prelive import (
     DevelopmentOneShotCredential, OwnerReviewedSource, _current_source_commit,
     synthetic_first_live_task,
@@ -78,7 +81,7 @@ def stable_contract_digest(value=None):
 
 
 # Frozen only after deterministic regeneration from the reviewed implementation.
-EXPECTED_STABLE_CONTRACT_DIGEST = "792c3a7aa92c08d365952176c2133bf2db75375f59d85ef01956d25ce8317543"
+EXPECTED_STABLE_CONTRACT_DIGEST = "ddbacdfe819df6e446423fe414172e5c914f3b73113b7e6b72a4494651d22cd5"
 
 
 @dataclass(frozen=True)
@@ -94,16 +97,19 @@ class FirstLiveBindings:
 class FirstLiveResult:
     checkpoint: str
     cycle: object
+    capture_result: dict = None
 
 
 class FirstLiveFailure(ValidationError):
     """Bounded first-live failure with a non-secret classification."""
 
-    def __init__(self, classification, provider_structure=None):
+    def __init__(self, classification, provider_structure=None, capture_result=None):
         super().__init__(classification)
         self.classification = classification
         self.provider_structure = (None if provider_structure is None
                                    else parse_json(canonical_json(provider_structure)))
+        self.capture_result = (None if capture_result is None
+                               else parse_json(canonical_json(capture_result)))
 
 
 def prepare_first_live_bindings():
@@ -137,7 +143,8 @@ def _interactive_terminal_available():
     return sys.stdin.isatty() and sys.stderr.isatty()
 
 
-def _run_first_live(reviewed_source, tty_check, prompt_fn, transport_factory):
+def _run_first_live(reviewed_source, tty_check, prompt_fn, transport_factory,
+                    *, private_response_capture=False):
     if type(reviewed_source) is not OwnerReviewedSource:
         raise FirstLiveFailure("SOURCE_MISMATCH")
     current = _current_source_commit()
@@ -146,11 +153,15 @@ def _run_first_live(reviewed_source, tty_check, prompt_fn, transport_factory):
     bindings = prepare_first_live_bindings()
     if tty_check() is not True:
         raise FirstLiveFailure("TTY_REQUIRED")
+    if type(private_response_capture) is not bool:
+        raise FirstLiveFailure("CAPTURE_MODE_INVALID")
 
     provider = None
+    capture = PrivateResponseCapture() if private_response_capture else None
     try:
         provider = DevelopmentOneShotCredential.prompt_hidden(prompt_fn)
-        transport = transport_factory(provider)
+        transport = transport_factory(
+            provider, private_response_capture=capture)
         try:
             cycle = run_product_model_cycle(
                 bindings.task, transport, require_initial_predecessor_null=True)
@@ -169,23 +180,61 @@ def _run_first_live(reviewed_source, tty_check, prompt_fn, transport_factory):
                                   "OUTPUT_REJECTED", "TRANSPORT_FAILED"}
                               else "PROVIDER_ERROR")
             structure = metadata.get("provider_structure")
-            raise FirstLiveFailure(classification, structure) from None
-        return FirstLiveResult(current, cycle)
+            raise FirstLiveFailure(
+                classification, structure,
+                getattr(transport, "private_response_capture_result", None)) from None
+        return FirstLiveResult(
+            current, cycle,
+            getattr(transport, "private_response_capture_result", None))
     finally:
         if provider is not None:
             provider.discard()
+
+
+def _production_transport(provider, *, private_response_capture=None):
+    return OpenAIResponsesHTTPAdapter(
+        provider, private_response_capture=private_response_capture)
 
 
 def run_first_live(reviewed_source):
     """Production construction has no caller-selectable task, model, endpoint, or tools."""
     return _run_first_live(
         reviewed_source, _interactive_terminal_available, None,
-        OpenAIResponsesHTTPAdapter)
+        _production_transport)
 
 
-def _run_first_live_for_tests(reviewed_source, tty_check, prompt_fn, transport_factory):
+def _run_private_response_capture(reviewed_source):
+    """Founder CLI-only construction for one private response capture."""
+    return _run_first_live(
+        reviewed_source, _interactive_terminal_available, None,
+        _production_transport, private_response_capture=True)
+
+
+def _run_first_live_for_tests(reviewed_source, tty_check, prompt_fn, transport_factory,
+                              *, private_response_capture=False):
     """Explicit local test seam; the Founder CLI never calls this function."""
-    return _run_first_live(reviewed_source, tty_check, prompt_fn, transport_factory)
+    def test_transport(provider, *, private_response_capture=None):
+        if private_response_capture is None:
+            return transport_factory(provider)
+        return transport_factory(
+            provider, private_response_capture=private_response_capture)
+
+    return _run_first_live(
+        reviewed_source, tty_check, prompt_fn, test_transport,
+        private_response_capture=private_response_capture)
+
+
+def _capture_lines(capture_result):
+    if capture_result is None:
+        return []
+    created = capture_result.get("created") is True
+    path = capture_result.get("path") if created else "NONE"
+    return [
+        "CAPTURE_CREATED: " + ("YES" if created else "NO"),
+        "CAPTURE_PATH: " + (path if type(path) is str else "NONE"),
+        "CAPTURE_BYTES: " + str(capture_result.get("bytes", 0)),
+        "CAPTURE_MODE: " + CAPTURE_MODE,
+    ]
 
 
 def format_success(result):
@@ -215,6 +264,7 @@ def format_success(result):
         "PRIORITY RECOMMENDATION:", canonical_json(proposal["priority_recommendation"]),
         "EVIDENCE REFERENCES:", canonical_json(proposal["evidence_references"]),
     ]
+    lines.extend(_capture_lines(result.capture_result))
     return "\n".join(lines)
 
 
@@ -223,15 +273,34 @@ def main(argv=None):
         prog="python3 -B -m tools.agent_control.prod_first_live",
         description="Founder-run one-shot ATS-1201 PROD-01 inference.")
     parser.add_argument(
-        "--expected-source-commit", required=True,
+        "--expected-source-commit",
         help="Owner-reviewed checkpoint identity (40 lowercase hexadecimal characters).")
+    parser.add_argument(
+        "--private-response-capture", action="store_true",
+        help="Founder-only private capture of this one response body.")
+    parser.add_argument(
+        "--cleanup-private-response-capture", action="store_true",
+        help="Founder-only cleanup of generated private response captures.")
     args = parser.parse_args(argv)
+    if args.private_response_capture and args.cleanup_private_response_capture:
+        parser.error("Capture and cleanup modes cannot be combined.")
+    if not args.cleanup_private_response_capture and args.expected_source_commit is None:
+        parser.error("--expected-source-commit is required for Founder first-live mode.")
     try:
+        if args.cleanup_private_response_capture:
+            removed = cleanup_private_response_captures()
+            print("CLEANUP_REMOVED: " + str(removed))
+            print("CLEANUP_REMAINING: NO")
+            return 0
         reviewed = OwnerReviewedSource.from_owner_authorization(
             args.expected_source_commit)
-        print(format_success(run_first_live(reviewed)))
+        result = (_run_private_response_capture(reviewed)
+                  if args.private_response_capture else run_first_live(reviewed))
+        print(format_success(result))
         return 0
     except FirstLiveFailure as error:
+        for line in _capture_lines(error.capture_result):
+            print(line, file=sys.stderr)
         blocked = {"status": "BLOCKED", "classification": error.classification}
         if error.provider_structure is not None:
             blocked["provider_structure"] = error.provider_structure

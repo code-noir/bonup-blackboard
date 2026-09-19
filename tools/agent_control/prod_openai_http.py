@@ -15,6 +15,7 @@ from .prod_model_transport import (
     SAFE_TRANSPORT_FAILURE_REASONS, TIMEOUT_SECONDS, TRUSTED_ENDPOINT, TRUSTED_MODEL,
     TRUST_ENVIRONMENT, validate_provider_schema_subset,
 )
+from .prod_response_capture import PrivateResponseCapture, PrivateResponseCaptureError
 from .serialization import canonical_json, digest, parse_json
 from .types import ValidationError
 
@@ -92,10 +93,14 @@ class OpenAIResponsesHTTPAdapter:
 
     credential_owned = True
 
-    def __init__(self, credential_provider):
+    def __init__(self, credential_provider, *, private_response_capture=None):
         if not callable(getattr(credential_provider, "credential", None)):
             raise ValidationError("Trusted OpenAI credential provider is required.")
+        if (private_response_capture is not None
+                and not isinstance(private_response_capture, PrivateResponseCapture)):
+            raise ValidationError("Invalid private response capture.")
         self.__credential_provider = credential_provider
+        self.__private_response_capture = private_response_capture
         self.__endpoint = TRUSTED_ENDPOINT
         self.__timeouts = (CONNECT_TIMEOUT_SECONDS, READ_TIMEOUT_SECONDS)
         self.__session_factory = requests.Session
@@ -104,7 +109,7 @@ class OpenAIResponsesHTTPAdapter:
 
     @classmethod
     def _for_loopback_tests(cls, endpoint, credential_provider, *, timeouts=None,
-                            session_factory=None):
+                            session_factory=None, private_response_capture=None):
         """Test-only seam: accepts an explicit numeric loopback HTTP endpoint."""
         parsed = urlsplit(endpoint)
         if (parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "::1"}
@@ -112,7 +117,8 @@ class OpenAIResponsesHTTPAdapter:
                 or parsed.username is not None or parsed.password is not None
                 or parsed.port is None):
             raise ValidationError("Test OpenAI endpoint must be an explicit loopback Responses path.")
-        adapter = cls(credential_provider)
+        adapter = cls(credential_provider,
+                      private_response_capture=private_response_capture)
         adapter.__endpoint = endpoint
         adapter.__test_only = True
         if timeouts is not None:
@@ -133,9 +139,18 @@ class OpenAIResponsesHTTPAdapter:
     def response_metadata(self):
         return self.__response_metadata
 
+    @property
+    def private_response_capture_result(self):
+        if self.__private_response_capture is None:
+            return None
+        return self.__private_response_capture.result
+
     def send(self, *, endpoint, model, request, credential, timeout_seconds,
              allow_redirects, trust_environment):
         self.__response_metadata = None
+        if (self.__private_response_capture is not None
+                and self.__private_response_capture.used):
+            raise OpenAIHTTPError("Private provider response capture is single-use.")
         if (endpoint != TRUSTED_ENDPOINT or model != TRUSTED_MODEL
                 or timeout_seconds != TIMEOUT_SECONDS or allow_redirects is not ALLOW_REDIRECTS
                 or trust_environment is not TRUST_ENVIRONMENT):
@@ -228,7 +243,15 @@ class OpenAIResponsesHTTPAdapter:
                                 "OpenAI response length did not match its declaration.",
                                 failure_reason=PROVIDER_RESPONSE_TRUNCATED,
                                 response_metadata=response_metadata)
-                    return b"".join(chunks)
+                    body = b"".join(chunks)
+                    if self.__private_response_capture is not None:
+                        try:
+                            self.__private_response_capture.capture(body)
+                        except PrivateResponseCaptureError:
+                            raise OpenAIHTTPError(
+                                "Private provider response capture failed.",
+                                response_metadata=response_metadata) from None
+                    return body
         except OpenAIHTTPError:
             raise
         except requests.exceptions.ChunkedEncodingError:

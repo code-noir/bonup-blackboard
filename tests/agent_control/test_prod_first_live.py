@@ -1,9 +1,11 @@
 import inspect
 import io
 import json
+import os
+import stat
 import unittest
 from copy import deepcopy
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
 from prod_cycle_fixtures import DeterministicProductFake
@@ -26,6 +28,9 @@ from tools.agent_control.prod_model_transport import (
 from tools.agent_control.prod_openai_http import OpenAIHTTPError, project_openai_responses_request
 from tools.agent_control.prod_prelive import (
     DevelopmentOneShotCredential, OwnerReviewedSource, synthetic_first_live_task,
+)
+from tools.agent_control.prod_response_capture import (
+    CAPTURE_DIRECTORY, cleanup_private_response_captures,
 )
 from tools.agent_control.serialization import canonical_json, digest
 from tools.agent_control.types import ValidationError
@@ -63,11 +68,13 @@ class FakeFirstLiveTransport:
     credential_owned = True
     test_only = True
 
-    def __init__(self, provider, *, raw=None, error=None, response_metadata=None):
+    def __init__(self, provider, *, raw=None, error=None, response_metadata=None,
+                 private_response_capture=None):
         self.provider = provider
         self.raw = raw if raw is not None else response_bytes()
         self.error = error
         self.response_metadata = response_metadata
+        self.private_response_capture = private_response_capture
         self.calls = []
 
     def send(self, **kwargs):
@@ -77,7 +84,15 @@ class FakeFirstLiveTransport:
             raise AssertionError("unexpected synthetic credential")
         if self.error is not None:
             raise self.error
+        if self.private_response_capture is not None:
+            self.private_response_capture.capture(self.raw)
         return self.raw
+
+    @property
+    def private_response_capture_result(self):
+        if self.private_response_capture is None:
+            return None
+        return self.private_response_capture.result
 
 
 def reviewed():
@@ -194,6 +209,50 @@ class ProductFirstLiveTests(unittest.TestCase):
         self.assertIsNone(result.cycle.proposal["predecessor_proposal_id"])
         with self.assertRaises(ValidationError):
             transport.provider.credential()
+
+    def test_private_capture_requires_explicit_flag_and_reports_private_file(self):
+        default_transports = []
+
+        def default_factory(provider):
+            transport = FakeFirstLiveTransport(provider)
+            default_transports.append(transport)
+            return transport
+
+        with patch.object(prod_first_live, "_current_source_commit", return_value=CHECKPOINT):
+            result = _run_first_live_for_tests(
+                reviewed(), lambda: True, lambda _: SECRET, default_factory)
+        self.assertIsNone(default_transports[0].private_response_capture)
+        self.assertIsNone(result.capture_result)
+        self.assertNotIn("CAPTURE_CREATED", format_success(result))
+
+        captured_transports = []
+
+        def capture_factory(provider, *, private_response_capture=None):
+            transport = FakeFirstLiveTransport(
+                provider, private_response_capture=private_response_capture)
+            captured_transports.append(transport)
+            return transport
+
+        try:
+            with patch.object(prod_first_live, "_current_source_commit", return_value=CHECKPOINT):
+                result = _run_first_live_for_tests(
+                    reviewed(), lambda: True, lambda _: SECRET, capture_factory,
+                    private_response_capture=True)
+            capture = result.capture_result
+            self.assertTrue(capture["created"])
+            self.assertTrue(capture["path"].startswith(CAPTURE_DIRECTORY + os.sep))
+            self.assertNotIn(os.getcwd(), capture["path"])
+            self.assertEqual(capture["bytes"], len(captured_transports[0].raw))
+            file_stat = os.stat(capture["path"])
+            self.assertTrue(stat.S_ISREG(file_stat.st_mode))
+            self.assertEqual(file_stat.st_mode & 0o777, 0o600)
+            with open(capture["path"], "rb") as captured:
+                self.assertEqual(captured.read(), captured_transports[0].raw)
+            output = format_success(result)
+            self.assertIn("CAPTURE_CREATED: YES", output)
+            self.assertIn("CAPTURE_MODE: PRIVATE_DIAGNOSTIC", output)
+        finally:
+            cleanup_private_response_captures()
 
     def test_initial_non_null_predecessor_is_rejected_without_review_or_routing(self):
         authority = {"agents": [], "grants": [], "assignments": [], "registry": {}}
@@ -408,6 +467,24 @@ class ProductFirstLiveTests(unittest.TestCase):
             with self.subTest(option=option), redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                 prod_first_live.main([
                     "--expected-source-commit", CHECKPOINT, option, "denied"])
+
+    def test_private_capture_flag_and_cleanup_are_explicit_founder_commands(self):
+        with patch.object(prod_first_live, "_run_private_response_capture",
+                          side_effect=FirstLiveFailure("SYNTHETIC_CAPTURE_STOP")) as capture:
+            with redirect_stderr(io.StringIO()):
+                result = prod_first_live.main([
+                    "--expected-source-commit", CHECKPOINT,
+                    "--private-response-capture"])
+        self.assertEqual(result, 2)
+        capture.assert_called_once()
+
+        with patch.object(prod_first_live, "cleanup_private_response_captures",
+                          return_value=0):
+            output = io.StringIO()
+            with redirect_stdout(output):
+                result = prod_first_live.main(["--cleanup-private-response-capture"])
+        self.assertEqual(result, 0)
+        self.assertIn("CLEANUP_REMAINING: NO", output.getvalue())
 
 
 if __name__ == "__main__":

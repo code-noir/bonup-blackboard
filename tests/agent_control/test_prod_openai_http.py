@@ -26,6 +26,10 @@ from tools.agent_control.prod_openai_http import (
     PROVIDER_MODEL, InjectedOpenAICredentialProvider, OpenAIResponsesHTTPAdapter,
     project_openai_responses_request,
 )
+from tools.agent_control.prod_response_capture import (
+    CAPTURE_DIRECTORY, PrivateResponseCapture, PrivateResponseCaptureError,
+    cleanup_private_response_captures,
+)
 from tools.agent_control.serialization import canonical_json, digest
 from tools.agent_control.types import ValidationError
 
@@ -162,6 +166,7 @@ class ProductOpenAIHTTPTests(unittest.TestCase):
     def test_one_fixed_post_with_provider_model_zero_tools_and_structured_output(self):
         result, calls, adapter = self.run_local({"body": response_bytes()})
         self.assertTrue(adapter.test_only)
+        self.assertIsNone(adapter.private_response_capture_result)
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["path"], "/v1/responses")
         request = json.loads(calls[0]["body"])
@@ -227,6 +232,69 @@ class ProductOpenAIHTTPTests(unittest.TestCase):
         self.assertFalse(structure["http_response"]["json_decode_success"])
         self.assertNotIn(raw.decode(), json.dumps(caught.exception.audit_metadata))
         self.assertEqual(len(server.calls), 1)
+
+    def test_private_capture_stores_only_decompressed_response_once(self):
+        raw = b'{"status":"completed"'
+        capture = PrivateResponseCapture()
+        try:
+            with fake_server({"body": raw, "content_encoding": "gzip"}) as (server, endpoint):
+                provider = InjectedOpenAICredentialProvider(SECRET)
+                adapter = OpenAIResponsesHTTPAdapter._for_loopback_tests(
+                    endpoint, provider, private_response_capture=capture)
+                with self.assertRaises(ProductModelFailure):
+                    run_product_model_cycle(synthetic_task(), adapter)
+            result = adapter.private_response_capture_result
+            self.assertTrue(result["created"])
+            self.assertEqual(result["bytes"], len(raw))
+            self.assertTrue(result["path"].startswith(CAPTURE_DIRECTORY + os.sep))
+            file_stat = os.stat(result["path"])
+            self.assertEqual(file_stat.st_mode & 0o777, 0o600)
+            with open(result["path"], "rb") as captured:
+                captured_body = captured.read()
+            self.assertEqual(captured_body, raw)
+            self.assertNotIn(SECRET.encode(), captured_body)
+            self.assertNotEqual(captured_body, server.calls[0]["body"])
+            self.assertEqual(len(server.calls), 1)
+            with self.assertRaises(ProductModelFailure):
+                run_product_model_cycle(synthetic_task(), adapter)
+            self.assertEqual(len(server.calls), 1)
+        finally:
+            cleanup_private_response_captures()
+
+        success_capture = PrivateResponseCapture()
+        try:
+            with fake_server({"body": response_bytes()}) as (server, endpoint):
+                provider = InjectedOpenAICredentialProvider(SECRET)
+                adapter = OpenAIResponsesHTTPAdapter._for_loopback_tests(
+                    endpoint, provider, private_response_capture=success_capture)
+                result = run_product_model_cycle(synthetic_task(), adapter)
+                self.assertEqual(result.proposal["knowledge_state"], "WORKING")
+                self.assertEqual(len(server.calls), 1)
+                capture_result = adapter.private_response_capture_result
+                self.assertTrue(capture_result["created"])
+                with open(capture_result["path"], "rb") as captured:
+                    self.assertEqual(captured.read(), response_bytes())
+        finally:
+            cleanup_private_response_captures()
+
+    def test_private_capture_is_bounded_and_does_not_follow_symlink(self):
+        capture = PrivateResponseCapture()
+        try:
+            with self.assertRaises(PrivateResponseCaptureError):
+                capture.capture(b"x" * (MAX_RESPONSE_BYTES + 1))
+            self.assertFalse(capture.result["created"])
+
+            os.makedirs(CAPTURE_DIRECTORY, mode=0o700, exist_ok=True)
+            filename = "response-" + ("a" * 32) + ".bin"
+            path = os.path.join(CAPTURE_DIRECTORY, filename)
+            os.symlink("/etc/passwd", path)
+            with patch("tools.agent_control.prod_response_capture.uuid.uuid4") as uuid4:
+                uuid4.return_value.hex = "a" * 32
+                with self.assertRaises(PrivateResponseCaptureError):
+                    PrivateResponseCapture().capture(b"private")
+            self.assertFalse(os.path.lexists(path))
+        finally:
+            cleanup_private_response_captures()
 
     def test_empty_truncated_and_oversized_decoded_bodies_fail_closed(self):
         cases = (

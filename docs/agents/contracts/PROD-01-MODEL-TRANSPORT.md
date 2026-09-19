@@ -49,12 +49,19 @@ requirements and acceptance conditions using modal or hypothetical language rema
 valid. Explicit authority-like fields remain rejected by the closed proposal field
 set regardless of narrative wording.
 
-Output failures retain only a bounded code-owned reason, never provider text or
-field values. Current reasons distinguish provider-envelope, structured-JSON,
-proposal-schema, proposal-identity, task-binding, evidence-binding, knowledge-state,
-authority-claim, content-policy, and initial-predecessor rejection. This improves
-future diagnostics but cannot retrospectively identify a reason that an earlier
-execution discarded.
+Output failures retain only bounded code-owned classifications and, for provider
+envelope failures, a structural fingerprint. Envelope reasons distinguish response
+bytes/JSON/object/status/output shape, message status/role, content shape, refusal,
+unexpected item types, missing or multiple assistant/output-text parts, and output
+size. The fingerprint is capped to eight values per structural list and contains
+only the allowlisted response status, bounded item type/status/role names, counts,
+and a refusal boolean. It never retains output text, refusal text, reasoning,
+annotations, IDs, arbitrary metadata, field values, or credentials. Unknown type
+values are reported only when they match the bounded ASCII identifier rule;
+otherwise they become `UNSAFE_TYPE`. The parser still requires one completed
+assistant message with one output-text proposal before strict JSON and runtime
+proposal validation. This improves future diagnostics but cannot retrospectively
+identify a reason that an earlier execution discarded.
 
 Transport failures retain only an allowlisted code-owned classification. HTTP
 401, 403, 404, 429, other 4xx, and 5xx responses map respectively to bounded

@@ -23,7 +23,7 @@ from .prod_prelive import (
     DevelopmentOneShotCredential, OwnerReviewedSource, _current_source_commit,
     synthetic_first_live_task,
 )
-from .serialization import canonical_json, digest
+from .serialization import canonical_json, digest, parse_json
 from .types import ValidationError
 
 EXPECTED_SCHEMA_DIGEST = "c13b322dff0b8da89699966165b4d6f3ab69f50efbb0cc540ab8a75133e661ce"
@@ -76,7 +76,7 @@ def stable_contract_digest(value=None):
 
 
 # Frozen only after deterministic regeneration from the reviewed implementation.
-EXPECTED_STABLE_CONTRACT_DIGEST = "42abc180020e1d9815a2382556d27475717b13ffc2b3df38942005a3b8511759"
+EXPECTED_STABLE_CONTRACT_DIGEST = "8d052608793dacbf315fc04e74269778e812055ae62a13631bc5a6dc1a64ae07"
 
 
 @dataclass(frozen=True)
@@ -97,9 +97,11 @@ class FirstLiveResult:
 class FirstLiveFailure(ValidationError):
     """Bounded first-live failure with a non-secret classification."""
 
-    def __init__(self, classification):
+    def __init__(self, classification, provider_structure=None):
         super().__init__(classification)
         self.classification = classification
+        self.provider_structure = (None if provider_structure is None
+                                   else parse_json(canonical_json(provider_structure)))
 
 
 def prepare_first_live_bindings():
@@ -164,7 +166,9 @@ def _run_first_live(reviewed_source, tty_check, prompt_fn, transport_factory):
                               and metadata.get("result_classification") in {
                                   "OUTPUT_REJECTED", "TRANSPORT_FAILED"}
                               else "PROVIDER_ERROR")
-            raise FirstLiveFailure(classification) from None
+            structure = (metadata.get("provider_structure")
+                         if classification == "PROVIDER_ENVELOPE_INVALID" else None)
+            raise FirstLiveFailure(classification, structure) from None
         return FirstLiveResult(current, cycle)
     finally:
         if provider is not None:
@@ -227,8 +231,10 @@ def main(argv=None):
         print(format_success(run_first_live(reviewed)))
         return 0
     except FirstLiveFailure as error:
-        print(json.dumps({"status": "BLOCKED", "classification": error.classification},
-                         sort_keys=True, separators=(",", ":")), file=sys.stderr)
+        blocked = {"status": "BLOCKED", "classification": error.classification}
+        if error.provider_structure is not None:
+            blocked["provider_structure"] = error.provider_structure
+        print(json.dumps(blocked, sort_keys=True, separators=(",", ":")), file=sys.stderr)
         return 2
     except (ValidationError, OSError):
         print(json.dumps({"status": "BLOCKED", "classification": "CONTRACT_MISMATCH"},

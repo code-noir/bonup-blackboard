@@ -240,6 +240,30 @@ class ProductFirstLiveTests(unittest.TestCase):
             self.assertEqual(caught.exception.classification, classification)
             self.assertEqual(len(transports[0].calls), 1)
 
+    def test_envelope_failure_exposes_only_bounded_structure(self):
+        transports = []
+
+        def factory(provider):
+            transport = FakeFirstLiveTransport(
+                provider,
+                raw=response_bytes(refusal=True))
+            transports.append(transport)
+            return transport
+
+        with patch.object(prod_first_live, "_current_source_commit", return_value=CHECKPOINT):
+            with self.assertRaises(FirstLiveFailure) as caught:
+                _run_first_live_for_tests(reviewed(), lambda: True, lambda _: SECRET, factory)
+        self.assertEqual(caught.exception.classification, "PROVIDER_ENVELOPE_INVALID")
+        structure = caught.exception.provider_structure
+        self.assertEqual(structure["reason"], "REFUSAL_PRESENT")
+        self.assertEqual(structure["content_types"], ["refusal"])
+        self.assertTrue(structure["refusal_present"])
+        diagnostic = prod_first_live.json.dumps(structure)
+        self.assertNotIn("synthetic refusal", diagnostic)
+        self.assertNotIn(HIDDEN_REASONING, diagnostic)
+        self.assertNotIn("resp_first_live_synthetic", diagnostic)
+        self.assertEqual(len(transports[0].calls), 1)
+
     def test_bounded_transport_reason_reaches_first_live_without_body(self):
         transports = []
 

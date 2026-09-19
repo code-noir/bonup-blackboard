@@ -1,5 +1,6 @@
 """Bounded PROD-01 model transport; proposals only, with no execution authority."""
 from dataclasses import dataclass
+import re
 from typing import Protocol
 
 from .prod_contract import REFERENCE_TYPES, validate_product_proposal, validate_product_task
@@ -15,6 +16,7 @@ ALLOW_REDIRECTS = False
 TRUST_ENVIRONMENT = False
 MAX_OUTPUT_ITEMS = 32
 MAX_CONTENT_PARTS = 8
+MAX_DIAGNOSTIC_VALUES = 8
 INITIAL_PREDECESSOR_INVALID = "INITIAL_PREDECESSOR_INVALID"
 TASK_ID_PATTERN = (
     r"^ATS-(?:[0-9]{3}[1-9]|[0-9]{2}[1-9][0-9]|[0-9][1-9][0-9]{2}|[1-9][0-9]{3,})$"
@@ -40,6 +42,14 @@ _PROVIDER_SCHEMA_KEYWORDS = frozenset({
     "pattern", "format", "minLength", "maxLength", "minItems", "maxItems",
     "enum", "const", "anyOf",
 })
+_RESPONSE_STATUSES = frozenset({
+    "completed", "incomplete", "failed", "queued", "in_progress", "cancelled",
+})
+_MESSAGE_STATUSES = frozenset({"completed", "incomplete", "in_progress", "failed"})
+_MESSAGE_ROLES = frozenset({"assistant", "user", "system", "developer"})
+_KNOWN_OUTPUT_TYPES = frozenset({"reasoning", "message"})
+_KNOWN_CONTENT_TYPES = frozenset({"output_text", "refusal"})
+_SAFE_STRUCTURE_IDENTIFIER = re.compile(r"[A-Za-z][A-Za-z0-9_:-]{0,63}\Z", re.ASCII)
 TRUSTED_ENDPOINT = "https://api.openai.com/v1/responses"
 TRUSTED_MODEL = "PROD-01-STRUCTURED-MODEL-V1"
 LOCAL_CONTRACT_VALIDATED = True
@@ -144,13 +154,49 @@ class ProductModelFailure(ValidationError):
 class ProductOutputFailure(ValidationError):
     """Internal output rejection carrying only a bounded, code-owned reason."""
 
-    def __init__(self, reason):
-        super().__init__(reason)
+    def __init__(self, classification, reason, provider_structure):
+        super().__init__(classification)
+        self.classification = classification
         self.reason = reason
+        self.provider_structure = parse_json(canonical_json(provider_structure))
 
 
-def _reject_output(reason):
-    raise ProductOutputFailure(reason)
+def _new_provider_structure():
+    return {
+        "output_count": 0,
+        "output_types": [],
+        "message_count": 0,
+        "message_statuses": [],
+        "message_roles": [],
+        "content_count": 0,
+        "content_types": [],
+        "refusal_present": False,
+    }
+
+
+def _append_bounded(values, value):
+    if len(values) < MAX_DIAGNOSTIC_VALUES:
+        values.append(value)
+
+
+def _safe_structure_type(value, known):
+    if type(value) is str and value in known:
+        return value
+    if (type(value) is str and value.isascii()
+            and _SAFE_STRUCTURE_IDENTIFIER.fullmatch(value)):
+        return value
+    return "UNSAFE_TYPE"
+
+
+def _safe_structure_enum(value, known):
+    return value if type(value) is str and value in known else "UNRECOGNIZED"
+
+
+def _reject_output(reason, *, classification="PROVIDER_ENVELOPE_INVALID", structure=None):
+    value = _new_provider_structure() if structure is None else structure
+    value = dict(value)
+    value["reason"] = reason
+    raise ProductOutputFailure(classification, reason, value)
 
 
 @dataclass(frozen=True)
@@ -217,49 +263,113 @@ def build_product_model_request(task):
 
 
 def parse_product_model_response(raw):
-    if type(raw) is not bytes or not raw or len(raw) > MAX_RESPONSE_BYTES:
-        _reject_output("PROVIDER_ENVELOPE_INVALID")
+    if type(raw) is not bytes or not raw:
+        _reject_output("RESPONSE_BYTES_INVALID")
+    if len(raw) > MAX_RESPONSE_BYTES:
+        _reject_output("RESPONSE_TOO_LARGE")
     try:
         envelope = parse_json(raw.decode("utf-8"))
     except (UnicodeError, ValidationError):
-        _reject_output("PROVIDER_ENVELOPE_INVALID")
-    if (type(envelope) is not dict or envelope.get("status") != "completed"
-            or type(envelope.get("output")) is not list
-            or not envelope["output"] or len(envelope["output"]) > MAX_OUTPUT_ITEMS):
-        _reject_output("PROVIDER_ENVELOPE_INVALID")
+        _reject_output("RESPONSE_JSON_INVALID")
+    if type(envelope) is not dict:
+        _reject_output("RESPONSE_NOT_OBJECT")
+
+    structure = _new_provider_structure()
+    if "status" not in envelope:
+        _reject_output("RESPONSE_STATUS_MISSING", structure=structure)
+    response_status = envelope["status"]
+    structure["response_status"] = _safe_structure_enum(response_status, _RESPONSE_STATUSES)
+    if type(response_status) is not str or response_status not in _RESPONSE_STATUSES:
+        _reject_output("RESPONSE_STATUS_INVALID", structure=structure)
+    if response_status != "completed":
+        _reject_output("RESPONSE_STATUS_NOT_COMPLETED", structure=structure)
+    if "output" not in envelope:
+        _reject_output("OUTPUT_MISSING", structure=structure)
+    output = envelope["output"]
+    if type(output) is not list:
+        _reject_output("OUTPUT_NOT_ARRAY", structure=structure)
+    structure["output_count"] = min(len(output), MAX_OUTPUT_ITEMS + 1)
+    if not output:
+        _reject_output("OUTPUT_EMPTY", structure=structure)
+    if len(output) > MAX_OUTPUT_ITEMS:
+        _reject_output("OUTPUT_TOO_LARGE", structure=structure)
 
     proposal_texts = []
-    for item in envelope["output"]:
-        if type(item) is not dict or type(item.get("type")) is not str:
-            _reject_output("PROVIDER_ENVELOPE_INVALID")
+    assistant_message_count = 0
+    for item in output:
+        if type(item) is not dict:
+            _reject_output("OUTPUT_ITEM_NOT_OBJECT", structure=structure)
+        if "type" not in item:
+            _reject_output("OUTPUT_ITEM_TYPE_MISSING", structure=structure)
+        item_type = _safe_structure_type(item["type"], _KNOWN_OUTPUT_TYPES)
+        _append_bounded(structure["output_types"], item_type)
         if item["type"] == "reasoning":
             continue
-        if (item["type"] != "message" or item.get("role") != "assistant"
-                or item.get("status") != "completed"):
-            _reject_output("PROVIDER_ENVELOPE_INVALID")
-        content = item.get("content")
-        if (type(content) is not list or not content
-                or len(content) > MAX_CONTENT_PARTS):
-            _reject_output("PROVIDER_ENVELOPE_INVALID")
+        if item["type"] != "message":
+            _reject_output("UNEXPECTED_OUTPUT_ITEM", structure=structure)
+        structure["message_count"] = min(structure["message_count"] + 1,
+                                          MAX_DIAGNOSTIC_VALUES + 1)
+        message_status = item.get("status")
+        message_role = item.get("role")
+        _append_bounded(structure["message_statuses"],
+                        _safe_structure_enum(message_status, _MESSAGE_STATUSES))
+        _append_bounded(structure["message_roles"],
+                        _safe_structure_enum(message_role, _MESSAGE_ROLES))
+        if type(message_status) is not str or message_status not in _MESSAGE_STATUSES:
+            _reject_output("MESSAGE_STATUS_INVALID", structure=structure)
+        if type(message_role) is not str or message_role not in _MESSAGE_ROLES:
+            _reject_output("MESSAGE_ROLE_INVALID", structure=structure)
+        if message_role != "assistant":
+            _reject_output("MESSAGE_ROLE_INVALID", structure=structure)
+        if message_status != "completed":
+            _reject_output("MESSAGE_STATUS_INVALID", structure=structure)
+        assistant_message_count += 1
+        if assistant_message_count > 1:
+            _reject_output("MULTIPLE_ASSISTANT_MESSAGES", structure=structure)
+        if "content" not in item:
+            _reject_output("CONTENT_MISSING", structure=structure)
+        content = item["content"]
+        if type(content) is not list:
+            _reject_output("CONTENT_NOT_ARRAY", structure=structure)
+        structure["content_count"] = min(len(content), MAX_CONTENT_PARTS + 1)
+        if not content:
+            _reject_output("CONTENT_EMPTY", structure=structure)
+        if len(content) > MAX_CONTENT_PARTS:
+            _reject_output("CONTENT_TOO_LARGE", structure=structure)
         for part in content:
-            if type(part) is not dict or type(part.get("type")) is not str:
-                _reject_output("PROVIDER_ENVELOPE_INVALID")
+            if type(part) is not dict:
+                _reject_output("CONTENT_ITEM_NOT_OBJECT", structure=structure)
+            if "type" not in part:
+                _reject_output("CONTENT_TYPE_MISSING", structure=structure)
+            content_type = _safe_structure_type(part["type"], _KNOWN_CONTENT_TYPES)
+            _append_bounded(structure["content_types"], content_type)
             if part["type"] == "refusal":
-                _reject_output("PROVIDER_ENVELOPE_INVALID")
-            if part["type"] != "output_text" or type(part.get("text")) is not str:
-                _reject_output("PROVIDER_ENVELOPE_INVALID")
+                structure["refusal_present"] = True
+                _reject_output("REFUSAL_PRESENT", structure=structure)
+            if part["type"] != "output_text":
+                _reject_output("UNEXPECTED_CONTENT_ITEM", structure=structure)
+            if "text" not in part or type(part["text"]) is not str:
+                _reject_output("OUTPUT_TEXT_INVALID", structure=structure)
+            if not part["text"]:
+                _reject_output("OUTPUT_TEXT_EMPTY", structure=structure)
             proposal_texts.append(part["text"])
 
+    if assistant_message_count == 0:
+        _reject_output("MESSAGE_MISSING", structure=structure)
+    if len(proposal_texts) > 1:
+        _reject_output("MULTIPLE_OUTPUT_TEXT", structure=structure)
     if len(proposal_texts) != 1:
-        _reject_output("PROVIDER_ENVELOPE_INVALID")
-    if not proposal_texts[0] or len(proposal_texts[0].encode("utf-8")) > MAX_RESPONSE_BYTES:
-        _reject_output("PROVIDER_ENVELOPE_INVALID")
+        _reject_output("OUTPUT_TEXT_MISSING", structure=structure)
+    if len(proposal_texts[0].encode("utf-8")) > MAX_RESPONSE_BYTES:
+        _reject_output("OUTPUT_TEXT_TOO_LARGE", structure=structure)
     try:
         candidate = parse_json(proposal_texts[0])
     except ValidationError:
-        _reject_output("STRUCTURED_JSON_INVALID")
+        _reject_output("STRUCTURED_JSON_INVALID", classification="STRUCTURED_JSON_INVALID",
+                       structure=structure)
     if type(candidate) is not dict:
-        _reject_output("STRUCTURED_JSON_INVALID")
+        _reject_output("STRUCTURED_JSON_INVALID", classification="STRUCTURED_JSON_INVALID",
+                       structure=structure)
     return candidate
 
 
@@ -279,7 +389,8 @@ def _proposal_rejection_reason(error):
     return "PROPOSAL_SCHEMA_MISMATCH"
 
 
-def _audit(task_id, request_digest, classification, *, proposal_digest=None, reason=None):
+def _audit(task_id, request_digest, classification, *, proposal_digest=None, reason=None,
+           provider_structure=None):
     value = {
         "agent_id": "PROD-01",
         "task_id": task_id,
@@ -289,6 +400,8 @@ def _audit(task_id, request_digest, classification, *, proposal_digest=None, rea
         "proposal_digest": proposal_digest,
         "failure_reason": reason,
     }
+    if provider_structure is not None:
+        value["provider_structure"] = provider_structure
     return parse_json(canonical_json(value))
 
 
@@ -335,7 +448,8 @@ def run_product_model_cycle(task_input, transport, credential_provider=None, *,
         candidate = parse_product_model_response(raw)
     except ProductOutputFailure as error:
         metadata = _audit(task["task_id"], request_digest, "OUTPUT_REJECTED",
-                          reason=error.reason)
+                          reason=error.classification,
+                          provider_structure=error.provider_structure)
         raise ProductModelFailure("PROD-01 model output failed strict validation.", metadata) from None
     try:
         proposal = validate_product_proposal(candidate)

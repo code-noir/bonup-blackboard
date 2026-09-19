@@ -259,6 +259,70 @@ class ProductModelTransportTests(unittest.TestCase):
             with self.subTest(size=len(raw)), self.assertRaises(ProductModelFailure):
                 self.run_cycle(raw=raw)
 
+    def test_responses_envelope_fixtures_have_bounded_structural_reasons(self):
+        message = response_envelope()["output"][0]
+        reasoning = {"type": "reasoning", "summary": "must never be retained"}
+        fixtures = [
+            ("completed_message", response_bytes(output=[message]), True, None),
+            ("reasoning_before_message", response_bytes(output=[reasoning, message]), True, None),
+            ("message_before_reasoning", response_bytes(output=[message, reasoning]), True, None),
+            ("incomplete", response_bytes(status="incomplete"), False,
+             "RESPONSE_STATUS_NOT_COMPLETED"),
+            ("failed", response_bytes(status="failed"), False,
+             "RESPONSE_STATUS_NOT_COMPLETED"),
+            ("missing_output", canonical_json({"status": "completed"}).encode(), False,
+             "OUTPUT_MISSING"),
+            ("empty_output", response_bytes(output=[]), False, "OUTPUT_EMPTY"),
+            ("reasoning_only", response_bytes(output=[reasoning]), False, "MESSAGE_MISSING"),
+            ("multiple_assistant_messages", response_bytes(
+                output=[message, dict(message, id="msg_synthetic_2")] ), False,
+             "MULTIPLE_ASSISTANT_MESSAGES"),
+            ("multiple_output_text", response_bytes(
+                output=[dict(message, content=message["content"] * 2)]), False,
+             "MULTIPLE_OUTPUT_TEXT"),
+            ("refusal", response_bytes(output=[dict(
+                message, content=[{"type": "refusal", "refusal": "do not retain"}])]),
+             False, "REFUSAL_PRESENT"),
+            ("unknown_output_type", response_bytes(output=[{"type": "mystery_output"}]),
+             False, "UNEXPECTED_OUTPUT_ITEM"),
+            ("unknown_content_type", response_bytes(output=[dict(
+                message, content=[{"type": "mystery_content", "text": "do not retain"}])]),
+             False, "UNEXPECTED_CONTENT_ITEM"),
+            ("wrong_message_role", response_bytes(output=[dict(message, role="user")]),
+             False, "MESSAGE_ROLE_INVALID"),
+            ("non_completed_message", response_bytes(output=[dict(message, status="in_progress")]),
+             False, "MESSAGE_STATUS_INVALID"),
+        ]
+        for name, raw, succeeds, reason in fixtures:
+            with self.subTest(fixture=name):
+                if succeeds:
+                    result, _, _ = self.run_cycle(raw=raw)
+                    self.assertEqual(result.proposal["knowledge_state"], "WORKING")
+                    continue
+                with self.assertRaises(ProductModelFailure) as caught:
+                    self.run_cycle(raw=raw)
+                metadata = caught.exception.audit_metadata
+                self.assertEqual(metadata["failure_reason"], "PROVIDER_ENVELOPE_INVALID")
+                structure = metadata["provider_structure"]
+                self.assertEqual(structure["reason"], reason)
+                self.assertLessEqual(len(structure["output_types"]), 8)
+                self.assertLessEqual(len(structure["message_statuses"]), 8)
+                self.assertLessEqual(len(structure["message_roles"]), 8)
+                self.assertLessEqual(len(structure["content_types"]), 8)
+                diagnostic = canonical_json(metadata)
+                self.assertNotIn("do not retain", diagnostic)
+                self.assertNotIn("must never be retained", diagnostic)
+
+    def test_structural_fingerprint_caps_unknown_type_values(self):
+        unsafe_type = "x" * 200
+        raw = response_bytes(output=[{"type": unsafe_type}])
+        with self.assertRaises(ProductModelFailure) as caught:
+            self.run_cycle(raw=raw)
+        structure = caught.exception.audit_metadata["provider_structure"]
+        self.assertEqual(structure["reason"], "UNEXPECTED_OUTPUT_ITEM")
+        self.assertEqual(structure["output_types"], ["UNSAFE_TYPE"])
+        self.assertNotIn(unsafe_type, canonical_json(caught.exception.audit_metadata))
+
     def test_authority_and_knowledge_claims_are_rejected(self):
         for changes in ({"approved": True}, {"execution_grant": "grant"},
                         {"knowledge_state": "APPROVED_INTERNAL"},

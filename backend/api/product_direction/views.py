@@ -8,6 +8,7 @@ from backend.api.operator.permissions import IsOperator
 from backend.bonup.models import ProductDirectionTask
 
 from .serializers import ProductDirectionTaskSerializer
+from .proposal import ProposalReadFailure, read_product_direction_proposal
 from .runtime import (
     ProductRuntimeFailure,
     ProductRuntimeUnavailable,
@@ -72,6 +73,25 @@ class ProductDirectionTaskDetailView(APIView):
             pk=task_id,
         )
         return Response(ProductDirectionTaskSerializer(task).data)
+
+
+class ProductDirectionTaskProposalView(APIView):
+    """Expose only the verified product proposal projection."""
+
+    permission_classes = [IsOperator]
+
+    def get(self, request, task_id):
+        task = get_object_or_404(ProductDirectionTask, pk=task_id)
+        try:
+            proposal = read_product_direction_proposal(task)
+        except ProposalReadFailure as error:
+            http_status = (
+                status.HTTP_404_NOT_FOUND
+                if error.reason == "PROPOSAL_NOT_AVAILABLE"
+                else status.HTTP_409_CONFLICT
+            )
+            return Response({"reason": error.reason}, status=http_status)
+        return Response(proposal)
 
 
 class ProductDirectionTaskSubmitView(APIView):

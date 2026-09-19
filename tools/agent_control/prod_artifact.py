@@ -29,8 +29,9 @@ _FILE_MODE = 0o600
 class ProposalArtifactError(ValidationError):
     """Bounded artifact persistence or verification failure."""
 
-    def __init__(self):
+    def __init__(self, reason="ARTIFACT_INVALID"):
         super().__init__("Validated PROD-01 proposal artifact operation failed.")
+        self.reason = reason
 
 
 @dataclass(frozen=True)
@@ -228,6 +229,8 @@ class ProposalArtifactStore:
                 descriptor = os.open(
                     filename, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
                     dir_fd=directory_fd)
+            except FileNotFoundError:
+                raise ProposalArtifactError("ARTIFACT_MISSING") from None
             except OSError:
                 raise ProposalArtifactError() from None
             file_stat = os.fstat(descriptor)

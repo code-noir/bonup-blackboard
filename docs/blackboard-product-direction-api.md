@@ -109,3 +109,35 @@ The current non-provisioned application composition fails closed with
 `RUNTIME_UNAVAILABLE`. A future trusted controller/runtime composition must
 replace that seam; it must not be configured from browser input or ordinary
 task fields.
+
+## M3 proposal read
+
+```text
+GET /api/product-direction/tasks/<task_id>/proposal/
+```
+
+The endpoint is operator-authenticated and read-only. For `WORKING_PROPOSAL`,
+it loads the proposal by the already-bound proposal identity from the fixed
+trusted `ProposalArtifactStore`, verifies the artifact, task, agent, proposal,
+digest, and `WORKING` bindings, and returns only the validated product
+proposal projection. `AWAITING_FOUNDER_REVIEW`, `APPROVED_INTERNAL`,
+`REJECTED`, and `CHANGES_REQUESTED` may continue to read the same immutable
+artifact after later milestones. `SUBMITTED`, `RUNNING`, and `BLOCKED` return
+`PROPOSAL_NOT_AVAILABLE`.
+
+The response contains the application task ID, Agent Control task ID, agent ID,
+proposal ID/digest, knowledge state, title, `problem_user_need`, objective,
+`proposed_requirement`, acceptance intent, dependencies, assumptions,
+`risks_open_questions`, priority recommendation, and evidence references.
+Evidence references are displayed as validated bounded metadata only; they are
+never dereferenced by this endpoint.
+
+Safe failure reasons include `ARTIFACT_MISSING`, `ARTIFACT_INVALID`,
+`ARTIFACT_BINDING_MISMATCH`, `TASK_BINDING_MISMATCH`,
+`PROPOSAL_BINDING_MISMATCH`, `PROPOSAL_DIGEST_MISMATCH`, and
+`KNOWLEDGE_STATE_INVALID`. No path, provider envelope, credential, reasoning,
+request metadata, Founder session material, or authority record is returned.
+
+Reading the artifact does not mutate the task, proposal, knowledge state, or
+authority system. Operator read access is separate from the future Founder
+review operation.

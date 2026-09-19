@@ -19,7 +19,9 @@ from .founder_key_validation import validate_public_key
 
 OPENSSL = '/usr/bin/openssl'
 SPKI_PREFIX = bytes.fromhex('302a300506032b6570032100')
-PURPOSES = ('FOUNDER_INSTALLATION_APPROVAL', 'FOUNDER_HOST_TEST_AUTHORIZATION')
+PROD_PROPOSAL_REVIEW = 'PROD_PROPOSAL_REVIEW'
+PURPOSES = ('FOUNDER_INSTALLATION_APPROVAL', 'FOUNDER_HOST_TEST_AUTHORIZATION',
+            PROD_PROPOSAL_REVIEW)
 DEPENDENCY = dict(path=OPENSSL, minimum_version='3.0', algorithm='Ed25519',
                   operations=['pkeyutl-verify'], package_installation=False,
                   compatibility='ROOT_CONTROLLED_BINARY_AND_KNOWN_ANSWER_VERIFICATION')

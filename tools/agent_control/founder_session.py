@@ -8,7 +8,8 @@ import threading
 import time
 from uuid import uuid4
 
-from .founder_crypto import FounderRoot,OpenSSLVerifier,PURPOSES,load_founder_root
+from .founder_crypto import (FounderRoot, OpenSSLVerifier, PROD_PROPOSAL_REVIEW,
+                             PURPOSES, load_founder_root)
 from .identity import PeerIdentity,ProcessIdentity,founder_context
 from .installation_approval import validate_proposal,approval_record
 from .serialization import canonical_json,digest
@@ -51,8 +52,14 @@ class FounderSessions:
     def issue_binding(self,purpose,binding,*,installation_receipt_digest=None):
         with self.lock:
             if purpose not in PURPOSES:raise AuthorityError('Purpose disabled.')
-            from .authority_installation import InstallationBinding
-            binding=InstallationBinding(**binding).data()
+            if purpose == PROD_PROPOSAL_REVIEW:
+                from .founder_review_auth import normalize_review_binding
+                binding = normalize_review_binding(binding)
+                if installation_receipt_digest is not None:
+                    raise AuthorityError('Product review cannot use an installation receipt.')
+            else:
+                from .authority_installation import InstallationBinding
+                binding=InstallationBinding(**binding).data()
             if purpose==PURPOSES[1] and (type(installation_receipt_digest) is not str or
                     len(installation_receipt_digest)!=64 or any(c not in '0123456789abcdef' for c in installation_receipt_digest)):
                 raise AuthorityError('Verified installation receipt binding required.')
@@ -60,8 +67,12 @@ class FounderSessions:
                 raise AuthorityError('Installation purpose cannot be substituted.')
             peer,process=self._peer();now=self.clock();deadline=self.boottime()+60;nonce=secrets.token_hex(32)
             if len(self.pending)+len(self.used)>=256:raise AuthorityError('Enrollment capacity exhausted.')
+            audience = ('GENERATION_'+str(binding['provisioning_generation'])+'_INSTALLER'
+                        if purpose==PURPOSES[0] else
+                        'M3_HOST_TEST_CONTROLLER' if purpose==PURPOSES[1] else
+                        'FOUNDER_PROPOSAL_REVIEW')
             challenge=dict(version=1,protocol='bonup-founder-root-v1',purpose=purpose,
-                audience='GENERATION_'+str(binding['provisioning_generation'])+'_INSTALLER' if purpose==PURPOSES[0] else 'M3_HOST_TEST_CONTROLLER',
+                audience=audience,
                 nonce=nonce,peer=asdict(peer),process=asdict(process),enrollment_generation=self.generation,
                 key_id=self.root.key_id,algorithm=self.root.algorithm,root_generation=self.root.generation,
                 root_digest=self.root.identity,binding=binding,installation_receipt_digest=installation_receipt_digest,
@@ -70,6 +81,9 @@ class FounderSessions:
             self.audit('FOUNDER_CHALLENGE_ISSUED',challenge_id)
             self.pending[challenge_id]=(challenge,deadline)
             return deepcopy(challenge)
+
+    def issue_product_review(self, binding):
+        return self.issue_binding(PROD_PROPOSAL_REVIEW, binding)
 
     def revoke_all(self):
         with self.lock:
@@ -114,6 +128,9 @@ class FounderSessions:
     def consume(self,session,purpose,binding,*,installation_receipt_digest=None):
         with self.lock:
             if type(session) is not str or session not in self.sessions:raise AuthorityError('Founder session required.')
+            if purpose == PROD_PROPOSAL_REVIEW:
+                from .founder_review_auth import normalize_review_binding
+                binding = normalize_review_binding(binding)
             challenge,deadline,decision=self.sessions.pop(session)
             try:
                 self._live(challenge,deadline)
@@ -124,6 +141,9 @@ class FounderSessions:
             except BaseException:
                 self.audit('FOUNDER_SESSION_EXPIRED',session)
                 raise
+
+    def consume_product_review(self, session, binding):
+        return self.consume(session, PROD_PROPOSAL_REVIEW, binding)
 
     def delegate(self,session,purpose,binding,*,installation_receipt_digest=None):
         """Consume once and retain the original process/BOOTTIME ceiling."""

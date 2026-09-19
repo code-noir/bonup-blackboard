@@ -34,3 +34,19 @@ separately authorized ARCH-01 task. This contract performs no routing.
 The synthetic reviewed task document records the proposal, review identity and
 digest, Founder decision, resulting knowledge state, and result while retaining
 the `HUMAN-READABLE PROJECTION — NOT EXECUTION AUTHORITY` boundary.
+
+## Future authenticated review boundary
+
+The production authentication contract uses the existing Founder root and
+FounderSessions mechanism with purpose `PROD_PROPOSAL_REVIEW`. Its signed,
+canonical binding contains only the binding version, exact persisted artifact
+identity and digest, task ID, proposal ID and digest, one decision
+(`ACCEPT`, `REJECT`, or `REQUEST_CHANGES`), and a bounded reason.
+
+The challenge remains bound to the existing Founder root, nonce, freshness,
+peer/process, boot, enrollment generation, and one-use session protections.
+Challenge issuance is not a review decision. A future installed review adapter
+must load and verify the immutable artifact before requesting the challenge;
+this contract does not create a review record, change `WORKING`, create
+authority, or route to ARCH. `SyntheticFounderReviewContext` remains
+`SYNTHETIC_TEST_ONLY` and is never production authentication.

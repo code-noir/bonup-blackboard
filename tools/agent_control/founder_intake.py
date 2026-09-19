@@ -85,6 +85,8 @@ class FounderIntake:
             raise
 
     def _request(self, action, args):
+        if action == 'REQUEST_PROD_PROPOSAL_REVIEW_CHALLENGE' and set(args) == {'binding'}:
+            return self.founder.issue_product_review(args['binding'])
         if action == 'REQUEST_FOUNDER_CHALLENGE' and set(args) == {'purpose'}:
             purpose = args['purpose']
             receipt = None

@@ -9,12 +9,16 @@ import unittest
 from uuid import uuid4
 
 from test_founder_root import ROOT, BOOT, sign
+from prod_cycle_fixtures import DeterministicProductFake
 from tools.agent_control.authority_installation import InstallationBinding, verify_receipt
 from tools.agent_control.authority_journal import AuthorityJournal
 from tools.agent_control.founder_intake import FounderIntake, FounderPolicy
+from tools.agent_control.founder_review_auth import ProductProposalReviewBinding
 from tools.agent_control.host_test_catalog import CATALOG, CATALOG_DIGEST, IDS, select
 from tools.agent_control.identity import PeerIdentity, ProcessIdentity
 from tools.agent_control.operational_enrollment import Admission, AdmissionState
+from tools.agent_control.prod_artifact import ProposalArtifactStore
+from test_prod_cycle import synthetic_task
 from tools.agent_control.registry import Registry
 from tools.agent_control.serialization import canonical_json, digest
 from tools.agent_control.types import AuthorityError, ValidationError
@@ -78,6 +82,20 @@ class AuthorityTests(unittest.TestCase):
         challenge=self.challenge()
         self.assertEqual(self.submit(challenge)['session'],digest(challenge))
         self.assertEqual(self.journal.load(digest(challenge))['event'],'FOUNDER_SESSION_CREATED')
+
+    def test_product_review_challenge_uses_founder_intake_without_review_action(self):
+        artifact = ProposalArtifactStore(Path(self.temp.name) / 'proposal-artifacts').persist(
+            DeterministicProductFake().propose(synthetic_task()), source_checkpoint='a' * 40)
+        binding = ProductProposalReviewBinding.from_artifact(
+            artifact, decision='ACCEPT', reason='Bounded product review challenge.')
+        challenge = self.request(
+            'REQUEST_PROD_PROPOSAL_REVIEW_CHALLENGE', binding=binding.to_dict())
+        self.assertEqual(challenge['purpose'], 'PROD_PROPOSAL_REVIEW')
+        self.assertEqual(challenge['binding'], binding.to_dict())
+        session = self.submit(challenge)['session']
+        self.assertEqual(session, digest(challenge))
+        self.assertEqual(self.registry.db.execute('SELECT COUNT(*) FROM approvals').fetchone()[0], 0)
+        self.assertEqual(self.registry.db.execute('SELECT COUNT(*) FROM executions').fetchone()[0], 0)
 
     def test_uid_without_signature(self):
         challenge=self.challenge()

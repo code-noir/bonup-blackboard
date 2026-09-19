@@ -10,6 +10,8 @@ from .prod_model_transport import (
     PROVIDER_CONNECTION_ERROR, PROVIDER_ERROR, PROVIDER_NOT_FOUND,
     PROVIDER_PERMISSION_ERROR, PROVIDER_RATE_LIMIT, PROVIDER_REQUEST_REJECTED,
     PROVIDER_RESPONSE_TOO_LARGE, PROVIDER_SERVER_ERROR, PROVIDER_TIMEOUT,
+    PROVIDER_CONTENT_TYPE_INVALID, PROVIDER_ENCODING_UNSUPPORTED,
+    PROVIDER_RESPONSE_TRUNCATED,
     SAFE_TRANSPORT_FAILURE_REASONS, TIMEOUT_SECONDS, TRUSTED_ENDPOINT, TRUSTED_MODEL,
     TRUST_ENVIRONMENT, validate_provider_schema_subset,
 )
@@ -64,11 +66,12 @@ def project_openai_responses_request(request):
 class OpenAIHTTPError(ValidationError):
     """Bounded transport failure. Messages never contain provider bodies or credentials."""
 
-    def __init__(self, message, *, failure_reason=PROVIDER_ERROR):
+    def __init__(self, message, *, failure_reason=PROVIDER_ERROR, response_metadata=None):
         super().__init__(message)
         self.failure_reason = (
             failure_reason if type(failure_reason) is str
             and failure_reason in SAFE_TRANSPORT_FAILURE_REASONS else PROVIDER_ERROR)
+        self.response_metadata = response_metadata
 
 
 class InjectedOpenAICredentialProvider:
@@ -97,6 +100,7 @@ class OpenAIResponsesHTTPAdapter:
         self.__timeouts = (CONNECT_TIMEOUT_SECONDS, READ_TIMEOUT_SECONDS)
         self.__session_factory = requests.Session
         self.__test_only = False
+        self.__response_metadata = None
 
     @classmethod
     def _for_loopback_tests(cls, endpoint, credential_provider, *, timeouts=None,
@@ -125,8 +129,13 @@ class OpenAIResponsesHTTPAdapter:
     def test_only(self):
         return self.__test_only
 
+    @property
+    def response_metadata(self):
+        return self.__response_metadata
+
     def send(self, *, endpoint, model, request, credential, timeout_seconds,
              allow_redirects, trust_environment):
+        self.__response_metadata = None
         if (endpoint != TRUSTED_ENDPOINT or model != TRUSTED_MODEL
                 or timeout_seconds != TIMEOUT_SECONDS or allow_redirects is not ALLOW_REDIRECTS
                 or trust_environment is not TRUST_ENVIRONMENT):
@@ -150,6 +159,8 @@ class OpenAIResponsesHTTPAdapter:
         headers = {
             "Authorization": "Bearer " + credential,
             "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Accept-Encoding": "gzip, deflate",
         }
         try:
             with self.__session_factory() as session:
@@ -161,48 +172,141 @@ class OpenAIResponsesHTTPAdapter:
                         self.__endpoint, data=encoded, headers=headers, stream=True,
                         allow_redirects=ALLOW_REDIRECTS, timeout=self.__timeouts,
                         verify=True) as response:
+                    response_metadata = _response_metadata(response)
+                    self.__response_metadata = response_metadata
                     if response.status_code != 200:
                         raise OpenAIHTTPError(
                             "OpenAI returned a non-success HTTP status.",
-                            failure_reason=_status_failure_reason(response.status_code))
-                    declared = response.headers.get("Content-Length")
-                    if declared is not None:
-                        try:
-                            declared_bytes = int(declared)
-                        except ValueError:
-                            raise OpenAIHTTPError("OpenAI returned an invalid response length.") from None
-                        if declared_bytes > MAX_RESPONSE_BYTES:
-                            raise OpenAIHTTPError(
-                                "OpenAI response exceeded the byte limit.",
-                                failure_reason=PROVIDER_RESPONSE_TOO_LARGE)
+                            failure_reason=_status_failure_reason(response.status_code),
+                            response_metadata=response_metadata)
+                    if response_metadata["content_type"] != "APPLICATION_JSON":
+                        raise OpenAIHTTPError(
+                            "OpenAI response content type was not JSON.",
+                            failure_reason=PROVIDER_CONTENT_TYPE_INVALID,
+                            response_metadata=response_metadata)
+                    if response_metadata["content_encoding"] == "OTHER":
+                        raise OpenAIHTTPError(
+                            "OpenAI response content encoding was unsupported.",
+                            failure_reason=PROVIDER_ENCODING_UNSUPPORTED,
+                            response_metadata=response_metadata)
+                    if not response_metadata["declared_content_length_valid"]:
+                        raise OpenAIHTTPError(
+                            "OpenAI returned an invalid response length.",
+                            response_metadata=response_metadata)
+                    declared_bytes = response_metadata["declared_content_length"]
+                    if (declared_bytes is not None
+                            and declared_bytes > MAX_RESPONSE_BYTES):
+                        raise OpenAIHTTPError(
+                            "OpenAI response exceeded the byte limit.",
+                            failure_reason=PROVIDER_RESPONSE_TOO_LARGE,
+                            response_metadata=response_metadata)
                     chunks = []
                     total = 0
-                    for chunk in response.iter_content(chunk_size=_RESPONSE_CHUNK_BYTES):
+                    for chunk in response.iter_content(
+                            chunk_size=_RESPONSE_CHUNK_BYTES, decode_unicode=False):
                         if not chunk:
                             continue
+                        if type(chunk) is not bytes:
+                            raise OpenAIHTTPError(
+                                "OpenAI response was not delivered as bytes.",
+                                response_metadata=response_metadata)
                         total += len(chunk)
+                        response_metadata["body_bytes"] = min(total, MAX_RESPONSE_BYTES + 1)
+                        response_metadata["body_empty"] = False
                         if total > MAX_RESPONSE_BYTES:
                             raise OpenAIHTTPError(
                                 "OpenAI response exceeded the byte limit.",
-                                failure_reason=PROVIDER_RESPONSE_TOO_LARGE)
+                                failure_reason=PROVIDER_RESPONSE_TOO_LARGE,
+                                response_metadata=response_metadata)
                         chunks.append(chunk)
+                    response_metadata["body_empty"] = total == 0
+                    if (declared_bytes is not None
+                            and response_metadata["content_encoding"] in {"MISSING", "IDENTITY"}):
+                        response_metadata["declared_length_matches"] = total == declared_bytes
+                        if total != declared_bytes:
+                            raise OpenAIHTTPError(
+                                "OpenAI response length did not match its declaration.",
+                                failure_reason=PROVIDER_RESPONSE_TRUNCATED,
+                                response_metadata=response_metadata)
                     return b"".join(chunks)
         except OpenAIHTTPError:
             raise
+        except requests.exceptions.ChunkedEncodingError:
+            raise OpenAIHTTPError(
+                "OpenAI response was truncated.",
+                failure_reason=PROVIDER_RESPONSE_TRUNCATED,
+                response_metadata=self.__response_metadata) from None
+        except requests.exceptions.ContentDecodingError:
+            raise OpenAIHTTPError(
+                "OpenAI response encoding could not be decoded.",
+                failure_reason=PROVIDER_ENCODING_UNSUPPORTED,
+                response_metadata=self.__response_metadata) from None
         except requests.exceptions.Timeout:
             raise OpenAIHTTPError(
-                "OpenAI HTTP request timed out.", failure_reason=PROVIDER_TIMEOUT) from None
+                "OpenAI HTTP request timed out.", failure_reason=PROVIDER_TIMEOUT,
+                response_metadata=self.__response_metadata) from None
         except requests.exceptions.SSLError:
             raise OpenAIHTTPError(
-                "OpenAI TLS connection failed.",
-                failure_reason=PROVIDER_CONNECTION_ERROR) from None
+                "OpenAI TLS connection failed.", failure_reason=PROVIDER_CONNECTION_ERROR,
+                response_metadata=self.__response_metadata) from None
         except requests.exceptions.ConnectionError:
             raise OpenAIHTTPError(
                 "OpenAI HTTP connection failed.",
-                failure_reason=PROVIDER_CONNECTION_ERROR) from None
+                failure_reason=PROVIDER_CONNECTION_ERROR,
+                response_metadata=self.__response_metadata) from None
         except requests.exceptions.RequestException:
             raise OpenAIHTTPError(
-                "OpenAI HTTP request failed closed.", failure_reason=PROVIDER_ERROR) from None
+                "OpenAI HTTP request failed closed.", failure_reason=PROVIDER_ERROR,
+                response_metadata=self.__response_metadata) from None
+
+
+def _classify_content_type(value):
+    if value is None:
+        return "MISSING"
+    if type(value) is not str:
+        return "OTHER"
+    media_type = value.split(";", 1)[0].strip().lower()
+    return "APPLICATION_JSON" if media_type == "application/json" else "OTHER"
+
+
+def _classify_content_encoding(value):
+    if value is None or not value.strip():
+        return "MISSING"
+    encodings = [item.strip().lower() for item in value.split(",")]
+    if len(encodings) != 1:
+        return "OTHER"
+    return {
+        "identity": "IDENTITY",
+        "gzip": "GZIP",
+        "deflate": "DEFLATE",
+    }.get(encodings[0], "OTHER")
+
+
+def _response_metadata(response):
+    declared = response.headers.get("Content-Length")
+    declared_valid = True
+    declared_bytes = None
+    if declared is not None:
+        try:
+            parsed = int(declared)
+            if parsed < 0:
+                raise ValueError
+            declared_bytes = min(parsed, MAX_RESPONSE_BYTES + 1)
+        except (TypeError, ValueError):
+            declared_valid = False
+    return {
+        "http_status": response.status_code,
+        "content_type": _classify_content_type(response.headers.get("Content-Type")),
+        "content_encoding": _classify_content_encoding(response.headers.get("Content-Encoding")),
+        "body_bytes": 0,
+        "body_empty": True,
+        "content_length_present": declared is not None,
+        "declared_content_length": declared_bytes,
+        "declared_content_length_valid": declared_valid,
+        "declared_length_matches": None,
+        "utf8_decode_success": None,
+        "json_decode_success": None,
+    }
 
 
 def _status_failure_reason(status_code):

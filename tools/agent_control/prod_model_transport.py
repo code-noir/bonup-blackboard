@@ -31,11 +31,15 @@ PROVIDER_SERVER_ERROR = "PROVIDER_SERVER_ERROR"
 PROVIDER_TIMEOUT = "PROVIDER_TIMEOUT"
 PROVIDER_CONNECTION_ERROR = "PROVIDER_CONNECTION_ERROR"
 PROVIDER_RESPONSE_TOO_LARGE = "PROVIDER_RESPONSE_TOO_LARGE"
+PROVIDER_CONTENT_TYPE_INVALID = "PROVIDER_CONTENT_TYPE_INVALID"
+PROVIDER_ENCODING_UNSUPPORTED = "PROVIDER_ENCODING_UNSUPPORTED"
+PROVIDER_RESPONSE_TRUNCATED = "PROVIDER_RESPONSE_TRUNCATED"
 SAFE_TRANSPORT_FAILURE_REASONS = frozenset({
     PROVIDER_ERROR, PROVIDER_AUTH_ERROR, PROVIDER_PERMISSION_ERROR,
     PROVIDER_NOT_FOUND, PROVIDER_RATE_LIMIT, PROVIDER_REQUEST_REJECTED,
     PROVIDER_SERVER_ERROR, PROVIDER_TIMEOUT, PROVIDER_CONNECTION_ERROR,
-    PROVIDER_RESPONSE_TOO_LARGE,
+    PROVIDER_RESPONSE_TOO_LARGE, PROVIDER_CONTENT_TYPE_INVALID,
+    PROVIDER_ENCODING_UNSUPPORTED, PROVIDER_RESPONSE_TRUNCATED,
 })
 _PROVIDER_SCHEMA_KEYWORDS = frozenset({
     "type", "additionalProperties", "required", "properties", "items",
@@ -50,6 +54,13 @@ _MESSAGE_ROLES = frozenset({"assistant", "user", "system", "developer"})
 _KNOWN_OUTPUT_TYPES = frozenset({"reasoning", "message"})
 _KNOWN_CONTENT_TYPES = frozenset({"output_text", "refusal"})
 _SAFE_STRUCTURE_IDENTIFIER = re.compile(r"[A-Za-z][A-Za-z0-9_:-]{0,63}\Z", re.ASCII)
+_RESPONSE_CONTENT_TYPES = frozenset({"APPLICATION_JSON", "OTHER", "MISSING"})
+_RESPONSE_ENCODINGS = frozenset({"IDENTITY", "GZIP", "DEFLATE", "OTHER", "MISSING"})
+_RESPONSE_METADATA_KEYS = frozenset({
+    "http_status", "content_type", "content_encoding", "body_bytes", "body_empty",
+    "content_length_present", "declared_content_length", "declared_content_length_valid",
+    "declared_length_matches", "utf8_decode_success", "json_decode_success",
+})
 TRUSTED_ENDPOINT = "https://api.openai.com/v1/responses"
 TRUSTED_MODEL = "PROD-01-STRUCTURED-MODEL-V1"
 LOCAL_CONTRACT_VALIDATED = True
@@ -192,6 +203,39 @@ def _safe_structure_enum(value, known):
     return value if type(value) is str and value in known else "UNRECOGNIZED"
 
 
+def _bounded_response_metadata(value):
+    """Retain only the adapter's fixed, non-content response metadata."""
+    if type(value) is not dict or not set(value) <= _RESPONSE_METADATA_KEYS:
+        return None
+    result = {}
+    for key in _RESPONSE_METADATA_KEYS:
+        if key not in value:
+            continue
+        item = value[key]
+        if key == "http_status":
+            if type(item) is not int or not 100 <= item <= 599:
+                return None
+        elif key == "content_type":
+            if type(item) is not str or item not in _RESPONSE_CONTENT_TYPES:
+                return None
+        elif key == "content_encoding":
+            if type(item) is not str or item not in _RESPONSE_ENCODINGS:
+                return None
+        elif key in {"body_bytes", "declared_content_length"}:
+            if item is not None and (type(item) is not int
+                                     or not 0 <= item <= MAX_RESPONSE_BYTES + 1):
+                return None
+        elif key in {"body_empty", "content_length_present", "declared_content_length_valid"}:
+            if type(item) is not bool:
+                return None
+        elif key in {"declared_length_matches", "utf8_decode_success",
+                     "json_decode_success"}:
+            if item is not None and type(item) is not bool:
+                return None
+        result[key] = item
+    return result
+
+
 def _reject_output(reason, *, classification="PROVIDER_ENVELOPE_INVALID", structure=None):
     value = _new_provider_structure() if structure is None else structure
     value = dict(value)
@@ -262,19 +306,34 @@ def build_product_model_request(task):
     return request, raw
 
 
-def parse_product_model_response(raw):
+def parse_product_model_response(raw, *, response_metadata=None):
+    structure = _new_provider_structure()
+    bounded_metadata = _bounded_response_metadata(response_metadata)
+    if bounded_metadata is not None:
+        structure["http_response"] = bounded_metadata
     if type(raw) is not bytes or not raw:
-        _reject_output("RESPONSE_BYTES_INVALID")
+        _reject_output("RESPONSE_BYTES_INVALID" if type(raw) is not bytes else "EMPTY_BODY",
+                       structure=structure)
     if len(raw) > MAX_RESPONSE_BYTES:
         _reject_output("RESPONSE_TOO_LARGE")
     try:
         envelope = parse_json(raw.decode("utf-8"))
-    except (UnicodeError, ValidationError):
-        _reject_output("RESPONSE_JSON_INVALID")
+    except UnicodeError:
+        if "http_response" in structure:
+            structure["http_response"]["utf8_decode_success"] = False
+            structure["http_response"]["json_decode_success"] = False
+        _reject_output("INVALID_UTF8", structure=structure)
+    except ValidationError:
+        if "http_response" in structure:
+            structure["http_response"]["utf8_decode_success"] = True
+            structure["http_response"]["json_decode_success"] = False
+        _reject_output("RESPONSE_JSON_INVALID", structure=structure)
+    if "http_response" in structure:
+        structure["http_response"]["utf8_decode_success"] = True
+        structure["http_response"]["json_decode_success"] = True
     if type(envelope) is not dict:
         _reject_output("RESPONSE_NOT_OBJECT")
 
-    structure = _new_provider_structure()
     if "status" not in envelope:
         _reject_output("RESPONSE_STATUS_MISSING", structure=structure)
     response_status = envelope["status"]
@@ -418,6 +477,7 @@ def run_product_model_cycle(task_input, transport, credential_provider=None, *,
     task = validate_product_task(task_input)
     request, request_bytes = build_product_model_request(task)
     request_digest = digest(request)
+    response_metadata = None
     try:
         if getattr(transport, "credential_owned", False) is True:
             if credential_provider is not None:
@@ -442,10 +502,17 @@ def run_product_model_cycle(task_input, transport, credential_provider=None, *,
         if isinstance(error, (KeyboardInterrupt, SystemExit)):
             raise
         metadata = _audit(task["task_id"], request_digest, "TRANSPORT_FAILED",
-                          reason=_transport_failure_reason(error))
+                          reason=_transport_failure_reason(error),
+                          provider_structure=(
+                              {"http_response": bounded}
+                              if (bounded := _bounded_response_metadata(
+                                      getattr(error, "response_metadata", None))) is not None
+                              else None))
         raise ProductModelFailure("PROD-01 model transport failed closed.", metadata) from None
+    response_metadata = _bounded_response_metadata(
+        getattr(transport, "response_metadata", None))
     try:
-        candidate = parse_product_model_response(raw)
+        candidate = parse_product_model_response(raw, response_metadata=response_metadata)
     except ProductOutputFailure as error:
         metadata = _audit(task["task_id"], request_digest, "OUTPUT_REJECTED",
                           reason=error.classification,

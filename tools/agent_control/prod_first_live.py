@@ -57,6 +57,8 @@ def stable_contract_identity():
         "parser_contract": PARSER_CONTRACT,
         "parser_implementation_digest": _implementation_digest(
             parse_product_model_response),
+        "response_transport_implementation_digest": _implementation_digest(
+            OpenAIResponsesHTTPAdapter),
         "proposal_validator": VALIDATOR_CONTRACT,
         "proposal_validator_implementation_digest": _implementation_digest(
             prod_contract),
@@ -76,7 +78,7 @@ def stable_contract_digest(value=None):
 
 
 # Frozen only after deterministic regeneration from the reviewed implementation.
-EXPECTED_STABLE_CONTRACT_DIGEST = "8d052608793dacbf315fc04e74269778e812055ae62a13631bc5a6dc1a64ae07"
+EXPECTED_STABLE_CONTRACT_DIGEST = "7d56b48991d7768e008010e8bec1805929ce9d0e3f75d51e3226d275fe94eb3f"
 
 
 @dataclass(frozen=True)
@@ -166,8 +168,7 @@ def _run_first_live(reviewed_source, tty_check, prompt_fn, transport_factory):
                               and metadata.get("result_classification") in {
                                   "OUTPUT_REJECTED", "TRANSPORT_FAILED"}
                               else "PROVIDER_ERROR")
-            structure = (metadata.get("provider_structure")
-                         if classification == "PROVIDER_ENVELOPE_INVALID" else None)
+            structure = metadata.get("provider_structure")
             raise FirstLiveFailure(classification, structure) from None
         return FirstLiveResult(current, cycle)
     finally:

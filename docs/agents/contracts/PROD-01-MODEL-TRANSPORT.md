@@ -67,10 +67,25 @@ Transport failures retain only an allowlisted code-owned classification. HTTP
 401, 403, 404, 429, other 4xx, and 5xx responses map respectively to bounded
 authentication, permission, not-found, rate-limit, request-rejected, and
 server-error classes. Timeout, connection/TLS, and response-size failures are
-separate bounded classes; unknown adapter failures remain `PROVIDER_ERROR`.
-Provider bodies, status text, request content, credentials, and response metadata
-are never included in diagnostics. A non-200 response still makes exactly one
-attempt and never triggers a retry or repair request.
+separate bounded classes; unexpected JSON media types, unsupported response
+encodings, and truncated responses are separate bounded classes; unknown adapter
+failures remain `PROVIDER_ERROR`. Provider bodies, status text, request content,
+credentials, and arbitrary headers are never included in diagnostics. The HTTP
+adapter retains only bounded response metadata: HTTP status, JSON/missing/other
+content-type classification, missing/identity/gzip/deflate/other encoding
+classification, bounded collected-byte count, empty-body state, bounded
+Content-Length state, and decode-stage booleans. `iter_content()` receives bytes
+with `decode_unicode=False`; the requests/urllib3 path may transparently decode
+the explicitly accepted gzip or deflate content encodings before the byte bound
+and JSON parser see the chunks. The bound therefore applies to decompressed
+parser input. A non-200 response still makes exactly one attempt and never
+triggers a retry or repair request.
+
+The adapter sends one ordinary JSON Responses request: its local `stream=True`
+flag controls bounded response reading and is not an SSE request field. It sends
+`Accept: application/json` and never requests `text/event-stream`; unexpected
+content types are rejected before proposal parsing. Empty, invalid-UTF-8,
+malformed, and content-length/truncation cases fail closed with bounded reasons.
 
 The bounded model module remains transport-neutral, and its tests use an injected
 in-memory transport and synthetic credential marker. The separate hardened HTTP

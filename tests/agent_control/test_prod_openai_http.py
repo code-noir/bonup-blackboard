@@ -1,4 +1,5 @@
 import json
+import gzip
 import io
 import logging
 import os
@@ -6,6 +7,7 @@ import requests
 import threading
 import time
 import unittest
+import zlib
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
@@ -52,16 +54,39 @@ class _Handler(BaseHTTPRequestHandler):
             time.sleep(behavior["delay"])
         status = behavior.get("status", 200)
         payload = behavior.get("body", b"")
+        encoding = behavior.get("content_encoding")
+        if encoding == "gzip":
+            payload = gzip.compress(payload)
+        elif encoding == "deflate":
+            payload = zlib.compress(payload)
         self.send_response(status)
         if "location" in behavior:
             self.send_header("Location", behavior["location"])
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(payload)))
+        if behavior.get("content_type", "application/json") is not None:
+            self.send_header("Content-Type", behavior.get("content_type", "application/json"))
+        if encoding is not None:
+            self.send_header("Content-Encoding", encoding)
+        declared_length = behavior.get("declared_length", len(payload))
+        if behavior.get("chunked"):
+            self.send_header("Transfer-Encoding", "chunked")
+        else:
+            self.send_header("Content-Length", str(declared_length))
+        if behavior.get("close"):
+            self.send_header("Connection", "close")
         self.end_headers()
         try:
-            self.wfile.write(payload)
+            if behavior.get("chunked"):
+                chunk_size = behavior.get("chunk_size", 7)
+                for offset in range(0, len(payload), chunk_size):
+                    chunk = payload[offset:offset + chunk_size]
+                    self.wfile.write(('%x\r\n' % len(chunk)).encode() + chunk + b"\r\n")
+                self.wfile.write(b"0\r\n\r\n")
+            else:
+                self.wfile.write(payload)
         except (BrokenPipeError, ConnectionResetError):
             pass
+        if behavior.get("close"):
+            self.close_connection = True
 
 
 class _ConnectionFailureSession:
@@ -148,6 +173,115 @@ class ProductOpenAIHTTPTests(unittest.TestCase):
         self.assertEqual(calls[0]["headers"]["Authorization"], "Bearer " + SECRET)
         self.assertEqual(result.proposal["knowledge_state"], "WORKING")
 
+    def test_response_bytes_variants_use_exact_http_adapter_path(self):
+        for label, behavior in (
+                ("plain", {"body": response_bytes()}),
+                ("whitespace", {"body": b" \n" + response_bytes() + b"\t\n"}),
+                ("utf8", {"body": response_bytes(proposal({"title": "Caf\u00e9"}))}),
+                ("gzip", {"body": response_bytes(), "content_encoding": "gzip"}),
+                ("deflate", {"body": response_bytes(), "content_encoding": "deflate"}),
+                ("chunked", {"body": response_bytes(), "chunked": True, "chunk_size": 5}),
+                ("gzip_chunked", {"body": response_bytes(), "content_encoding": "gzip",
+                                  "chunked": True, "chunk_size": 3}),
+        ):
+            with self.subTest(variant=label):
+                result, calls, _ = self.run_local(behavior)
+                self.assertEqual(result.proposal["knowledge_state"], "WORKING")
+                self.assertEqual(len(calls), 1)
+
+    def test_response_metadata_is_bounded_and_decode_stage_is_safe(self):
+        with fake_server({"body": b"not-json"}) as (server, endpoint):
+            provider = InjectedOpenAICredentialProvider(SECRET)
+            adapter = OpenAIResponsesHTTPAdapter._for_loopback_tests(endpoint, provider)
+            with self.assertRaises(ProductModelFailure) as caught:
+                run_product_model_cycle(synthetic_task(), adapter)
+        metadata = caught.exception.audit_metadata
+        structure = metadata["provider_structure"]
+        http = structure["http_response"]
+        self.assertEqual(metadata["failure_reason"], "PROVIDER_ENVELOPE_INVALID")
+        self.assertEqual(structure["reason"], "RESPONSE_JSON_INVALID")
+        self.assertEqual(http["http_status"], 200)
+        self.assertEqual(http["content_type"], "APPLICATION_JSON")
+        self.assertEqual(http["content_encoding"], "MISSING")
+        self.assertEqual(http["body_bytes"], len(b"not-json"))
+        self.assertFalse(http["body_empty"])
+        self.assertTrue(http["content_length_present"])
+        self.assertEqual(http["declared_content_length"], len(b"not-json"))
+        self.assertTrue(http["declared_length_matches"])
+        self.assertTrue(http["utf8_decode_success"])
+        self.assertFalse(http["json_decode_success"])
+        self.assertEqual(len(server.calls), 1)
+        self.assertNotIn("not-json", json.dumps(metadata))
+
+    def test_empty_truncated_and_oversized_decoded_bodies_fail_closed(self):
+        cases = (
+            ({"body": b""}, "EMPTY_BODY"),
+            ({"body": b"\xff"}, "INVALID_UTF8"),
+            ({"body": b'{"status":"completed"'}, "RESPONSE_JSON_INVALID"),
+            ({"body": b"\xef\xbb\xbf" + response_bytes()}, "RESPONSE_JSON_INVALID"),
+            ({"body": b"{}", "declared_length": 5, "close": True},
+             "PROVIDER_RESPONSE_TRUNCATED"),
+            ({"body": b"x" * (MAX_RESPONSE_BYTES + 1),
+              "content_encoding": "gzip"}, "PROVIDER_RESPONSE_TOO_LARGE"),
+        )
+        for behavior, reason in cases:
+            with self.subTest(reason=reason), fake_server(behavior) as (server, endpoint):
+                provider = InjectedOpenAICredentialProvider(SECRET)
+                adapter = OpenAIResponsesHTTPAdapter._for_loopback_tests(endpoint, provider)
+                with self.assertRaises(ProductModelFailure) as caught:
+                    run_product_model_cycle(synthetic_task(), adapter)
+                self.assertEqual(len(server.calls), 1)
+                expected_classification = (reason if reason.startswith("PROVIDER_")
+                                            else "PROVIDER_ENVELOPE_INVALID")
+                self.assertEqual(caught.exception.audit_metadata["failure_reason"],
+                                 expected_classification)
+                if reason in {"RESPONSE_JSON_INVALID", "INVALID_UTF8"}:
+                    self.assertEqual(caught.exception.audit_metadata["provider_structure"]["reason"], reason)
+
+    def test_unexpected_media_type_and_encoding_are_bounded(self):
+        cases = (
+            ({"body": response_bytes(), "content_type": "text/event-stream"},
+             "PROVIDER_CONTENT_TYPE_INVALID"),
+            ({"body": response_bytes(), "content_type": None},
+             "PROVIDER_CONTENT_TYPE_INVALID"),
+            ({"body": response_bytes(), "content_encoding": "br"},
+             "PROVIDER_ENCODING_UNSUPPORTED"),
+        )
+        for behavior, reason in cases:
+            with self.subTest(reason=reason), fake_server(behavior) as (server, endpoint):
+                provider = InjectedOpenAICredentialProvider(SECRET)
+                adapter = OpenAIResponsesHTTPAdapter._for_loopback_tests(endpoint, provider)
+                with self.assertRaises(ProductModelFailure) as caught:
+                    run_product_model_cycle(synthetic_task(), adapter)
+                self.assertEqual(len(server.calls), 1)
+                self.assertEqual(caught.exception.audit_metadata["failure_reason"], reason)
+                http = caught.exception.audit_metadata["provider_structure"]["http_response"]
+                self.assertIn(http["content_type"], {"APPLICATION_JSON", "OTHER", "MISSING"})
+                self.assertIn(http["content_encoding"], {"MISSING", "IDENTITY", "GZIP", "DEFLATE", "OTHER"})
+                self.assertNotIn("event-stream", json.dumps(caught.exception.audit_metadata))
+                self.assertNotIn("br", json.dumps(caught.exception.audit_metadata))
+
+    def test_request_is_ordinary_json_not_sse_and_stays_one_shot(self):
+        observed = []
+
+        class ObservedSession(requests.Session):
+            def post(self, *args, **kwargs):
+                observed.append(dict(kwargs))
+                return super().post(*args, **kwargs)
+
+        with fake_server({"body": response_bytes()}) as (server, endpoint):
+            provider = InjectedOpenAICredentialProvider(SECRET)
+            adapter = OpenAIResponsesHTTPAdapter._for_loopback_tests(
+                endpoint, provider, session_factory=ObservedSession)
+            result = run_product_model_cycle(synthetic_task(), adapter)
+        self.assertEqual(result.proposal["knowledge_state"], "WORKING")
+        self.assertEqual(len(server.calls), 1)
+        self.assertEqual(len(observed), 1)
+        self.assertTrue(observed[0]["stream"])
+        self.assertFalse(observed[0]["allow_redirects"])
+        self.assertEqual(server.calls[0]["headers"]["Accept"], "application/json")
+        self.assertNotEqual(server.calls[0]["headers"].get("Accept"), "text/event-stream")
+
     def test_provider_wire_projection_is_fixed_and_deterministic(self):
         internal, _ = build_product_model_request(synthetic_task())
         first = project_openai_responses_request(internal)
@@ -222,6 +356,7 @@ class ProductOpenAIHTTPTests(unittest.TestCase):
                     run_product_model_cycle(synthetic_task(), adapter)
                 self.assertEqual(len(server.calls), 1)
                 self.assertEqual(caught.exception.audit_metadata["failure_reason"], reason)
+                self.assertEqual(caught.exception.audit_metadata["provider_structure"]["http_response"]["http_status"], status)
                 self.assertNotIn(SECRET, str(caught.exception))
                 self.assertNotIn("provider body", str(caught.exception))
 

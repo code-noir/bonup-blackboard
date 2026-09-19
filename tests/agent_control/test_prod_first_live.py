@@ -3,6 +3,7 @@ import io
 import json
 import os
 import stat
+import tempfile
 import unittest
 from copy import deepcopy
 from contextlib import redirect_stderr, redirect_stdout
@@ -32,6 +33,7 @@ from tools.agent_control.prod_prelive import (
 from tools.agent_control.prod_response_capture import (
     CAPTURE_DIRECTORY, cleanup_private_response_captures,
 )
+from tools.agent_control.prod_artifact import ProposalArtifactStore
 from tools.agent_control.serialization import canonical_json, digest
 from tools.agent_control.types import ValidationError
 
@@ -100,7 +102,7 @@ def reviewed():
 
 
 class ProductFirstLiveTests(unittest.TestCase):
-    def run_local(self, *, raw=None, error=None):
+    def run_local(self, *, raw=None, error=None, proposal_artifact_store=None):
         prompts = []
         transports = []
 
@@ -112,7 +114,8 @@ class ProductFirstLiveTests(unittest.TestCase):
         with patch.object(prod_first_live, "_current_source_commit", return_value=CHECKPOINT):
             result = _run_first_live_for_tests(
                 reviewed(), lambda: True,
-                lambda prompt: prompts.append(prompt) or SECRET, factory)
+                lambda prompt: prompts.append(prompt) or SECRET, factory,
+                proposal_artifact_store=proposal_artifact_store)
         return result, transports[0], prompts
 
     def test_reviewed_digests_regenerate_and_distinguish_task_instances(self):
@@ -209,6 +212,19 @@ class ProductFirstLiveTests(unittest.TestCase):
         self.assertIsNone(result.cycle.proposal["predecessor_proposal_id"])
         with self.assertRaises(ValidationError):
             transport.provider.credential()
+
+    def test_validated_live_proposal_persists_artifact_before_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ProposalArtifactStore(os.path.join(directory, "artifacts"))
+            result, transport, _ = self.run_local(proposal_artifact_store=store)
+            artifact = result.cycle.proposal_artifact
+            self.assertIsNotNone(artifact)
+            self.assertEqual(artifact.value["proposal_id"], result.cycle.proposal["proposal_id"])
+            self.assertEqual(artifact.value["proposal_digest"], result.cycle.proposal_digest)
+            self.assertEqual(artifact.proposal_bytes, result.cycle.proposal_bytes)
+            self.assertEqual(store.load(result.cycle.proposal["proposal_id"]).value,
+                             artifact.value)
+            self.assertEqual(len(transport.calls), 1)
 
     def test_private_capture_requires_explicit_flag_and_reports_private_file(self):
         default_transports = []

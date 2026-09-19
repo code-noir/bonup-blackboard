@@ -12,6 +12,7 @@ from .prod_contract import load_contract
 from .prod_model_transport import (
     ALLOW_REDIRECTS, MAX_REQUESTS_PER_CYCLE, MAX_RESPONSE_BYTES, MAX_RETRIES,
     INITIAL_PREDECESSOR_INVALID, PRODUCT_PROPOSAL_SCHEMA_DIGEST, TIMEOUT_SECONDS,
+    PROPOSAL_ARTIFACT_PERSISTENCE_FAILED,
     SAFE_TRANSPORT_FAILURE_REASONS, TRUSTED_ENDPOINT, TRUSTED_MODEL,
     build_product_model_request, parse_product_model_response, run_product_model_cycle,
 )
@@ -21,6 +22,9 @@ from .prod_openai_http import (
 )
 from .prod_response_capture import (
     CAPTURE_MODE, PrivateResponseCapture, cleanup_private_response_captures,
+)
+from .prod_artifact import (
+    ARTIFACT_DIRECTORY, ARTIFACT_MAX_BYTES, ARTIFACT_VERSION, ProposalArtifactStore,
 )
 from .prod_prelive import (
     DevelopmentOneShotCredential, OwnerReviewedSource, _current_source_commit,
@@ -65,6 +69,12 @@ def stable_contract_identity():
         "proposal_validator": VALIDATOR_CONTRACT,
         "proposal_validator_implementation_digest": _implementation_digest(
             prod_contract),
+        "proposal_artifact": {
+            "version": ARTIFACT_VERSION,
+            "directory": ARTIFACT_DIRECTORY,
+            "max_bytes": ARTIFACT_MAX_BYTES,
+            "implementation_digest": _implementation_digest(ProposalArtifactStore),
+        },
         "resulting_knowledge_state": "WORKING",
         "initial_proposal_predecessor_null": True,
         "founder_auto_approval": False,
@@ -81,7 +91,7 @@ def stable_contract_digest(value=None):
 
 
 # Frozen only after deterministic regeneration from the reviewed implementation.
-EXPECTED_STABLE_CONTRACT_DIGEST = "8c5fd8b98fafff8f0d028f0857fe4b14a98b04387307192b54fa44401733e2ee"
+EXPECTED_STABLE_CONTRACT_DIGEST = "beb8f2df0db16fe83a2906187c23867d0371b16fc7f80b971504ecef2cee1e4d"
 
 
 @dataclass(frozen=True)
@@ -144,7 +154,7 @@ def _interactive_terminal_available():
 
 
 def _run_first_live(reviewed_source, tty_check, prompt_fn, transport_factory,
-                    *, private_response_capture=False):
+                    *, private_response_capture=False, proposal_artifact_store=None):
     if type(reviewed_source) is not OwnerReviewedSource:
         raise FirstLiveFailure("SOURCE_MISMATCH")
     current = _current_source_commit()
@@ -164,7 +174,9 @@ def _run_first_live(reviewed_source, tty_check, prompt_fn, transport_factory,
             provider, private_response_capture=capture)
         try:
             cycle = run_product_model_cycle(
-                bindings.task, transport, require_initial_predecessor_null=True)
+                bindings.task, transport, require_initial_predecessor_null=True,
+                proposal_artifact_store=proposal_artifact_store,
+                source_checkpoint=current)
         except ValidationError as error:
             metadata = getattr(error, "audit_metadata", {})
             reason = metadata.get("failure_reason")
@@ -174,6 +186,7 @@ def _run_first_live(reviewed_source, tty_check, prompt_fn, transport_factory,
                 "TASK_BINDING_INVALID", "EVIDENCE_BINDING_INVALID",
                 "KNOWLEDGE_STATE_INVALID", "AUTHORITY_CLAIM_REJECTED",
                 "CONTENT_POLICY_REJECTED", INITIAL_PREDECESSOR_INVALID,
+                PROPOSAL_ARTIFACT_PERSISTENCE_FAILED,
             } | SAFE_TRANSPORT_FAILURE_REASONS
             classification = (reason if type(reason) is str and reason in safe_reasons
                               and metadata.get("result_classification") in {
@@ -200,18 +213,20 @@ def run_first_live(reviewed_source):
     """Production construction has no caller-selectable task, model, endpoint, or tools."""
     return _run_first_live(
         reviewed_source, _interactive_terminal_available, None,
-        _production_transport)
+        _production_transport, proposal_artifact_store=ProposalArtifactStore())
 
 
 def _run_private_response_capture(reviewed_source):
     """Founder CLI-only construction for one private response capture."""
     return _run_first_live(
         reviewed_source, _interactive_terminal_available, None,
-        _production_transport, private_response_capture=True)
+        _production_transport, private_response_capture=True,
+        proposal_artifact_store=ProposalArtifactStore())
 
 
 def _run_first_live_for_tests(reviewed_source, tty_check, prompt_fn, transport_factory,
-                              *, private_response_capture=False):
+                              *, private_response_capture=False,
+                              proposal_artifact_store=None):
     """Explicit local test seam; the Founder CLI never calls this function."""
     def test_transport(provider, *, private_response_capture=None):
         if private_response_capture is None:
@@ -221,7 +236,8 @@ def _run_first_live_for_tests(reviewed_source, tty_check, prompt_fn, transport_f
 
     return _run_first_live(
         reviewed_source, tty_check, prompt_fn, test_transport,
-        private_response_capture=private_response_capture)
+        private_response_capture=private_response_capture,
+        proposal_artifact_store=proposal_artifact_store)
 
 
 def _capture_lines(capture_result):
@@ -264,6 +280,13 @@ def format_success(result):
         "PRIORITY RECOMMENDATION:", canonical_json(proposal["priority_recommendation"]),
         "EVIDENCE REFERENCES:", canonical_json(proposal["evidence_references"]),
     ]
+    if result.cycle.proposal_artifact is not None:
+        artifact = result.cycle.proposal_artifact
+        lines.extend([
+            "PROPOSAL ARTIFACT ID:", artifact.artifact_id,
+            "PROPOSAL ARTIFACT DIGEST:", artifact.artifact_digest,
+            "PROPOSAL ARTIFACT PATH:", artifact.path,
+        ])
     lines.extend(_capture_lines(result.capture_result))
     return "\n".join(lines)
 

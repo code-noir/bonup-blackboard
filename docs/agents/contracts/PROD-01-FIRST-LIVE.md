@@ -30,9 +30,13 @@ Founder procedure:
 5. The command may make exactly one inference request with zero tools and retries.
 6. The response is strictly parsed and validated as a WORKING proposal with a null
    `predecessor_proposal_id`; a non-null initial predecessor is rejected.
-7. Review the bounded proposal output; it is not Founder approval.
-8. Allow the process to exit after the single cycle.
-9. Report only safe output, never the API key, to ChatGPT or Codex.
+7. After validation, the exact canonical proposal is persisted as an immutable,
+   non-authoritative artifact under `/var/lib/bonup-prod/proposals/` using the
+   proposal ID as its deterministic identity. Artifact creation failure is a
+   failed cycle; it does not trigger another request or claim durable success.
+8. Review the bounded proposal output; it is not Founder approval.
+9. Allow the process to exit after the single cycle.
+10. Report only safe output, never the API key, to ChatGPT or Codex.
 
 The command creates no AgentRecord, grant, assignment, registry state, task document,
 ARCH routing, deployment, or application change. Python reference disposal is not a
@@ -44,3 +48,14 @@ is printed or persisted. A classification identifies the validation stage only; 
 does not make rejected output recoverable or authorize a retry. The generic proposal
 validator continues to support non-null predecessor linkage for later,
 separately reviewed `REQUEST_CHANGES` revisions.
+
+The artifact is a bounded canonical object containing the validated proposal and
+its task, proposal, model, source-checkpoint, validation, knowledge-state, and
+artifact-digest bindings. It contains no provider envelope, request, credential,
+reasoning, or execution authority. The current Founder review implementation
+remains synthetic-only; an authenticated production Founder review adapter is a
+separate prerequisite.
+
+The historical first successful ATS-1201 proposal was not durably captured by
+the prior command. Its known identity and digest are historical evidence only;
+no artifact or Founder decision may be fabricated for it.

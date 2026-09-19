@@ -37,6 +37,7 @@ PROVIDER_RESPONSE_TOO_LARGE = "PROVIDER_RESPONSE_TOO_LARGE"
 PROVIDER_CONTENT_TYPE_INVALID = "PROVIDER_CONTENT_TYPE_INVALID"
 PROVIDER_ENCODING_UNSUPPORTED = "PROVIDER_ENCODING_UNSUPPORTED"
 PROVIDER_RESPONSE_TRUNCATED = "PROVIDER_RESPONSE_TRUNCATED"
+PROPOSAL_ARTIFACT_PERSISTENCE_FAILED = "PROPOSAL_ARTIFACT_PERSISTENCE_FAILED"
 SAFE_TRANSPORT_FAILURE_REASONS = frozenset({
     PROVIDER_ERROR, PROVIDER_AUTH_ERROR, PROVIDER_PERMISSION_ERROR,
     PROVIDER_NOT_FOUND, PROVIDER_RATE_LIMIT, PROVIDER_REQUEST_REJECTED,
@@ -293,6 +294,7 @@ class ProductModelCycle:
     proposal_bytes: bytes
     proposal_digest: str
     audit_metadata: dict
+    proposal_artifact: object = None
 
 
 def project_product_context(task):
@@ -526,7 +528,8 @@ def _transport_failure_reason(error):
 
 
 def run_product_model_cycle(task_input, transport, credential_provider=None, *,
-                            require_initial_predecessor_null=False):
+                            require_initial_predecessor_null=False,
+                            proposal_artifact_store=None, source_checkpoint=None):
     """Perform one bounded model call and stop; create no authority or registry state."""
     task = validate_product_task(task_input)
     request, request_bytes = build_product_model_request(task)
@@ -596,4 +599,16 @@ def run_product_model_cycle(task_input, transport, credential_provider=None, *,
     proposal_digest = digest(proposal)
     metadata = _audit(task["task_id"], request_digest, "VALIDATED_PROPOSAL",
                       proposal_digest=proposal_digest)
-    return ProductModelCycle(task, proposal, proposal_bytes, proposal_digest, metadata)
+    artifact = None
+    if proposal_artifact_store is not None:
+        try:
+            artifact = proposal_artifact_store.persist(
+                proposal, source_checkpoint=source_checkpoint)
+        except ValidationError:
+            failure_metadata = _audit(
+                task["task_id"], request_digest, "OUTPUT_REJECTED",
+                proposal_digest=proposal_digest,
+                reason=PROPOSAL_ARTIFACT_PERSISTENCE_FAILED)
+            raise ProductModelFailure(
+                "PROD-01 proposal artifact persistence failed.", failure_metadata) from None
+    return ProductModelCycle(task, proposal, proposal_bytes, proposal_digest, metadata, artifact)

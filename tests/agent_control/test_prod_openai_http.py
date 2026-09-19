@@ -213,6 +213,21 @@ class ProductOpenAIHTTPTests(unittest.TestCase):
         self.assertEqual(len(server.calls), 1)
         self.assertNotIn("not-json", json.dumps(metadata))
 
+    def test_gzip_json_decode_diagnostic_is_bounded(self):
+        raw = b'{"status":"completed"'
+        with fake_server({"body": raw, "content_encoding": "gzip"}) as (server, endpoint):
+            provider = InjectedOpenAICredentialProvider(SECRET)
+            adapter = OpenAIResponsesHTTPAdapter._for_loopback_tests(endpoint, provider)
+            with self.assertRaises(ProductModelFailure) as caught:
+                run_product_model_cycle(synthetic_task(), adapter)
+        structure = caught.exception.audit_metadata["provider_structure"]
+        self.assertEqual(structure["reason"], "RESPONSE_JSON_INVALID")
+        self.assertEqual(structure["json_error"]["category"], "EXPECTING_COMMA")
+        self.assertEqual(structure["http_response"]["content_encoding"], "GZIP")
+        self.assertFalse(structure["http_response"]["json_decode_success"])
+        self.assertNotIn(raw.decode(), json.dumps(caught.exception.audit_metadata))
+        self.assertEqual(len(server.calls), 1)
+
     def test_empty_truncated_and_oversized_decoded_bodies_fail_closed(self):
         cases = (
             ({"body": b""}, "EMPTY_BODY"),

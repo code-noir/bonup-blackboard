@@ -9,6 +9,38 @@ import json
 from .types import ValidationError
 
 
+class JSONDecodeFailure(ValidationError):
+    """JSON syntax failure carrying only code-owned bounded metadata."""
+
+    def __init__(self, category, line, column, position, character_count):
+        super().__init__("Invalid control JSON.")
+        self.category = category
+        self.line = line
+        self.column = column
+        self.position = position
+        self.character_count = character_count
+
+
+def _json_error_category(message):
+    if message == "Expecting value":
+        return "EXPECTING_VALUE"
+    if message == "Expecting property name enclosed in double quotes":
+        return "EXPECTING_PROPERTY_NAME"
+    if message == "Expecting ':' delimiter":
+        return "EXPECTING_COLON"
+    if message == "Expecting ',' delimiter":
+        return "EXPECTING_COMMA"
+    if message.startswith("Unterminated string"):
+        return "UNTERMINATED_STRING"
+    if message.startswith("Invalid \\escape"):
+        return "INVALID_ESCAPE"
+    if message.startswith("Invalid control character"):
+        return "INVALID_CONTROL_CHARACTER"
+    if message == "Extra data":
+        return "EXTRA_DATA"
+    return "OTHER_JSON_SYNTAX"
+
+
 def _json_value(value):
     if value is None or type(value) in (str, int, bool):
         if type(value) is str:
@@ -51,5 +83,10 @@ def parse_json(text):
         value = json.loads(text, object_pairs_hook=pairs)
         _json_value(value)
         return value
+    except json.JSONDecodeError as error:
+        raise JSONDecodeFailure(
+            _json_error_category(error.msg), error.lineno, error.colno,
+            error.pos, len(text) if type(text) is str else 0,
+        ) from None
     except (ValueError, TypeError, RecursionError):
         raise ValidationError("Invalid control JSON.") from None

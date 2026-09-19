@@ -87,6 +87,16 @@ flag controls bounded response reading and is not an SSE request field. It sends
 content types are rejected before proposal parsing. Empty, invalid-UTF-8,
 malformed, and content-length/truncation cases fail closed with bounded reasons.
 
+When Python rejects the collected UTF-8 JSON, the failure fingerprint may also
+contain only a normalized JSON syntax category (`EXPECTING_VALUE`,
+`EXPECTING_PROPERTY_NAME`, `EXPECTING_COLON`, `EXPECTING_COMMA`,
+`UNTERMINATED_STRING`, `INVALID_ESCAPE`, `INVALID_CONTROL_CHARACTER`,
+`EXTRA_DATA`, or `OTHER_JSON_SYNTAX`) and bounded non-negative line, column,
+position, decoded-character-count, and body-byte-count integers. Python's raw
+decoder message, document, failure character, and surrounding text are never
+retained or surfaced. Trailing whitespace remains valid; non-whitespace trailing
+data and concatenated JSON are classified as `EXTRA_DATA`.
+
 The bounded model module remains transport-neutral, and its tests use an injected
 in-memory transport and synthetic credential marker. The separate hardened HTTP
 adapter described below is tested only against a loopback fake server. No live

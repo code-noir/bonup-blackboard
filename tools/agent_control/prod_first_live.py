@@ -78,7 +78,7 @@ def stable_contract_digest(value=None):
 
 
 # Frozen only after deterministic regeneration from the reviewed implementation.
-EXPECTED_STABLE_CONTRACT_DIGEST = "7d56b48991d7768e008010e8bec1805929ce9d0e3f75d51e3226d275fe94eb3f"
+EXPECTED_STABLE_CONTRACT_DIGEST = "a4278ffffc456e54ee9a63e3d131bd71dfeea0bd3bd851c049053caa1196938f"
 
 
 @dataclass(frozen=True)

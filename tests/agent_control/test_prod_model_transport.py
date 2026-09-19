@@ -212,6 +212,51 @@ class ProductModelTransportTests(unittest.TestCase):
                     run_product_model_cycle(synthetic_task(), transport, SyntheticCredentialProvider())
                 self.assertEqual(len(transport.calls), 1)
 
+    def test_json_decoder_diagnostics_are_bounded_and_normalized(self):
+        cases = (
+            (b"", None, "EMPTY_BODY"),
+            (b"   ", "EXPECTING_VALUE", "RESPONSE_JSON_INVALID"),
+            (b"{\"a\":}", "EXPECTING_VALUE", "RESPONSE_JSON_INVALID"),
+            (b"[1,]", "EXPECTING_VALUE", "RESPONSE_JSON_INVALID"),
+            (b'"unterminated', "UNTERMINATED_STRING", "RESPONSE_JSON_INVALID"),
+            (b'"\\q"', "INVALID_ESCAPE", "RESPONSE_JSON_INVALID"),
+            (b'"a\x01b"', "INVALID_CONTROL_CHARACTER", "RESPONSE_JSON_INVALID"),
+            (b'{"a" 1}', "EXPECTING_COLON", "RESPONSE_JSON_INVALID"),
+            (b'{"a":1 "b":2}', "EXPECTING_COMMA", "RESPONSE_JSON_INVALID"),
+            (b'{"a":1} trailing', "EXTRA_DATA", "RESPONSE_JSON_INVALID"),
+            (b'{"a":1}{"b":2}', "EXTRA_DATA", "RESPONSE_JSON_INVALID"),
+            (b"{" + b"a" * 12000, "EXPECTING_PROPERTY_NAME", "RESPONSE_JSON_INVALID"),
+        )
+        for raw, category, reason in cases:
+            with self.subTest(raw=raw[:16]), self.assertRaises(ProductModelFailure) as caught:
+                self.run_cycle(raw=raw)
+            metadata = caught.exception.audit_metadata
+            self.assertEqual(metadata["failure_reason"], "PROVIDER_ENVELOPE_INVALID")
+            structure = metadata["provider_structure"]
+            self.assertEqual(structure["reason"],
+                             "EMPTY_BODY" if reason == "EMPTY_BODY" else "RESPONSE_JSON_INVALID")
+            if category is None:
+                self.assertNotIn("json_error", structure)
+                continue
+            error = structure["json_error"]
+            self.assertEqual(error["category"], category)
+            for key in ("line", "column", "position", "character_count", "body_bytes"):
+                self.assertIsInstance(error[key], int)
+                self.assertGreaterEqual(error[key], 0)
+                self.assertLessEqual(error[key], MAX_RESPONSE_BYTES)
+
+    def test_json_decoder_accepts_trailing_whitespace_and_hides_sentinel(self):
+        result, _, _ = self.run_cycle(raw=response_bytes() + b" \n\t")
+        self.assertEqual(validate_product_proposal(result.proposal), result.proposal)
+        sentinel = "synthetic-provider-secret-model-sentinel"
+        raw = b'{"malformed":"' + sentinel.encode() + b""
+        with self.assertRaises(ProductModelFailure) as caught:
+            self.run_cycle(raw=raw)
+        rendered = " ".join((str(caught.exception), repr(caught.exception),
+                              canonical_json(caught.exception.audit_metadata)))
+        self.assertNotIn(sentinel, rendered)
+        self.assertNotIn("malformed", rendered)
+
     def test_oversized_input_stops_before_transport_and_response_is_bounded(self):
         task = synthetic_task()
         task["objective"] = "x" * 4097

@@ -4,7 +4,7 @@ import re
 from typing import Protocol
 
 from .prod_contract import REFERENCE_TYPES, validate_product_proposal, validate_product_task
-from .serialization import canonical_json, digest, parse_json
+from .serialization import JSONDecodeFailure, canonical_json, digest, parse_json
 from .types import ValidationError
 
 MAX_REQUEST_BYTES = 65536
@@ -60,6 +60,11 @@ _RESPONSE_METADATA_KEYS = frozenset({
     "http_status", "content_type", "content_encoding", "body_bytes", "body_empty",
     "content_length_present", "declared_content_length", "declared_content_length_valid",
     "declared_length_matches", "utf8_decode_success", "json_decode_success",
+})
+_JSON_ERROR_CATEGORIES = frozenset({
+    "EXPECTING_VALUE", "EXPECTING_PROPERTY_NAME", "EXPECTING_COLON",
+    "EXPECTING_COMMA", "UNTERMINATED_STRING", "INVALID_ESCAPE",
+    "INVALID_CONTROL_CHARACTER", "EXTRA_DATA", "OTHER_JSON_SYNTAX",
 })
 TRUSTED_ENDPOINT = "https://api.openai.com/v1/responses"
 TRUSTED_MODEL = "PROD-01-STRUCTURED-MODEL-V1"
@@ -236,6 +241,22 @@ def _bounded_response_metadata(value):
     return result
 
 
+def _json_error_metadata(error, body_bytes):
+    """Project only bounded JSON decoder positions and code-owned categories."""
+    def bounded(value):
+        return min(max(value if type(value) is int else 0, 0), MAX_RESPONSE_BYTES)
+
+    category = error.category if error.category in _JSON_ERROR_CATEGORIES else "OTHER_JSON_SYNTAX"
+    return {
+        "category": category,
+        "line": bounded(error.line),
+        "column": bounded(error.column),
+        "position": bounded(error.position),
+        "character_count": bounded(error.character_count),
+        "body_bytes": bounded(body_bytes),
+    }
+
+
 def _reject_output(reason, *, classification="PROVIDER_ENVELOPE_INVALID", structure=None):
     value = _new_provider_structure() if structure is None else structure
     value = dict(value)
@@ -315,7 +336,7 @@ def parse_product_model_response(raw, *, response_metadata=None):
         _reject_output("RESPONSE_BYTES_INVALID" if type(raw) is not bytes else "EMPTY_BODY",
                        structure=structure)
     if len(raw) > MAX_RESPONSE_BYTES:
-        _reject_output("RESPONSE_TOO_LARGE")
+        _reject_output("RESPONSE_TOO_LARGE", structure=structure)
     try:
         envelope = parse_json(raw.decode("utf-8"))
     except UnicodeError:
@@ -323,6 +344,12 @@ def parse_product_model_response(raw, *, response_metadata=None):
             structure["http_response"]["utf8_decode_success"] = False
             structure["http_response"]["json_decode_success"] = False
         _reject_output("INVALID_UTF8", structure=structure)
+    except JSONDecodeFailure as error:
+        if "http_response" in structure:
+            structure["http_response"]["utf8_decode_success"] = True
+            structure["http_response"]["json_decode_success"] = False
+        structure["json_error"] = _json_error_metadata(error, len(raw))
+        _reject_output("RESPONSE_JSON_INVALID", structure=structure)
     except ValidationError:
         if "http_response" in structure:
             structure["http_response"]["utf8_decode_success"] = True
@@ -332,7 +359,7 @@ def parse_product_model_response(raw, *, response_metadata=None):
         structure["http_response"]["utf8_decode_success"] = True
         structure["http_response"]["json_decode_success"] = True
     if type(envelope) is not dict:
-        _reject_output("RESPONSE_NOT_OBJECT")
+        _reject_output("RESPONSE_NOT_OBJECT", structure=structure)
 
     if "status" not in envelope:
         _reject_output("RESPONSE_STATUS_MISSING", structure=structure)

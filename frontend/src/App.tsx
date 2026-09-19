@@ -51,6 +51,7 @@ import AdminEntities from '@/pages/admin/AdminEntities'
 import AdminContracts from '@/pages/admin/AdminContracts'
 import AdminObligations from '@/pages/admin/AdminObligations'
 import AdminActivity from '@/pages/admin/AdminActivity'
+import AdminProductDirection from '@/pages/admin/AdminProductDirection'
 import AdminPlaceholder from '@/pages/admin/AdminPlaceholder'
 import AdminBilling from '@/pages/admin/AdminBilling'
 import AdminProfile from '@/pages/admin/AdminProfile'
@@ -258,6 +259,7 @@ export default function App() {
             <Route path="apps/blackbod/agreements" element={<AdminContracts />} />
             <Route path="apps/blackbod/obligations" element={<AdminObligations />} />
             <Route path="apps/blackbod/activity" element={<AdminActivity />} />
+            <Route path="apps/blackbod/product-direction" element={<AdminProductDirection />} />
             <Route path="apps/sol/groups" element={<AdminSol />} />
 
             <Route path="billing" element={<AdminBilling />} />

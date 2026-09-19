@@ -33,8 +33,8 @@ test('same-origin API routes retain expected credential separation', async () =>
   impersonationTokenStorage.set('view-as','synthetic-session',{id:1,email:'fixture@example.invalid',first_name:'Fixture',last_name:''})
   const received=[]
   api.defaults.adapter = async config => { received.push(config.headers.Authorization); return ok(config) }
-  await api.get('/uploads/'); await api.get('/operator/me/'); await api.post('/operator/view-as/exit/')
-  assert.deepEqual(received,['Bearer view-as','Bearer operator','Bearer view-as'])
+  await api.get('/uploads/'); await api.get('/operator/me/'); await api.get('/product-direction/tasks/'); await api.post('/operator/view-as/exit/')
+  assert.deepEqual(received,['Bearer view-as','Bearer operator','Bearer operator','Bearer view-as'])
 })
 
 test('simultaneous customer and operator refreshes never exchange credentials', async () => {

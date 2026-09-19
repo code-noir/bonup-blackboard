@@ -105,7 +105,7 @@ export function apiPath(value: string, baseURL = '/api'): string {
 
 function contextFor(path: string): CredentialContext {
   if (path.startsWith('/api/operator/view-as/exit/') && impersonationTokenStorage.getAccess()) return 'view-as'
-  if (path.startsWith('/api/operator/') || path.startsWith('/api/admin/')) return 'operator'
+  if (path.startsWith('/api/operator/') || path.startsWith('/api/admin/') || path.startsWith('/api/product-direction/')) return 'operator'
   return impersonationTokenStorage.getAccess() ? 'view-as' : 'customer'
 }
 

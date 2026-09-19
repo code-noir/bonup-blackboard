@@ -16,6 +16,7 @@ const SECTION_LABELS: Record<string, string> = {
   '/operator/apps/blackbod/agreements': 'Agreements',
   '/operator/apps/blackbod/obligations': 'Obligations',
   '/operator/apps/blackbod/activity': 'Activity',
+  '/operator/apps/blackbod/product-direction': 'Product Direction',
   '/operator/apps/sol/groups': 'Sol Groups',
   '/operator/billing': 'Billing Overview',
   '/operator/billing/subscriptions': 'Subscriptions',

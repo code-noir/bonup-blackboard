@@ -61,6 +61,7 @@ const operatorNav: NavDef[] = [
   { to: '/operator/apps/blackbod/agreements', label: 'Agreements', Icon: ClipboardDocumentListIcon, indent: true },
   { to: '/operator/apps/blackbod/obligations', label: 'Obligations', Icon: ClipboardDocumentListIcon, indent: true },
   { to: '/operator/apps/blackbod/activity', label: 'Activity', Icon: BoltIcon, indent: true },
+  { to: '/operator/apps/blackbod/product-direction', label: 'Product Direction', Icon: SparklesIcon, indent: true },
   { to: '/operator/apps/sol/groups', label: 'Sol Groups', Icon: UserGroupIcon },
   { type: 'disabled', label: 'Unfair', Icon: SparklesIcon },
 

@@ -64,7 +64,7 @@ def open_existing_registry(path):
 
 
 def validate_registry(registry):
-    if check_version(registry.db) != 2 or registry.verify()['status'] == 'BLOCKED':
+    if check_version(registry.db) not in (2, 3) or registry.verify()['status'] == 'BLOCKED':
         raise AuthorityError('Operational registry verification failed.')
 
 

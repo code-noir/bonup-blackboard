@@ -5,6 +5,7 @@ unapproved proposal intake may omit a context; its audit attribution is marked
 as an unauthenticated declaration, never founder authorization.
 """
 import hashlib
+import re
 import sqlite3
 from datetime import datetime, timezone
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -14,13 +15,16 @@ from .lifecycle import transition_task, revise_spec
 from .records import (Task, AgentRecord, ExecutionGrant, Record, Approval,
                       IntegrationCandidate, TestEvidence, CandidateEvent, ProductReviewRecord,
                       ProductReviewCompletedEvent, AuditEvent,
-                      SPEC_FIELDS, task_spec_digest)
+                      PRODUCT_REVIEW_EVENT_CONSUMERS, SPEC_FIELDS, task_spec_digest)
 from .schema import document, validate_schema, valid_format
 from .serialization import canonical_json, digest, parse_json
 from .storage import DB_VERSION, DDL, RegistryBlocked, connect, create_database, external_path, utc_now
 from .types import Role, ValidationError, AuthorityError
 from .publication import GitHistory
 from .founder_session import ProductReviewAuthentication
+
+
+_DELIVERY_REASON = re.compile(r"[A-Z][A-Z0-9_]{0,63}")
 
 
 TABLES = {'ExecutionGrant':('executions','execution_id'), 'Record':('records','record_id'),
@@ -274,6 +278,17 @@ class Registry:
                VALUES (?,?,?,?,?)''',
             (event['event_id'], event['event_type'], payload_json, payload_digest, event['occurred_at']),
         )
+        if self._version() >= 3:
+            now = utc_now()
+            self.db.executemany(
+                '''INSERT INTO domain_event_deliveries(
+                   event_id,event_type,event_digest,consumer_name,status,attempts,
+                   next_attempt_at,last_reason,created_at,updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)''',
+                [(event['event_id'], event['event_type'], event['event_digest'], consumer,
+                  'PENDING', 0, now, None, now, now)
+                 for consumer in PRODUCT_REVIEW_EVENT_CONSUMERS],
+            )
 
     def get_task(self,task_id):
         row=self.db.execute('SELECT payload FROM tasks WHERE task_id=?',(task_id,)).fetchone()
@@ -415,6 +430,8 @@ class Registry:
             raise ValidationError('Unknown domain event.')
         try:
             payload = parse_json(row['payload'])
+            if type(payload) is not dict or payload.get('event_version') != 1:
+                raise RegistryBlocked('Unsupported domain event version.')
             event = ProductReviewCompletedEvent(payload)
             outbox = self.db.execute(
                 'SELECT * FROM domain_event_outbox WHERE event_id=?', (event_id,)
@@ -454,6 +471,100 @@ class Registry:
             raise RegistryBlocked('Domain event operation is missing.')
         object.__setattr__(event, '_trusted', True)
         return event
+
+    def pending_domain_event_deliveries(self, *, now=None, limit=100, replay=False):
+        """Read durable per-consumer obligations without claiming them."""
+        if self._version() < 3:
+            raise RegistryBlocked('Domain event delivery schema is not installed.')
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValidationError('Delivery batch size is out of bounds.')
+        now = utc_now() if now is None else now
+        statuses = "'PENDING','RETRY','ACKNOWLEDGED'" if replay else "'PENDING','RETRY'"
+        return [dict(row) for row in self.db.execute(
+            f'''SELECT * FROM domain_event_deliveries
+                WHERE status IN ({statuses}) AND next_attempt_at<=?
+                ORDER BY next_attempt_at,event_id,consumer_name LIMIT ?''',
+            (now, limit),
+        )]
+
+    def _domain_event_delivery_row(self, event_id, consumer_name):
+        row = self.db.execute(
+            '''SELECT * FROM domain_event_deliveries
+               WHERE event_id=? AND consumer_name=?''',
+            (event_id, consumer_name),
+        ).fetchone()
+        if row is None:
+            raise RegistryBlocked('Unknown domain event delivery obligation.')
+        return row
+
+    def acknowledge_domain_event_delivery(self, event_id, consumer_name):
+        """Acknowledge only after a trusted consumer transaction returns."""
+        if self._version() < 3:
+            raise RegistryBlocked('Domain event delivery schema is not installed.')
+        if consumer_name not in PRODUCT_REVIEW_EVENT_CONSUMERS:
+            raise ValidationError('Unknown domain event consumer.')
+        self.load_domain_event(event_id)
+        if self.db.in_transaction:
+            raise RegistryBlocked('Nested domain event delivery transaction.')
+        self.db.execute('BEGIN IMMEDIATE')
+        try:
+            row = self._domain_event_delivery_row(event_id, consumer_name)
+            if row['status'] == 'BLOCKED':
+                raise RegistryBlocked('Blocked domain event delivery cannot be acknowledged.')
+            if row['status'] != 'ACKNOWLEDGED':
+                now = utc_now()
+                self.db.execute(
+                    '''UPDATE domain_event_deliveries
+                       SET status='ACKNOWLEDGED',last_reason=NULL,updated_at=?
+                       WHERE event_id=? AND consumer_name=?''',
+                    (now, event_id, consumer_name),
+                )
+            self.db.commit()
+        except BaseException:
+            self.db.rollback()
+            raise
+        return {'status': 'ACKNOWLEDGED', 'event_id': event_id, 'consumer_name': consumer_name}
+
+    def record_domain_event_delivery_failure(self, event_id, consumer_name, reason, *, retryable):
+        """Persist a bounded retry or blocked outcome; never marks success."""
+        if self._version() < 3:
+            raise RegistryBlocked('Domain event delivery schema is not installed.')
+        if consumer_name not in PRODUCT_REVIEW_EVENT_CONSUMERS:
+            raise ValidationError('Unknown domain event consumer.')
+        if type(reason) is not str or not _DELIVERY_REASON.fullmatch(reason):
+            raise ValidationError('Bounded delivery reason required.')
+        if type(retryable) is not bool:
+            raise ValidationError('Delivery retry classification required.')
+        if self.db.in_transaction:
+            raise RegistryBlocked('Nested domain event delivery transaction.')
+        self.db.execute('BEGIN IMMEDIATE')
+        try:
+            row = self._domain_event_delivery_row(event_id, consumer_name)
+            if row['status'] == 'ACKNOWLEDGED':
+                self.db.commit()
+                return {'status': 'ACKNOWLEDGED', 'event_id': event_id, 'consumer_name': consumer_name}
+            attempts = row['attempts'] + 1
+            now = utc_now()
+            if retryable:
+                from datetime import timedelta
+                delay = min(900, 2 ** min(attempts - 1, 4))
+                next_attempt = (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat(
+                    timespec='microseconds').replace('+00:00', 'Z')
+                status = 'RETRY'
+            else:
+                next_attempt, status = now, 'BLOCKED'
+            self.db.execute(
+                '''UPDATE domain_event_deliveries
+                   SET status=?,attempts=?,next_attempt_at=?,last_reason=?,updated_at=?
+                   WHERE event_id=? AND consumer_name=?''',
+                (status, attempts, next_attempt, reason, now, event_id, consumer_name),
+            )
+            self.db.commit()
+        except BaseException:
+            self.db.rollback()
+            raise
+        return {'status': status, 'event_id': event_id, 'consumer_name': consumer_name,
+                'reason': reason, 'attempts': attempts}
 
     def list_domain_events(self):
         return [self.load_domain_event(row[0]) for row in self.db.execute(
@@ -568,7 +679,7 @@ class Registry:
                 or type(binding) is not ProductProposalReviewBinding
                 or type(authentication) is not ProductReviewAuthentication):
             raise AuthorityError('Verified product review inputs required.')
-        if self._version() != 2:
+        if self._version() not in (2, 3):
             raise RegistryBlocked('Product review registry schema is not installed.')
         context=authentication.context
         require_context(context, roles={Role.FOUNDER}, actor_id='FOUNDER')
@@ -780,6 +891,26 @@ class Registry:
                             or delivery['payload'] != row['payload']
                             or delivery['payload_digest'] != row['payload_digest']):
                         raise RegistryBlocked('Domain event delivery binding mismatch.')
+            if version >= 3:
+                deliveries = [dict(row) for row in self.db.execute(
+                    'SELECT * FROM domain_event_deliveries')]
+                expected_deliveries = {
+                    (event_id, consumer): (event, consumer)
+                    for event_id, event in domain_events.items()
+                    for consumer in PRODUCT_REVIEW_EVENT_CONSUMERS
+                }
+                actual_keys = {(row['event_id'], row['consumer_name']) for row in deliveries}
+                if actual_keys != set(expected_deliveries):
+                    raise RegistryBlocked('Domain event consumer delivery cardinality mismatch.')
+                for row in deliveries:
+                    event = domain_events[row['event_id']]
+                    if (row['event_type'] != event['event_type']
+                            or row['event_digest'] != parse_json(event['payload'])['event_digest']
+                            or row['status'] not in {'PENDING','RETRY','ACKNOWLEDGED','BLOCKED'}
+                            or row['attempts'] < 0
+                            or (row['last_reason'] is not None
+                                and not _DELIVERY_REASON.fullmatch(row['last_reason']))):
+                        raise RegistryBlocked('Domain event consumer delivery binding mismatch.')
             previous=None;events={}
             for expected,row in enumerate(self.db.execute('SELECT * FROM audit_events ORDER BY sequence'),1):
                 event=parse_json(row['payload']);validate_schema('AuditEvent',event)

@@ -17,6 +17,7 @@ from .types import ApprovalAction, AuthorityError, Role, TaskState, ValidationEr
 
 PRODUCT_REVIEW_NAMESPACE = NAMESPACE_URL
 PRODUCT_REVIEW_DECISIONS = ("ACCEPT", "REJECT", "REQUEST_CHANGES")
+PRODUCT_REVIEW_EVENT_CONSUMERS = ("product-direction", "blackboard-product-direction")
 _PRODUCT_REVIEW_SECRET = re.compile(
     r"(?i)\b(?:password|api[_ -]?key|private[_ -]?key|client[_ -]?secret)\s*[:=]\s*\S+"
 )

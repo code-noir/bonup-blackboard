@@ -212,6 +212,15 @@ status projection are one database transaction: `ACCEPT` becomes
 with its own consumer identity. Replay can rebuild either projection, but can
 never create review authority, execution authority, or publication authority.
 
+The additive v3 registry migration adds mutable `domain_event_deliveries` rows
+with a unique `(event_id, consumer_name)` identity. The trusted delivery worker
+loads each canonical event through `Registry.load_domain_event`, fans out to
+the Product Direction and Blackboard application boundary independently, and
+acknowledges each row only after that consumer transaction returns. Retryable
+failures use bounded backoff; integrity, version, and permanent binding
+failures remain visibly blocked. If the trusted application boundary is not
+provisioned, obligations remain pending with `TRUSTED_RUNTIME_UNAVAILABLE`.
+
 ## Startup, recovery and backup
 
 Registry opening computes `startup_report`; `verify()` can repeat it. Verification

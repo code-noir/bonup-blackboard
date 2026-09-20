@@ -60,8 +60,8 @@ class RuntimeRegistry:
     def __init__(self, registry, *, founder_uid, now=None):
         if type(founder_uid) is not int or founder_uid <= 0:
             raise AuthorityError('Explicit non-root founder required.')
-        if check_version(registry.db) != 2:
-            raise RegistryBlocked('Explicit v2 migration required.')
+        if check_version(registry.db) not in (2, 3):
+            raise RegistryBlocked('Explicit v2 or v3 migration required.')
         self.registry, self.db, self.founder_uid = registry, registry.db, founder_uid
         self.now = now or (lambda:datetime.now(timezone.utc))
 

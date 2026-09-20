@@ -15,6 +15,20 @@ DDL_V2 = (
         payload TEXT NOT NULL,
         payload_digest TEXT NOT NULL,
         context TEXT NOT NULL)''',
+    '''CREATE TABLE domain_events(
+        event_id TEXT PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        review_id TEXT NOT NULL UNIQUE REFERENCES product_reviews(record_id),
+        operation_id TEXT NOT NULL REFERENCES operations(operation_id) DEFERRABLE INITIALLY DEFERRED,
+        occurred_at TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        payload_digest TEXT NOT NULL)''',
+    '''CREATE TABLE domain_event_outbox(
+        event_id TEXT PRIMARY KEY REFERENCES domain_events(event_id),
+        event_type TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        payload_digest TEXT NOT NULL,
+        created_at TEXT NOT NULL)''',
     '''CREATE TABLE identity_enrollments(
         enrollment_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(agent_id),
         username TEXT NOT NULL UNIQUE, uid INTEGER NOT NULL UNIQUE CHECK(uid>0),
@@ -72,6 +86,16 @@ DDL_V2 += tuple(
 DDL_V2 += tuple(
     f'''CREATE TRIGGER immutable_product_reviews_{action.lower()} BEFORE {action} ON product_reviews
         BEGIN SELECT RAISE(ABORT,'Product review records are immutable'); END'''
+    for action in ('UPDATE', 'DELETE')
+)
+DDL_V2 += tuple(
+    f'''CREATE TRIGGER immutable_domain_events_{action.lower()} BEFORE {action} ON domain_events
+        BEGIN SELECT RAISE(ABORT,'Domain events are immutable'); END'''
+    for action in ('UPDATE', 'DELETE')
+)
+DDL_V2 += tuple(
+    f'''CREATE TRIGGER immutable_domain_event_outbox_{action.lower()} BEFORE {action} ON domain_event_outbox
+        BEGIN SELECT RAISE(ABORT,'Domain event delivery obligations are immutable'); END'''
     for action in ('UPDATE', 'DELETE')
 )
 

@@ -2511,6 +2511,99 @@
       ],
       "additionalProperties": false
     },
+    "ProductReviewCompletedEvent": {
+      "type": "object",
+      "properties": {
+        "event_version": {
+          "$ref": "#/$defs/Version"
+        },
+        "event_id": {
+          "$ref": "#/$defs/UUID"
+        },
+        "event_type": {
+          "const": "PRODUCT_REVIEW_COMPLETED",
+          "type": "string"
+        },
+        "occurred_at": {
+          "$ref": "#/$defs/Time"
+        },
+        "review_id": {
+          "$ref": "#/$defs/UUID"
+        },
+        "review_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "task_id": {
+          "$ref": "#/$defs/TaskID"
+        },
+        "agent_id": {
+          "$ref": "#/$defs/AgentID"
+        },
+        "artifact_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "artifact_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "proposal_id": {
+          "$ref": "#/$defs/UUID"
+        },
+        "proposal_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "ACCEPT",
+            "REJECT",
+            "REQUEST_CHANGES"
+          ]
+        },
+        "prior_knowledge_state": {
+          "const": "WORKING",
+          "type": "string"
+        },
+        "resulting_knowledge_state": {
+          "type": "string",
+          "enum": [
+            "WORKING",
+            "APPROVED_INTERNAL"
+          ]
+        },
+        "operation_id": {
+          "$ref": "#/$defs/UUID"
+        },
+        "correlation_id": {
+          "$ref": "#/$defs/UUID"
+        },
+        "event_digest": {
+          "$ref": "#/$defs/Digest"
+        }
+      },
+      "required": [
+        "event_version",
+        "event_id",
+        "event_type",
+        "occurred_at",
+        "review_id",
+        "review_digest",
+        "task_id",
+        "agent_id",
+        "artifact_id",
+        "artifact_digest",
+        "proposal_id",
+        "proposal_digest",
+        "decision",
+        "prior_knowledge_state",
+        "resulting_knowledge_state",
+        "operation_id",
+        "correlation_id",
+        "event_digest"
+      ],
+      "additionalProperties": false
+    },
     "CandidateEvent": {
       "type": "object",
       "properties": {

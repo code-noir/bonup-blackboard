@@ -41,7 +41,8 @@ private; no global or application Git configuration is changed.
 
 ## SQLite model
 
-Schema version 1 uses these tables:
+The base schema uses these tables; runtime schema v2 adds immutable Product
+Review and domain-event tables:
 
 | Tables | Purpose |
 |---|---|
@@ -53,9 +54,11 @@ Schema version 1 uses these tables:
 | records | Current Finding/Conflict/Decision envelope and revision |
 | candidates | Immutable manifest plus separate invalidation flag |
 | approvals, evidence, candidate_events | Immutable, exactly bound metadata and independent QA events |
+| product_reviews | Immutable Founder-authenticated Product Review authority records |
 | operations | Domain operation ID, canonical request digest and original result |
 | audit_events | Append-only ordered events and digest chain |
 | outbox | Immutable publication obligations, full source snapshots and projected publication payloads |
+| domain_events, domain_event_outbox | Immutable Product Review facts and explicit domain-event delivery obligations; separate from Git publication |
 | publications | Unique publication acknowledgement, digest, commit OID, time and status |
 | maintenance_operations | Idempotent publication/backup bookkeeping requests and results |
 
@@ -160,6 +163,7 @@ candidates/IC-ATS-0001-01.json
 approvals/<approval-uuid>.json
 evidence/<evidence-uuid>.json
 candidate_events/<event-uuid>.json
+product-reviews/<review-uuid>.json
 events/000000000001.json
 ```
 
@@ -183,6 +187,30 @@ it records publication ID/outbox/record/digest/OID/time/status without generatin
 another publishable event. Maintenance requests have durable idempotency records.
 This prevents an infinite acknowledgement-publication loop. No domain mutation
 can bypass its event/outbox transaction by using maintenance operations.
+
+### Product Review domain fact
+
+`ProductReviewRecord` is authoritative. On a successful `product_review.create`
+operation, the same SQLite transaction writes the existing
+`PROD_PROPOSAL_REVIEW_RECORDED` audit evidence, one immutable
+`PRODUCT_REVIEW_COMPLETED` v1 event, one immutable `domain_event_outbox`
+delivery obligation, and the operation result. Any failure rolls back all of
+them together. The domain event is evidence of the committed review; it is not
+a command and no event consumer may call `Registry.create_product_review()`.
+
+The event carries its own ID/version/type/time, review ID/digest, Agent Control
+task and agent, artifact ID/digest, proposal ID/digest, decision, prior and
+resulting knowledge states, and operation/correlation ID. Founder signatures,
+challenges, sessions, private keys, peer credentials, paths and secrets are
+excluded. `Registry.load_domain_event(event_id)` verifies the canonical event
+digest, durable outbox copy, and every binding back to the immutable review.
+
+Product Direction is one consumer. Its unique Django inbox acknowledgement and
+status projection are one database transaction: `ACCEPT` becomes
+`APPROVED_INTERNAL`, `REJECT` becomes `REJECTED`, and `REQUEST_CHANGES` becomes
+`CHANGES_REQUESTED`. A later Blackboard projection may consume the same event
+with its own consumer identity. Replay can rebuild either projection, but can
+never create review authority, execution authority, or publication authority.
 
 ## Startup, recovery and backup
 

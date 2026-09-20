@@ -1,9 +1,5 @@
 """Fail-closed application bridge for authenticated PROD-01 review."""
 from dataclasses import dataclass
-from uuid import UUID
-
-from django.db import transaction
-
 from tools.agent_control.founder_review_auth import (
     ProductProposalReviewBinding,
     REVIEW_DECISIONS,
@@ -28,18 +24,14 @@ FINAL_REVIEW_STATUSES = frozenset({
     ProductDirectionTask.STATUS_REJECTED,
     ProductDirectionTask.STATUS_CHANGES_REQUESTED,
 })
-REVIEW_STATUS_BY_DECISION = {
-    "ACCEPT": ProductDirectionTask.STATUS_APPROVED_INTERNAL,
-    "REJECT": ProductDirectionTask.STATUS_REJECTED,
-    "REQUEST_CHANGES": ProductDirectionTask.STATUS_CHANGES_REQUESTED,
-}
 SAFE_REVIEW_REASONS = frozenset({
     "TASK_BINDING_MISMATCH", "PROPOSAL_NOT_AVAILABLE", "PROPOSAL_BINDING_MISMATCH",
     "ARTIFACT_BINDING_MISMATCH", "ARTIFACT_MISSING", "ARTIFACT_INVALID",
     "AGENT_BINDING_MISMATCH", "PROPOSAL_DIGEST_MISMATCH", "KNOWLEDGE_STATE_INVALID",
     "REVIEW_ALREADY_RECORDED", "REVIEW_NOT_AVAILABLE", "REVIEW_BINDING_INVALID",
     "REVIEW_RECORD_INVALID", "REVIEW_DECISION_INVALID", "REVIEW_STATE_INVALID",
-    "REVIEW_AUTHENTICATION_INVALID", "FOUNDER_REVIEW_DENIED",
+    "REVIEW_AUTHENTICATION_INVALID", "REVIEW_EVENT_UNAVAILABLE",
+    "REVIEW_PROJECTION_RETRY", "FOUNDER_REVIEW_DENIED",
 })
 
 
@@ -224,14 +216,22 @@ def submit_review_signature(task, *, signature):
         reason=record_reason,
     )
     value = _safe_record(record, target)
-    with transaction.atomic():
-        current = ProductDirectionTask.objects.select_for_update().get(pk=task.pk)
-        if current.status in FINAL_REVIEW_STATUSES or current.review_id is not None:
-            _review_failure("REVIEW_ALREADY_RECORDED")
-        if current.status != ProductDirectionTask.STATUS_AWAITING_FOUNDER_REVIEW:
-            _review_failure("REVIEW_NOT_AVAILABLE")
-        current.status = REVIEW_STATUS_BY_DECISION[value["decision"]]
-        current.review_id = UUID(value["review_id"])
-        current.review_digest = value["review_digest"]
-        current.save(update_fields=["status", "review_id", "review_digest", "updated_at"])
+    load_completed_event = getattr(runtime, "load_completed_event", None)
+    if not callable(load_completed_event):
+        _review_failure("REVIEW_EVENT_UNAVAILABLE")
+    try:
+        event = load_completed_event(value["review_id"])
+    except FounderRuntimeUnavailable:
+        raise
+    except Exception:
+        raise FounderReviewRuntimeError("REVIEW_PROJECTION_RETRY") from None
+    if (event["review_id"] != value["review_id"]
+            or event["review_digest"] != value["review_digest"]
+            or event["decision"] != value["decision"]):
+        _review_failure("REVIEW_BINDING_MISMATCH")
+    from .events import ProductDirectionProjectionError, consume_product_review_completed
+    try:
+        consume_product_review_completed(event)
+    except ProductDirectionProjectionError:
+        _review_failure("REVIEW_PROJECTION_RETRY")
     return safe_review_result(value)

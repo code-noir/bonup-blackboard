@@ -18,6 +18,12 @@ from tools.agent_control.identity import PeerIdentity, ProcessIdentity
 from tools.agent_control.prod_review import ProductReviewRecord as SyntheticReviewRecord
 
 from backend.bonup.models import ProductDirectionTask
+from backend.api.product_direction.events import (
+    ProductDirectionProjectionError,
+    consume_product_review_completed,
+    consume_product_review_event,
+)
+from backend.bonup.models import AgentControlEventInbox
 from .test_product_direction import make_administrator, make_verified_user
 
 
@@ -118,6 +124,9 @@ class TrustedFounderFixture:
             self.store, self.sessions, self.registry,
         ).review(self.binding, session=session, operation_id=str(uuid4()))
 
+    def load_completed_event(self, review_id):
+        return self.registry.load_product_review_event(review_id)
+
 
 class ProductDirectionReviewAPITests(TestCase):
     def setUp(self):
@@ -152,7 +161,15 @@ class ProductDirectionReviewAPITests(TestCase):
 
     def make_task(self, status=ProductDirectionTask.STATUS_WORKING_PROPOSAL):
         application_id = uuid4()
-        agent_task_id = f"ATS-{application_id.int}"
+        control_task = self.registry.create_task(
+            {
+                "title": "Product direction review",
+                "objective": "Review one bounded product direction.",
+                "source_base_commit": "a" * 40,
+            },
+            operation_id=str(uuid4()),
+        )
+        agent_task_id = control_task["task_id"]
         proposal = working_proposal(agent_task_id, str(uuid4()))
         artifact = self.store.persist(proposal, source_checkpoint="a" * 40)
         task = ProductDirectionTask.objects.create(
@@ -253,6 +270,101 @@ class ProductDirectionReviewAPITests(TestCase):
         self.assertEqual(task.status, ProductDirectionTask.STATUS_APPROVED_INTERNAL)
         self.assertEqual(task.review_id, UUID(result.data["review_id"]))
         self.assertEqual(task.review_digest, result.data["review_digest"])
+        self.assertEqual(self.registry.db.execute("SELECT count(*) FROM product_reviews").fetchone()[0], 1)
+        self.assertEqual(self.registry.db.execute("SELECT count(*) FROM domain_events").fetchone()[0], 1)
+        self.assertEqual(AgentControlEventInbox.objects.filter(consumer_name="product-direction").count(), 1)
+
+    @unittest.skipUnless(FOUNDER_FIXTURE_AVAILABLE, "trusted Founder fixture unavailable in this environment")
+    def test_reject_and_request_changes_project_only_the_application_status(self):
+        for decision, expected_status in (
+            ("REJECT", ProductDirectionTask.STATUS_REJECTED),
+            ("REQUEST_CHANGES", ProductDirectionTask.STATUS_CHANGES_REQUESTED),
+        ):
+            with self.subTest(decision=decision):
+                task = self.make_task()
+                with self.patch_runtime(), patch(
+                    "backend.api.product_direction.proposal.get_proposal_artifact_store",
+                    return_value=self.store,
+                ):
+                    challenge = self.client.post(
+                        f"/api/product-direction/tasks/{task.id}/review/challenge/",
+                        {"decision": decision, "reason": "Bounded Founder review decision."},
+                        format="json",
+                    )
+                    self.assertEqual(challenge.status_code, 202)
+                    signature = base64.b64encode(
+                        make_signature(canonical_json(self.runtime.challenge).encode())
+                    ).decode()
+                    result = self.client.post(
+                        f"/api/product-direction/tasks/{task.id}/review/submit/",
+                        {"signature": signature}, format="json",
+                    )
+                self.assertEqual(result.status_code, 200)
+                task.refresh_from_db()
+                self.assertEqual(task.status, expected_status)
+                self.assertNotEqual(task.status, ProductDirectionTask.STATUS_APPROVED_INTERNAL)
+
+    @unittest.skipUnless(FOUNDER_FIXTURE_AVAILABLE, "trusted Founder fixture unavailable in this environment")
+    def test_projection_failure_rolls_back_inbox_and_retries_without_repeating_review(self):
+        task = self.make_task()
+        with self.patch_runtime(), patch(
+            "backend.api.product_direction.proposal.get_proposal_artifact_store",
+            return_value=self.store,
+        ):
+            from backend.api.product_direction.review import load_review_target
+            target = load_review_target(
+                task, decision="ACCEPT", reason="Approve exact proposal."
+            )
+            self.runtime.request_challenge(target.binding)
+            record = self.runtime.submit_signature(
+                task_id=str(task.id),
+                signature=base64.b64encode(
+                    make_signature(canonical_json(self.runtime.challenge).encode())
+                ).decode(),
+            )
+            event = self.runtime.load_completed_event(record["review_id"])
+            with patch.object(ProductDirectionTask, "save", side_effect=RuntimeError("projection failure")):
+                with self.assertRaises(ProductDirectionProjectionError):
+                    consume_product_review_completed(event, artifact_store=self.store)
+            self.assertEqual(AgentControlEventInbox.objects.count(), 0)
+            task.refresh_from_db()
+            self.assertEqual(task.status, ProductDirectionTask.STATUS_WORKING_PROPOSAL)
+            applied = consume_product_review_completed(event, artifact_store=self.store)
+            duplicate = consume_product_review_completed(event, artifact_store=self.store)
+        self.assertEqual(applied["status"], "APPLIED")
+        self.assertEqual(duplicate["status"], "DUPLICATE")
+        self.assertEqual(AgentControlEventInbox.objects.count(), 1)
+        task.refresh_from_db()
+        self.assertEqual(task.status, ProductDirectionTask.STATUS_APPROVED_INTERNAL)
+
+    @unittest.skipUnless(FOUNDER_FIXTURE_AVAILABLE, "trusted Founder fixture unavailable in this environment")
+    def test_replay_projects_only_and_never_recreates_review_authority(self):
+        task = self.make_task()
+        with self.patch_runtime(), patch(
+            "backend.api.product_direction.proposal.get_proposal_artifact_store",
+            return_value=self.store,
+        ):
+            from backend.api.product_direction.review import load_review_target
+            target = load_review_target(
+                task, decision="ACCEPT", reason="Approve exact proposal."
+            )
+            self.runtime.request_challenge(target.binding)
+            record = self.runtime.submit_signature(
+                task_id=str(task.id),
+                signature=base64.b64encode(
+                    make_signature(canonical_json(self.runtime.challenge).encode())
+                ).decode(),
+            )
+            event_id = self.registry.load_product_review_event(record["review_id"])["event_id"]
+            with patch.object(self.registry, "create_product_review", side_effect=AssertionError), \
+                    patch("tools.agent_control.founder_intake.FounderIntake", side_effect=AssertionError), \
+                    patch("tools.agent_control.founder_session.FounderSessions", side_effect=AssertionError), \
+                    patch("tools.agent_control.prod_review_adapter.ProductionProductReviewAdapter.review",
+                          side_effect=AssertionError):
+                result = consume_product_review_event(
+                    self.registry, event_id, artifact_store=self.store,
+                )
+        self.assertEqual(result["status"], "APPLIED")
         self.assertEqual(self.registry.db.execute("SELECT count(*) FROM product_reviews").fetchone()[0], 1)
 
     @unittest.skipUnless(FOUNDER_FIXTURE_AVAILABLE, "trusted Founder fixture unavailable in this environment")

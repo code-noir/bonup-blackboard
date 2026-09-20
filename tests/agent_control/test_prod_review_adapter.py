@@ -4,7 +4,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
 import unittest
+import sqlite3
 from uuid import uuid4
+from unittest.mock import patch
 
 from prod_cycle_fixtures import DeterministicProductFake
 from test_founder_root import BOOT, ROOT, sign
@@ -16,7 +18,7 @@ from tools.agent_control.founder_session import FounderSessions
 from tools.agent_control.identity import PeerIdentity, ProcessIdentity
 from tools.agent_control.prod_artifact import ProposalArtifactStore
 from tools.agent_control.prod_review_adapter import ProductionProductReviewAdapter
-from tools.agent_control.records import ProductReviewRecord
+from tools.agent_control.records import ProductReviewCompletedEvent, ProductReviewRecord
 from tools.agent_control.registry import Registry
 from tools.agent_control.runtime_schema import migrate_v2
 from tools.agent_control.serialization import canonical_json, digest, parse_json
@@ -70,10 +72,10 @@ class ProductionProductReviewTests(unittest.TestCase):
         })
         return session
 
-    def review(self, artifact, *, decision="ACCEPT", reason="Founder product review."):
+    def review(self, artifact, *, decision="ACCEPT", reason="Founder product review.", operation_id=None):
         binding=self.binding(artifact, decision, reason)
         return self.adapter.review(binding, session=self.signed_session(binding),
-                                   operation_id=str(uuid4()))
+                                   operation_id=operation_id or str(uuid4()))
 
     def test_authenticated_accept_is_durable_and_knowledge_only(self):
         artifact=self.artifact()
@@ -85,7 +87,82 @@ class ProductionProductReviewTests(unittest.TestCase):
         self.assertEqual(self.registry.load("ProductReviewRecord", review["review_id"]).to_dict(),
                          review.to_dict())
         self.assertEqual(self.registry.db.execute("SELECT count(*) FROM product_reviews").fetchone()[0], 1)
-        self.assertEqual(self.registry.verify(check_history=False)["status"], "DEGRADED")
+        self.assertEqual(self.registry.db.execute("SELECT count(*) FROM domain_events").fetchone()[0], 1)
+        self.assertEqual(self.registry.db.execute("SELECT count(*) FROM domain_event_outbox").fetchone()[0], 1)
+
+    def test_domain_event_matches_authoritative_review_and_load_verifies_integrity(self):
+        review=self.review(self.artifact())
+        row=self.registry.db.execute(
+            "SELECT * FROM domain_events WHERE review_id=?", (review["review_id"],)
+        ).fetchone()
+        event=self.registry.load_domain_event(row["event_id"])
+        self.assertIs(type(event), ProductReviewCompletedEvent)
+        self.assertEqual(event["review_id"], review["review_id"])
+        self.assertEqual(event["review_digest"], review["review_digest"])
+        self.assertEqual(event["task_id"], review["task_id"])
+        self.assertEqual(event["artifact_id"], review["artifact_id"])
+        self.assertEqual(event["artifact_digest"], review["artifact_digest"])
+        self.assertEqual(event["proposal_id"], review["proposal_id"])
+        self.assertEqual(event["proposal_digest"], review["proposal_digest"])
+        self.assertEqual(event["decision"], review["decision"])
+        self.assertNotIn("founder", event.to_dict())
+        self.assertNotIn("authentication", event.to_dict())
+        tampered=event.to_dict()
+        tampered["decision"]="REJECT"
+        with self.assertRaises(ValidationError):
+            ProductReviewCompletedEvent(tampered)
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.registry.db.execute(
+                "UPDATE domain_events SET event_type='TAMPERED' WHERE event_id=?",
+                (event["event_id"],),
+            )
+
+    def test_event_writer_rejects_a_valid_but_wrong_review_binding(self):
+        review=self.review(self.artifact())
+        event=self.registry.load_product_review_event(review["review_id"])
+        data=event.to_dict()
+        data["decision"]="REJECT"
+        data["resulting_knowledge_state"]="WORKING"
+        data["event_digest"]=digest({k: v for k, v in data.items() if k != "event_digest"})
+        forged=ProductReviewCompletedEvent(data)
+        with self.assertRaises(AuthorityError):
+            self.registry._store_domain_event(forged)
+
+    def test_event_creation_failure_rolls_back_review_audit_event_and_delivery(self):
+        artifact=self.artifact()
+        binding=self.binding(artifact)
+        original=self.registry._store_domain_event
+        def fail_after_event(event):
+            original(event)
+            raise RuntimeError("controlled event delivery failure")
+        with patch.object(self.registry, "_store_domain_event", side_effect=fail_after_event):
+            with self.assertRaises(RuntimeError):
+                self.adapter.review(binding, session=self.signed_session(binding), operation_id=str(uuid4()))
+        for table in ("product_reviews", "domain_events", "domain_event_outbox"):
+            self.assertEqual(self.registry.db.execute(f"SELECT count(*) FROM {table}").fetchone()[0], 0)
+        audit_payloads = [row[0] for row in self.registry.db.execute(
+            "SELECT payload FROM audit_events"
+        )]
+        self.assertEqual(sum("PROD_PROPOSAL_REVIEW_RECORDED" in payload for payload in audit_payloads), 0)
+
+    def test_duplicate_operation_does_not_create_duplicate_domain_event(self):
+        artifact=self.artifact()
+        operation_id=str(uuid4())
+        self.review(artifact, operation_id=operation_id)
+        self.adapter.review(self.binding(artifact), session=self.signed_session(self.binding(artifact)),
+                            operation_id=operation_id)
+        self.assertEqual(self.registry.db.execute("SELECT count(*) FROM product_reviews").fetchone()[0], 1)
+        self.assertEqual(self.registry.db.execute("SELECT count(*) FROM domain_events").fetchone()[0], 1)
+
+    def test_product_review_git_publication_remains_separate_and_working(self):
+        review=self.review(self.artifact())
+        report=self.registry.reconcile(operation_id=str(uuid4()))
+        self.assertEqual(report["pending_publications"], 0)
+        self.assertEqual(self.registry.db.execute(
+            "SELECT count(*) FROM publications WHERE record_type='ProductReviewRecord' AND record_id=?",
+            (review["review_id"],),
+        ).fetchone()[0], 1)
+        self.assertEqual(self.registry.verify(check_history=False)["status"], "HEALTHY")
 
     def test_reject_and_request_changes_never_approve(self):
         reject=self.review(self.artifact(702), decision="REJECT", reason="Reject this direction.")

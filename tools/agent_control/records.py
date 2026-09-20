@@ -5,7 +5,7 @@ Git ancestry, resource acquisition, or Unix authentication. Explicit binding and
 authority functions must be used by the future trusted controller.
 """
 import re
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from .authority import (ENGINEERS, authorize_resolution, authorize_resource,
                         phase_one_role, require_context, validate_actor,
@@ -151,6 +151,58 @@ class ProductReviewRecord(ImmutableRecord):
         body = {key: value for key, value in d.items() if key != "review_digest"}
         if digest(body) != d["review_digest"]:
             raise ValidationError("Product review record digest mismatch.")
+
+
+class ProductReviewCompletedEvent(ImmutableRecord):
+    """Durable fact emitted after one authoritative product review commits."""
+
+    __slots__ = ("_trusted",)
+    schema_name = "ProductReviewCompletedEvent"
+
+    def _validate(self, d, context):
+        if (d["event_version"] != 1
+                or d["event_type"] != "PRODUCT_REVIEW_COMPLETED"
+                or d["prior_knowledge_state"] != "WORKING"
+                or d["decision"] not in PRODUCT_REVIEW_DECISIONS
+                or d["resulting_knowledge_state"] != {
+                    "ACCEPT": "APPROVED_INTERNAL",
+                    "REJECT": "WORKING",
+                    "REQUEST_CHANGES": "WORKING",
+                }[d["decision"]]
+                or d["agent_id"] != "PROD-01"
+                or d["artifact_id"] != "PROD-01-" + d["proposal_id"]
+                or d["correlation_id"] != d["operation_id"]):
+            raise AuthorityError("Product review event binding or state is invalid.")
+        body = {key: value for key, value in d.items() if key != "event_digest"}
+        if digest(body) != d["event_digest"]:
+            raise ValidationError("Product review event digest mismatch.")
+
+    @classmethod
+    def from_review(cls, review, *, operation_id, occurred_at):
+        if type(review) is not ProductReviewRecord:
+            raise AuthorityError("Authoritative product review record required.")
+        d = review.to_dict()
+        event = {
+            "event_version": 1,
+            "event_id": str(uuid4()),
+            "event_type": "PRODUCT_REVIEW_COMPLETED",
+            "occurred_at": occurred_at,
+            "review_id": d["review_id"],
+            "review_digest": d["review_digest"],
+            "task_id": d["task_id"],
+            "agent_id": d["agent_id"],
+            "artifact_id": d["artifact_id"],
+            "artifact_digest": d["artifact_digest"],
+            "proposal_id": d["proposal_id"],
+            "proposal_digest": d["proposal_digest"],
+            "decision": d["decision"],
+            "prior_knowledge_state": d["prior_knowledge_state"],
+            "resulting_knowledge_state": d["resulting_knowledge_state"],
+            "operation_id": operation_id,
+            "correlation_id": operation_id,
+        }
+        event["event_digest"] = digest(event)
+        return cls(event)
 
 
 class Task(ImmutableRecord):

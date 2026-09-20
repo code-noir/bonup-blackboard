@@ -243,3 +243,24 @@ class ProductDirectionTask(models.Model):
 
     def __str__(self):
         return f"ProductDirectionTask({self.id}, {self.status})"
+
+
+class AgentControlEventInbox(models.Model):
+    """Per-consumer acknowledgement for an immutable Agent Control event."""
+
+    consumer_name = models.CharField(max_length=64)
+    event_id = models.UUIDField()
+    event_type = models.CharField(max_length=96)
+    event_digest = models.CharField(max_length=64)
+    processed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["consumer_name", "event_id"],
+                name="bonup_event_inbox_consumer_event_uq",
+            ),
+        ]
+
+    def __str__(self):
+        return f"AgentControlEventInbox({self.consumer_name}, {self.event_id})"

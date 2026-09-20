@@ -158,7 +158,8 @@ Operator API requests exact challenge
   -> signature is submitted to the trusted Founder runtime
   -> one-use authenticated Founder session is consumed
   -> ProductionProductReviewAdapter writes Registry v2 ProductReviewRecord
-  -> Blackboard stores review ID/digest and updates application status
+  -> Registry atomically stores PRODUCT_REVIEW_COMPLETED v1 and its domain-event outbox obligation
+  -> Product Direction consumes the verified event and stores review ID/digest projection
 ```
 
 The application challenge endpoint is:
@@ -191,8 +192,19 @@ bridge therefore reports `FOUNDER_RUNTIME_UNAVAILABLE` and fails closed; it
 does not provide an operator bypass, synthetic approval, or hardcoded Founder.
 The UI says: “Founder authentication is not available on this installation.”
 
-After durable `ProductReviewRecord` creation, the application stores only its
-bounded `review_id` and `review_digest` provenance. Status transitions are:
+After durable `ProductReviewRecord` creation, Agent Control emits one immutable
+`PRODUCT_REVIEW_COMPLETED` v1 fact. It contains only the safe review/task/agent/
+artifact/proposal bindings, decision, knowledge states, event time, and
+operation/correlation identifiers. It contains no Founder signature, challenge,
+session, key, peer, path, or credential. Product Direction acknowledges the
+event with a unique `(consumer_name, event_id)` inbox row in the same Django
+transaction as its projection update. Duplicate delivery is a no-op; a failed
+projection rolls back the inbox acknowledgement so the durable event can be
+retried. Replaying the event rebuilds projections only and never invokes Founder
+authentication or creates another `ProductReviewRecord`.
+
+The application stores only bounded `review_id` and `review_digest` provenance.
+Status transitions are:
 
 - `ACCEPT`: `WORKING` knowledge state -> application `APPROVED_INTERNAL`.
 - `REJECT`: immutable proposal retained; application `REJECTED`.

@@ -81,7 +81,7 @@ class GitHistory:
         PathRule('FILE',item['path'])
         if item['path']==IDENTITY_PATH or item['path'].split('/')[0] not in {
             'agents','tasks','findings','conflicts','decisions','candidates','approvals',
-            'evidence','executions','candidate_events','events'}:
+            'evidence','executions','candidate_events','events','product-reviews'}:
             raise RegistryBlocked('Invalid publication record path.')
         payload = parse_json(item['payload'])
         if digest(payload) != item['payload_digest']:

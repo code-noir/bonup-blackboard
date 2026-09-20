@@ -13,7 +13,7 @@ from .authority import AuthenticatedContext, require_context, validate_actor
 from .lifecycle import transition_task, revise_spec
 from .records import (Task, AgentRecord, ExecutionGrant, Record, Approval,
                       IntegrationCandidate, TestEvidence, CandidateEvent, ProductReviewRecord,
-                      AuditEvent,
+                      ProductReviewCompletedEvent, AuditEvent,
                       SPEC_FIELDS, task_spec_digest)
 from .schema import document, validate_schema, valid_format
 from .serialization import canonical_json, digest, parse_json
@@ -170,7 +170,8 @@ class Registry:
         return self._operation(str(uuid4()), 'routing', asdict(event), None,
             lambda now, changed: ({'status': 'RECORDED'}, None), event.event_type, routing=event)
 
-    def _operation(self, operation_id, kind, payload, context, action, event_type, *, bootstrap=False, routing=None):
+    def _operation(self, operation_id, kind, payload, context, action, event_type, *, bootstrap=False,
+                   routing=None, after_audit=None):
         if not valid_format('uuid',operation_id):raise ValidationError('Operation ID must be a UUID.')
         request_digest=digest({'kind':kind,'payload':payload,'context':context_data(context)})
         if not self.db.in_transaction:self.db.execute('BEGIN IMMEDIATE')
@@ -211,6 +212,8 @@ class Registry:
             self.db.execute('INSERT INTO audit_events VALUES (?,?,?,?,?)',
                 (sequence,event['event_id'],operation_id,canonical_json(event),event['event_digest']))
             changed.append(('AuditEvent',event['event_id'],f'events/{sequence:012d}.json',event))
+            if after_audit is not None:
+                after_audit(now, result, task_id, event)
             for record_type,record_id,path,data in changed:
                 self._enqueue(operation_id,record_type,record_id,path,data,now)
             self.db.execute('INSERT INTO operations VALUES (?,?,?,?)',
@@ -223,6 +226,54 @@ class Registry:
         payload=public_payload(kind,data)
         self.db.execute('INSERT INTO outbox(publication_id,operation_id,record_type,record_id,path,payload,payload_digest,created_at,source_payload,source_digest) VALUES (?,?,?,?,?,?,?,?,?,?)',
             (str(uuid4()),operation_id,kind,record_id,path,canonical_json(payload),digest(payload),now,canonical_json(data),digest(data)))
+
+    def _store_domain_event(self, event):
+        if type(event) is not ProductReviewCompletedEvent:
+            raise AuthorityError('Trusted product review event required.')
+        review = self.load('ProductReviewRecord', event['review_id'])
+        review_data = review.to_dict()
+        expected = {
+            'review_id': review_data['review_id'],
+            'review_digest': review_data['review_digest'],
+            'task_id': review_data['task_id'],
+            'agent_id': review_data['agent_id'],
+            'artifact_id': review_data['artifact_id'],
+            'artifact_digest': review_data['artifact_digest'],
+            'proposal_id': review_data['proposal_id'],
+            'proposal_digest': review_data['proposal_digest'],
+            'decision': review_data['decision'],
+            'prior_knowledge_state': review_data['prior_knowledge_state'],
+            'resulting_knowledge_state': review_data['resulting_knowledge_state'],
+        }
+        if any(event[key] != value for key, value in expected.items()):
+            raise AuthorityError('Product review event must bind its authoritative review.')
+        audit_row = self.db.execute(
+            'SELECT payload FROM audit_events WHERE operation_id=?',
+            (event['operation_id'],),
+        ).fetchone()
+        if audit_row is None:
+            raise AuthorityError('Product review event requires its committed audit evidence.')
+        audit = parse_json(audit_row['payload'])
+        if (audit['event_type'] != 'PROD_PROPOSAL_REVIEW_RECORDED'
+                or audit['task_id'] != event['task_id']
+                or digest(review_data) not in audit['record_digests']):
+            raise AuthorityError('Product review event audit binding is invalid.')
+        payload = event.to_dict()
+        payload_json = canonical_json(payload)
+        payload_digest = digest(payload)
+        self.db.execute(
+            '''INSERT INTO domain_events(
+               event_id,event_type,review_id,operation_id,occurred_at,payload,payload_digest)
+               VALUES (?,?,?,?,?,?,?)''',
+            (event['event_id'], event['event_type'], event['review_id'], event['operation_id'],
+             event['occurred_at'], payload_json, payload_digest),
+        )
+        self.db.execute(
+            '''INSERT INTO domain_event_outbox(
+               event_id,event_type,payload,payload_digest,created_at)
+               VALUES (?,?,?,?,?)''',
+            (event['event_id'], event['event_type'], payload_json, payload_digest, event['occurred_at']),
+        )
 
     def get_task(self,task_id):
         row=self.db.execute('SELECT payload FROM tasks WHERE task_id=?',(task_id,)).fetchone()
@@ -354,6 +405,67 @@ class Registry:
         row=self.db.execute(f'SELECT * FROM {table} WHERE record_id=?',(record_id,)).fetchone()
         if row is None:raise ValidationError('Unknown control record.')
         return CLASSES[kind](parse_json(row['payload']),context=stored_context(parse_json(row['context'])))
+
+    def load_domain_event(self, event_id):
+        """Load one immutable domain fact after verifying its durable bindings."""
+        if not valid_format('uuid', event_id):
+            raise ValidationError('Invalid domain event ID.')
+        row = self.db.execute('SELECT * FROM domain_events WHERE event_id=?', (event_id,)).fetchone()
+        if row is None:
+            raise ValidationError('Unknown domain event.')
+        try:
+            payload = parse_json(row['payload'])
+            event = ProductReviewCompletedEvent(payload)
+            outbox = self.db.execute(
+                'SELECT * FROM domain_event_outbox WHERE event_id=?', (event_id,)
+            ).fetchone()
+            review = self.load('ProductReviewRecord', row['review_id'])
+        except (KeyError, TypeError, ValueError, ValidationError, sqlite3.DatabaseError):
+            raise RegistryBlocked('Domain event integrity verification failed.') from None
+        if outbox is None:
+            raise RegistryBlocked('Domain event delivery obligation is missing.')
+        expected = review.to_dict()
+        bindings = {
+            'review_id': expected['review_id'],
+            'review_digest': expected['review_digest'],
+            'task_id': expected['task_id'],
+            'agent_id': expected['agent_id'],
+            'artifact_id': expected['artifact_id'],
+            'artifact_digest': expected['artifact_digest'],
+            'proposal_id': expected['proposal_id'],
+            'proposal_digest': expected['proposal_digest'],
+            'decision': expected['decision'],
+            'prior_knowledge_state': expected['prior_knowledge_state'],
+            'resulting_knowledge_state': expected['resulting_knowledge_state'],
+        }
+        if (event['event_id'] != row['event_id']
+                or event['event_type'] != row['event_type']
+                or event['operation_id'] != row['operation_id']
+                or event['occurred_at'] != row['occurred_at']
+                or digest(payload) != row['payload_digest']
+                or event['event_digest'] != digest({k: v for k, v in payload.items() if k != 'event_digest'})
+                or outbox['event_type'] != row['event_type']
+                or outbox['payload'] != row['payload']
+                or outbox['payload_digest'] != row['payload_digest']
+                or outbox['created_at'] != row['occurred_at']
+                or any(event[key] != value for key, value in bindings.items())):
+            raise RegistryBlocked('Domain event binding or digest mismatch.')
+        if self.db.execute('SELECT 1 FROM operations WHERE operation_id=?', (event['operation_id'],)).fetchone() is None:
+            raise RegistryBlocked('Domain event operation is missing.')
+        object.__setattr__(event, '_trusted', True)
+        return event
+
+    def list_domain_events(self):
+        return [self.load_domain_event(row[0]) for row in self.db.execute(
+            'SELECT event_id FROM domain_events ORDER BY occurred_at,event_id')]
+
+    def load_product_review_event(self, review_id):
+        row = self.db.execute(
+            'SELECT event_id FROM domain_events WHERE review_id=?', (review_id,)
+        ).fetchone()
+        if row is None:
+            raise ValidationError('Unknown product review event.')
+        return self.load_domain_event(row['event_id'])
 
     def _active_candidate(self,candidate,task):
         row=self.db.execute('SELECT invalidated FROM candidates WHERE record_id=?',(candidate['candidate_id'],)).fetchone()
@@ -533,8 +645,13 @@ class Registry:
                             f'product-reviews/{review_id}.json',d))
             return d,d['task_id']
 
+        def write_domain_event(now, result, task_id, audit_event):
+            review = ProductReviewRecord(result, context=context)
+            self._store_domain_event(ProductReviewCompletedEvent.from_review(
+                review, operation_id=operation_id, occurred_at=now))
+
         result=self._operation(operation_id,'product_review.create',binding.to_dict(),context,
-                               create,'PROD_PROPOSAL_REVIEW_RECORDED')
+                               create,'PROD_PROPOSAL_REVIEW_RECORDED',after_audit=write_domain_event)
         return ProductReviewRecord(result,context=context)
 
     def create_record(self,body,*,operation_id,context):
@@ -650,6 +767,19 @@ class Registry:
                 numbers=[int(r[0].rsplit('-',1)[-1]) for r in self.db.execute(f'SELECT {column} FROM {table} WHERE {column} LIKE ?',(kind+'-%',))]
                 seq=self.db.execute('SELECT value FROM sequences WHERE name=?',(kind,)).fetchone()
                 if seq is None or seq[0]<max(numbers,default=0):raise RegistryBlocked('Display ID sequence is behind durable records.')
+            if version >= 2:
+                domain_events={r['event_id']: r for r in self.db.execute('SELECT * FROM domain_events')}
+                delivery_events={r['event_id']: r for r in self.db.execute('SELECT * FROM domain_event_outbox')}
+                if set(domain_events) != set(delivery_events):
+                    raise RegistryBlocked('Domain event delivery obligation cardinality mismatch.')
+                for event_id in domain_events:
+                    event = self.load_domain_event(event_id)
+                    row, delivery = domain_events[event_id], delivery_events[event_id]
+                    if (row['review_id'] != event['review_id']
+                            or delivery['event_type'] != event['event_type']
+                            or delivery['payload'] != row['payload']
+                            or delivery['payload_digest'] != row['payload_digest']):
+                        raise RegistryBlocked('Domain event delivery binding mismatch.')
             previous=None;events={}
             for expected,row in enumerate(self.db.execute('SELECT * FROM audit_events ORDER BY sequence'),1):
                 event=parse_json(row['payload']);validate_schema('AuditEvent',event)

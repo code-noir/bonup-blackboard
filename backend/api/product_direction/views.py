@@ -10,15 +10,14 @@ from backend.bonup.models import ProductDirectionTask
 from .serializers import (
     ProductDirectionTaskSerializer,
     ProductReviewChallengeSerializer,
-    ProductReviewSignatureSerializer,
 )
 from .proposal import ProposalReadFailure, read_product_direction_proposal
 from .review import (
     FounderReviewRuntimeError,
     FounderRuntimeUnavailable,
     REVIEWABLE_STATUSES,
-    request_review_challenge,
-    submit_review_signature,
+    observe_review,
+    request_review,
 )
 from .runtime import (
     ProductRuntimeFailure,
@@ -196,7 +195,7 @@ class ProductDirectionTaskReviewChallengeView(APIView):
         serializer.is_valid(raise_exception=True)
         task = get_object_or_404(ProductDirectionTask, pk=task_id)
         try:
-            result = request_review_challenge(task, **serializer.validated_data)
+            result = request_review(task, **serializer.validated_data)
         except FounderRuntimeUnavailable:
             return Response(
                 {"reason": "FOUNDER_RUNTIME_UNAVAILABLE"},
@@ -211,12 +210,21 @@ class ProductDirectionTaskReviewSubmitView(APIView):
     permission_classes = [IsOperator]
 
     def post(self, request, task_id):
-        serializer = ProductReviewSignatureSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        return Response(
+            {"reason": "FOUNDER_EXTERNAL_ONLY"},
+            status=status.HTTP_410_GONE,
+        )
+
+
+class ProductDirectionTaskReviewStatusView(APIView):
+    """Observe a committed Agent Control event; no Founder input is accepted."""
+
+    permission_classes = [IsOperator]
+
+    def get(self, request, task_id):
         task = get_object_or_404(ProductDirectionTask, pk=task_id)
         try:
-            result = submit_review_signature(
-                task, signature=serializer.validated_data["signature"])
+            result = observe_review(task)
         except FounderRuntimeUnavailable:
             return Response(
                 {"reason": "FOUNDER_RUNTIME_UNAVAILABLE"},

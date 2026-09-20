@@ -1,13 +1,10 @@
 """Fail-closed application bridge for authenticated PROD-01 review."""
 from dataclasses import dataclass
-from tools.agent_control.founder_review_auth import (
-    ProductProposalReviewBinding,
-    REVIEW_DECISIONS,
-)
+from django.db import transaction
+from tools.agent_control.founder_review_auth import ProductProposalReviewBinding
 from tools.agent_control.prod_artifact import ProposalArtifactError
-from tools.agent_control.records import ProductReviewRecord
-from tools.agent_control.schema import valid_format
 from tools.agent_control.types import AuthorityError, ValidationError
+from tools.agent_control.founder_review_runtime import TrustedFounderReviewRuntime
 
 from backend.bonup.models import ProductDirectionTask
 
@@ -31,7 +28,8 @@ SAFE_REVIEW_REASONS = frozenset({
     "REVIEW_ALREADY_RECORDED", "REVIEW_NOT_AVAILABLE", "REVIEW_BINDING_INVALID",
     "REVIEW_RECORD_INVALID", "REVIEW_DECISION_INVALID", "REVIEW_STATE_INVALID",
     "REVIEW_AUTHENTICATION_INVALID", "REVIEW_EVENT_UNAVAILABLE",
-    "REVIEW_PROJECTION_RETRY", "FOUNDER_REVIEW_DENIED",
+    "REVIEW_PROJECTION_RETRY", "FOUNDER_REVIEW_DENIED", "FOUNDER_REVIEW_PENDING",
+    "FOUNDER_EXTERNAL_ONLY",
 })
 
 
@@ -53,16 +51,29 @@ class UnavailableFounderReviewRuntime:
 
     available = False
 
-    def request_challenge(self, binding):
+    def request_review(self, binding):
         raise FounderRuntimeUnavailable()
 
-    def submit_signature(self, *, task_id, signature):
+    def observe_review(self, *, task_id):
         raise FounderRuntimeUnavailable()
+
+
+_configured_founder_review_runtime = None
+
+
+def configure_founder_review_runtime(runtime):
+    """Install only a trusted Agent Control composition at application startup."""
+    if type(runtime) is not TrustedFounderReviewRuntime:
+        raise ValidationError("Trusted Founder review runtime required.")
+    global _configured_founder_review_runtime
+    _configured_founder_review_runtime = runtime
 
 
 def get_founder_review_runtime():
-    """Return the trusted external bridge; no Founder session is created here."""
-    return UnavailableFounderReviewRuntime()
+    """Return the trusted external bridge; never construct Founder authority."""
+    return (_configured_founder_review_runtime
+            if _configured_founder_review_runtime is not None
+            else UnavailableFounderReviewRuntime())
 
 
 @dataclass(frozen=True)
@@ -102,136 +113,73 @@ def load_review_target(task, *, decision, reason):
     return ReviewTarget(task=task, artifact=artifact, binding=binding)
 
 
-def _safe_record(record, target):
-    """Accept only a controller-created ProductReviewRecord for this target."""
-    if type(record) is not ProductReviewRecord:
-        _review_failure("REVIEW_RECORD_INVALID")
-    try:
-        value = record.to_dict()
-        expected = {
-            "artifact_id": target.artifact.value["artifact_id"],
-            "artifact_digest": target.artifact.value["artifact_digest"],
-            "task_id": target.task.agent_control_task_id,
-            "agent_id": ProductDirectionTask.AGENT_ID,
-            "proposal_id": str(target.task.proposal_id),
-            "proposal_digest": target.task.proposal_digest,
-            "prior_knowledge_state": "WORKING",
-        }
-        if any(value.get(key) != expected_value for key, expected_value in expected.items()):
-            _review_failure("REVIEW_BINDING_MISMATCH")
-        decision = value.get("decision")
-        if decision not in REVIEW_DECISIONS:
-            _review_failure("REVIEW_DECISION_INVALID")
-        expected_state = "APPROVED_INTERNAL" if decision == "ACCEPT" else "WORKING"
-        if value.get("resulting_knowledge_state") != expected_state:
-            _review_failure("REVIEW_STATE_INVALID")
-        if value.get("review_id") is None or not valid_format("uuid", value["review_id"]):
-            _review_failure("REVIEW_RECORD_INVALID")
-        if value.get("review_digest") is None or not valid_format("sha256", value["review_digest"]):
-            _review_failure("REVIEW_RECORD_INVALID")
-        authentication = value.get("authentication", {})
-        if authentication.get("purpose") != "PROD_PROPOSAL_REVIEW":
-            _review_failure("REVIEW_AUTHENTICATION_INVALID")
-        if authentication.get("binding_digest") != target.binding.binding_digest:
-            _review_failure("REVIEW_BINDING_MISMATCH")
-        if "PUBLICATION_ELIGIBLE" in record.canonical_json():
-            _review_failure("REVIEW_STATE_INVALID")
-    except (KeyError, TypeError, ValueError):
-        _review_failure("REVIEW_RECORD_INVALID")
-    return value
-
-
-def safe_review_result(value):
+def request_review(task, *, decision, reason):
+    """Initiate Founder review with only the server-derived binding."""
+    with transaction.atomic():
+        task = ProductDirectionTask.objects.select_for_update().get(pk=task.pk)
+        if task.status == ProductDirectionTask.STATUS_AWAITING_FOUNDER_REVIEW:
+            return {
+                "status": "ALREADY_REQUESTED",
+                "proposal_id": str(task.proposal_id),
+                "proposal_digest": task.proposal_digest,
+            }
+        if task.status != ProductDirectionTask.STATUS_WORKING_PROPOSAL:
+            _review_failure("REVIEW_NOT_AVAILABLE")
+        target = load_review_target(task, decision=decision, reason=reason)
+        runtime = get_founder_review_runtime()
+        if not getattr(runtime, "available", False):
+            raise FounderRuntimeUnavailable()
+        try:
+            runtime.request_review(target.binding)
+        except FounderRuntimeUnavailable:
+            raise
+        except FounderReviewRuntimeError:
+            raise
+        except Exception:
+            raise FounderReviewRuntimeError("FOUNDER_REVIEW_DENIED") from None
+        task.status = ProductDirectionTask.STATUS_AWAITING_FOUNDER_REVIEW
+        task.save(update_fields=["status", "updated_at"])
     return {
-        "review_id": value["review_id"],
-        "review_digest": value["review_digest"],
-        "decision": value["decision"],
-        "prior_knowledge_state": value["prior_knowledge_state"],
-        "resulting_knowledge_state": value["resulting_knowledge_state"],
-        "proposal_id": value["proposal_id"],
-        "proposal_digest": value["proposal_digest"],
-    }
-
-
-def request_review_challenge(task, *, decision, reason):
-    if task.status != ProductDirectionTask.STATUS_WORKING_PROPOSAL:
-        _review_failure("REVIEW_NOT_AVAILABLE")
-    target = load_review_target(task, decision=decision, reason=reason)
-    runtime = get_founder_review_runtime()
-    if not getattr(runtime, "available", False):
-        raise FounderRuntimeUnavailable()
-    try:
-        runtime.request_challenge(target.binding)
-    except FounderRuntimeUnavailable:
-        raise
-    except FounderReviewRuntimeError:
-        raise
-    except Exception:
-        raise FounderReviewRuntimeError("FOUNDER_REVIEW_DENIED") from None
-
-    ProductDirectionTask.objects.filter(
-        pk=task.pk,
-        status__in=REVIEWABLE_STATUSES,
-        review_id__isnull=True,
-    ).update(status=ProductDirectionTask.STATUS_AWAITING_FOUNDER_REVIEW)
-    return {
-        "status": "CHALLENGE_REQUESTED",
+        "status": "REQUESTED",
         "decision": decision,
         "proposal_id": str(target.task.proposal_id),
         "proposal_digest": target.task.proposal_digest,
     }
 
 
-def submit_review_signature(task, *, signature):
+def observe_review(task):
+    """Receive one committed event and let the EVENT-01 consumer project it."""
     if task.status in FINAL_REVIEW_STATUSES or task.review_id is not None:
-        _review_failure("REVIEW_ALREADY_RECORDED")
+        return {
+            "status": "ALREADY_PROJECTED",
+            "review_id": str(task.review_id),
+            "review_digest": task.review_digest,
+        }
     if task.status != ProductDirectionTask.STATUS_AWAITING_FOUNDER_REVIEW:
         _review_failure("REVIEW_NOT_AVAILABLE")
     runtime = get_founder_review_runtime()
     if not getattr(runtime, "available", False):
         raise FounderRuntimeUnavailable()
     try:
-        record = runtime.submit_signature(task_id=str(task.id), signature=signature)
+        event = runtime.observe_review(task_id=task.agent_control_task_id)
     except FounderRuntimeUnavailable:
         raise
     except FounderReviewRuntimeError:
         raise
     except Exception:
-        raise FounderReviewRuntimeError("FOUNDER_REVIEW_DENIED") from None
-
-    # The runtime owns the challenge, signature verification, Founder session,
-    # adapter, and durable Registry write. Re-load the exact artifact before
-    # accepting the returned record or changing application state.
-    if type(record) is not ProductReviewRecord:
-        _review_failure("REVIEW_RECORD_INVALID")
-    try:
-        record_value = record.to_dict()
-        record_decision = record_value["decision"]
-        record_reason = record_value["reason"]
-    except (KeyError, TypeError, ValueError):
-        _review_failure("REVIEW_RECORD_INVALID")
-    target = load_review_target(
-        ProductDirectionTask.objects.get(pk=task.pk),
-        decision=record_decision,
-        reason=record_reason,
-    )
-    value = _safe_record(record, target)
-    load_completed_event = getattr(runtime, "load_completed_event", None)
-    if not callable(load_completed_event):
-        _review_failure("REVIEW_EVENT_UNAVAILABLE")
-    try:
-        event = load_completed_event(value["review_id"])
-    except FounderRuntimeUnavailable:
-        raise
-    except Exception:
-        raise FounderReviewRuntimeError("REVIEW_PROJECTION_RETRY") from None
-    if (event["review_id"] != value["review_id"]
-            or event["review_digest"] != value["review_digest"]
-            or event["decision"] != value["decision"]):
-        _review_failure("REVIEW_BINDING_MISMATCH")
+        raise FounderReviewRuntimeError("REVIEW_EVENT_UNAVAILABLE") from None
+    if event is None:
+        return {"status": "PENDING"}
     from .events import ProductDirectionProjectionError, consume_product_review_completed
     try:
-        consume_product_review_completed(event)
+        projection = consume_product_review_completed(event)
     except ProductDirectionProjectionError:
         _review_failure("REVIEW_PROJECTION_RETRY")
-    return safe_review_result(value)
+    return {
+        "status": projection["status"],
+        "event_id": event["event_id"],
+        "review_id": event["review_id"],
+        "review_digest": event["review_digest"],
+        "decision": event["decision"],
+        "resulting_knowledge_state": event["resulting_knowledge_state"],
+    }

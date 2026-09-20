@@ -152,10 +152,10 @@ as authorization for `ACCEPT`, `REJECT`, or `REQUEST_CHANGES`. The review
 decision must come from the existing cryptographic Founder protocol:
 
 ```text
-Operator API requests exact challenge
-  -> trusted Founder runtime binds and issues challenge
+Operator API requests Founder review initiation
+  -> trusted Agent Control bridge binds and requests Founder review
   -> Founder signs externally
-  -> signature is submitted to the trusted Founder runtime
+  -> FounderTransport delivers the external signature to Agent Control
   -> one-use authenticated Founder session is consumed
   -> ProductionProductReviewAdapter writes Registry v2 ProductReviewRecord
   -> Registry atomically stores PRODUCT_REVIEW_COMPLETED v1 and its domain-event outbox obligation
@@ -173,18 +173,21 @@ Its exact request body is `{"decision":"ACCEPT|REJECT|REQUEST_CHANGES",
 digest, Agent Control task ID, proposal ID, proposal digest, and
 `PROD_PROPOSAL_REVIEW` purpose from the locked `ProductDirectionTask` and the
 verified immutable artifact. Browser-supplied binding fields are rejected.
-The signature bridge endpoint accepts only the bounded external signature:
+The application observes the trusted Agent Control result through:
 
 ```text
-POST /api/product-direction/tasks/<task_id>/review/submit/
+GET /api/product-direction/tasks/<task_id>/review/status/
 ```
 
-It never accepts a task ID, proposal ID/digest, artifact identity, purpose,
-Founder identity, session, or decision override from the browser. The trusted
-runtime owns challenge freshness, replay protection, external signature
-verification, one-use Founder session creation, and the call to
-`ProductionProductReviewAdapter`. `SyntheticFounderReviewContext` and
+The browser sends only `decision` and bounded `reason` to the initiation
+endpoint. It never submits a signature or accepts a challenge, task ID,
+proposal ID/digest, artifact identity, purpose, Founder identity, or session.
+The provisioned Agent Control composition owns `FounderIntake`,
+`FounderSessions`, `FounderTransport`, challenge freshness/replay protection,
+external signature verification, one-use Founder session creation, and the
+call to `ProductionProductReviewAdapter`. `SyntheticFounderReviewContext` and
 arbitrary `AuthenticatedContext` values are not production application inputs.
+The legacy `/review/submit/` action is disabled with `FOUNDER_EXTERNAL_ONLY`.
 
 The current installation has no Founder Genesis, installed Founder root,
 Generation-2 installation, or production Founder socket. The application
@@ -214,8 +217,8 @@ Status transitions are:
 
 No review can produce `PUBLICATION_ELIGIBLE`, create an ARCH task, route to
 ARCH-01, create an AgentRecord or ExecutionGrant, activate an agent, modify a
-repository, or publish. Application status is updated only after the trusted
-runtime returns the durably persisted review record. Persistence or binding
+repository, or publish. Application status is updated only after the EVENT-01
+consumer receives the durably persisted review event. Persistence or binding
 failure leaves the prior application status unchanged, and replay, duplicate,
 stale, substituted, or already-reviewed requests return bounded safe reasons
 without creating another review record.

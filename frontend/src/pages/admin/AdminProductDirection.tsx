@@ -95,6 +95,8 @@ function runtimeMessage(reason: unknown) {
 
 function reviewMessage(reason: unknown) {
   if (reason === 'FOUNDER_RUNTIME_UNAVAILABLE') return 'Founder authentication is not available on this installation.'
+  if (reason === 'FOUNDER_REVIEW_PENDING') return 'Founder review is still pending in the trusted external channel.'
+  if (reason === 'FOUNDER_EXTERNAL_ONLY') return 'Founder authorization must be completed through the trusted external Founder channel.'
   if (reason === 'REVIEW_ALREADY_RECORDED') return 'This proposal already has a durable Founder review result.'
   if (reason === 'REVIEW_NOT_AVAILABLE') return 'This proposal is not currently available for Founder review.'
   if (reason === 'REVIEW_BINDING_MISMATCH' || reason === 'ARTIFACT_BINDING_MISMATCH' || reason === 'TASK_BINDING_MISMATCH' || reason === 'PROPOSAL_BINDING_MISMATCH' || reason === 'PROPOSAL_DIGEST_MISMATCH') return 'The exact proposal binding could not be verified. No review was applied.'
@@ -230,9 +232,8 @@ export default function AdminProductDirection() {
   const [reviewAvailability, setReviewAvailability] = useState<ReviewAvailability | null>(null)
   const [reviewDecision, setReviewDecision] = useState<'ACCEPT' | 'REJECT' | 'REQUEST_CHANGES'>('ACCEPT')
   const [reviewReason, setReviewReason] = useState('')
-  const [reviewSignature, setReviewSignature] = useState('')
   const [challengeRequested, setChallengeRequested] = useState(false)
-  const [reviewAction, setReviewAction] = useState<'challenge' | 'submit' | null>(null)
+  const [reviewAction, setReviewAction] = useState<'challenge' | 'observe' | null>(null)
   const [reviewError, setReviewError] = useState<string | null>(null)
   const [reviewNotice, setReviewNotice] = useState<string | null>(null)
 
@@ -255,7 +256,6 @@ export default function AdminProductDirection() {
     setProposal(null)
     setProposalError(null)
     setReviewAvailability(null)
-    setReviewSignature('')
     setReviewError(null)
     setReviewNotice(null)
     if (!selectedTask || !PROPOSAL_READABLE_STATUSES.has(selectedTask.status)) return () => { cancelled = true }
@@ -327,7 +327,7 @@ export default function AdminProductDirection() {
     try {
       await api.post(`/product-direction/tasks/${selectedTask.task_id}/review/challenge/`, { decision: reviewDecision, reason })
       setChallengeRequested(true)
-      setReviewNotice('Founder challenge requested. Complete the signature through the trusted external Founder channel, then submit the returned signature below.')
+      setReviewNotice('Founder review requested through trusted Agent Control. Complete authorization in the external Founder channel; Operator access cannot decide this review.')
     } catch (requestError: unknown) {
       const reasonCode = (requestError as { response?: { data?: { reason?: unknown } } })?.response?.data?.reason
       setReviewError(reviewMessage(reasonCode))
@@ -336,16 +336,19 @@ export default function AdminProductDirection() {
     }
   }
 
-  const submitReviewSignature = async () => {
-    if (!selectedTask || !challengeRequested || !reviewSignature || reviewAction) return
-    setReviewAction('submit')
+  const observeReview = async () => {
+    if (!selectedTask || selectedTask.status !== 'AWAITING_FOUNDER_REVIEW' || reviewAction) return
+    setReviewAction('observe')
     setReviewError(null)
     setReviewNotice(null)
     try {
-      const response = await api.post(`/product-direction/tasks/${selectedTask.task_id}/review/submit/`, { signature: reviewSignature })
-      setReviewSignature('')
-      setChallengeRequested(false)
-      setReviewNotice(`Founder review recorded: ${response.data.decision}. Application status is now ${response.data.resulting_knowledge_state}.`)
+      const response = await api.get(`/product-direction/tasks/${selectedTask.task_id}/review/status/`)
+      if (response.data.status === 'PENDING') {
+        setReviewNotice('Founder review is still pending in the trusted external Founder channel.')
+      } else {
+        setChallengeRequested(false)
+        setReviewNotice(`Founder review recorded: ${response.data.decision}. Application status is now ${response.data.resulting_knowledge_state}.`)
+      }
       setRefreshToken((current) => current + 1)
     } catch (requestError: unknown) {
       const reasonCode = (requestError as { response?: { data?: { reason?: unknown } } })?.response?.data?.reason
@@ -469,7 +472,7 @@ export default function AdminProductDirection() {
                       Founder authentication is not available on this installation.
                     </p>
                   )}
-                  <fieldset disabled={!reviewAvailability?.available || !!reviewAction} style={{ margin: '14px 0 0', border: 0, padding: 0 }}>
+                  <fieldset disabled={!reviewAvailability?.available || !!reviewAction || selectedTask.status === 'AWAITING_FOUNDER_REVIEW'} style={{ margin: '14px 0 0', border: 0, padding: 0 }}>
                     <legend style={{ color: '#334155', fontSize: 13, fontWeight: 800 }}>Decision</legend>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
                       {(['ACCEPT', 'REJECT', 'REQUEST_CHANGES'] as const).map((decision) => (
@@ -484,16 +487,14 @@ export default function AdminProductDirection() {
                     {reviewDecision === 'ACCEPT' && <p style={{ margin: '8px 0 0', color: '#475569', fontSize: 12 }}>Confirmation: <strong>{proposal.title}</strong> · proposal {proposal.proposal_id} · digest <code>{proposal.proposal_digest}</code> · resulting state <strong>APPROVED_INTERNAL</strong>.</p>}
                     {reviewDecision !== 'ACCEPT' && <p style={{ margin: '8px 0 0', color: '#475569', fontSize: 12 }}>The proposal remains immutable historical evidence. This decision will not create publication or execution authority.</p>}
                     <button type="button" onClick={requestReviewChallenge} style={{ marginTop: 12, border: 0, borderRadius: 8, background: reviewAvailability?.available ? '#0369A1' : '#94A3B8', color: '#fff', cursor: reviewAvailability?.available ? 'pointer' : 'not-allowed', padding: '9px 14px', fontSize: 12, fontWeight: 800 }}>
-                      {reviewAction === 'challenge' ? 'Requesting challenge…' : `Request Founder ${reviewDecision} challenge`}
+                      {reviewAction === 'challenge' ? 'Requesting Founder review…' : `Request Founder ${reviewDecision} review`}
                     </button>
                   </fieldset>
-                  {challengeRequested && (
+                  {(challengeRequested || selectedTask.status === 'AWAITING_FOUNDER_REVIEW') && (
                     <div style={{ marginTop: 14, borderTop: '1px solid #E2E8F0', paddingTop: 14 }}>
-                      <label htmlFor="founder-review-signature" style={{ display: 'block', color: '#334155', fontSize: 13, fontWeight: 750 }}>External Founder signature</label>
-                      <p style={{ margin: '5px 0 0', color: '#64748B', fontSize: 12 }}>Paste only the signature returned by the trusted Founder channel. Private key material never belongs in bonUP, the browser, or this request.</p>
-                      <input id="founder-review-signature" value={reviewSignature} onChange={(event) => setReviewSignature(event.target.value)} maxLength={88} autoComplete="off" style={{ display: 'block', width: '100%', marginTop: 7, border: '1px solid #CBD5E1', borderRadius: 8, padding: 10, color: '#0F172A', fontSize: 12, fontFamily: 'monospace' }} />
-                      <button type="button" onClick={submitReviewSignature} disabled={!reviewSignature || !!reviewAction} style={{ marginTop: 10, border: 0, borderRadius: 8, background: reviewSignature && !reviewAction ? '#0F1F3D' : '#94A3B8', color: '#fff', cursor: reviewSignature && !reviewAction ? 'pointer' : 'not-allowed', padding: '9px 14px', fontSize: 12, fontWeight: 800 }}>
-                        {reviewAction === 'submit' ? 'Submitting review…' : 'Submit Founder signature'}
+                      <p style={{ margin: 0, color: '#64748B', fontSize: 12 }}>Founder authorization is completed outside Blackboard through the trusted Founder transport. No signature, challenge, session, or Founder identity is entered here.</p>
+                      <button type="button" onClick={observeReview} disabled={!!reviewAction} style={{ marginTop: 10, border: 0, borderRadius: 8, background: !reviewAction ? '#0F1F3D' : '#94A3B8', color: '#fff', cursor: !reviewAction ? 'pointer' : 'not-allowed', padding: '9px 14px', fontSize: 12, fontWeight: 800 }}>
+                        {reviewAction === 'observe' ? 'Checking Founder result…' : 'Check Founder review result'}
                       </button>
                     </div>
                   )}

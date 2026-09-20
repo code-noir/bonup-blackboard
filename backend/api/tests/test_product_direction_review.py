@@ -11,6 +11,7 @@ from rest_framework.test import APIClient
 from tools.agent_control.founder_session import FounderSessions
 from tools.agent_control.prod_artifact import ProposalArtifactStore
 from tools.agent_control.prod_review_adapter import ProductionProductReviewAdapter
+from tools.agent_control.founder_review_runtime import product_review_operation_id
 from tools.agent_control.registry import Registry
 from tools.agent_control.runtime_schema import migrate_v2
 from tools.agent_control.serialization import canonical_json, digest
@@ -111,21 +112,30 @@ class TrustedFounderFixture:
     def attach_registry(self, registry):
         self.registry = registry
 
-    def request_challenge(self, binding):
+    def request_review(self, binding):
         self.binding = binding
         self.challenge = self.sessions.issue_product_review(binding)
+        return {"status": "REQUESTED"}
 
-    def submit_signature(self, *, task_id, signature):
+    def complete_external_review(self):
+        signature = base64.b64encode(
+            make_signature(canonical_json(self.challenge).encode())
+        ).decode()
         session = self.sessions.submit({
             "challenge_id": digest(self.challenge),
             "signature": signature,
         })
-        return ProductionProductReviewAdapter(
+        self.record = ProductionProductReviewAdapter(
             self.store, self.sessions, self.registry,
-        ).review(self.binding, session=session, operation_id=str(uuid4()))
+        ).review(self.binding, session=session,
+                 operation_id=product_review_operation_id(self.binding))
+        return self.record
 
-    def load_completed_event(self, review_id):
-        return self.registry.load_product_review_event(review_id)
+    def observe_review(self, *, task_id):
+        if not hasattr(self, "record"):
+            return None
+        event = self.registry.load_product_review_event(self.record["review_id"])
+        return event if event["task_id"] == task_id else None
 
 
 class ProductDirectionReviewAPITests(TestCase):
@@ -217,6 +227,13 @@ class ProductDirectionReviewAPITests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 400)
+        legacy = self.client.post(
+            f"/api/product-direction/tasks/{task.id}/review/submit/",
+            {"signature": "browser-must-not-submit"},
+            format="json",
+        )
+        self.assertEqual(legacy.status_code, 410)
+        self.assertEqual(legacy.data, {"reason": "FOUNDER_EXTERNAL_ONLY"})
         task.refresh_from_db()
         self.assertEqual(task.status, ProductDirectionTask.STATUS_WORKING_PROPOSAL)
 
@@ -248,23 +265,21 @@ class ProductDirectionReviewAPITests(TestCase):
             "backend.api.product_direction.proposal.get_proposal_artifact_store",
             return_value=self.store,
         ):
-            challenge = self.client.post(
+            request = self.client.post(
                 f"/api/product-direction/tasks/{task.id}/review/challenge/",
                 {"decision": "ACCEPT", "reason": "Approve exact proposal."},
                 format="json",
             )
-            self.assertEqual(challenge.status_code, 202)
-            self.assertEqual(challenge.data["proposal_id"], str(task.proposal_id))
-            self.assertNotIn("challenge", challenge.data)
-            result = self.client.post(
-                f"/api/product-direction/tasks/{task.id}/review/submit/",
-                {"signature": base64.b64encode(make_signature(canonical_json(self.runtime.challenge).encode())).decode()},
-                format="json",
+            self.assertEqual(request.status_code, 202)
+            self.assertEqual(request.data["proposal_id"], str(task.proposal_id))
+            self.assertNotIn("challenge", request.data)
+            self.runtime.complete_external_review()
+            result = self.client.get(
+                f"/api/product-direction/tasks/{task.id}/review/status/",
             )
         self.assertEqual(result.status_code, 200)
         self.assertEqual(result.data["decision"], "ACCEPT")
         self.assertEqual(result.data["resulting_knowledge_state"], "APPROVED_INTERNAL")
-        self.assertNotIn("signature", result.data)
         self.assertNotIn("authentication", result.data)
         task.refresh_from_db()
         self.assertEqual(task.status, ProductDirectionTask.STATUS_APPROVED_INTERNAL)
@@ -286,18 +301,15 @@ class ProductDirectionReviewAPITests(TestCase):
                     "backend.api.product_direction.proposal.get_proposal_artifact_store",
                     return_value=self.store,
                 ):
-                    challenge = self.client.post(
+                    request = self.client.post(
                         f"/api/product-direction/tasks/{task.id}/review/challenge/",
                         {"decision": decision, "reason": "Bounded Founder review decision."},
                         format="json",
                     )
-                    self.assertEqual(challenge.status_code, 202)
-                    signature = base64.b64encode(
-                        make_signature(canonical_json(self.runtime.challenge).encode())
-                    ).decode()
-                    result = self.client.post(
-                        f"/api/product-direction/tasks/{task.id}/review/submit/",
-                        {"signature": signature}, format="json",
+                    self.assertEqual(request.status_code, 202)
+                    self.runtime.complete_external_review()
+                    result = self.client.get(
+                        f"/api/product-direction/tasks/{task.id}/review/status/",
                     )
                 self.assertEqual(result.status_code, 200)
                 task.refresh_from_db()
@@ -315,14 +327,9 @@ class ProductDirectionReviewAPITests(TestCase):
             target = load_review_target(
                 task, decision="ACCEPT", reason="Approve exact proposal."
             )
-            self.runtime.request_challenge(target.binding)
-            record = self.runtime.submit_signature(
-                task_id=str(task.id),
-                signature=base64.b64encode(
-                    make_signature(canonical_json(self.runtime.challenge).encode())
-                ).decode(),
-            )
-            event = self.runtime.load_completed_event(record["review_id"])
+            self.runtime.request_review(target.binding)
+            self.runtime.complete_external_review()
+            event = self.runtime.observe_review(task_id=task.agent_control_task_id)
             with patch.object(ProductDirectionTask, "save", side_effect=RuntimeError("projection failure")):
                 with self.assertRaises(ProductDirectionProjectionError):
                     consume_product_review_completed(event, artifact_store=self.store)
@@ -348,14 +355,11 @@ class ProductDirectionReviewAPITests(TestCase):
             target = load_review_target(
                 task, decision="ACCEPT", reason="Approve exact proposal."
             )
-            self.runtime.request_challenge(target.binding)
-            record = self.runtime.submit_signature(
-                task_id=str(task.id),
-                signature=base64.b64encode(
-                    make_signature(canonical_json(self.runtime.challenge).encode())
-                ).decode(),
-            )
-            event_id = self.registry.load_product_review_event(record["review_id"])["event_id"]
+            self.runtime.request_review(target.binding)
+            self.runtime.complete_external_review()
+            event_id = self.registry.load_product_review_event(
+                self.runtime.record["review_id"]
+            )["event_id"]
             with patch.object(self.registry, "create_product_review", side_effect=AssertionError), \
                     patch("tools.agent_control.founder_intake.FounderIntake", side_effect=AssertionError), \
                     patch("tools.agent_control.founder_session.FounderSessions", side_effect=AssertionError), \
@@ -368,7 +372,7 @@ class ProductDirectionReviewAPITests(TestCase):
         self.assertEqual(self.registry.db.execute("SELECT count(*) FROM product_reviews").fetchone()[0], 1)
 
     @unittest.skipUnless(FOUNDER_FIXTURE_AVAILABLE, "trusted Founder fixture unavailable in this environment")
-    def test_duplicate_signature_is_rejected_without_second_record(self):
+    def test_duplicate_http_action_is_rejected_without_second_record(self):
         task = self.make_task()
         with self.patch_runtime(), patch(
             "backend.api.product_direction.proposal.get_proposal_artifact_store",
@@ -378,24 +382,28 @@ class ProductDirectionReviewAPITests(TestCase):
                 f"/api/product-direction/tasks/{task.id}/review/challenge/",
                 {"decision": "REJECT", "reason": "Reject exact proposal."}, format="json"
             )
-            signature = base64.b64encode(make_signature(canonical_json(self.runtime.challenge).encode())).decode()
             first = self.client.post(
-                f"/api/product-direction/tasks/{task.id}/review/submit/", {"signature": signature}, format="json"
+                f"/api/product-direction/tasks/{task.id}/review/challenge/",
+                {"decision": "REJECT", "reason": "Reject exact proposal."}, format="json"
             )
             second = self.client.post(
-                f"/api/product-direction/tasks/{task.id}/review/submit/", {"signature": signature}, format="json"
+                f"/api/product-direction/tasks/{task.id}/review/challenge/",
+                {"decision": "REJECT", "reason": "Reject exact proposal."}, format="json"
             )
-        self.assertEqual(first.status_code, 200)
-        self.assertEqual(second.status_code, 409)
-        self.assertEqual(second.data, {"reason": "REVIEW_ALREADY_RECORDED"})
+            self.runtime.complete_external_review()
+            result = self.client.get(f"/api/product-direction/tasks/{task.id}/review/status/")
+        self.assertEqual(first.status_code, 202)
+        self.assertEqual(second.status_code, 202)
+        self.assertEqual(second.data["status"], "ALREADY_REQUESTED")
+        self.assertEqual(result.status_code, 200)
         self.assertEqual(self.registry.db.execute("SELECT count(*) FROM product_reviews").fetchone()[0], 1)
 
     def test_synthetic_review_record_cannot_cross_runtime_boundary(self):
         task = self.make_task()
         runtime = type("SyntheticRuntime", (), {
             "available": True,
-            "request_challenge": lambda self, binding: None,
-            "submit_signature": lambda self, **kwargs: SyntheticReviewRecord("{}"),
+            "request_review": lambda self, binding: {"status": "REQUESTED"},
+            "observe_review": lambda self, **kwargs: SyntheticReviewRecord("{}"),
         })()
         with patch(
             "backend.api.product_direction.review.get_founder_review_runtime",
@@ -408,12 +416,9 @@ class ProductDirectionReviewAPITests(TestCase):
                 f"/api/product-direction/tasks/{task.id}/review/challenge/",
                 {"decision": "ACCEPT", "reason": "Approve."}, format="json"
             )
-            response = self.client.post(
-                f"/api/product-direction/tasks/{task.id}/review/submit/",
-                {"signature": base64.b64encode(b"x" * 64).decode()}, format="json"
-            )
+            response = self.client.get(f"/api/product-direction/tasks/{task.id}/review/status/")
         self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.data, {"reason": "REVIEW_RECORD_INVALID"})
+        self.assertEqual(response.data, {"reason": "REVIEW_PROJECTION_RETRY"})
         task.refresh_from_db()
         self.assertEqual(task.status, ProductDirectionTask.STATUS_AWAITING_FOUNDER_REVIEW)
 

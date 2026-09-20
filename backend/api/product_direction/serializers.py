@@ -1,12 +1,10 @@
-import base64
-import binascii
 import re
 
 from rest_framework import serializers
 
-from backend.bonup.models import ProductDirectionTask
+from tools.agent_control.founder_review_auth import REVIEW_DECISIONS
 
-from .review import REVIEW_DECISIONS
+from backend.bonup.models import ProductDirectionTask
 
 
 _SECRET_PATTERNS = (
@@ -92,21 +90,4 @@ class ProductReviewChallengeSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"detail": "Only decision and reason may be supplied."}
             )
-        return attrs
-
-
-class ProductReviewSignatureSerializer(serializers.Serializer):
-    signature = serializers.CharField(min_length=88, max_length=88, trim_whitespace=False)
-
-    def validate(self, attrs):
-        if set(self.initial_data or {}) != {"signature"}:
-            raise serializers.ValidationError(
-                {"detail": "Only the external Founder signature may be supplied."}
-            )
-        try:
-            decoded = base64.b64decode(attrs["signature"], validate=True)
-        except (ValueError, binascii.Error):
-            raise serializers.ValidationError({"detail": "Founder signature is invalid."}) from None
-        if len(decoded) != 64:
-            raise serializers.ValidationError({"detail": "Founder signature is invalid."})
         return attrs

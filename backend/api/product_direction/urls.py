@@ -7,6 +7,7 @@ from .views import (
     ProductDirectionTaskReviewAvailabilityView,
     ProductDirectionTaskReviewChallengeView,
     ProductDirectionTaskReviewSubmitView,
+    ProductDirectionTaskReviewStatusView,
     ProductDirectionTaskSubmitView,
 )
 
@@ -19,4 +20,5 @@ urlpatterns = [
     path("tasks/<uuid:task_id>/review/availability/", ProductDirectionTaskReviewAvailabilityView.as_view(), name="product-direction-task-review-availability"),
     path("tasks/<uuid:task_id>/review/challenge/", ProductDirectionTaskReviewChallengeView.as_view(), name="product-direction-task-review-challenge"),
     path("tasks/<uuid:task_id>/review/submit/", ProductDirectionTaskReviewSubmitView.as_view(), name="product-direction-task-review-submit"),
+    path("tasks/<uuid:task_id>/review/status/", ProductDirectionTaskReviewStatusView.as_view(), name="product-direction-task-review-status"),
 ]

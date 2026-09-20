@@ -56,6 +56,8 @@ Returns the safe task representation for one application task.
 - `proposal_artifact_id`
 - `proposal_id`
 - `proposal_digest`
+- `review_id` (nullable bounded provenance)
+- `review_digest` (nullable bounded provenance)
 - `runtime_failure_reason`
 - bounded creator identity
 - `created_at`
@@ -141,3 +143,72 @@ request metadata, Founder session material, or authority record is returned.
 Reading the artifact does not mutate the task, proposal, knowledge state, or
 authority system. Operator read access is separate from the future Founder
 review operation.
+
+## M5 authenticated Founder review
+
+M5 keeps the Operator-versus-Founder boundary explicit. An operator JWT may
+display a proposal and initiate a review challenge, but it is never accepted
+as authorization for `ACCEPT`, `REJECT`, or `REQUEST_CHANGES`. The review
+decision must come from the existing cryptographic Founder protocol:
+
+```text
+Operator API requests exact challenge
+  -> trusted Founder runtime binds and issues challenge
+  -> Founder signs externally
+  -> signature is submitted to the trusted Founder runtime
+  -> one-use authenticated Founder session is consumed
+  -> ProductionProductReviewAdapter writes Registry v2 ProductReviewRecord
+  -> Blackboard stores review ID/digest and updates application status
+```
+
+The application challenge endpoint is:
+
+```text
+POST /api/product-direction/tasks/<task_id>/review/challenge/
+```
+
+Its exact request body is `{"decision":"ACCEPT|REJECT|REQUEST_CHANGES",
+"reason":"bounded reason"}`. The server derives the artifact ID, artifact
+digest, Agent Control task ID, proposal ID, proposal digest, and
+`PROD_PROPOSAL_REVIEW` purpose from the locked `ProductDirectionTask` and the
+verified immutable artifact. Browser-supplied binding fields are rejected.
+The signature bridge endpoint accepts only the bounded external signature:
+
+```text
+POST /api/product-direction/tasks/<task_id>/review/submit/
+```
+
+It never accepts a task ID, proposal ID/digest, artifact identity, purpose,
+Founder identity, session, or decision override from the browser. The trusted
+runtime owns challenge freshness, replay protection, external signature
+verification, one-use Founder session creation, and the call to
+`ProductionProductReviewAdapter`. `SyntheticFounderReviewContext` and
+arbitrary `AuthenticatedContext` values are not production application inputs.
+
+The current installation has no Founder Genesis, installed Founder root,
+Generation-2 installation, or production Founder socket. The application
+bridge therefore reports `FOUNDER_RUNTIME_UNAVAILABLE` and fails closed; it
+does not provide an operator bypass, synthetic approval, or hardcoded Founder.
+The UI says: “Founder authentication is not available on this installation.”
+
+After durable `ProductReviewRecord` creation, the application stores only its
+bounded `review_id` and `review_digest` provenance. Status transitions are:
+
+- `ACCEPT`: `WORKING` knowledge state -> application `APPROVED_INTERNAL`.
+- `REJECT`: immutable proposal retained; application `REJECTED`.
+- `REQUEST_CHANGES`: immutable proposal retained; application
+  `CHANGES_REQUESTED`; any future revision is a new predecessor-linked
+  proposal.
+
+No review can produce `PUBLICATION_ELIGIBLE`, create an ARCH task, route to
+ARCH-01, create an AgentRecord or ExecutionGrant, activate an agent, modify a
+repository, or publish. Application status is updated only after the trusted
+runtime returns the durably persisted review record. Persistence or binding
+failure leaves the prior application status unchanged, and replay, duplicate,
+stale, substituted, or already-reviewed requests return bounded safe reasons
+without creating another review record.
+
+The review result exposes only review ID/digest, decision, prior/resulting
+knowledge state, proposal ID, and proposal digest. Founder signatures,
+challenge contents, session material, registry internals, peer metadata,
+filesystem paths, and exception details are never returned.

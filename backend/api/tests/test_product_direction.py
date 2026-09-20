@@ -179,6 +179,8 @@ class ProductDirectionTaskAPITests(TestCase):
                 "proposal_artifact_id",
                 "proposal_id",
                 "proposal_digest",
+                "review_id",
+                "review_digest",
                 "runtime_failure_reason",
                 "created_by",
                 "created_at",

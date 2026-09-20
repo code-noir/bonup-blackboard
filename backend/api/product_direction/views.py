@@ -7,8 +7,19 @@ from rest_framework.views import APIView
 from backend.api.operator.permissions import IsOperator
 from backend.bonup.models import ProductDirectionTask
 
-from .serializers import ProductDirectionTaskSerializer
+from .serializers import (
+    ProductDirectionTaskSerializer,
+    ProductReviewChallengeSerializer,
+    ProductReviewSignatureSerializer,
+)
 from .proposal import ProposalReadFailure, read_product_direction_proposal
+from .review import (
+    FounderReviewRuntimeError,
+    FounderRuntimeUnavailable,
+    REVIEWABLE_STATUSES,
+    request_review_challenge,
+    submit_review_signature,
+)
 from .runtime import (
     ProductRuntimeFailure,
     ProductRuntimeUnavailable,
@@ -159,3 +170,58 @@ class ProductDirectionTaskSubmitView(APIView):
             },
             status=http_status,
         )
+
+
+class ProductDirectionTaskReviewAvailabilityView(APIView):
+    permission_classes = [IsOperator]
+
+    def get(self, request, task_id):
+        task = get_object_or_404(ProductDirectionTask, pk=task_id)
+        from .review import get_founder_review_runtime
+        try:
+            available = bool(getattr(get_founder_review_runtime(), "available", False))
+        except Exception:
+            available = False
+        return Response({
+            "available": available and task.status in REVIEWABLE_STATUSES,
+            "reason": None if available else "FOUNDER_RUNTIME_UNAVAILABLE",
+        })
+
+
+class ProductDirectionTaskReviewChallengeView(APIView):
+    permission_classes = [IsOperator]
+
+    def post(self, request, task_id):
+        serializer = ProductReviewChallengeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        task = get_object_or_404(ProductDirectionTask, pk=task_id)
+        try:
+            result = request_review_challenge(task, **serializer.validated_data)
+        except FounderRuntimeUnavailable:
+            return Response(
+                {"reason": "FOUNDER_RUNTIME_UNAVAILABLE"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except FounderReviewRuntimeError as error:
+            return Response({"reason": error.reason}, status=status.HTTP_409_CONFLICT)
+        return Response(result, status=status.HTTP_202_ACCEPTED)
+
+
+class ProductDirectionTaskReviewSubmitView(APIView):
+    permission_classes = [IsOperator]
+
+    def post(self, request, task_id):
+        serializer = ProductReviewSignatureSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        task = get_object_or_404(ProductDirectionTask, pk=task_id)
+        try:
+            result = submit_review_signature(
+                task, signature=serializer.validated_data["signature"])
+        except FounderRuntimeUnavailable:
+            return Response(
+                {"reason": "FOUNDER_RUNTIME_UNAVAILABLE"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except FounderReviewRuntimeError as error:
+            return Response({"reason": error.reason}, status=status.HTTP_409_CONFLICT)
+        return Response(result)

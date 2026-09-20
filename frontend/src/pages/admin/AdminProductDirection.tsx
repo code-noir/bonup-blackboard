@@ -11,6 +11,8 @@ interface ProductDirectionTask {
   proposal_artifact_id: string | null
   proposal_id: string | null
   proposal_digest: string | null
+  review_id: string | null
+  review_digest: string | null
   runtime_failure_reason: string | null
   created_by: { id: number; email: string; display_name: string }
   created_at: string
@@ -50,6 +52,11 @@ interface ProductProposal {
   evidence_references: EvidenceReference[]
 }
 
+interface ReviewAvailability {
+  available: boolean
+  reason: string | null
+}
+
 const PROPOSAL_READABLE_STATUSES = new Set([
   'WORKING_PROPOSAL',
   'AWAITING_FOUNDER_REVIEW',
@@ -84,6 +91,14 @@ function runtimeMessage(reason: unknown) {
   if (reason === 'RUNTIME_UNAVAILABLE') return 'The trusted PROD-01 runtime is currently unavailable.'
   if (reason === 'PROPOSAL_ARTIFACT_PERSISTENCE_FAILED') return 'PROD-01 completed without a durable proposal result. The task is blocked.'
   return 'PROD-01 could not complete this task. No proposal is available.'
+}
+
+function reviewMessage(reason: unknown) {
+  if (reason === 'FOUNDER_RUNTIME_UNAVAILABLE') return 'Founder authentication is not available on this installation.'
+  if (reason === 'REVIEW_ALREADY_RECORDED') return 'This proposal already has a durable Founder review result.'
+  if (reason === 'REVIEW_NOT_AVAILABLE') return 'This proposal is not currently available for Founder review.'
+  if (reason === 'REVIEW_BINDING_MISMATCH' || reason === 'ARTIFACT_BINDING_MISMATCH' || reason === 'TASK_BINDING_MISMATCH' || reason === 'PROPOSAL_BINDING_MISMATCH' || reason === 'PROPOSAL_DIGEST_MISMATCH') return 'The exact proposal binding could not be verified. No review was applied.'
+  return 'Founder review could not be completed. No application status was changed.'
 }
 
 function proposalMessage(error: unknown) {
@@ -191,6 +206,17 @@ function ProposalView({ proposal }: { proposal: ProductProposal }) {
   )
 }
 
+function ReviewProvenance({ task }: { task: ProductDirectionTask }) {
+  if (!task.review_id || !task.review_digest) return null
+  return (
+    <Panel title="Founder review provenance">
+      <DetailRow label="Review ID" value={<code style={{ fontSize: 12 }}>{task.review_id}</code>} />
+      <DetailRow label="Review digest" value={<code style={{ fontSize: 12 }}>{task.review_digest}</code>} />
+      <p style={{ margin: '10px 0 0', color: '#64748B', fontSize: 12 }}>The cryptographic review record remains authoritative in Agent Control. Blackboard stores only this bounded provenance.</p>
+    </Panel>
+  )
+}
+
 export default function AdminProductDirection() {
   const [refreshToken, setRefreshToken] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -201,6 +227,14 @@ export default function AdminProductDirection() {
   const [submittingId, setSubmittingId] = useState<string | null>(null)
   const [proposal, setProposal] = useState<ProductProposal | null>(null)
   const [proposalError, setProposalError] = useState<string | null>(null)
+  const [reviewAvailability, setReviewAvailability] = useState<ReviewAvailability | null>(null)
+  const [reviewDecision, setReviewDecision] = useState<'ACCEPT' | 'REJECT' | 'REQUEST_CHANGES'>('ACCEPT')
+  const [reviewReason, setReviewReason] = useState('')
+  const [reviewSignature, setReviewSignature] = useState('')
+  const [challengeRequested, setChallengeRequested] = useState(false)
+  const [reviewAction, setReviewAction] = useState<'challenge' | 'submit' | null>(null)
+  const [reviewError, setReviewError] = useState<string | null>(null)
+  const [reviewNotice, setReviewNotice] = useState<string | null>(null)
 
   const { data, loading, error } = useAdminFetch<ProductDirectionTaskPage>(`/product-direction/tasks/?page=1&page_size=100&refresh=${refreshToken}`)
   const selectedTask = useMemo(
@@ -213,15 +247,26 @@ export default function AdminProductDirection() {
   }, [selectedTask, selectedId])
 
   useEffect(() => {
+    setChallengeRequested(false)
+  }, [selectedTask?.task_id])
+
+  useEffect(() => {
     let cancelled = false
     setProposal(null)
     setProposalError(null)
+    setReviewAvailability(null)
+    setReviewSignature('')
+    setReviewError(null)
+    setReviewNotice(null)
     if (!selectedTask || !PROPOSAL_READABLE_STATUSES.has(selectedTask.status)) return () => { cancelled = true }
     api.get<ProductProposal>(`/product-direction/tasks/${selectedTask.task_id}/proposal/`)
       .then((response) => { if (!cancelled) setProposal(response.data) })
       .catch((requestError: unknown) => { if (!cancelled) setProposalError(proposalMessage(requestError)) })
+    api.get<ReviewAvailability>(`/product-direction/tasks/${selectedTask.task_id}/review/availability/`)
+      .then((response) => { if (!cancelled) setReviewAvailability(response.data) })
+      .catch(() => { if (!cancelled) setReviewAvailability({ available: false, reason: 'FOUNDER_RUNTIME_UNAVAILABLE' }) })
     return () => { cancelled = true }
-  }, [selectedTask])
+  }, [selectedTask?.task_id, selectedTask?.status])
 
   const createTask = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -265,10 +310,55 @@ export default function AdminProductDirection() {
     }
   }
 
+  const requestReviewChallenge = async () => {
+    if (!selectedTask || !proposal || !reviewAvailability?.available || reviewAction) return
+    const reason = reviewReason.trim()
+    if (!reason) {
+      setReviewError('A bounded reason is required by the Founder review contract.')
+      return
+    }
+    if (reason.length > 2048) {
+      setReviewError('Reason must be 2048 characters or fewer.')
+      return
+    }
+    setReviewAction('challenge')
+    setReviewError(null)
+    setReviewNotice(null)
+    try {
+      await api.post(`/product-direction/tasks/${selectedTask.task_id}/review/challenge/`, { decision: reviewDecision, reason })
+      setChallengeRequested(true)
+      setReviewNotice('Founder challenge requested. Complete the signature through the trusted external Founder channel, then submit the returned signature below.')
+    } catch (requestError: unknown) {
+      const reasonCode = (requestError as { response?: { data?: { reason?: unknown } } })?.response?.data?.reason
+      setReviewError(reviewMessage(reasonCode))
+    } finally {
+      setReviewAction(null)
+    }
+  }
+
+  const submitReviewSignature = async () => {
+    if (!selectedTask || !challengeRequested || !reviewSignature || reviewAction) return
+    setReviewAction('submit')
+    setReviewError(null)
+    setReviewNotice(null)
+    try {
+      const response = await api.post(`/product-direction/tasks/${selectedTask.task_id}/review/submit/`, { signature: reviewSignature })
+      setReviewSignature('')
+      setChallengeRequested(false)
+      setReviewNotice(`Founder review recorded: ${response.data.decision}. Application status is now ${response.data.resulting_knowledge_state}.`)
+      setRefreshToken((current) => current + 1)
+    } catch (requestError: unknown) {
+      const reasonCode = (requestError as { response?: { data?: { reason?: unknown } } })?.response?.data?.reason
+      setReviewError(reviewMessage(reasonCode))
+    } finally {
+      setReviewAction(null)
+    }
+  }
+
   return (
     <div className="space-y-5">
       <header>
-        <p style={{ margin: 0, color: '#38BDF8', fontSize: 10, fontWeight: 850, letterSpacing: '0.14em', textTransform: 'uppercase' }}>Blackbòd · Product Direction</p>
+        <p style={{ margin: 0, color: '#38BDF8', fontSize: 10, fontWeight: 850, letterSpacing: '0.14em', textTransform: 'uppercase' }}>Blackboard · Product Direction</p>
         <h1 style={{ margin: '5px 0 0', color: '#0F1F3D', fontSize: 24, fontWeight: 900 }}>Product Direction</h1>
         <p style={{ margin: '5px 0 0', color: '#64748B', fontSize: 13 }}>Create bounded product work and inspect validated PROD-01 proposals.</p>
       </header>
@@ -367,11 +457,49 @@ export default function AdminProductDirection() {
 
               {proposalError && <div role="alert" style={{ border: '1px solid #FDE68A', borderRadius: 9, background: '#FFFBEB', color: '#92400E', padding: '11px 14px', fontSize: 13 }}>{proposalError}</div>}
               {proposal && <ProposalView proposal={proposal} />}
+              <ReviewProvenance task={selectedTask} />
               {selectedTask.status === 'WORKING_PROPOSAL' && !proposal && !proposalError && <Panel title="Proposal"><p style={{ margin: 0, color: '#64748B', fontSize: 13 }}>Loading the validated proposal…</p></Panel>}
               {proposal && (selectedTask.status === 'WORKING_PROPOSAL' || selectedTask.status === 'AWAITING_FOUNDER_REVIEW') && (
-                <div style={{ border: '1px solid #BAE6FD', borderRadius: 10, background: '#F0F9FF', color: '#075985', padding: '12px 14px', fontSize: 13 }}>
-                  Founder review required. Operator access cannot accept, reject, or request changes.
-                </div>
+                <Panel title="Founder review">
+                  <div style={{ border: '1px solid #BAE6FD', borderRadius: 10, background: '#F0F9FF', color: '#075985', padding: '12px 14px', fontSize: 13 }}>
+                    Founder review required. Operator access is separate from Founder authorization and cannot approve this proposal by itself.
+                  </div>
+                  {reviewAvailability && !reviewAvailability.available && (
+                    <p role="status" style={{ margin: '12px 0 0', border: '1px solid #FDE68A', borderRadius: 9, background: '#FFFBEB', color: '#92400E', padding: '11px 14px', fontSize: 13 }}>
+                      Founder authentication is not available on this installation.
+                    </p>
+                  )}
+                  <fieldset disabled={!reviewAvailability?.available || !!reviewAction} style={{ margin: '14px 0 0', border: 0, padding: 0 }}>
+                    <legend style={{ color: '#334155', fontSize: 13, fontWeight: 800 }}>Decision</legend>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                      {(['ACCEPT', 'REJECT', 'REQUEST_CHANGES'] as const).map((decision) => (
+                        <label key={decision} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #CBD5E1', borderRadius: 8, padding: '8px 10px', color: '#334155', fontSize: 12, fontWeight: 750 }}>
+                          <input type="radio" name="founder-review-decision" checked={reviewDecision === decision} onChange={() => setReviewDecision(decision)} />
+                          {decision}
+                        </label>
+                      ))}
+                    </div>
+                    <label htmlFor="founder-review-reason" style={{ display: 'block', marginTop: 12, color: '#334155', fontSize: 13, fontWeight: 750 }}>Bounded reason</label>
+                    <textarea id="founder-review-reason" value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} maxLength={2048} rows={3} placeholder="Explain the Founder decision." style={{ display: 'block', width: '100%', marginTop: 7, border: '1px solid #CBD5E1', borderRadius: 8, padding: 10, color: '#0F172A', fontSize: 13, resize: 'vertical' }} />
+                    {reviewDecision === 'ACCEPT' && <p style={{ margin: '8px 0 0', color: '#475569', fontSize: 12 }}>Confirmation: <strong>{proposal.title}</strong> · proposal {proposal.proposal_id} · digest <code>{proposal.proposal_digest}</code> · resulting state <strong>APPROVED_INTERNAL</strong>.</p>}
+                    {reviewDecision !== 'ACCEPT' && <p style={{ margin: '8px 0 0', color: '#475569', fontSize: 12 }}>The proposal remains immutable historical evidence. This decision will not create publication or execution authority.</p>}
+                    <button type="button" onClick={requestReviewChallenge} style={{ marginTop: 12, border: 0, borderRadius: 8, background: reviewAvailability?.available ? '#0369A1' : '#94A3B8', color: '#fff', cursor: reviewAvailability?.available ? 'pointer' : 'not-allowed', padding: '9px 14px', fontSize: 12, fontWeight: 800 }}>
+                      {reviewAction === 'challenge' ? 'Requesting challenge…' : `Request Founder ${reviewDecision} challenge`}
+                    </button>
+                  </fieldset>
+                  {challengeRequested && (
+                    <div style={{ marginTop: 14, borderTop: '1px solid #E2E8F0', paddingTop: 14 }}>
+                      <label htmlFor="founder-review-signature" style={{ display: 'block', color: '#334155', fontSize: 13, fontWeight: 750 }}>External Founder signature</label>
+                      <p style={{ margin: '5px 0 0', color: '#64748B', fontSize: 12 }}>Paste only the signature returned by the trusted Founder channel. Private key material never belongs in bonUP, the browser, or this request.</p>
+                      <input id="founder-review-signature" value={reviewSignature} onChange={(event) => setReviewSignature(event.target.value)} maxLength={88} autoComplete="off" style={{ display: 'block', width: '100%', marginTop: 7, border: '1px solid #CBD5E1', borderRadius: 8, padding: 10, color: '#0F172A', fontSize: 12, fontFamily: 'monospace' }} />
+                      <button type="button" onClick={submitReviewSignature} disabled={!reviewSignature || !!reviewAction} style={{ marginTop: 10, border: 0, borderRadius: 8, background: reviewSignature && !reviewAction ? '#0F1F3D' : '#94A3B8', color: '#fff', cursor: reviewSignature && !reviewAction ? 'pointer' : 'not-allowed', padding: '9px 14px', fontSize: 12, fontWeight: 800 }}>
+                        {reviewAction === 'submit' ? 'Submitting review…' : 'Submit Founder signature'}
+                      </button>
+                    </div>
+                  )}
+                  {reviewNotice && <p role="status" style={{ margin: '12px 0 0', color: '#166534', fontSize: 13 }}>{reviewNotice}</p>}
+                  {reviewError && <p role="alert" style={{ margin: '12px 0 0', color: '#B91C1C', fontSize: 13 }}>{reviewError}</p>}
+                </Panel>
               )}
             </div>
           )}

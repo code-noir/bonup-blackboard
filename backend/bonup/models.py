@@ -264,3 +264,37 @@ class AgentControlEventInbox(models.Model):
 
     def __str__(self):
         return f"AgentControlEventInbox({self.consumer_name}, {self.event_id})"
+
+
+class ApprovedProductDirection(models.Model):
+    """Blackboard read model for one trusted APPROVED_INTERNAL event.
+
+    This table is projection state only. It contains no review-authority
+    inputs and has no relationship that can write back to Agent Control.
+    """
+
+    event_id = models.UUIDField(unique=True)
+    event_digest = models.CharField(max_length=64)
+    agent_control_task_id = models.CharField(max_length=64)
+    agent_id = models.CharField(max_length=16)
+    proposal_id = models.UUIDField()
+    proposal_digest = models.CharField(max_length=64)
+    artifact_id = models.CharField(max_length=64)
+    artifact_digest = models.CharField(max_length=64)
+    review_id = models.UUIDField()
+    review_digest = models.CharField(max_length=64)
+    resulting_knowledge_state = models.CharField(max_length=32)
+    event_occurred_at = models.DateTimeField()
+
+    title = models.CharField(max_length=4096)
+    objective = models.CharField(max_length=4096)
+    proposed_requirement = models.TextField()
+    acceptance_intent = models.JSONField(default=list)
+
+    projected_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-event_occurred_at", "-projected_at"]
+
+    def __str__(self):
+        return f"ApprovedProductDirection({self.proposal_id})"

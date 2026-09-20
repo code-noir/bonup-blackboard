@@ -1,0 +1,1 @@
+"""Blackboard read-model consumers."""

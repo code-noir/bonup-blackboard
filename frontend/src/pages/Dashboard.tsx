@@ -55,6 +55,25 @@ interface ContractRecord {
   primary_action_url?: string
 }
 
+interface ApprovedProductDirection {
+  event_id: string
+  event_digest: string
+  agent_control_task_id: string
+  agent_id: string
+  proposal_id: string
+  proposal_digest: string
+  artifact_id: string
+  artifact_digest: string
+  review_id: string
+  review_digest: string
+  resulting_knowledge_state: 'APPROVED_INTERNAL'
+  event_occurred_at: string
+  title: string
+  objective: string
+  proposed_requirement: string
+  acceptance_intent: string[]
+}
+
 function contractStatusLabel(contract: ContractRecord): string {
   if (contract.display_status_label) return contract.display_status_label
   if (contract.state === 'created') return 'Created'
@@ -177,6 +196,8 @@ export default function Dashboard() {
   const [contractsError, setContractsError] = useState('')
   const [returningContractId, setReturningContractId] = useState<string | null>(null)
   const [returnToDraftError, setReturnToDraftError] = useState<{ contractId: string; message: string } | null>(null)
+  const [approvedDirections, setApprovedDirections] = useState<ApprovedProductDirection[]>([])
+  const [approvedDirectionsError, setApprovedDirectionsError] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -192,6 +213,18 @@ export default function Dashboard() {
       })
       .finally(() => {
         if (!cancelled) setContractsLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    api.get<{ results: ApprovedProductDirection[] }>('/blackboard/product-direction/approved/')
+      .then(({ data }) => {
+        if (!cancelled) setApprovedDirections(data.results)
+      })
+      .catch(() => {
+        if (!cancelled) setApprovedDirectionsError('Unable to load approved Product Direction.')
       })
     return () => { cancelled = true }
   }, [])
@@ -467,6 +500,42 @@ export default function Dashboard() {
                 </article>
               )
             })}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <h3 className="mb-3 text-base font-semibold text-slate-800">Approved Product Direction</h3>
+        {approvedDirectionsError ? (
+          <div className="rounded-lg border border-red-100 bg-white p-4 shadow-sm" style={{ maxWidth: 620 }}>
+            <p className="text-sm text-red-600">{approvedDirectionsError}</p>
+          </div>
+        ) : approvedDirections.length === 0 ? (
+          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" style={{ maxWidth: 620 }}>
+            <p className="text-sm text-slate-500">No Founder-approved Product Direction is available.</p>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gap: 12, maxWidth: 760 }}>
+            {approvedDirections.map((direction) => (
+              <article key={direction.event_id} className="rounded-lg border border-emerald-100 bg-white p-4 shadow-sm">
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+                  <h4 style={{ margin: 0, color: '#0F1F3D', fontSize: 15, fontWeight: 750 }}>{direction.title}</h4>
+                  <span style={{ flexShrink: 0, borderRadius: 999, padding: '4px 9px', background: '#ECFDF5', color: '#047857', fontSize: 11, fontWeight: 700 }}>APPROVED_INTERNAL</span>
+                </div>
+                <p style={{ margin: '8px 0 0', color: '#475569', fontSize: 12 }}>{direction.proposed_requirement}</p>
+                <p style={{ margin: '10px 0 0', color: '#64748B', fontSize: 11 }}>Approved Product Direction · {formatDate(direction.event_occurred_at)}</p>
+                <details style={{ marginTop: 10, color: '#64748B', fontSize: 11 }}>
+                  <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Provenance</summary>
+                  <div style={{ display: 'grid', gap: 5, marginTop: 8 }}>
+                    <span>Agent Control task: <code>{direction.agent_control_task_id}</code></span>
+                    <span>Proposal: <code>{direction.proposal_id}</code> · digest <code>{direction.proposal_digest}</code></span>
+                    <span>Artifact: <code>{direction.artifact_id}</code> · digest <code>{direction.artifact_digest}</code></span>
+                    <span>Review: <code>{direction.review_id}</code> · digest <code>{direction.review_digest}</code></span>
+                    <span>Event: <code>{direction.event_id}</code> · digest <code>{direction.event_digest}</code></span>
+                  </div>
+                </details>
+              </article>
+            ))}
           </div>
         )}
       </section>

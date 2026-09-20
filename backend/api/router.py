@@ -9,6 +9,7 @@ urlpatterns = [
     path("agreement-exchange/", include("backend.api.agreement_exchange.urls")),
     path("auth/", include("backend.api.auth.urls")),
     path("billing/", include("backend.api.billing.urls")),
+    path("blackboard/", include("backend.api.blackboard.urls")),
     path("contracts/", include("backend.api.contracts.urls")),
     path("lifecycle/", include("backend.api.lifecycle.urls")),
     path("documents/", include("backend.api.documents.urls")),
@@ -29,4 +30,3 @@ urlpatterns = [
     path("users/", include("backend.api.users.urls")),
     path("workspace/", include("backend.api.workspace.urls")),
 ]
-

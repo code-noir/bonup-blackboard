@@ -26,3 +26,19 @@ at v3; authoritative Registry and Git history are never rollback targets.
 
 No Founder state, credentials, review, ARCH state, execution authority,
 publication authority, or activation is created by this installer.
+
+## Installation schema v5 projection binding
+
+Schema v4 remains valid for historical bundles. New event-delivery bundles use
+schema v5 and include a closed `projection_scope`. Its digest binds the exact
+root-owned event-delivery configuration and digest, the production Django
+identity (`www-data`, UID/GID `33:33`, `/srv/bonup-web`,
+`backend.core.settings`), the AF_UNIX socket and parent ownership/modes, and
+`bonup-django-projection.service` including its unit path, service identity,
+receiver command and generated unit digest.
+
+The v5 installer still accepts explicit `RuntimeInstallOptions` for execution,
+but every trust-bearing value is compared with `projection_scope` before any
+installation files are generated. A conflicting option is rejected; it cannot
+expand or replace the approved installation scope. Polling, batch, timeout and
+message bounds are also included in the approved event configuration digest.

@@ -40,10 +40,10 @@ BONUP_GROUP = "bonup"
 BONUP_GID = 1000
 REGISTRY_PATH = "/var/lib/bonup-agent-control/control.sqlite3"
 HISTORY_PATH = "/var/lib/bonup-agent-control/history.git"
-EVENT_CONFIG_PATH = "/etc/bonup-agent-control/event-delivery.json"
-PROJECTION_SOCKET = "/run/bonup-agent-control/projection/events.sock"
-PROJECTION_PARENT = "/run/bonup-agent-control/projection"
-PROJECTION_UNIT = "bonup-django-projection.service"
+EVENT_CONFIG_PATH = bundle.EVENT_CONFIG_PATH
+PROJECTION_SOCKET = bundle.PROJECTION_SOCKET
+PROJECTION_PARENT = bundle.PROJECTION_PARENT
+PROJECTION_UNIT = bundle.PROJECTION_UNIT
 CONTROLLER_UNIT = "bonup-agent-controller.service"
 SYSTEMD_UNIT_DIR = "/etc/systemd/system"
 DJANGO_COMMAND = "run_trusted_projection_receiver"
@@ -283,6 +283,30 @@ def _projection_unit(options):
     return "\n".join(lines) + "\n"
 
 
+def _verify_approved_projection_scope(manifest, options):
+    """Keep all v5 trust-bearing installer inputs equal to approval."""
+    scope = bundle.validate_projection_scope(manifest["projection_scope"])
+    service = scope["service"]
+    if (options.django_uid, options.django_gid, options.django_user,
+            options.django_group, options.django_root,
+            options.django_settings_module) != (
+                service["uid"], service["gid"], service["user"],
+                service["group"], service["root"], service["settings_module"]):
+        raise InstallerBlocked("Django service identity conflicts with approval.")
+    if options.socket_path != scope["socket"]["path"] or options.socket_mode != int(scope["socket"]["mode"], 8):
+        raise InstallerBlocked("Projection socket conflicts with approval.")
+    if options.event_config() != bundle.projection_event_config(scope):
+        raise InstallerBlocked("Event-delivery configuration conflicts with approval.")
+    if (service["path"] != SYSTEMD_UNIT_DIR + "/" + PROJECTION_UNIT or
+            service["name"] != PROJECTION_UNIT or
+            (service["file_owner"], service["file_owner_uid"],
+             service["file_group"], service["file_group_gid"], service["file_mode"]) !=
+            ("root", 0, "root", 0, "0444") or
+            bundle.sha(_projection_unit(options).encode()) != service["unit_sha256"]):
+        raise InstallerBlocked("Projection service conflicts with approval.")
+    return scope
+
+
 def _files(manifest, payloads, options):
     bundle.verify_payloads(manifest, payloads)
     rows = []
@@ -308,6 +332,8 @@ def build_plan(manifest, payloads, options):
         raise AuthorityError("Installation-only approved manifest required.")
     if manifest.get("integration_services_approved") is not False:
         raise AuthorityError("Integration service activation is separate.")
+    if manifest["version"] == bundle.INSTALLATION_SCHEMA_VERSION:
+        _verify_approved_projection_scope(manifest, options)
     if options.django_user in bundle.NAMES or options.django_group in bundle.NAMES:
         raise InstallerBlocked("Django identity uses a reserved Agent Control name.")
     files = _files(manifest, payloads, options)

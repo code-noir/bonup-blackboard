@@ -337,10 +337,10 @@ class InstalledBase:
             if type(self.io) is KernelIO and data['version'] != 4:
                 raise AuthorityError('Successor installed authority requires Genesis binding.')
             return self.load_successor(data,manifest,identities)
-        modern = manifest.get('version') in (3,4)
+        modern = manifest.get('version') in (3,4,5)
         # v2 exists solely for the prior offline fixtures. Installed startup cannot
         # pre-enroll future processes via that superseded configuration contract.
-        if type(self.io) is KernelIO and manifest.get('version') != 4:
+        if type(self.io) is KernelIO and manifest.get('version') not in (4,5):
             raise AuthorityError('Complete installation bundle and per-start enrollment required.')
         required=(('version','service','founder_uid','founder','proposal','executions') if modern else
                   ('version','service','handshake','founder','proposal','executions')) if self.component=='controller' else (
@@ -349,7 +349,7 @@ class InstalledBase:
         if type(data['version']) is not int or data['version'] != (2 if modern else 1):
             raise ValidationError('Unsupported component configuration.')
         evidence = {}
-        if manifest.get('version') == 4:
+        if manifest.get('version') in (4,5):
             from .installation_bundle import validate_manifest
             validate_manifest(manifest)
             if not manifest['approved'] or not (manifest['activation'] or manifest['integration_services_approved']):

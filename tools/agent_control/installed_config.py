@@ -54,7 +54,7 @@ def read_installed(path):
 
 
 def validate_activation(manifest, identities, configuration, *, component, receipt=None, host_tests=None):
-    if type(manifest) is dict and manifest.get('version') == 4:
+    if type(manifest) is dict and manifest.get('version') in (4, 5):
         from .installation_bundle import (validate_manifest, runtime_permission, configurations,
                                           identities as expected_identities, same)
         validate_manifest(manifest)

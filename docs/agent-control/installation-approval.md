@@ -54,6 +54,16 @@ source commit, manifest digest, bundle digest, artifact inventory, provisioning
 generation and policy digests. A historical approval therefore cannot authorize a
 new candidate.
 
+Current event-delivery candidates use installation schema v5. In addition to the
+existing v4 inventory, v5 binds `projection_scope`: the canonical event-delivery
+file and digest, the fixed production Django identity (`www-data`, `33:33`,
+`/srv/bonup-web`, `backend.core.settings`), the projection socket and secure
+parent ownership/modes, and the exact trusted Django unit identity/path/command
+and generated unit digest. The privileged installer must match its explicit
+runtime options to this scope; it cannot supply a different peer, path, mode,
+service, or application identity after approval. v4 validation remains available
+for historical bundles and does not acquire v5 semantics.
+
 Candidate manifest byte SHA-256:
 `034036d04043c470e67a050e827f1312445017069e1f234e3f096fa5864adbb6`
 

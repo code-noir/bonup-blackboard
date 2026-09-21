@@ -24,6 +24,21 @@ from .types import AuthorityError, ValidationError
 PREFIX = '/usr/lib/bonup-agent-control'
 ETC = '/etc/bonup-agent-control'
 MANIFEST = ETC + '/approved-installation.json'
+INSTALLATION_SCHEMA_VERSION = 5
+PROJECTION_SCOPE_VERSION = 1
+EVENT_CONFIG_PATH = ETC + '/event-delivery.json'
+PROJECTION_SOCKET = '/run/bonup-agent-control/projection/events.sock'
+PROJECTION_PARENT = '/run/bonup-agent-control/projection'
+PROJECTION_UNIT = 'bonup-django-projection.service'
+PROJECTION_UNIT_PATH = '/etc/systemd/system/' + PROJECTION_UNIT
+PROJECTION_TRANSPORT_IDENTITY = 'TRUSTED_DJANGO_PROJECTION_BOUNDARY_V1'
+PRODUCTION_DJANGO = dict(uid=33, gid=33, user='www-data', group='www-data',
+                          root='/srv/bonup-web', settings_module='backend.core.settings')
+# These are the reviewed bounded delivery mechanics used by the existing
+# privileged-installer contract.  Security-sensitive peer/path values remain
+# fixed below; all values are included in the v5 approval digest.
+PROJECTION_DEFAULTS = dict(poll_interval_ms=1000, batch_size=10,
+                            timeout_ms=500, max_message_bytes=2048)
 SOURCE_COMMIT = 'fd27391978b67077b0ad4550fd49da5f761e6b3d'
 REVIEWED_RUNTIME_MODULES = (
     '__init__','authority','authority_installation','authority_journal','bootstrap_entry',
@@ -69,6 +84,134 @@ def sha(raw):
 
 def json_bytes(value):
     return (canonical_json(value)+'\n').encode()
+
+
+def projection_event_config(scope):
+    """Return the exact root-owned event-delivery file for one v5 scope."""
+    return dict(scope['event_config'])
+
+
+def projection_unit(scope):
+    """Render the exact trusted Django unit bound by a v5 scope."""
+    service = scope['service']
+    lines = [
+        '[Unit]', 'Description=bonUP trusted Django projection receiver',
+        'After=local-fs.target', 'ConditionPathExists=' + EVENT_CONFIG_PATH,
+        '[Service]', 'Type=simple', 'User=' + service['user'],
+        'Group=' + service['group'], 'WorkingDirectory=' + service['root'],
+        'Environment=DJANGO_SETTINGS_MODULE=' + service['settings_module'],
+        'Environment=PYTHONPATH=' + service['root'],
+        'ExecStart=' + service['exec_start'],
+        'UMask=0077', 'NoNewPrivileges=yes', 'ProtectSystem=strict',
+        'ProtectHome=yes', 'PrivateTmp=yes', 'ReadOnlyPaths=' + service['root'],
+        'ReadWritePaths=' + PROJECTION_PARENT, 'Restart=on-failure',
+        'RestartSec=2s', 'TimeoutStopSec=5s', 'LimitNOFILE=128',
+    ]
+    return ('\n'.join(lines) + '\n').encode()
+
+
+def projection_scope(*, poll_interval_ms=None, batch_size=None, timeout_ms=None,
+                     max_message_bytes=None):
+    """Build the closed v5 installation-only trusted projection scope."""
+    mechanics = dict(PROJECTION_DEFAULTS)
+    for name, value in (('poll_interval_ms', poll_interval_ms),
+                        ('batch_size', batch_size), ('timeout_ms', timeout_ms),
+                        ('max_message_bytes', max_message_bytes)):
+        if value is not None:
+            mechanics[name] = value
+    config = dict(
+        enabled=True, poll_interval_ms=mechanics['poll_interval_ms'],
+        batch_size=mechanics['batch_size'],
+        transport_identity=PROJECTION_TRANSPORT_IDENTITY,
+        socket_path=PROJECTION_SOCKET, socket_mode=0o660,
+        agent_control=dict(uid=3000, gid=3000),
+        django=dict(uid=PRODUCTION_DJANGO['uid'], gid=PRODUCTION_DJANGO['gid']),
+        timeout_ms=mechanics['timeout_ms'],
+        max_message_bytes=mechanics['max_message_bytes'])
+    scope = dict(
+        version=PROJECTION_SCOPE_VERSION,
+        event_config_path=EVENT_CONFIG_PATH,
+        event_config=config,
+        event_config_sha256=sha(json_bytes(config)),
+        event_config_file=dict(path=EVENT_CONFIG_PATH, owner='root', owner_uid=0,
+                               group='bonup-agentctl', group_gid=3000, mode='0440'),
+        socket=dict(path=PROJECTION_SOCKET, owner=PRODUCTION_DJANGO['user'],
+                    owner_uid=PRODUCTION_DJANGO['uid'], group='bonup-agentctl',
+                    group_gid=3000, mode='0660'),
+        socket_parent=dict(path=PROJECTION_PARENT, owner=PRODUCTION_DJANGO['user'],
+                           owner_uid=PRODUCTION_DJANGO['uid'],
+                           group=PRODUCTION_DJANGO['group'],
+                           group_gid=PRODUCTION_DJANGO['gid'], mode='0700'),
+        service=dict(name=PROJECTION_UNIT, path=PROJECTION_UNIT_PATH,
+                     user=PRODUCTION_DJANGO['user'], uid=PRODUCTION_DJANGO['uid'],
+                     group=PRODUCTION_DJANGO['group'], gid=PRODUCTION_DJANGO['gid'],
+                     root=PRODUCTION_DJANGO['root'],
+                     settings_module=PRODUCTION_DJANGO['settings_module'],
+                     exec_start='/usr/bin/python3 ' + PRODUCTION_DJANGO['root'] +
+                                '/manage.py run_trusted_projection_receiver',
+                     file_owner='root', file_owner_uid=0, file_group='root',
+                     file_group_gid=0, file_mode='0444'))
+    scope['service']['unit_sha256'] = sha(projection_unit(scope))
+    return scope
+
+
+def validate_projection_scope(scope):
+    """Validate every v5 projection identity, path, mode and generated byte."""
+    keys(scope, ('version', 'event_config_path', 'event_config', 'event_config_file',
+                 'event_config_sha256', 'socket', 'socket_parent', 'service'))
+    if scope['version'] != PROJECTION_SCOPE_VERSION:
+        raise ValidationError('Unsupported projection scope version.')
+    if scope['event_config_path'] != EVENT_CONFIG_PATH:
+        raise ValidationError('Unexpected event-delivery configuration path.')
+    keys(scope['event_config_file'], ('path', 'owner', 'owner_uid', 'group', 'group_gid', 'mode'))
+    if scope['event_config_file'] != {
+            'path': EVENT_CONFIG_PATH, 'owner': 'root', 'owner_uid': 0,
+            'group': 'bonup-agentctl', 'group_gid': 3000, 'mode': '0440'}:
+        raise ValidationError('Invalid event-delivery file scope.')
+    config = scope['event_config']
+    keys(config, ('enabled', 'poll_interval_ms', 'batch_size', 'transport_identity',
+                  'socket_path', 'socket_mode', 'agent_control', 'django',
+                  'timeout_ms', 'max_message_bytes'))
+    if (config['enabled'] is not True or
+            type(config['poll_interval_ms']) is not int or
+            not 1000 <= config['poll_interval_ms'] <= 60000 or
+            type(config['batch_size']) is not int or
+            not 1 <= config['batch_size'] <= 100 or
+            config['transport_identity'] != PROJECTION_TRANSPORT_IDENTITY or
+            config['socket_path'] != PROJECTION_SOCKET or
+            config['socket_mode'] != 0o660 or
+            config['agent_control'] != {'uid': 3000, 'gid': 3000} or
+            config['django'] != {'uid': 33, 'gid': 33} or
+            type(config['timeout_ms']) is not int or
+            not 100 <= config['timeout_ms'] <= 5000 or
+            type(config['max_message_bytes']) is not int or
+            not 1024 <= config['max_message_bytes'] <= 4096 or
+            scope['event_config_sha256'] != sha(json_bytes(config))):
+        raise ValidationError('Invalid trusted projection configuration scope.')
+    keys(scope['socket'], ('path', 'owner', 'owner_uid', 'group', 'group_gid', 'mode'))
+    if scope['socket'] != projection_scope(
+            poll_interval_ms=config['poll_interval_ms'],
+            batch_size=config['batch_size'], timeout_ms=config['timeout_ms'],
+            max_message_bytes=config['max_message_bytes'])['socket']:
+        raise ValidationError('Invalid trusted projection socket scope.')
+    keys(scope['socket_parent'], ('path', 'owner', 'owner_uid', 'group', 'group_gid', 'mode'))
+    expected_parent = projection_scope(
+        poll_interval_ms=config['poll_interval_ms'], batch_size=config['batch_size'],
+        timeout_ms=config['timeout_ms'], max_message_bytes=config['max_message_bytes'])['socket_parent']
+    if scope['socket_parent'] != expected_parent:
+        raise ValidationError('Invalid trusted projection parent scope.')
+    keys(scope['service'], ('name', 'path', 'user', 'uid', 'group', 'gid',
+                           'root', 'settings_module', 'exec_start', 'unit_sha256',
+                           'file_owner', 'file_owner_uid', 'file_group',
+                           'file_group_gid', 'file_mode'))
+    expected = projection_scope(
+        poll_interval_ms=config['poll_interval_ms'], batch_size=config['batch_size'],
+        timeout_ms=config['timeout_ms'], max_message_bytes=config['max_message_bytes'])['service']
+    if (scope['service'].get('unit_sha256') != sha(projection_unit(scope)) or
+            {k: scope['service'][k] for k in expected if k != 'unit_sha256'} !=
+            {k: expected[k] for k in expected if k != 'unit_sha256'}):
+        raise ValidationError('Invalid trusted projection service scope.')
+    return scope
 
 
 def identities():
@@ -313,10 +456,13 @@ def seal(manifest):
     return manifest
 
 
-def candidate(artifacts, source_commit, modules=None):
+def candidate(artifacts, source_commit, modules=None, projection_scope=None):
     if not valid_format('git-oid',source_commit):raise ValidationError('Exact source commit required.')
     modules = None if modules is None else tuple(modules)
-    result=dict(version=4,source_mode='COMMITTED_BASE_PLUS_REVIEWED_PAYLOAD_HASHES',approved=False,activation=False,integration_services_approved=False,
+    if projection_scope is not None:
+        projection_scope = parse_json(canonical_json(validate_projection_scope(projection_scope)))
+    result=dict(version=INSTALLATION_SCHEMA_VERSION if projection_scope is not None else 4,
+        source_mode='COMMITTED_BASE_PLUS_REVIEWED_PAYLOAD_HASHES',approved=False,activation=False,integration_services_approved=False,
         provisioning_generation=1,source_commit=source_commit,**policy_sections(modules),artifacts=artifacts,
         manifest_artifact=manifest_spec(),identity_map_digest=digest(identities()),
         configuration_digests={k:digest(v) for k,v in configurations().items()},
@@ -324,6 +470,8 @@ def candidate(artifacts, source_commit, modules=None):
         resource_digest=IntegrationPolicy().policy_digest,rollback=rollback_policy(artifacts))
     if modules is not None:
         result['runtime_modules'] = list(modules)
+    if projection_scope is not None:
+        result['projection_scope'] = projection_scope
     return seal(result)
 
 
@@ -331,16 +479,23 @@ def validate_manifest(manifest):
     if type(manifest) is not dict:raise ValidationError('Manifest object required.')
     legacy = 'runtime_modules' not in manifest
     expected_keys = set(candidate([],SOURCE_COMMIT))
+    version = manifest.get('version')
+    if version == INSTALLATION_SCHEMA_VERSION:
+        expected_keys.add('projection_scope')
     if not legacy:
         expected_keys.add('runtime_modules')
     if set(manifest) != expected_keys:
         raise ValidationError('Unexpected manifest fields.')
+    if version not in (4, INSTALLATION_SCHEMA_VERSION):
+        raise ValidationError('Unsupported or incomplete manifest.')
+    if version == INSTALLATION_SCHEMA_VERSION:
+        validate_projection_scope(manifest['projection_scope'])
     modules = tuple(LEGACY_PRODUCTION_MODULES if legacy else manifest['runtime_modules'])
     if (not modules or tuple(sorted(set(modules))) != modules or
             any(type(name) is not str or not re.fullmatch(r'[a-zA-Z_][a-zA-Z0-9_]*',name)
                 for name in modules)):
         raise ValidationError('Invalid reviewed runtime module closure.')
-    if (type(manifest['version']) is not int or manifest['version']!=4 or
+    if (type(manifest['version']) is not int or manifest['version'] not in (4, INSTALLATION_SCHEMA_VERSION) or
             type(manifest['provisioning_generation']) is not int or manifest['provisioning_generation']!=1 or
             any(type(manifest[k]) is not bool for k in ('approved','activation','integration_services_approved')) or
             not valid_format('git-oid',manifest['source_commit'])):
@@ -353,7 +508,8 @@ def validate_manifest(manifest):
         same({k:v for k,v in actual.items() if k!='sha256'},expected,'artifact')
         if not valid_format('sha256',actual['sha256']) or actual['sha256']=='0'*64:
             raise ValidationError('Unresolved artifact hash.')
-    expected=candidate(artifacts,manifest['source_commit'],None if legacy else modules)
+    expected=candidate(artifacts,manifest['source_commit'],None if legacy else modules,
+                       manifest.get('projection_scope'))
     for k in ('approved','activation','integration_services_approved'):expected[k]=manifest[k]
     seal(expected)
     same(manifest,expected,'manifest binding')
@@ -563,7 +719,7 @@ def source_bytes(root,relative):
     finally:os.close(fd)
 
 
-def build(repository, *, source_commit):
+def build(repository, *, source_commit, projection_scope=None):
     """Build only from the exact committed Git tree; never from checkout bytes."""
     root,_=validate_source_commit(repository,source_commit)
     modules=dependency_modules(root,source_commit)
@@ -573,7 +729,7 @@ def build(repository, *, source_commit):
         if path not in payloads:
             payloads[path]=committed_source_bytes(root,source_commit,spec['source'])
         artifacts.append(dict(spec,sha256=sha(payloads[path])))
-    manifest=candidate(artifacts,source_commit,modules)
+    manifest=candidate(artifacts,source_commit,modules,projection_scope)
     verify_payloads(manifest,payloads)
     return manifest,payloads
 
@@ -584,7 +740,7 @@ def detached_inventory(manifest):
         [dict(manifest_spec(),sha256=sha(json_bytes(manifest)))])
 
 
-def write_review(repository, output, *, source_commit):
+def write_review(repository, output, *, source_commit, projection_scope=None):
     """Only a new review/build directory or temporary directory; no host installer."""
     root=Path(repository).resolve();dest=Path(output).absolute()
     if any(p.is_symlink() for p in (dest,*dest.parents)):
@@ -597,7 +753,7 @@ def write_review(repository, output, *, source_commit):
     observed=subprocess.run(['/usr/bin/git','-C',str(root),'rev-parse','HEAD'],check=True,
         capture_output=True,text=True,env={'PATH':'/usr/bin:/bin','GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':'/dev/null'}).stdout.strip()
     if observed!=source_commit:raise AuthorityError('Source commit mismatch.')
-    manifest,payloads=build(root,source_commit=source_commit)
+    manifest,payloads=build(root,source_commit=source_commit,projection_scope=projection_scope)
     dest.mkdir(parents=True)
     for a in manifest['artifacts']:
         path=dest/'payload'/a['destination'].lstrip('/')

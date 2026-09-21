@@ -42,6 +42,8 @@ def candidate(raw, *, expected=None):
     if (bundle.validate_manifest(value) != 'COMPLETE_BUT_UNAPPROVED' or value['activation'] or
             value['integration_services_approved'] or value['provisioning_generation'] != 1):
         raise ValidationError('Candidate identity mismatch.')
+    if expected is None and value.get('version') == 5:
+        raise ValidationError('Current candidate identity required.')
     if expected is None:
         expected={'source_commit':HISTORICAL_SOURCE_COMMIT,
             'candidate_manifest_digest':HISTORICAL_CANDIDATE_SHA256,

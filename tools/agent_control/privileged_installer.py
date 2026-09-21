@@ -38,8 +38,8 @@ CONTROLLER_UID = 3000
 CONTROLLER_GID = 3000
 BONUP_GROUP = "bonup"
 BONUP_GID = 1000
-REGISTRY_PATH = "/var/lib/bonup-agent-control/control.sqlite3"
-HISTORY_PATH = "/var/lib/bonup-agent-control/history.git"
+REGISTRY_PATH = bundle.REGISTRY_PATH
+HISTORY_PATH = bundle.HISTORY_PATH
 EVENT_CONFIG_PATH = bundle.EVENT_CONFIG_PATH
 PROJECTION_SOCKET = bundle.PROJECTION_SOCKET
 PROJECTION_PARENT = bundle.PROJECTION_PARENT
@@ -286,6 +286,16 @@ def _projection_unit(options):
 def _verify_approved_projection_scope(manifest, options):
     """Keep all v5 trust-bearing installer inputs equal to approval."""
     scope = bundle.validate_projection_scope(manifest["projection_scope"])
+    registry = scope["registry"]
+    if (registry["path"] != REGISTRY_PATH or
+            registry["history_path"] != HISTORY_PATH or
+            registry["target_schema_version"] != bundle.REGISTRY_TARGET_VERSION or
+            registry["accepted_existing_versions"] != [1, 2, 3] or
+            registry["initialization"] != "INITIALIZE_ABSENT_THEN_MIGRATE_V1_TO_V2_TO_V3" or
+            registry["verify_history"] is not True or
+            registry["preserve_existing_records"] is not True or
+            registry["reinitialize_existing"] is not False):
+        raise InstallerBlocked("Registry installation scope conflicts with approval.")
     service = scope["service"]
     if (options.django_uid, options.django_gid, options.django_user,
             options.django_group, options.django_root,
@@ -332,14 +342,16 @@ def build_plan(manifest, payloads, options):
         raise AuthorityError("Installation-only approved manifest required.")
     if manifest.get("integration_services_approved") is not False:
         raise AuthorityError("Integration service activation is separate.")
+    registry_path, history_path = REGISTRY_PATH, HISTORY_PATH
     if manifest["version"] == bundle.INSTALLATION_SCHEMA_VERSION:
-        _verify_approved_projection_scope(manifest, options)
+        scope = _verify_approved_projection_scope(manifest, options)
+        registry_path, history_path = scope["registry"]["path"], scope["registry"]["history_path"]
     if options.django_user in bundle.NAMES or options.django_group in bundle.NAMES:
         raise InstallerBlocked("Django identity uses a reserved Agent Control name.")
     files = _files(manifest, payloads, options)
     units = tuple(sorted({f.path for f in files if f.kind == "unit"} |
                          {SYSTEMD_UNIT_DIR + "/" + name for name in bundle.units()}))
-    for path in (REGISTRY_PATH, HISTORY_PATH, EVENT_CONFIG_PATH, PROJECTION_SOCKET):
+    for path in (registry_path, history_path, EVENT_CONFIG_PATH, PROJECTION_SOCKET):
         _absolute(path, "installation path")
     if (options.django_uid, options.django_gid) in {
             (a.uid, a.gid) for a in _account_specs(options)}:
@@ -352,7 +364,7 @@ def build_plan(manifest, payloads, options):
         Account(options.django_user, options.django_uid, options.django_gid,
                 options.django_root, "/usr/sbin/nologin"),
         Group(options.django_group, options.django_gid),
-        _directory_specs(options), files, units, REGISTRY_PATH, HISTORY_PATH,
+        _directory_specs(options), files, units, registry_path, history_path,
         options.socket_path, "INSTALL_ONLY_NO_SERVICE_ACTIVATION",
     )
 

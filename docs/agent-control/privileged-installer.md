@@ -31,6 +31,10 @@ publication authority, or activation is created by this installer.
 
 Schema v4 remains valid for historical bundles. New event-delivery bundles use
 schema v5 and include a closed `projection_scope`. Its digest binds the exact
+Registry target (`/var/lib/bonup-agent-control/control.sqlite3`), audit history
+path (`/var/lib/bonup-agent-control/history.git`), v3 target schema and
+initialize-then-migrate intent, including v1/v2 migration and v3 verify/no-op
+behavior. It also binds the exact
 root-owned event-delivery configuration and digest, the production Django
 identity (`www-data`, UID/GID `33:33`, `/srv/bonup-web`,
 `backend.core.settings`), the AF_UNIX socket and parent ownership/modes, and

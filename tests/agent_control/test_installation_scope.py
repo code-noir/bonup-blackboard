@@ -34,6 +34,10 @@ class InstallationScopeTests(unittest.TestCase):
     def test_v5_scope_is_complete_and_unapproved(self):
         self.assertEqual(bundle.validate_manifest(self.m), 'COMPLETE_BUT_UNAPPROVED')
         scope = self.m['projection_scope']
+        self.assertEqual(scope['registry']['path'], '/var/lib/bonup-agent-control/control.sqlite3')
+        self.assertEqual(scope['registry']['history_path'], '/var/lib/bonup-agent-control/history.git')
+        self.assertEqual(scope['registry']['target_schema_version'], 3)
+        self.assertEqual(scope['registry']['accepted_existing_versions'], [1, 2, 3])
         self.assertEqual(scope['event_config_path'], bundle.EVENT_CONFIG_PATH)
         self.assertEqual(scope['event_config_file']['mode'], '0440')
         self.assertEqual(scope['event_config_sha256'],
@@ -52,6 +56,9 @@ class InstallationScopeTests(unittest.TestCase):
 
     def test_socket_mode_and_service_change_are_bound(self):
         for path, value in (
+                (('projection_scope', 'registry', 'path'), '/var/lib/other/control.sqlite3'),
+                (('projection_scope', 'registry', 'history_path'), '/var/lib/other/history.git'),
+                (('projection_scope', 'registry', 'target_schema_version'), 2),
                 (('projection_scope', 'socket', 'mode'), '0600'),
                 (('projection_scope', 'event_config_file', 'mode'), '0644'),
                 (('projection_scope', 'service', 'root'), '/srv/other')):
@@ -73,6 +80,8 @@ class InstallationScopeTests(unittest.TestCase):
 
     def test_installer_consumes_approved_scope(self):
         plan = installer.build_plan(self.approved(), self.payloads, self.options())
+        self.assertEqual(plan.registry_path, bundle.REGISTRY_PATH)
+        self.assertEqual(plan.history_path, bundle.HISTORY_PATH)
         self.assertEqual(plan.projection_socket, bundle.PROJECTION_SOCKET)
         self.assertEqual(plan.activation, 'INSTALL_ONLY_NO_SERVICE_ACTIVATION')
 

@@ -56,7 +56,8 @@ new candidate.
 
 Current event-delivery candidates use installation schema v5. In addition to the
 existing v4 inventory, v5 binds `projection_scope`: the canonical event-delivery
-file and digest, the fixed production Django identity (`www-data`, `33:33`,
+file and digest, the Registry database path, Git history path, target schema v3,
+and initialize/migrate/verify intent, the fixed production Django identity (`www-data`, `33:33`,
 `/srv/bonup-web`, `backend.core.settings`), the projection socket and secure
 parent ownership/modes, and the exact trusted Django unit identity/path/command
 and generated unit digest. The privileged installer must match its explicit

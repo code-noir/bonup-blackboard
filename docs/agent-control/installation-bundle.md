@@ -78,6 +78,12 @@ Every installed artifact has an exact ID, source, destination, digest, type,
 owner, group, mode, generation and required flag in `bundle-index.json`.
 
 Manifest v4 hashes every payload artifact and every security-policy field.
+Manifest v5 retains that closed inventory and additionally hashes the complete
+Registry installation target and trusted projection scope, including the
+Registry/history paths, target v3 migration intent, event-delivery file,
+projection socket ownership/modes and Django service unit identity. The v5
+Registry target accepts only absent/v1/v2 setup through reviewed migration and
+v3 verification/no-op; future or invalid versions fail closed.
 A manifest cannot include its own final SHA-256 without a circular definition.
 Its exact metadata therefore appears in `manifest_artifact`; the detached review
 index includes its final SHA-256 together with the complete installed inventory.

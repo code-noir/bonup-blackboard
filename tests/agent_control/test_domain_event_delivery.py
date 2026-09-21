@@ -18,7 +18,7 @@ from tools.agent_control.identity import PeerIdentity, ProcessIdentity
 from tools.agent_control.prod_artifact import ProposalArtifactStore
 from tools.agent_control.prod_review_adapter import ProductionProductReviewAdapter
 from tools.agent_control.registry import Registry
-from tools.agent_control.runtime_schema import migrate_v2, migrate_v3
+from tools.agent_control.runtime_schema import check_version, migrate_v2, migrate_v3
 from tools.agent_control.serialization import canonical_json, digest
 from tools.agent_control.storage import RegistryBlocked
 
@@ -240,12 +240,47 @@ class DomainEventDeliveryTests(unittest.TestCase):
         self.assertEqual(self.registry.db.execute("SELECT count(*) FROM product_reviews").fetchone()[0], 1)
 
     def test_delivery_migration_backfills_existing_event_obligations(self):
+        self.assertEqual(check_version(self.registry.db), 3)
         self.assertEqual(
             self.registry.db.execute(
                 "SELECT count(*) FROM domain_event_deliveries WHERE event_id=?",
                 (self.event["event_id"],),
             ).fetchone()[0], 2,
         )
+
+    def test_v3_migration_is_idempotent_and_preserves_authoritative_data(self):
+        tables = (
+            "product_reviews", "domain_events", "domain_event_outbox",
+            "domain_event_deliveries", "schema_versions",
+        )
+        before = {
+            table: [tuple(row) for row in self.registry.db.execute(
+                f"SELECT * FROM {table} ORDER BY rowid"
+            )]
+            for table in tables
+        }
+        schema_before = [tuple(row) for row in self.registry.db.execute(
+            "SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name"
+        )]
+
+        self.assertIsNone(migrate_v3(self.registry))
+
+        after = {
+            table: [tuple(row) for row in self.registry.db.execute(
+                f"SELECT * FROM {table} ORDER BY rowid"
+            )]
+            for table in tables
+        }
+        schema_after = [tuple(row) for row in self.registry.db.execute(
+            "SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name"
+        )]
+        self.assertEqual(before, after)
+        self.assertEqual(schema_before, schema_after)
+
+    def test_invalid_v3_schema_fails_closed(self):
+        self.registry.db.execute("DROP INDEX domain_event_delivery_pending")
+        with self.assertRaises(RegistryBlocked):
+            migrate_v3(self.registry)
 
     def test_v3_review_commit_creates_both_consumer_obligations(self):
         event = self._committed_event(702)

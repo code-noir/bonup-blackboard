@@ -178,12 +178,22 @@ def migrate_v2(registry):
 
 
 def migrate_v3(registry):
-    """Add mutable per-consumer delivery state to an existing v2 registry."""
+    """Add mutable per-consumer delivery state, or verify an existing v3 registry."""
     from .records import PRODUCT_REVIEW_EVENT_CONSUMERS
 
     db = registry.db
     if db.in_transaction:
         raise RegistryBlocked('Migration requires an idle connection.')
+
+    # A v3 registry is already in the target state.  Validate its complete
+    # schema and durable invariants, but do not open a write transaction: a
+    # repeated installation must not rewrite timestamps, delivery rows, or
+    # any authoritative history.
+    if check_version(db) == 3:
+        if registry.verify(check_history=False)['status'] == 'BLOCKED':
+            raise RegistryBlocked('Existing registry verification failed.')
+        return
+
     db.execute('BEGIN IMMEDIATE')
     try:
         if check_version(db) != 2:

@@ -16,12 +16,24 @@ from .types import ValidationError
 
 EVENT_DELIVERY_CONFIG_PATH = "/etc/bonup-agent-control/event-delivery.json"
 _TRANSPORT_IDENTITY = "TRUSTED_DJANGO_PROJECTION_BOUNDARY_V1"
+_TRANSPORT_FIELDS = {
+    "socket_path", "socket_mode", "agent_control", "django",
+    "timeout_ms", "max_message_bytes",
+}
 
 
 class TrustedRuntimeUnavailable(Exception):
     """The server-side application projection boundary is not provisioned."""
 
     reason = "TRUSTED_RUNTIME_UNAVAILABLE"
+
+
+class TrustedProjectionFailure(Exception):
+    """Bounded retryable failure returned by the trusted Django peer."""
+
+    def __init__(self, reason):
+        self.reason = reason
+        super().__init__(reason)
 
 
 class UnavailableProjectionBoundary:
@@ -42,11 +54,20 @@ class EventDeliveryConfig:
     poll_interval_ms: int
     batch_size: int
     transport_identity: str | None
+    socket_path: str | None
+    socket_mode: int | None
+    agent_control_uid: int | None
+    agent_control_gid: int | None
+    django_uid: int | None
+    django_gid: int | None
+    timeout_ms: int | None
+    max_message_bytes: int | None
 
     @classmethod
     def parse(cls, value):
         if type(value) is not dict or set(value) != {
-                "enabled", "poll_interval_ms", "batch_size", "transport_identity"}:
+                "enabled", "poll_interval_ms", "batch_size", "transport_identity",
+                *_TRANSPORT_FIELDS}:
             raise ValidationError("Invalid event delivery configuration.")
         if (type(value["enabled"]) is not bool
                 or type(value["poll_interval_ms"]) is not int
@@ -57,15 +78,77 @@ class EventDeliveryConfig:
         identity = value["transport_identity"]
         if identity is not None and (type(identity) is not str or identity != _TRANSPORT_IDENTITY):
             raise ValidationError("Invalid trusted event delivery transport.")
-        if value["enabled"] and identity != _TRANSPORT_IDENTITY:
+        transport_values = {key: value[key] for key in _TRANSPORT_FIELDS}
+        if not value["enabled"]:
+            if identity is not None or any(item is not None for item in transport_values.values()):
+                raise ValidationError("Disabled event delivery cannot declare a transport.")
+            return cls(value["enabled"], value["poll_interval_ms"], value["batch_size"], None,
+                       None, None, None, None, None, None, None, None)
+
+        if identity != _TRANSPORT_IDENTITY:
             raise ValidationError("Enabled event delivery requires its trusted transport identity.")
-        if not value["enabled"] and identity is not None:
-            raise ValidationError("Disabled event delivery cannot declare a transport.")
-        return cls(value["enabled"], value["poll_interval_ms"], value["batch_size"], identity)
+        path = transport_values["socket_path"]
+        if (type(path) is not str or not path.startswith("/") or "\0" in path
+                or len(path.encode()) > 107 or ".." in path.split("/")
+                or path != "/" + "/".join(part for part in path.split("/") if part)):
+            raise ValidationError("Invalid trusted projection socket path.")
+        mode = transport_values["socket_mode"]
+        if type(mode) is not int or mode not in (0o600, 0o660):
+            raise ValidationError("Invalid trusted projection socket mode.")
+        if (mode == 0o600 and transport_values["agent_control"] != transport_values["django"]):
+            raise ValidationError("Separate projection identities require group access.")
+        for name in ("agent_control", "django"):
+            identity_value = transport_values[name]
+            if (type(identity_value) is not dict or set(identity_value) != {"uid", "gid"}
+                    or any(type(identity_value[field]) is not int or identity_value[field] <= 0
+                           for field in ("uid", "gid"))):
+                raise ValidationError("Invalid trusted projection identity.")
+        agent, django = transport_values["agent_control"], transport_values["django"]
+        if (agent["uid"], agent["gid"]) == (django["uid"], django["gid"]):
+            if mode != 0o600:
+                raise ValidationError("Shared projection identity requires private socket mode.")
+        elif mode != 0o660:
+            raise ValidationError("Separate projection identities require 0660 socket mode.")
+        timeout = transport_values["timeout_ms"]
+        max_bytes = transport_values["max_message_bytes"]
+        if type(timeout) is not int or not 100 <= timeout <= 5000:
+            raise ValidationError("Invalid trusted projection timeout.")
+        if type(max_bytes) is not int or not 1024 <= max_bytes <= 4096:
+            raise ValidationError("Invalid trusted projection message bound.")
+        return cls(value["enabled"], value["poll_interval_ms"], value["batch_size"], identity,
+                   path, mode, agent["uid"], agent["gid"], django["uid"], django["gid"],
+                   timeout, max_bytes)
 
     @classmethod
     def disabled(cls):
-        return cls(False, 5000, 50, None)
+        return cls(False, 5000, 50, None, None, None, None, None, None, None, None, None)
+
+
+class InstalledDjangoProjectionBoundary:
+    """Agent Control client for the explicitly configured Django AF_UNIX peer."""
+
+    trusted_application_boundary = True
+    available = True
+
+    def __init__(self, config):
+        if type(config) is not EventDeliveryConfig or not config.enabled:
+            raise ValidationError("Enabled event delivery configuration required.")
+        from .installed_transport import DjangoProjectionClient
+        self.client = DjangoProjectionClient(config)
+
+    def deliver(self, event, consumer_name):
+        from .installed_transport import (
+            ProjectionTransportRejected, ProjectionTransportUnavailable,
+        )
+        try:
+            return self.client.deliver(event, consumer_name)
+        except ProjectionTransportUnavailable:
+            raise TrustedRuntimeUnavailable() from None
+        except ProjectionTransportRejected as error:
+            raise RegistryBlocked(error.reason) from None
+        except Exception as error:
+            reason = getattr(error, "reason", "CONSUMER_RUNTIME_FAILURE")
+            raise TrustedProjectionFailure(reason) from None
 
 
 _PERMANENT_REASONS = frozenset({

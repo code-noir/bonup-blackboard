@@ -127,9 +127,13 @@ class KernelIO:
         from .controller_entry import open_existing_registry
         return open_existing_registry(path)
 
-    def event_delivery_boundary(self):
-        from .domain_event_delivery import UnavailableProjectionBoundary
-        return UnavailableProjectionBoundary()
+    def event_delivery_boundary(self, config=None):
+        from .domain_event_delivery import (
+            InstalledDjangoProjectionBoundary, UnavailableProjectionBoundary,
+        )
+        if config is None or not config.enabled:
+            return UnavailableProjectionBoundary()
+        return InstalledDjangoProjectionBoundary(config)
 
     def capabilities(self):
         data=Path('/proc/self/status').read_text()
@@ -603,10 +607,12 @@ class InstalledControllerAdapters(InstalledBase):
             admission=getattr(self, "admission", None))
         self.driver=InstalledControllerDriver(controller,client,founder,proposal,enrollments,self.io)
         from .domain_event_delivery import InstalledEventDeliveryRuntime, UnavailableProjectionBoundary
+        event_delivery_config = self.load_event_delivery_config()
         boundary_factory = getattr(self.io, 'event_delivery_boundary', None)
-        boundary = boundary_factory() if callable(boundary_factory) else UnavailableProjectionBoundary()
+        boundary = (boundary_factory(event_delivery_config)
+                    if callable(boundary_factory) else UnavailableProjectionBoundary())
         self.driver.event_delivery_runtime = InstalledEventDeliveryRuntime(
-            str(registry.path), self.load_event_delivery_config(), boundary,
+            str(registry.path), event_delivery_config, boundary,
             open_registry=self.io.open_registry,
         )
         if self.config.get('founder_policy') is not None:

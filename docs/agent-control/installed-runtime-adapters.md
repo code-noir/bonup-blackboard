@@ -43,24 +43,35 @@ Scheduling is root-controlled at
   "enabled": false,
   "poll_interval_ms": 5000,
   "batch_size": 50,
-  "transport_identity": null
+  "transport_identity": null,
+  "socket_path": null,
+  "socket_mode": null,
+  "agent_control": null,
+  "django": null,
+  "timeout_ms": null,
+  "max_message_bytes": null
 }
 ```
 
 The poll interval and batch size are bounded. Retry delay remains the existing
 per-consumer Registry backoff. Missing configuration disables the lane. An
 enabled configuration must name the fixed
-`TRUSTED_DJANGO_PROJECTION_BOUNDARY_V1` transport identity; it cannot name an
-endpoint or supply a browser/operator path.
+`TRUSTED_DJANGO_PROJECTION_BOUNDARY_V1` transport identity. An enabled file must
+also name one absolute AF_UNIX socket, the expected Agent Control and Django
+UID/GID pairs, an exact private socket mode (`0600` for one shared identity or
+`0660` for separate identities), and bounded timeout/message values. It cannot
+name TCP, supply credentials, or select a browser/operator path.
 
-The installed `KernelIO` composition currently supplies the explicit
-fail-closed `UnavailableProjectionBoundary` until a separately provisioned
-trusted Django transport exists. In that state committed obligations remain
-pending and the bounded runtime status is `TRUSTED_RUNTIME_UNAVAILABLE`; no
-fallback delivery or event ingestion endpoint is created. When the trusted
-application boundary is provisioned through the installed adapter seam, the
-worker fans out the same verified event independently to Product Direction and
-Blackboard. A consumer failure affects only that consumer's ledger row.
+The installed `KernelIO` composition supplies the explicit fail-closed
+`UnavailableProjectionBoundary` when delivery is disabled or configuration is
+missing. With valid enabled configuration it selects the fixed AF_UNIX client;
+socket ownership, mode, SO_PEERCRED and live process identity are checked before
+each request. Missing or unavailable trusted runtime leaves obligations pending
+with `TRUSTED_RUNTIME_UNAVAILABLE`; no fallback delivery or event ingestion
+endpoint is created. The Django receiver acknowledges only after the selected
+consumer returns from its transaction. The worker fans out the same verified
+event independently to Product Direction and Blackboard. A consumer failure
+affects only that consumer's ledger row.
 
 The runtime exposes only bounded counts and timestamps through
 `ControllerService.event_delivery_status()`: pending, retrying, blocked, and the

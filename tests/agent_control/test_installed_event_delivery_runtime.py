@@ -5,11 +5,13 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
+import os
 from uuid import uuid4
 
 import test_service_runtime as service_fixtures
 from tools.agent_control.domain_event_delivery import (
     EventDeliveryConfig,
+    InstalledDjangoProjectionBoundary,
     InstalledEventDeliveryRuntime,
     TrustedRuntimeUnavailable,
     UnavailableProjectionBoundary,
@@ -46,6 +48,12 @@ class InstalledEventDeliveryRuntimeTests(unittest.TestCase):
             "poll_interval_ms": 1000,
             "batch_size": 7,
             "transport_identity": "TRUSTED_DJANGO_PROJECTION_BOUNDARY_V1",
+            "socket_path": "/run/bonup-agent-control/django-events.sock",
+            "socket_mode": 0o600,
+            "agent_control": {"uid": os.geteuid(), "gid": os.getegid()},
+            "django": {"uid": os.geteuid(), "gid": os.getegid()},
+            "timeout_ms": 1000,
+            "max_message_bytes": 4096,
         })
 
     def test_configuration_is_explicit_bounded_and_fail_closed(self):
@@ -117,6 +125,11 @@ class InstalledEventDeliveryRuntimeTests(unittest.TestCase):
         self.assertFalse(boundary.available)
         with self.assertRaises(TrustedRuntimeUnavailable):
             boundary.deliver({}, "product-direction")
+
+    def test_valid_enabled_configuration_selects_the_fixed_af_unix_adapter(self):
+        boundary = KernelIO().event_delivery_boundary(self.enabled_config())
+        self.assertIsInstance(boundary, InstalledDjangoProjectionBoundary)
+        self.assertTrue(boundary.available)
 
     def test_disabled_runtime_does_not_open_registry_or_start_thread(self):
         runtime = InstalledEventDeliveryRuntime(

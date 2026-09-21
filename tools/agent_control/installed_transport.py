@@ -4,10 +4,13 @@ Socket creation is explicit. Tests supply temporary AF_UNIX sockets; installed
 callers use fixed paths. There is no TCP, environment or adapter-module fallback.
 """
 import os
+import re
 import socket
+import stat
 import struct
 import time
 from pathlib import Path
+from uuid import uuid4
 
 from .identity import PeerIdentity, ProcessIdentity
 from .protocol import bounded_json
@@ -75,8 +78,11 @@ class SenderSocket:
 
 
 class Packet:
-    def __init__(self, now, timeout=1):
+    def __init__(self, now, timeout=1, limit=LIMIT):
+        if type(limit) is not int or not 1 <= limit <= 65536:
+            raise ValidationError('Unix frame bound is invalid.')
         self.deadline = now + timeout
+        self.limit = limit
         self.buffer = bytearray()
         self.size = None
 
@@ -87,12 +93,12 @@ class Packet:
     def feed(self, chunk, now):
         if now >= self.deadline or type(chunk) is not bytes or not chunk:
             raise AuthorityError('Unix frame expired/disconnected.')
-        if len(chunk) + len(self.buffer) > LIMIT + 4:
+        if len(chunk) + len(self.buffer) > self.limit + 4:
             raise ValidationError('Unix frame exceeds bound.')
         self.buffer.extend(chunk)
         if len(self.buffer) >= 4:
             self.size = struct.unpack('!I', self.buffer[:4])[0]
-            if not 0 < self.size <= LIMIT or len(self.buffer) > self.size + 4:
+            if not 0 < self.size <= self.limit or len(self.buffer) > self.size + 4:
                 raise ValidationError('Invalid/pipelined Unix frame.')
             if len(self.buffer) == self.size + 4:
                 bounded_json(bytes(self.buffer[4:]))
@@ -100,9 +106,9 @@ class Packet:
         return None
 
 
-def packet(value):
+def packet(value, limit=LIMIT):
     raw = canonical_json(value).encode()
-    if not 0 < len(raw) <= LIMIT:
+    if type(limit) is not int or not 1 <= limit <= 65536 or not 0 < len(raw) <= limit:
         raise ValidationError('Unix message exceeds bound.')
     return struct.pack('!I', len(raw)) + raw
 
@@ -112,6 +118,176 @@ def local_socket(sock):
         raise AuthorityError('AF_UNIX stream required.')
     sock.set_inheritable(False)
     return sock
+
+
+_PROJECTION_REASON = re.compile(r'^[A-Z0-9_]{1,64}$')
+
+
+class ProjectionTransportUnavailable(Exception):
+    """The configured local Django peer cannot be reached or authenticated."""
+
+
+class ProjectionTransportRejected(Exception):
+    """The peer rejected an invalid or untrusted projection request."""
+
+    def __init__(self, reason):
+        if type(reason) is not str or not _PROJECTION_REASON.fullmatch(reason):
+            reason = 'TRANSPORT_RESPONSE_INVALID'
+        self.reason = reason
+        super().__init__(reason)
+
+
+class ProjectionTransportFailure(Exception):
+    """The trusted peer could not commit one projection transaction."""
+
+    def __init__(self, reason):
+        if type(reason) is not str or not _PROJECTION_REASON.fullmatch(reason):
+            reason = 'CONSUMER_RUNTIME_FAILURE'
+        self.reason = reason
+        super().__init__(reason)
+
+
+def _secure_socket_ancestors(path):
+    path = Path(path)
+    if (not path.is_absolute() or '..' in path.parts or str(path) != os.path.normpath(str(path))
+            or '\0' in str(path) or len(str(path).encode()) > 107):
+        raise AuthorityError('Canonical projection socket path required.')
+    parent = path.parent
+    for node in (parent, *parent.parents):
+        info = node.lstat()
+        if node.is_symlink() or info.st_mode & 0o022:
+            raise AuthorityError('Writable projection socket ancestor.')
+    return path
+
+
+def validate_projection_socket(path, *, owner_uid, group_gid, mode):
+    """Verify an existing socket and every ancestor before connecting to it."""
+    path = _secure_socket_ancestors(path)
+    info = path.lstat()
+    if (path.is_symlink() or not stat.S_ISSOCK(info.st_mode)
+            or info.st_uid != owner_uid or info.st_gid != group_gid
+            or stat.S_IMODE(info.st_mode) != mode):
+        raise AuthorityError('Projection socket identity or mode mismatch.')
+    return path
+
+
+def projection_peer(sock, *, uid, gid, process_reader=ProcessIdentity.read):
+    peer = PeerIdentity.from_socket(sock)
+    if (peer.uid, peer.gid) != (uid, gid):
+        raise AuthorityError('Unexpected projection peer.')
+    process = process_reader(peer.pid)
+    process.verify(process_reader)
+    return peer, process
+
+
+class DjangoProjectionClient:
+    """One bounded request to the root-configured Django projection socket."""
+
+    def __init__(self, config, *, process_reader=ProcessIdentity.read, now=time.monotonic):
+        required = ('socket_path', 'socket_mode', 'agent_control_uid', 'agent_control_gid',
+                    'django_uid', 'django_gid', 'timeout_ms', 'max_message_bytes')
+        if any(getattr(config, field, None) is None for field in required):
+            raise ValidationError('Complete projection transport configuration required.')
+        if (os.geteuid(), os.getegid()) != (
+                config.agent_control_uid, config.agent_control_gid):
+            raise AuthorityError('Agent Control process identity mismatch.')
+        self.config = config
+        self.process_reader = process_reader
+        self.now = now
+
+    def _receive(self, sock):
+        timeout = self.config.timeout_ms / 1000
+        reader = Packet(self.now(), timeout=timeout, limit=self.config.max_message_bytes)
+        while True:
+            remaining = reader.deadline - self.now()
+            if remaining <= 0:
+                raise ProjectionTransportUnavailable()
+            sock.settimeout(remaining)
+            try:
+                chunk = sock.recv(reader.wanted)
+            except (socket.timeout, TimeoutError, ConnectionError, OSError):
+                raise ProjectionTransportUnavailable() from None
+            if not chunk:
+                raise ProjectionTransportUnavailable()
+            complete = reader.feed(chunk, self.now())
+            if complete is not None:
+                try:
+                    return bounded_json(complete[4:])
+                except ValidationError:
+                    raise ProjectionTransportRejected('TRANSPORT_RESPONSE_INVALID') from None
+
+    def deliver(self, event, consumer_name):
+        from .records import PRODUCT_REVIEW_EVENT_CONSUMERS, ProductReviewCompletedEvent
+
+        if (type(event) is not ProductReviewCompletedEvent
+                or not getattr(event, '_trusted', False)
+                or consumer_name not in PRODUCT_REVIEW_EVENT_CONSUMERS):
+            raise ProjectionTransportRejected('EVENT_INTEGRITY_FAILURE')
+        payload = event.to_dict()
+        request_id = str(uuid4())
+        request = {
+            'version': 1,
+            'request_id': request_id,
+            'consumer_name': consumer_name,
+            'event_id': payload['event_id'],
+            'event_digest': payload['event_digest'],
+            'event_type': payload['event_type'],
+            'event_version': payload['event_version'],
+            'event': payload,
+        }
+        sock = None
+        try:
+            validate_projection_socket(
+                self.config.socket_path,
+                owner_uid=self.config.django_uid,
+                group_gid=self.config.agent_control_gid,
+                mode=self.config.socket_mode,
+            )
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM | socket.SOCK_CLOEXEC)
+            sock.settimeout(self.config.timeout_ms / 1000)
+            sock.connect(self.config.socket_path)
+        except (AuthorityError, OSError, socket.timeout, TimeoutError):
+            if sock is not None:
+                sock.close()
+            raise ProjectionTransportUnavailable() from None
+        try:
+            projection_peer(
+                sock, uid=self.config.django_uid, gid=self.config.django_gid,
+                process_reader=self.process_reader,
+            )
+            try:
+                raw = packet(request, limit=self.config.max_message_bytes)
+            except ValidationError:
+                raise ProjectionTransportRejected('EVENT_TOO_LARGE') from None
+            sock.sendall(raw)
+            response = self._receive(sock)
+            projection_peer(
+                sock, uid=self.config.django_uid, gid=self.config.django_gid,
+                process_reader=self.process_reader,
+            )
+        except ProjectionTransportRejected:
+            raise
+        except ProjectionTransportUnavailable:
+            raise
+        except (AuthorityError, OSError, socket.timeout, TimeoutError, ValidationError):
+            raise ProjectionTransportUnavailable() from None
+        finally:
+            sock.close()
+        if (type(response) is not dict or set(response) != {
+                'version', 'request_id', 'status', 'reason'}
+                or response['version'] != 1 or response['request_id'] != request_id
+                or response['status'] not in {'ACKNOWLEDGED', 'RETRY', 'REJECTED'}
+                or (response['reason'] is not None
+                    and (type(response['reason']) is not str
+                         or not _PROJECTION_REASON.fullmatch(response['reason'])))):
+            raise ProjectionTransportRejected('TRANSPORT_RESPONSE_INVALID')
+        if response['status'] == 'ACKNOWLEDGED' and response['reason'] is not None:
+            raise ProjectionTransportRejected('TRANSPORT_RESPONSE_INVALID')
+        if response['status'] == 'RETRY':
+            raise ProjectionTransportFailure(response['reason'] or 'CONSUMER_RUNTIME_FAILURE')
+        if response['status'] == 'REJECTED':
+            raise ProjectionTransportRejected(response['reason'] or 'TRANSPORT_RESPONSE_INVALID')
+        return {'status': 'ACKNOWLEDGED', 'event_id': payload['event_id']}
 
 
 def transport_peer(sock):

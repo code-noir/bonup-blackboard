@@ -487,6 +487,20 @@ class Registry:
             (now, limit),
         )]
 
+    def domain_event_delivery_status(self):
+        """Return bounded operational counts without event payloads."""
+        if self._version() < 3:
+            raise RegistryBlocked('Domain event delivery schema is not installed.')
+        counts = {row['status'].lower(): row['count'] for row in self.db.execute(
+            '''SELECT status,COUNT(*) AS count FROM domain_event_deliveries GROUP BY status'''
+        )}
+        return {
+            'pending': counts.get('pending', 0),
+            'retrying': counts.get('retry', 0),
+            'blocked': counts.get('blocked', 0),
+            'acknowledged': counts.get('acknowledged', 0),
+        }
+
     def _domain_event_delivery_row(self, event_id, consumer_name):
         row = self.db.execute(
             '''SELECT * FROM domain_event_deliveries

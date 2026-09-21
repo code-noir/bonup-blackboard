@@ -82,6 +82,7 @@ def start(*, adapters, config_path=CONFIG):
     loop = None
     transport = None
     driver = None
+    delivery_runtime = None
     try:
         config = ServiceConfig.parse(adapters.load_config(config_path), component='controller',
             identity=adapters.identity(), boot_id=adapters.boot_id(), manifest_digest=adapters.verify_manifest())
@@ -103,11 +104,16 @@ def start(*, adapters, config_path=CONFIG):
             deadlines=driver.deadlines, control=driver.control, heartbeat=driver.heartbeat,
             disconnect=driver.disconnect, notifier=adapters.notify)
         loop.activate()
-        return ControllerService(loop, registry)
+        delivery_runtime = getattr(driver, 'event_delivery_runtime', None)
+        if delivery_runtime is not None:
+            delivery_runtime.start()
+        return ControllerService(loop, registry, delivery_runtime)
     except BaseException:
         if hasattr(adapters, 'abort_startup'):
             adapters.abort_startup()
         try:
+            if delivery_runtime is not None:
+                delivery_runtime.shutdown()
             if loop is not None:
                 loop.shutdown()
             else:
@@ -124,17 +130,24 @@ def start(*, adapters, config_path=CONFIG):
 
 
 class ControllerService:
-    def __init__(self, loop, registry):
-        self.loop, self.registry = loop, registry
+    def __init__(self, loop, registry, delivery_runtime=None):
+        self.loop, self.registry, self.delivery_runtime = loop, registry, delivery_runtime
         self.closed = False
 
     def close(self):
         if not self.closed:
             self.closed = True
             try:
+                if self.delivery_runtime is not None:
+                    self.delivery_runtime.shutdown()
                 self.loop.shutdown()
             finally:
                 self.registry.close()
+
+    def event_delivery_status(self):
+        if self.delivery_runtime is None:
+            return {'status': 'UNAVAILABLE', 'reason': 'TRUSTED_RUNTIME_UNAVAILABLE'}
+        return self.delivery_runtime.status()
 
 
 def main(*, adapters=None):

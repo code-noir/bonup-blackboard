@@ -27,7 +27,7 @@ MANIFEST = ETC + '/approved-installation.json'
 SOURCE_COMMIT = 'fd27391978b67077b0ad4550fd49da5f761e6b3d'
 REVIEWED_RUNTIME_MODULES = (
     '__init__','authority','authority_installation','authority_journal','bootstrap_entry',
-    'composition','composition_protocol','confinement','controller_entry','exec_start',
+    'composition','composition_protocol','confinement','controller_entry','domain_event_delivery','exec_start',
     'execution','filesystem_evidence','founder_crypto','founder_genesis','founder_intake',
     'founder_key_validation','founder_review_auth','founder_session','founder_transport',
     'gate_entry','host_test_catalog','host_test_launch','host_test_observation',

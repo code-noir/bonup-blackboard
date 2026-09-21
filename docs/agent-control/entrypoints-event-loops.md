@@ -73,6 +73,16 @@ loss, close transport, and (controller only) close its registry. Driver callback
 bridge the existing ControllerRuntime and database-free SupervisorEndpoint;
 normal evidence cannot create authority or change fixed launch parameters.
 
+The installed controller also owns the bounded domain-event delivery lane. It is
+started after the controller loop reaches READY and stopped before the controller
+registry closes. Each cycle opens a separate controller-owned Registry connection,
+loads only committed verified events, and delivers independently to the Product
+Direction and Blackboard projection consumers through the trusted application
+boundary. Missing or unprovisioned application transport leaves obligations
+pending with `TRUSTED_RUNTIME_UNAVAILABLE`; it never creates an event or changes
+review authority. See [installed-runtime-adapters.md](installed-runtime-adapters.md)
+for the root-controlled scheduling contract and bounded diagnostics.
+
 ## Remaining work
 
 Block 2 still needs supervisor-only pinned filesystem inspection and authenticated

@@ -127,6 +127,10 @@ class KernelIO:
         from .controller_entry import open_existing_registry
         return open_existing_registry(path)
 
+    def event_delivery_boundary(self):
+        from .domain_event_delivery import UnavailableProjectionBoundary
+        return UnavailableProjectionBoundary()
+
     def capabilities(self):
         data=Path('/proc/self/status').read_text()
         values=dict(line.split(':',1) for line in data.splitlines() if ':' in line)
@@ -393,6 +397,14 @@ class InstalledBase:
                       generation=peer.generation, enrollment_id=peer.enrollment_id))
         return service
 
+    def load_event_delivery_config(self):
+        from .domain_event_delivery import EVENT_DELIVERY_CONFIG_PATH, EventDeliveryConfig
+        try:
+            value = self.io.read(EVENT_DELIVERY_CONFIG_PATH)
+        except (FileNotFoundError, KeyError):
+            return EventDeliveryConfig.disabled()
+        return EventDeliveryConfig.parse(value)
+
     def load_successor(self, data, manifest, identities):
         from . import successor_config as successor
         from .authority_installation import approval_projection
@@ -590,6 +602,13 @@ class InstalledControllerAdapters(InstalledBase):
         controller=ControllerRuntime(runtime,authorization,remote,generation=config.peer.generation,boot_id=config.boot_id,
             admission=getattr(self, "admission", None))
         self.driver=InstalledControllerDriver(controller,client,founder,proposal,enrollments,self.io)
+        from .domain_event_delivery import InstalledEventDeliveryRuntime, UnavailableProjectionBoundary
+        boundary_factory = getattr(self.io, 'event_delivery_boundary', None)
+        boundary = boundary_factory() if callable(boundary_factory) else UnavailableProjectionBoundary()
+        self.driver.event_delivery_runtime = InstalledEventDeliveryRuntime(
+            str(registry.path), self.load_event_delivery_config(), boundary,
+            open_registry=self.io.open_registry,
+        )
         if self.config.get('founder_policy') is not None:
             self.driver.configure_founder(self.config['founder_policy'])
         return self.driver

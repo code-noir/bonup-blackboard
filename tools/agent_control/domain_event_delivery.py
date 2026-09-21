@@ -4,12 +4,18 @@ This worker is deliberately a projection dispatcher. It can load facts from
 the controller-owned Registry and call an explicitly composed application
 boundary, but it has no operation that can create or modify authority.
 """
+from dataclasses import dataclass
 from datetime import datetime, timezone
+import threading
 
 from .records import PRODUCT_REVIEW_EVENT_CONSUMERS
 from .registry import Registry
 from .storage import RegistryBlocked
 from .types import ValidationError
+
+
+EVENT_DELIVERY_CONFIG_PATH = "/etc/bonup-agent-control/event-delivery.json"
+_TRANSPORT_IDENTITY = "TRUSTED_DJANGO_PROJECTION_BOUNDARY_V1"
 
 
 class TrustedRuntimeUnavailable(Exception):
@@ -26,6 +32,40 @@ class UnavailableProjectionBoundary:
 
     def deliver(self, event, consumer_name):
         raise TrustedRuntimeUnavailable()
+
+
+@dataclass(frozen=True)
+class EventDeliveryConfig:
+    """Root-controlled bounded scheduling configuration."""
+
+    enabled: bool
+    poll_interval_ms: int
+    batch_size: int
+    transport_identity: str | None
+
+    @classmethod
+    def parse(cls, value):
+        if type(value) is not dict or set(value) != {
+                "enabled", "poll_interval_ms", "batch_size", "transport_identity"}:
+            raise ValidationError("Invalid event delivery configuration.")
+        if (type(value["enabled"]) is not bool
+                or type(value["poll_interval_ms"]) is not int
+                or not 1000 <= value["poll_interval_ms"] <= 60000
+                or type(value["batch_size"]) is not int
+                or not 1 <= value["batch_size"] <= 100):
+            raise ValidationError("Invalid event delivery bounds.")
+        identity = value["transport_identity"]
+        if identity is not None and (type(identity) is not str or identity != _TRANSPORT_IDENTITY):
+            raise ValidationError("Invalid trusted event delivery transport.")
+        if value["enabled"] and identity != _TRANSPORT_IDENTITY:
+            raise ValidationError("Enabled event delivery requires its trusted transport identity.")
+        if not value["enabled"] and identity is not None:
+            raise ValidationError("Disabled event delivery cannot declare a transport.")
+        return cls(value["enabled"], value["poll_interval_ms"], value["batch_size"], identity)
+
+    @classmethod
+    def disabled(cls):
+        return cls(False, 5000, 50, None)
 
 
 _PERMANENT_REASONS = frozenset({
@@ -133,8 +173,126 @@ class DomainEventDeliveryWorker:
         return summary
 
 
+class InstalledEventDeliveryRuntime:
+    """Recurring delivery lane owned by the installed controller service.
+
+    Each cycle opens its own controller-owned Registry connection. The existing
+    controller thread therefore remains the sole owner of its active SQLite
+    connection and execution-authority operations stay isolated from delivery.
+    """
+
+    def __init__(self, registry_path, config, boundary, *, open_registry):
+        if type(config) is not EventDeliveryConfig:
+            raise ValidationError("Event delivery configuration required.")
+        if (type(registry_path) is not str or not registry_path.startswith("/")
+                or ".." in registry_path.split("/")):
+            raise ValidationError("Absolute Agent Control registry path required.")
+        if not callable(open_registry):
+            raise ValidationError("Trusted Agent Control registry opener required.")
+        if (getattr(boundary, "trusted_application_boundary", False) is not True
+                or not callable(getattr(boundary, "deliver", None))):
+            raise ValidationError("Trusted application projection boundary required.")
+        self.registry_path = registry_path
+        self.config = config
+        self.boundary = boundary
+        self.open_registry = open_registry
+        self.stop_event = threading.Event()
+        self.thread = None
+        self._lock = threading.RLock()
+        self._snapshot = {
+            "status": "DISABLED" if not config.enabled else "STOPPED",
+            "pending": None,
+            "retrying": None,
+            "blocked": None,
+            "last_cycle_at": None,
+            "last_successful_cycle_at": None,
+            "reason": None,
+        }
+
+    def _record(self, snapshot):
+        with self._lock:
+            self._snapshot = dict(snapshot)
+
+    def run_once(self):
+        if not self.config.enabled:
+            return self.status()
+        try:
+            registry = self.open_registry(self.registry_path)
+        except (OSError, RegistryBlocked, ValidationError):
+            snapshot = dict(self.status(), status="REGISTRY_UNAVAILABLE",
+                            reason="REGISTRY_UNAVAILABLE")
+            self._record(snapshot)
+            return snapshot
+        try:
+            summary = DomainEventDeliveryWorker(
+                registry, self.boundary, batch_size=self.config.batch_size
+            ).run_once()
+            counts = registry.domain_event_delivery_status()
+            now = datetime.now(timezone.utc).isoformat(
+                timespec="microseconds").replace("+00:00", "Z")
+            successful = summary["status"] in {"IDLE", "DELIVERED", "PARTIAL"}
+            snapshot = {
+                "status": summary["status"],
+                "pending": counts["pending"],
+                "retrying": counts["retrying"],
+                "blocked": counts["blocked"],
+                "last_cycle_at": now,
+                "last_successful_cycle_at": now if successful else self.status()["last_successful_cycle_at"],
+                "reason": summary.get("reason"),
+            }
+            self._record(snapshot)
+            return snapshot
+        except (OSError, RegistryBlocked, ValidationError):
+            snapshot = dict(self.status(), status="REGISTRY_UNAVAILABLE",
+                            reason="REGISTRY_UNAVAILABLE")
+            self._record(snapshot)
+            return snapshot
+        except BaseException:
+            snapshot = dict(self.status(), status="DELIVERY_RUNTIME_FAILURE",
+                            reason="DELIVERY_RUNTIME_FAILURE")
+            self._record(snapshot)
+            return snapshot
+        finally:
+            registry.close()
+
+    def _run(self):
+        self.run_once()
+        while not self.stop_event.wait(self.config.poll_interval_ms / 1000):
+            self.run_once()
+
+    def start(self):
+        if not self.config.enabled:
+            return self.status()
+        with self._lock:
+            if self.thread is not None and self.thread.is_alive():
+                raise ValidationError("Event delivery runtime already started.")
+            self.stop_event.clear()
+            self.thread = threading.Thread(
+                target=self._run, name="agent-event-delivery", daemon=True
+            )
+            self.thread.start()
+        return self.status()
+
+    def shutdown(self):
+        self.stop_event.set()
+        thread = self.thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(2)
+        with self._lock:
+            if self.config.enabled and self._snapshot["status"] not in {
+                    "DELIVERY_RUNTIME_FAILURE", "REGISTRY_UNAVAILABLE"}:
+                self._snapshot["status"] = "STOPPED"
+
+    def status(self):
+        with self._lock:
+            return dict(self._snapshot)
+
+
 __all__ = [
     "DomainEventDeliveryWorker",
+    "EVENT_DELIVERY_CONFIG_PATH",
+    "EventDeliveryConfig",
+    "InstalledEventDeliveryRuntime",
     "PRODUCT_REVIEW_EVENT_CONSUMERS",
     "TrustedRuntimeUnavailable",
     "UnavailableProjectionBoundary",

@@ -76,14 +76,40 @@ The v6 candidate remains `approved=false`, `activation=false`, and
 `integration_services_approved=false`; changing this scope invalidates the
 candidate identity and requires a new review.
 
-Candidate manifest byte SHA-256:
+### Historical v4/v5 identity record
+
+The following identities are **HISTORICAL**, **SUPERSEDED**, and **DO NOT USE
+FOR CURRENT V6 APPROVAL**. They are retained only as evidence for the earlier
+generation-1 candidate and its proposed installation transformation:
+
+Historical candidate manifest byte SHA-256:
 `034036d04043c470e67a050e827f1312445017069e1f234e3f096fa5864adbb6`
 
-Candidate bundle digest:
+Historical candidate bundle digest:
 `cdaf9528de71fd64cf60c44d916cb0d3632adf5e7245b3cc5e11b4a782ea72e4`
 
-Proposed installation manifest byte SHA-256:
+Historical proposed installation manifest byte SHA-256:
 `da3124871d15fa64861c24e3a91bde66a9968029446d24de3ff2d54deb8836fe`
+
+### Current PROD-01 v6 candidate identity
+
+The current v6 candidate was recomputed from the exact committed runtime source
+at `903795d7324e6b82f4b785987edb78a8da985a7f`. This documentation-only
+correction is intentionally outside the packaged runtime source: it does not
+change the candidate source commit or candidate payload bytes. The correction
+commit must not be substituted as the v6 candidate source commit.
+
+- Source commit: `903795d7324e6b82f4b785987edb78a8da985a7f`
+- Runtime modules: `65`
+- Manifest artifacts: `83`
+- Detached inventory artifacts: `84`
+- Manifest byte SHA-256: `0a166b8d2143c4fb633c4e06a0ea97e938008a1853356f2dabdb0a1ed1468d85`
+- Bundle digest: `2f47a3dd820b5c0725993aa03e5ba4333e76458ecdaf847aa0dfa03bc14b099f`
+- Product scope digest: `ac106b7d150bf275c6dce4865c6a7ef7b0e80915817e1e72694ab98ab2fe8bc0`
+- Controller unit digest: `0be340e6760387f66e1277b3860680467178094b443a62665472db38c3f87386`
+- Validation: `COMPLETE_BUT_UNAPPROVED`
+- Approval state: `approved=false`, `activation=false`,
+  `integration_services_approved=false`
 
 Envelope bindings use SHA-256 of the exact canonical JSON bytes including the
 final newline, as do detached artifact inventories. Legacy runtime canonical

@@ -274,9 +274,14 @@ class ProductDirectionReviewAPITests(TestCase):
             self.assertEqual(request.data["proposal_id"], str(task.proposal_id))
             self.assertNotIn("challenge", request.data)
             self.runtime.complete_external_review()
-            result = self.client.get(
+            pending = self.client.get(
                 f"/api/product-direction/tasks/{task.id}/review/status/",
             )
+            event = self.runtime.observe_review(task_id=task.agent_control_task_id)
+            consume_product_review_completed(event, artifact_store=self.store)
+            result = self.client.get(f"/api/product-direction/tasks/{task.id}/review/status/")
+        self.assertEqual(pending.status_code, 200)
+        self.assertEqual(pending.data["status"], "REVIEW_PENDING_PROJECTION")
         self.assertEqual(result.status_code, 200)
         self.assertEqual(result.data["decision"], "ACCEPT")
         self.assertEqual(result.data["resulting_knowledge_state"], "APPROVED_INTERNAL")
@@ -308,10 +313,14 @@ class ProductDirectionReviewAPITests(TestCase):
                     )
                     self.assertEqual(request.status_code, 202)
                     self.runtime.complete_external_review()
-                    result = self.client.get(
+                    pending = self.client.get(
                         f"/api/product-direction/tasks/{task.id}/review/status/",
                     )
+                    event = self.runtime.observe_review(task_id=task.agent_control_task_id)
+                    consume_product_review_completed(event, artifact_store=self.store)
+                    result = self.client.get(f"/api/product-direction/tasks/{task.id}/review/status/")
                 self.assertEqual(result.status_code, 200)
+                self.assertEqual(pending.data["status"], "REVIEW_PENDING_PROJECTION")
                 task.refresh_from_db()
                 self.assertEqual(task.status, expected_status)
                 self.assertNotEqual(task.status, ProductDirectionTask.STATUS_APPROVED_INTERNAL)
@@ -417,8 +426,8 @@ class ProductDirectionReviewAPITests(TestCase):
                 {"decision": "ACCEPT", "reason": "Approve."}, format="json"
             )
             response = self.client.get(f"/api/product-direction/tasks/{task.id}/review/status/")
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.data, {"reason": "REVIEW_PROJECTION_RETRY"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "REVIEW_PENDING_PROJECTION")
         task.refresh_from_db()
         self.assertEqual(task.status, ProductDirectionTask.STATUS_AWAITING_FOUNDER_REVIEW)
 

@@ -30,14 +30,24 @@ class TrustedDjangoProjectionBoundary:
     def __init__(self, *, artifact_store=None):
         self.artifact_store = artifact_store
 
-    def deliver(self, event, consumer_name):
+    def deliver(self, event, consumer_name, proposal_projection=None):
         if (type(event) is not ProductReviewCompletedEvent
                 or not getattr(event, "_trusted", False)):
             raise ValueError("Trusted ProductReviewCompletedEvent required.")
         if consumer_name == PRODUCT_DIRECTION_CONSUMER:
-            return consume_product_direction(event, artifact_store=self.artifact_store)
+            if proposal_projection is None:
+                return consume_product_direction(event, artifact_store=self.artifact_store)
+            return consume_product_direction(
+                event, artifact_store=self.artifact_store,
+                proposal_projection=proposal_projection,
+            )
         if consumer_name == BLACKBOARD_PRODUCT_DIRECTION_CONSUMER:
-            return consume_blackboard(event, artifact_store=self.artifact_store)
+            if proposal_projection is None:
+                return consume_blackboard(event, artifact_store=self.artifact_store)
+            return consume_blackboard(
+                event, artifact_store=self.artifact_store,
+                proposal_projection=proposal_projection,
+            )
         raise ValueError("Unknown projection consumer.")
 
 
@@ -137,7 +147,8 @@ class TrustedDjangoProjectionReceiver:
     def _request(self, value):
         if type(value) is not dict or set(value) != {
                 "version", "request_id", "consumer_name", "event_id",
-                "event_digest", "event_type", "event_version", "event"}:
+                "event_digest", "event_type", "event_version", "event",
+                "proposal_projection"}:
             raise ValidationError("Malformed projection request.")
         if value["version"] != 1:
             raise ValidationError("Unsupported projection request version.")
@@ -154,7 +165,7 @@ class TrustedDjangoProjectionReceiver:
                 or canonical_json(value["event"]) != event.canonical_json()):
             raise ValidationError("Projection event binding mismatch.")
         object.__setattr__(event, "_trusted", True)
-        return value["request_id"], value["consumer_name"], event
+        return value["request_id"], value["consumer_name"], event, value["proposal_projection"]
 
     @staticmethod
     def _response(request_id, status, reason=None):
@@ -179,7 +190,7 @@ class TrustedDjangoProjectionReceiver:
             request_id = None
             try:
                 request = self._receive(conn)
-                request_id, consumer_name, event = self._request(request)
+                request_id, consumer_name, event, proposal_projection = self._request(request)
             except (AuthorityError, KeyError, TypeError, ValueError, ValidationError, OSError):
                 candidate = locals().get("request")
                 if (isinstance(candidate, dict)
@@ -197,7 +208,10 @@ class TrustedDjangoProjectionReceiver:
                     pass
                 return response
             try:
-                self.boundary.deliver(event, consumer_name)
+                if proposal_projection is None:
+                    self.boundary.deliver(event, consumer_name)
+                else:
+                    self.boundary.deliver(event, consumer_name, proposal_projection)
                 projection_peer(
                     conn, uid=self.config.agent_control_uid,
                     gid=self.config.agent_control_gid, process_reader=self.process_reader,

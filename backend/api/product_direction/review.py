@@ -2,13 +2,15 @@
 from dataclasses import dataclass
 from django.db import transaction
 from tools.agent_control.founder_review_auth import ProductProposalReviewBinding
-from tools.agent_control.prod_artifact import ProposalArtifactError
+from tools.agent_control.prod_application import (
+    ApplicationRemoteError,
+    ApplicationTransportUnavailable,
+)
 from tools.agent_control.types import AuthorityError, ValidationError
 from tools.agent_control.founder_review_runtime import TrustedFounderReviewRuntime
 
 from backend.bonup.models import ProductDirectionTask
 
-from . import proposal as proposal_module
 from .proposal import ProposalReadFailure, read_product_direction_proposal
 
 
@@ -88,7 +90,7 @@ def _review_failure(reason):
 
 
 def load_review_target(task, *, decision, reason):
-    """Resolve one exact application task to one verified immutable artifact."""
+    """Resolve one exact task to a verified safe projection of its artifact."""
     if type(task) is not ProductDirectionTask:
         _review_failure("TASK_BINDING_MISMATCH")
     if task.status in FINAL_REVIEW_STATUSES or task.review_id is not None:
@@ -96,21 +98,24 @@ def load_review_target(task, *, decision, reason):
     if task.status not in REVIEWABLE_STATUSES:
         _review_failure("REVIEW_NOT_AVAILABLE")
 
-    store = proposal_module.get_proposal_artifact_store()
     try:
-        # This verifies the application binding, artifact identity, task ID,
-        # proposal digest, and WORKING knowledge state before signing.
-        read_product_direction_proposal(task, artifact_store=store)
-        artifact = store.load(str(task.proposal_id))
-        binding = ProductProposalReviewBinding.from_artifact(
-            artifact, decision=decision, reason=reason)
+        projection = read_product_direction_proposal(task)
+        binding = ProductProposalReviewBinding.from_dict({
+            "binding_version": 1,
+            "purpose": "PROD_PROPOSAL_REVIEW",
+            "artifact_id": projection["artifact_id"],
+            "artifact_digest": projection["artifact_digest"],
+            "task_id": projection["agent_control_task_id"],
+            "proposal_id": projection["proposal_id"],
+            "proposal_digest": projection["proposal_digest"],
+            "decision": decision,
+            "reason": reason,
+        })
     except ProposalReadFailure as error:
         _review_failure(error.reason)
-    except ProposalArtifactError as error:
-        _review_failure(getattr(error, "reason", "ARTIFACT_INVALID"))
     except (AuthorityError, ValidationError):
         _review_failure("REVIEW_BINDING_INVALID")
-    return ReviewTarget(task=task, artifact=artifact, binding=binding)
+    return ReviewTarget(task=task, artifact=projection, binding=binding)
 
 
 def request_review(task, *, decision, reason):
@@ -133,6 +138,10 @@ def request_review(task, *, decision, reason):
             runtime.request_review(target.binding)
         except FounderRuntimeUnavailable:
             raise
+        except ApplicationTransportUnavailable:
+            raise FounderRuntimeUnavailable() from None
+        except ApplicationRemoteError as error:
+            raise FounderReviewRuntimeError(error.reason) from None
         except FounderReviewRuntimeError:
             raise
         except Exception:
@@ -148,7 +157,7 @@ def request_review(task, *, decision, reason):
 
 
 def observe_review(task):
-    """Receive one committed event and let the EVENT-01 consumer project it."""
+    """Observe application projection state without applying a projection."""
     if task.status in FINAL_REVIEW_STATUSES or task.review_id is not None:
         return {
             "status": "ALREADY_PROJECTED",
@@ -157,29 +166,7 @@ def observe_review(task):
         }
     if task.status != ProductDirectionTask.STATUS_AWAITING_FOUNDER_REVIEW:
         _review_failure("REVIEW_NOT_AVAILABLE")
-    runtime = get_founder_review_runtime()
-    if not getattr(runtime, "available", False):
-        raise FounderRuntimeUnavailable()
-    try:
-        event = runtime.observe_review(task_id=task.agent_control_task_id)
-    except FounderRuntimeUnavailable:
-        raise
-    except FounderReviewRuntimeError:
-        raise
-    except Exception:
-        raise FounderReviewRuntimeError("REVIEW_EVENT_UNAVAILABLE") from None
-    if event is None:
-        return {"status": "PENDING"}
-    from .events import ProductDirectionProjectionError, consume_product_review_completed
-    try:
-        projection = consume_product_review_completed(event)
-    except ProductDirectionProjectionError:
-        _review_failure("REVIEW_PROJECTION_RETRY")
     return {
-        "status": projection["status"],
-        "event_id": event["event_id"],
-        "review_id": event["review_id"],
-        "review_digest": event["review_digest"],
-        "decision": event["decision"],
-        "resulting_knowledge_state": event["resulting_knowledge_state"],
+        "status": "REVIEW_PENDING_PROJECTION",
+        "agent_control_task_id": task.agent_control_task_id,
     }

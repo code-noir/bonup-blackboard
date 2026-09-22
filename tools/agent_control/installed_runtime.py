@@ -127,13 +127,16 @@ class KernelIO:
         from .controller_entry import open_existing_registry
         return open_existing_registry(path)
 
-    def event_delivery_boundary(self, config=None):
+    def event_delivery_boundary(self, config=None, *, artifact_store=None):
         from .domain_event_delivery import (
             InstalledDjangoProjectionBoundary, UnavailableProjectionBoundary,
         )
         if config is None or not config.enabled:
             return UnavailableProjectionBoundary()
-        return InstalledDjangoProjectionBoundary(config)
+        if artifact_store is None:
+            from .prod_artifact import ProposalArtifactStore
+            artifact_store = ProposalArtifactStore()
+        return InstalledDjangoProjectionBoundary(config, artifact_store=artifact_store)
 
     def capabilities(self):
         data=Path('/proc/self/status').read_text()

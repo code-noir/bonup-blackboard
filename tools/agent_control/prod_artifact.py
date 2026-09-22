@@ -24,6 +24,15 @@ _UUID = re.compile(
 _FILENAME = re.compile(r"proposal-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.json\Z", re.ASCII)
 _DIRECTORY_MODE = 0o700
 _FILE_MODE = 0o600
+_SHA256 = re.compile(r"[a-f0-9]{64}\Z", re.ASCII)
+
+SAFE_PROPOSAL_PROJECTION_FIELDS = frozenset({
+    "artifact_id", "artifact_digest", "task_id", "agent_id", "proposal_id",
+    "proposal_digest", "knowledge_state", "proposal_type",
+    "predecessor_proposal_id", "title", "problem_user_need", "objective",
+    "proposed_requirement", "acceptance_intent", "dependencies", "assumptions",
+    "risks_open_questions", "priority_recommendation", "evidence_references",
+})
 
 
 class ProposalArtifactError(ValidationError):
@@ -244,3 +253,62 @@ class ProposalArtifactStore:
             if descriptor is not None:
                 os.close(descriptor)
             os.close(directory_fd)
+
+
+def safe_proposal_projection(artifact):
+    """Return the bounded proposal view allowed across a trusted process boundary.
+
+    This deliberately excludes the artifact path, raw bytes, source/provider
+    envelopes, and any runtime credential.  The Agent Control side calls this
+    only after ``ProposalArtifactStore.load`` has verified the immutable file.
+    """
+    if type(artifact) is not ProposalArtifact:
+        raise ProposalArtifactError()
+    value = artifact.value
+    proposal = value["proposal"]
+    return {
+        "artifact_id": value["artifact_id"],
+        "artifact_digest": value["artifact_digest"],
+        "task_id": value["task_id"],
+        "agent_id": value["agent_id"],
+        "proposal_id": value["proposal_id"],
+        "proposal_digest": value["proposal_digest"],
+        "knowledge_state": value["knowledge_state"],
+        "proposal_type": proposal["proposal_type"],
+        "predecessor_proposal_id": proposal["predecessor_proposal_id"],
+        "title": proposal["title"],
+        "problem_user_need": proposal["problem_user_need"],
+        "objective": proposal["objective"],
+        "proposed_requirement": proposal["proposed_requirement"],
+        "acceptance_intent": proposal["acceptance_intent"],
+        "dependencies": proposal["dependencies"],
+        "assumptions": proposal["assumptions"],
+        "risks_open_questions": proposal["risks_open_questions"],
+        "priority_recommendation": proposal["priority_recommendation"],
+        "evidence_references": proposal["evidence_references"],
+    }
+
+
+def validate_safe_proposal_projection(value):
+    """Verify a received safe projection without opening the artifact store."""
+    if type(value) is not dict or set(value) != SAFE_PROPOSAL_PROJECTION_FIELDS:
+        raise ProposalArtifactError()
+    if (not _SHA256.fullmatch(value["artifact_digest"])
+            or not _SHA256.fullmatch(value["proposal_digest"])
+            or value["artifact_id"] != "PROD-01-" + value["proposal_id"]
+            or value["agent_id"] != ARTIFACT_AGENT_ID
+            or value["knowledge_state"] != ARTIFACT_KNOWLEDGE_STATE):
+        raise ProposalArtifactError()
+    proposal = {key: value[key] for key in (
+        "agent_id", "task_id", "proposal_id", "predecessor_proposal_id",
+        "proposal_type", "title", "problem_user_need", "objective",
+        "proposed_requirement", "acceptance_intent", "dependencies", "assumptions",
+        "risks_open_questions", "priority_recommendation", "evidence_references",
+        "knowledge_state")}
+    try:
+        validated = validate_product_proposal(proposal)
+    except ValidationError:
+        raise ProposalArtifactError() from None
+    if digest(validated) != value["proposal_digest"]:
+        raise ProposalArtifactError()
+    return value

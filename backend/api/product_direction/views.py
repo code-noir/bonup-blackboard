@@ -217,7 +217,7 @@ class ProductDirectionTaskReviewSubmitView(APIView):
 
 
 class ProductDirectionTaskReviewStatusView(APIView):
-    """Observe a committed Agent Control event; no Founder input is accepted."""
+    """Observe review/projection state; this endpoint never applies events."""
 
     permission_classes = [IsOperator]
 

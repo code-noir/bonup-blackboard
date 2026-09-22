@@ -1,5 +1,11 @@
 """Read-only application bridge for immutable validated PROD-01 artifacts."""
-from tools.agent_control.prod_artifact import ProposalArtifactError, ProposalArtifactStore
+from tools.agent_control.prod_artifact import (
+    ProposalArtifactError,
+    ProposalArtifactStore,
+    safe_proposal_projection,
+    validate_safe_proposal_projection,
+)
+from tools.agent_control.prod_application import ApplicationRemoteError
 
 from backend.bonup.models import ProductDirectionTask
 
@@ -19,6 +25,17 @@ class ProposalReadFailure(ValueError):
     def __init__(self, reason):
         super().__init__(reason)
         self.reason = reason
+
+
+_configured_proposal_reader = None
+
+
+def configure_proposal_reader(reader):
+    """Install the trusted Agent Control proposal projection reader."""
+    if not callable(getattr(reader, "read_proposal", None)):
+        raise ValueError("Trusted proposal projection reader required.")
+    global _configured_proposal_reader
+    _configured_proposal_reader = reader
 
 
 def get_proposal_artifact_store():
@@ -44,6 +61,32 @@ def read_product_direction_proposal(task, *, artifact_store=None):
     if task.proposal_artifact_id != "PROD-01-" + str(task.proposal_id):
         _fail("ARTIFACT_BINDING_MISMATCH")
 
+    if artifact_store is None and _configured_proposal_reader is not None:
+        try:
+            value = _configured_proposal_reader.read_proposal(
+                application_task_id=str(task.id),
+                agent_control_task_id=task.agent_control_task_id,
+                proposal_artifact_id=task.proposal_artifact_id,
+                proposal_id=str(task.proposal_id),
+                proposal_digest=task.proposal_digest,
+            )
+            value = validate_safe_proposal_projection(value)
+        except ProposalArtifactError:
+            _fail("ARTIFACT_INVALID")
+        except ApplicationRemoteError as error:
+            _fail(error.reason)
+        except Exception:
+            _fail("ARTIFACT_INVALID")
+        if (value["artifact_id"] != task.proposal_artifact_id
+                or value["task_id"] != task.agent_control_task_id
+                or value["agent_id"] != ProductDirectionTask.AGENT_ID
+                or value["proposal_id"] != str(task.proposal_id)
+                or value["proposal_digest"] != task.proposal_digest
+                or value["knowledge_state"] != "WORKING"):
+            _fail("PROPOSAL_BINDING_MISMATCH")
+        return dict(value, application_task_id=str(task.id),
+                    agent_control_task_id=value["task_id"])
+
     store = get_proposal_artifact_store() if artifact_store is None else artifact_store
     if type(store) is not ProposalArtifactStore:
         _fail("ARTIFACT_INVALID")
@@ -66,22 +109,5 @@ def read_product_direction_proposal(task, *, artifact_store=None):
     if value["knowledge_state"] != "WORKING":
         _fail("KNOWLEDGE_STATE_INVALID")
 
-    proposal = value["proposal"]
-    return {
-        "application_task_id": str(task.id),
-        "agent_control_task_id": task.agent_control_task_id,
-        "agent_id": value["agent_id"],
-        "proposal_id": value["proposal_id"],
-        "proposal_digest": value["proposal_digest"],
-        "knowledge_state": value["knowledge_state"],
-        "title": proposal["title"],
-        "problem_user_need": proposal["problem_user_need"],
-        "objective": proposal["objective"],
-        "proposed_requirement": proposal["proposed_requirement"],
-        "acceptance_intent": proposal["acceptance_intent"],
-        "dependencies": proposal["dependencies"],
-        "assumptions": proposal["assumptions"],
-        "risks_open_questions": proposal["risks_open_questions"],
-        "priority_recommendation": proposal["priority_recommendation"],
-        "evidence_references": proposal["evidence_references"],
-    }
+    return dict(safe_proposal_projection(artifact), application_task_id=str(task.id),
+                agent_control_task_id=task.agent_control_task_id)

@@ -1,5 +1,8 @@
 """Hardened OpenAI HTTP transport for PROD-01; no live construction side effects."""
 from urllib.parse import urlsplit
+import os
+from pathlib import Path
+import stat
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -25,6 +28,7 @@ CONNECT_TIMEOUT_SECONDS = 5
 READ_TIMEOUT_SECONDS = TIMEOUT_SECONDS
 HTTP_MAX_RETRIES = 0
 _RESPONSE_CHUNK_BYTES = 8192
+PROD01_CREDENTIAL_PATH = "/run/credentials/bonup-agent-control/prod01-openai-api-key"
 
 
 def project_openai_responses_request(request):
@@ -86,6 +90,45 @@ class InjectedOpenAICredentialProvider:
 
     def credential(self):
         return self.__credential
+
+
+class InstalledOpenAICredentialProvider:
+    """Read one root-owned systemd credential inside Agent Control only."""
+
+    def __init__(self, path=PROD01_CREDENTIAL_PATH, *, owner_uid=0, group_gid=3000):
+        if path != PROD01_CREDENTIAL_PATH:
+            raise ValidationError("Fixed PROD-01 credential path required.")
+        if type(owner_uid) is not int or type(group_gid) is not int:
+            raise ValidationError("Bounded PROD-01 credential identity required.")
+        self.__path = Path(path)
+        self.__owner_uid, self.__group_gid = owner_uid, group_gid
+
+    def credential(self):
+        path = self.__path
+        try:
+            if path.is_symlink() or any(parent.is_symlink() for parent in path.parents):
+                raise ValidationError("Symlinked PROD-01 credential rejected.")
+            for parent in (path.parent, *path.parent.parents):
+                info = parent.lstat()
+                if info.st_uid != self.__owner_uid or info.st_mode & 0o022:
+                    raise ValidationError("Mutable PROD-01 credential parent rejected.")
+            descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+            try:
+                info = os.fstat(descriptor)
+                if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                        or info.st_uid != self.__owner_uid
+                        or info.st_gid != self.__group_gid
+                        or stat.S_IMODE(info.st_mode) != 0o440
+                        or info.st_size <= 0 or info.st_size > 4096):
+                    raise ValidationError("Invalid PROD-01 credential permissions.")
+                value = os.read(descriptor, 4097).decode("utf-8")
+            finally:
+                os.close(descriptor)
+        except (FileNotFoundError, OSError, UnicodeError):
+            raise ValidationError("Trusted PROD-01 credential is unavailable.") from None
+        if (not value or len(value) > 4096 or "\r" in value or "\n" in value):
+            raise ValidationError("Trusted PROD-01 credential is invalid.")
+        return value
 
 
 class OpenAIResponsesHTTPAdapter:

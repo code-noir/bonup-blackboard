@@ -216,7 +216,7 @@ class DjangoProjectionClient:
                 except ValidationError:
                     raise ProjectionTransportRejected('TRANSPORT_RESPONSE_INVALID') from None
 
-    def deliver(self, event, consumer_name):
+    def deliver(self, event, consumer_name, proposal_projection=None):
         from .records import PRODUCT_REVIEW_EVENT_CONSUMERS, ProductReviewCompletedEvent
 
         if (type(event) is not ProductReviewCompletedEvent
@@ -233,6 +233,7 @@ class DjangoProjectionClient:
             'event_digest': payload['event_digest'],
             'event_type': payload['event_type'],
             'event_version': payload['event_version'],
+            'proposal_projection': proposal_projection,
             'event': payload,
         }
         sock = None

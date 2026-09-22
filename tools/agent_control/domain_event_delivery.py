@@ -130,18 +130,28 @@ class InstalledDjangoProjectionBoundary:
     trusted_application_boundary = True
     available = True
 
-    def __init__(self, config):
+    def __init__(self, config, *, artifact_store=None):
         if type(config) is not EventDeliveryConfig or not config.enabled:
             raise ValidationError("Enabled event delivery configuration required.")
         from .installed_transport import DjangoProjectionClient
         self.client = DjangoProjectionClient(config)
+        self.artifact_store = artifact_store
 
     def deliver(self, event, consumer_name):
         from .installed_transport import (
             ProjectionTransportRejected, ProjectionTransportUnavailable,
         )
         try:
-            return self.client.deliver(event, consumer_name)
+            proposal_projection = None
+            if self.artifact_store is not None:
+                from .prod_artifact import ProposalArtifactError, safe_proposal_projection
+                try:
+                    proposal_projection = safe_proposal_projection(
+                        self.artifact_store.load(event["proposal_id"])
+                    )
+                except ProposalArtifactError as error:
+                    raise RegistryBlocked(getattr(error, "reason", "ARTIFACT_INVALID")) from None
+            return self.client.deliver(event, consumer_name, proposal_projection)
         except ProjectionTransportUnavailable:
             raise TrustedRuntimeUnavailable() from None
         except ProjectionTransportRejected as error:

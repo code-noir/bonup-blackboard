@@ -343,8 +343,10 @@ export default function AdminProductDirection() {
     setReviewNotice(null)
     try {
       const response = await api.get(`/product-direction/tasks/${selectedTask.task_id}/review/status/`)
-      if (response.data.status === 'PENDING') {
-        setReviewNotice('Founder review is still pending in the trusted external Founder channel.')
+      if (response.data.status === 'PENDING' || response.data.status === 'REVIEW_PENDING_PROJECTION') {
+        setReviewNotice(response.data.status === 'PENDING'
+          ? 'Founder review is still pending in the trusted external Founder channel.'
+          : 'Founder review is committed and waiting for the trusted durable projection worker.')
       } else {
         setChallengeRequested(false)
         setReviewNotice(`Founder review recorded: ${response.data.decision}. Application status is now ${response.data.resulting_knowledge_state}.`)

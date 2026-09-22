@@ -4,7 +4,12 @@ from datetime import datetime
 
 from django.db import transaction
 
-from tools.agent_control.prod_artifact import ProposalArtifactError, ProposalArtifactStore
+from tools.agent_control.prod_artifact import (
+    ProposalArtifactError,
+    ProposalArtifactStore,
+    safe_proposal_projection,
+    validate_safe_proposal_projection,
+)
 from tools.agent_control.records import ProductReviewCompletedEvent
 from tools.agent_control.registry import Registry
 from tools.agent_control.schema import valid_format
@@ -36,15 +41,19 @@ def _occurred_at(value):
         _fail("EVENT_TIME_INVALID")
 
 
-def _artifact_for_event(event, artifact_store):
-    if type(artifact_store) is not ProposalArtifactStore:
-        _fail("ARTIFACT_INVALID")
-    try:
-        artifact = artifact_store.load(event["proposal_id"])
-    except ProposalArtifactError as error:
-        _fail(getattr(error, "reason", "ARTIFACT_INVALID"))
-    value = artifact.value
-    proposal = value["proposal"]
+def _artifact_for_event(event, artifact_store, proposal_projection):
+    if proposal_projection is not None:
+        try:
+            value = validate_safe_proposal_projection(proposal_projection)
+        except ProposalArtifactError:
+            _fail("ARTIFACT_INVALID")
+    else:
+        if type(artifact_store) is not ProposalArtifactStore:
+            _fail("ARTIFACT_INVALID")
+        try:
+            value = safe_proposal_projection(artifact_store.load(event["proposal_id"]))
+        except ProposalArtifactError as error:
+            _fail(getattr(error, "reason", "ARTIFACT_INVALID"))
     if (
         value["agent_id"] != event["agent_id"]
         or value["task_id"] != event["task_id"]
@@ -53,10 +62,8 @@ def _artifact_for_event(event, artifact_store):
         or value["artifact_id"] != event["artifact_id"]
         or value["artifact_digest"] != event["artifact_digest"]
         or value["knowledge_state"] != "WORKING"
-        or proposal["agent_id"] != event["agent_id"]
-        or proposal["task_id"] != event["task_id"]
-        or proposal["proposal_id"] != event["proposal_id"]
-        or proposal["knowledge_state"] != "WORKING"
+        or value["task_id"] != event["task_id"]
+        or value["proposal_id"] != event["proposal_id"]
     ):
         _fail("EVENT_PROVENANCE_MISMATCH")
     return value
@@ -90,8 +97,7 @@ def _validate_event(event):
     return value
 
 
-def _projection_values(event, artifact):
-    proposal = artifact["proposal"]
+def _projection_values(event, proposal):
     return {
         "event_digest": event["event_digest"],
         "agent_control_task_id": event["task_id"],
@@ -112,6 +118,7 @@ def _projection_values(event, artifact):
 
 
 def consume_product_review_completed(event, *, artifact_store=None,
+                                     proposal_projection=None,
                                      consumer_name=BLACKBOARD_PRODUCT_DIRECTION_CONSUMER):
     """Project directly from one trusted Agent Control event.
 
@@ -120,7 +127,7 @@ def consume_product_review_completed(event, *, artifact_store=None,
     """
     value = _validate_event(event)
     store = ProposalArtifactStore() if artifact_store is None else artifact_store
-    artifact = _artifact_for_event(event, store)
+    artifact = _artifact_for_event(event, store, proposal_projection)
     approved = value["decision"] == "ACCEPT" and value["resulting_knowledge_state"] == APPROVED_INTERNAL
     projection = _projection_values(event, artifact) if approved else None
 

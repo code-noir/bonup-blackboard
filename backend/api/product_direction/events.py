@@ -3,11 +3,15 @@
 from django.db import transaction
 
 from tools.agent_control.records import ProductReviewCompletedEvent
+from tools.agent_control.prod_artifact import (
+    ProposalArtifactError,
+    safe_proposal_projection,
+    validate_safe_proposal_projection,
+)
 
 from backend.bonup.models import AgentControlEventInbox, ProductDirectionTask
 
 from . import proposal as proposal_module
-from .proposal import ProposalReadFailure, read_product_direction_proposal
 
 
 PRODUCT_DIRECTION_CONSUMER = "product-direction"
@@ -30,7 +34,30 @@ def _fail(reason):
     raise ProductDirectionProjectionError(reason)
 
 
+def _projection_for_event(event, *, artifact_store, proposal_projection):
+    if proposal_projection is not None:
+        try:
+            value = validate_safe_proposal_projection(proposal_projection)
+        except ProposalArtifactError:
+            _fail("ARTIFACT_INVALID")
+    else:
+        store = (proposal_module.get_proposal_artifact_store()
+                 if artifact_store is None else artifact_store)
+        try:
+            value = safe_proposal_projection(store.load(event["proposal_id"]))
+        except ProposalArtifactError as error:
+            _fail(getattr(error, "reason", "ARTIFACT_INVALID"))
+    if any(value[field] != event[event_field] for field, event_field in (
+            ("task_id", "task_id"), ("agent_id", "agent_id"),
+            ("artifact_id", "artifact_id"), ("artifact_digest", "artifact_digest"),
+            ("proposal_id", "proposal_id"), ("proposal_digest", "proposal_digest"),
+            ("knowledge_state", "prior_knowledge_state"))):
+        _fail("EVENT_BINDING_MISMATCH")
+    return value
+
+
 def consume_product_review_completed(event, *, artifact_store=None,
+                                     proposal_projection=None,
                                      consumer_name=PRODUCT_DIRECTION_CONSUMER):
     """Apply one verified event without invoking Founder or review authority."""
     if (type(event) is not ProductReviewCompletedEvent
@@ -66,21 +93,15 @@ def consume_product_review_completed(event, *, artifact_store=None,
                 or str(task.proposal_id) != event["proposal_id"]
                 or task.proposal_digest != event["proposal_digest"]):
             _fail("EVENT_BINDING_MISMATCH")
-        store = (proposal_module.get_proposal_artifact_store()
-                 if artifact_store is None else artifact_store)
-        try:
-            artifact_store_value = read_product_direction_proposal(
-                task, artifact_store=store)
-            artifact = store.load(event["proposal_id"])
-        except ProposalReadFailure as error:
-            _fail(error.reason)
-        except Exception:
-            _fail("ARTIFACT_INVALID")
-        if (artifact_store_value["agent_control_task_id"] != event["task_id"]
+        artifact_store_value = _projection_for_event(
+            event, artifact_store=artifact_store,
+            proposal_projection=proposal_projection,
+        )
+        if (artifact_store_value["task_id"] != event["task_id"]
                 or artifact_store_value["proposal_id"] != event["proposal_id"]
                 or artifact_store_value["proposal_digest"] != event["proposal_digest"]
-                or artifact.value["artifact_id"] != event["artifact_id"]
-                or artifact.value["artifact_digest"] != event["artifact_digest"]):
+                or artifact_store_value["artifact_id"] != event["artifact_id"]
+                or artifact_store_value["artifact_digest"] != event["artifact_digest"]):
             _fail("EVENT_BINDING_MISMATCH")
 
         if task.review_id is not None:

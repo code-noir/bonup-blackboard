@@ -1,4 +1,5 @@
 import base64
+from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -9,6 +10,11 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from tools.agent_control.founder_session import FounderSessions
+from tools.agent_control.founder_intake import FounderIntake, FounderPolicy
+from tools.agent_control.authority_installation import InstallationBinding
+from tools.agent_control.founder_crypto import FounderRoot
+from tools.agent_control.founder_review_composition import FounderReviewCoordinator
+from tools.agent_control.founder_review_runtime import TrustedFounderReviewRuntime
 from tools.agent_control.prod_artifact import ProposalArtifactStore
 from tools.agent_control.prod_review_adapter import ProductionProductReviewAdapter
 from tools.agent_control.founder_review_runtime import product_review_operation_id
@@ -19,6 +25,8 @@ from tools.agent_control.identity import PeerIdentity, ProcessIdentity
 from tools.agent_control.prod_review import ProductReviewRecord as SyntheticReviewRecord
 
 from backend.bonup.models import ProductDirectionTask
+from backend.bonup.models import ApprovedProductDirection
+from backend.api.blackboard.events import consume_product_review_completed as consume_blackboard_review
 from backend.api.product_direction.events import (
     ProductDirectionProjectionError,
     consume_product_review_completed,
@@ -293,6 +301,101 @@ class ProductDirectionReviewAPITests(TestCase):
         self.assertEqual(self.registry.db.execute("SELECT count(*) FROM product_reviews").fetchone()[0], 1)
         self.assertEqual(self.registry.db.execute("SELECT count(*) FROM domain_events").fetchone()[0], 1)
         self.assertEqual(AgentControlEventInbox.objects.filter(consumer_name="product-direction").count(), 1)
+
+    @unittest.skipUnless(FOUNDER_FIXTURE_AVAILABLE, "trusted Founder fixture unavailable in this environment")
+    def test_controlled_founder_intake_review_projects_to_product_direction_and_blackboard(self):
+        task = self.make_task()
+        coordinator = FounderReviewCoordinator(self.store, self.registry)
+        installation_binding = InstallationBinding(
+            "a" * 40, "b" * 64, "c" * 64, "d" * 64, "e" * 64, 2
+        )
+        policy = FounderPolicy(True, installation_binding, FounderRoot(
+            "synthetic-only",
+            bytes.fromhex("3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c"),
+            1,
+        ).identity, "f" * 64)
+        intake = FounderIntake(
+            policy,
+            FounderRoot(
+                "synthetic-only",
+                bytes.fromhex("3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c"),
+                1,
+            ),
+            lambda: (PeerIdentity(1000, 1000, 1234), ProcessIdentity(BOOT, 1234, 42)),
+            lambda *args: None,
+            controller=object(),
+            runner=None,
+            runtime_context=lambda: {"boot_id": BOOT},
+            receipt_reader=lambda: b"{}",
+            candidate_reader=lambda: (b"", b""),
+            product_review_artifact_store=self.store,
+            product_review_registry=self.registry,
+            product_review_gate=coordinator,
+            clock=lambda: datetime.now(timezone.utc),
+            boottime=lambda: 100.0,
+        )
+        runtime = TrustedFounderReviewRuntime(coordinator.boundary())
+        with patch(
+            "backend.api.product_direction.review.get_founder_review_runtime",
+            return_value=runtime,
+        ), patch(
+            "backend.api.product_direction.proposal.get_proposal_artifact_store",
+            return_value=self.store,
+        ):
+            challenge = self.client.post(
+                f"/api/product-direction/tasks/{task.id}/review/challenge/",
+                {"decision": "ACCEPT", "reason": "Approve exact proposal."},
+                format="json",
+            )
+            self.assertEqual(challenge.status_code, 202)
+            self.assertEqual(
+                self.client.post(
+                    f"/api/product-direction/tasks/{task.id}/review/submit/",
+                    {"signature": "operator-cannot-authorize"},
+                    format="json",
+                ).status_code,
+                410,
+            )
+            binding = coordinator._binding(coordinator._pending[task.agent_control_task_id])
+            packet = intake.request({
+                "version": 1,
+                "request_id": str(uuid4()),
+                "action": "REQUEST_PROD_PROPOSAL_REVIEW_CHALLENGE",
+                "arguments": {"binding": binding.to_dict()},
+            })["result"]
+            self.assertEqual(packet["review"]["proposal_digest"], binding.to_dict()["proposal_digest"])
+            signature = base64.b64encode(
+                make_signature(canonical_json(packet["challenge"]).encode())
+            ).decode()
+            result = intake.request({
+                "version": 1,
+                "request_id": str(uuid4()),
+                "action": "SUBMIT_FOUNDER_SIGNATURE",
+                "arguments": {
+                    "challenge_id": digest(packet["challenge"]),
+                    "signature": signature,
+                },
+            })["result"]["review"]
+            self.assertEqual(result["resulting_knowledge_state"], "APPROVED_INTERNAL")
+            event = coordinator.observe_product_review(task.agent_control_task_id)
+            self.assertEqual(self.client.get(
+                f"/api/product-direction/tasks/{task.id}/review/status/"
+            ).data["status"], "REVIEW_PENDING_PROJECTION")
+            product_result = consume_product_review_completed(event, artifact_store=self.store)
+            blackboard_result = consume_blackboard_review(event, artifact_store=self.store)
+            duplicate = consume_blackboard_review(event, artifact_store=self.store)
+
+        self.assertEqual(product_result["status"], "APPLIED")
+        self.assertEqual(blackboard_result["status"], "APPLIED")
+        self.assertEqual(duplicate["status"], "DUPLICATE")
+        task.refresh_from_db()
+        self.assertEqual(task.status, ProductDirectionTask.STATUS_APPROVED_INTERNAL)
+        row = ApprovedProductDirection.objects.get(event_id=event["event_id"])
+        self.assertEqual(row.proposal_digest, event["proposal_digest"])
+        self.assertEqual(row.review_digest, event["review_digest"])
+        self.assertEqual(row.resulting_knowledge_state, "APPROVED_INTERNAL")
+        self.assertEqual(self.registry.db.execute("SELECT COUNT(*) FROM product_reviews").fetchone()[0], 1)
+        self.assertEqual(self.registry.db.execute("SELECT COUNT(*) FROM executions").fetchone()[0], 0)
 
     @unittest.skipUnless(FOUNDER_FIXTURE_AVAILABLE, "trusted Founder fixture unavailable in this environment")
     def test_reject_and_request_changes_project_only_the_application_status(self):

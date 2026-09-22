@@ -31,7 +31,9 @@ class FounderPolicy:
 
 class FounderIntake:
     def __init__(self, policy, root, observe, journal, *, controller, runner, runtime_context,
-                 receipt_reader, candidate_reader, clock=None, boottime=None):
+                 receipt_reader, candidate_reader, product_review_artifact_store=None,
+                 product_review_registry=None, product_review_gate=None,
+                 clock=None, boottime=None):
         if type(policy) is not FounderPolicy or not policy.enabled:
             raise AuthorityError('Installed founder enrollment is disabled.')
         if type(root) is not FounderRoot or root.identity != policy.root_digest:
@@ -43,6 +45,23 @@ class FounderIntake:
         self.founder = FounderSessions(root, observe=observe, audit=journal, **options)
         self.runner, self.context = runner, runtime_context
         self.receipt_reader, self.candidate_reader = receipt_reader, candidate_reader
+        self.product_review_artifact_store = product_review_artifact_store
+        self.product_review_gate = product_review_gate
+        self.product_review_adapter = None
+        if product_review_artifact_store is not None or product_review_registry is not None:
+            from .prod_artifact import ProposalArtifactStore
+            from .prod_review_adapter import ProductionProductReviewAdapter
+            from .registry import Registry
+            if (type(product_review_artifact_store) is not ProposalArtifactStore
+                    or type(product_review_registry) is not Registry):
+                raise ValidationError('Complete product review dependencies required.')
+            self.product_review_adapter = ProductionProductReviewAdapter(
+                product_review_artifact_store, self.founder, product_review_registry)
+        if product_review_gate is not None:
+            for name in ('allow_product_review', 'complete_product_review',
+                         'founder_review_display'):
+                if not callable(getattr(product_review_gate, name, None)):
+                    raise ValidationError('Trusted product review gate required.')
         self.tests = None
         self.seen = set()
 
@@ -86,7 +105,17 @@ class FounderIntake:
 
     def _request(self, action, args):
         if action == 'REQUEST_PROD_PROPOSAL_REVIEW_CHALLENGE' and set(args) == {'binding'}:
-            return self.founder.issue_product_review(args['binding'])
+            from .founder_review_auth import ProductProposalReviewBinding
+            binding = ProductProposalReviewBinding.from_dict(args['binding'])
+            if self.product_review_gate is not None:
+                self.product_review_gate.allow_product_review(binding)
+            challenge = self.founder.issue_product_review(binding)
+            if self.product_review_gate is None:
+                return challenge
+            return {
+                'challenge': challenge,
+                'review': self.product_review_gate.founder_review_display(binding),
+            }
         if action == 'REQUEST_FOUNDER_CHALLENGE' and set(args) == {'purpose'}:
             purpose = args['purpose']
             receipt = None
@@ -100,7 +129,31 @@ class FounderIntake:
             return self.founder.issue_binding(purpose, self.policy.binding.data(),
                 installation_receipt_digest=None if receipt is None else receipt.receipt_digest)
         if action == 'SUBMIT_FOUNDER_SIGNATURE' and set(args) == {'challenge_id', 'signature'}:
-            return {'session': self.founder.submit(args)}
+            session = self.founder.submit(args)
+            if self.product_review_adapter is None:
+                return {'session': session}
+            binding = self.founder.product_review_binding_for_session(session)
+            if self.product_review_gate is not None:
+                self.product_review_gate.allow_product_review(binding)
+            from .founder_review_runtime import product_review_operation_id
+            record = self.product_review_adapter.review(
+                binding,
+                session=session,
+                operation_id=product_review_operation_id(binding),
+            )
+            if self.product_review_gate is not None:
+                self.product_review_gate.complete_product_review(binding)
+            return {
+                'review': {
+                    'review_id': record['review_id'],
+                    'review_digest': record['review_digest'],
+                    'decision': record['decision'],
+                    'prior_knowledge_state': record['prior_knowledge_state'],
+                    'resulting_knowledge_state': record['resulting_knowledge_state'],
+                    'proposal_id': record['proposal_id'],
+                    'proposal_digest': record['proposal_digest'],
+                },
+            }
         if action == 'APPROVE_INSTALLATION' and set(args) == {'session'}:
             candidate, approved = self.candidate_reader()
             projection = approval_projection(candidate, approved, self.policy.binding)

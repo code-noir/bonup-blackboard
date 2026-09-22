@@ -35,6 +35,17 @@ projection is exclusively:
 
 `ProductReviewRecord → PRODUCT_REVIEW_COMPLETED outbox → DomainEventDeliveryWorker → TrustedDjangoProjectionBoundary → Product Direction and Blackboard consumers`
 
+The installed composition creates `FounderReviewCoordinator` for this
+boundary. It retains only the canonical pending binding, gates the external
+Founder request, reloads the verified immutable artifact, and returns a
+separate safe Founder review display packet. The packet contains the bounded
+proposal fields, provenance, requested decision/reason, resulting knowledge
+state, and the notice that ACCEPT means `APPROVED_INTERNAL` product direction
+only. Proposal text is not copied into the signed challenge. The external
+Founder signs the challenge, then `FounderIntake` consumes the one-use session
+through `ProductionProductReviewAdapter`, which commits the
+`ProductReviewRecord` and durable event.
+
 The event transport includes the verified event and the bounded safe proposal
 projection so Django does not reopen Agent Control-owned artifact files. Each
 consumer retains its own inbox/acknowledgement and remains idempotent.

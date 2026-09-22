@@ -8,6 +8,7 @@ Registry.  It exposes only initiation and observation to the application.
 from uuid import UUID, uuid5
 
 from .founder_review_auth import ProductProposalReviewBinding
+from .prod_artifact import ProposalArtifactError, validate_safe_proposal_projection
 from .records import ProductReviewCompletedEvent
 from .schema import valid_format
 from .types import AuthorityError, ValidationError
@@ -39,10 +40,11 @@ class FounderReviewBoundary:
         self._request_review = request_review
         self._observe_review = observe_review
 
-    def request_product_review(self, binding, *, operation_id):
+    def request_product_review(self, binding, proposal_projection, *, operation_id):
         if type(binding) is not dict:
             raise ValidationError("Canonical Founder review binding required.")
-        return self._request_review(binding, operation_id=operation_id)
+        return self._request_review(
+            binding, proposal_projection, operation_id=operation_id)
 
     def observe_product_review(self, task_id):
         return self._observe_review(task_id)
@@ -60,11 +62,24 @@ class TrustedFounderReviewRuntime:
             raise ValidationError("Trusted Agent Control Founder boundary required.")
         self._boundary = boundary
 
-    def request_review(self, binding):
+    def request_review(self, binding, *, proposal_projection):
         if type(binding) is not ProductProposalReviewBinding:
             raise AuthorityError("Verified Founder review binding required.")
+        try:
+            projection = validate_safe_proposal_projection(proposal_projection)
+        except ProposalArtifactError:
+            raise AuthorityError("Verified Founder proposal projection required.") from None
+        metadata = binding.to_dict()
+        if any(projection[field] != metadata[expected] for field, expected in (
+                ("artifact_id", "artifact_id"),
+                ("artifact_digest", "artifact_digest"),
+                ("task_id", "task_id"),
+                ("proposal_id", "proposal_id"),
+                ("proposal_digest", "proposal_digest"))):
+            raise AuthorityError("Founder proposal projection binding mismatch.")
         result = self._boundary.request_product_review(
             binding.to_dict(),
+            projection,
             operation_id=product_review_operation_id(binding),
         )
         if type(result) is not dict or set(result) != {"status"}:

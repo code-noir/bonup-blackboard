@@ -135,7 +135,7 @@ def request_review(task, *, decision, reason):
         if not getattr(runtime, "available", False):
             raise FounderRuntimeUnavailable()
         try:
-            runtime.request_review(target.binding)
+            runtime.request_review(target.binding, proposal_projection=target.artifact)
         except FounderRuntimeUnavailable:
             raise
         except ApplicationTransportUnavailable:

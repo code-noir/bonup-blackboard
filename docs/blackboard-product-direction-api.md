@@ -227,3 +227,39 @@ The review result exposes only review ID/digest, decision, prior/resulting
 knowledge state, proposal ID, and proposal digest. Founder signatures,
 challenge contents, session material, registry internals, peer metadata,
 filesystem paths, and exception details are never returned.
+
+## Trusted Founder-facing review packet
+
+The installed Agent Control Founder composition uses
+`FounderReviewCoordinator` with the existing `FounderIntake`,
+`FounderSessions`, `FounderTransport`, and
+`ProductionProductReviewAdapter`. An application review request stores only
+the canonical binding as a pending request. When the external Founder process
+requests its challenge, Agent Control reloads and verifies the immutable
+proposal artifact and returns two separate values:
+
+```text
+{
+  "challenge": <canonical PROD_PROPOSAL_REVIEW challenge>,
+  "review": <safe human-readable proposal display>
+}
+```
+
+The `review` value contains the task, agent, artifact/proposal identities and
+digests, all bounded proposal fields, requested decision, reason, resulting
+knowledge state, and the notice that ACCEPT means `APPROVED_INTERNAL` product
+direction only. It contains no path, provider envelope, credential, Founder
+session, or private key material.
+
+The proposal display is not copied into the signed challenge. The Founder
+signs only the canonical challenge binding. Before challenge issuance and
+again before `ProductionProductReviewAdapter.review()`, Agent Control reloads
+the artifact and verifies that artifact ID/digest, proposal ID/digest, task,
+decision, and reason are identical. A changed proposal or decision is denied.
+
+On `SUBMIT_FOUNDER_SIGNATURE`, the existing one-use `FounderSessions` session
+is consumed by `ProductionProductReviewAdapter`, which commits exactly one
+`ProductReviewRecord` and its durable event. The application never receives
+the signature or session. The Founder-facing packet is available only through
+the trusted external Founder transport; the Operator browser remains an
+initiation and observation surface.

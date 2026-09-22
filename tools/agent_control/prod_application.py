@@ -199,7 +199,10 @@ class ProductDirectionApplicationService:
         )
         if server_binding.to_dict() != binding.to_dict():
             raise AuthorityError("Founder review binding was not derived from Agent Control state.")
-        result = self.founder_runtime.request_review(server_binding)
+        result = self.founder_runtime.request_review(
+            server_binding,
+            proposal_projection=safe_proposal_projection(artifact),
+        )
         return dict(_safe_result(result), proposal_id=binding.to_dict()["proposal_id"],
                     proposal_digest=binding.to_dict()["proposal_digest"])
 
@@ -360,7 +363,7 @@ class ProductDirectionApplicationClient:
         class ClientFounderBoundary:
             trusted_agent_control_boundary = True
 
-            def request_product_review(self, binding, *, operation_id):
+            def request_product_review(self, binding, proposal_projection, *, operation_id):
                 return client.transport.exchange("REQUEST_FOUNDER_REVIEW", {"binding": dict(binding)})
 
             def observe_product_review(self, task_id):
@@ -532,8 +535,18 @@ class ProductionVerticalSliceComposition:
 
 
 def compose_prod01_vertical_slice(*, credential_provider, source_checkpoint,
-                                  artifact_store, founder_boundary, transport_config):
+                                  artifact_store, transport_config,
+                                  founder_boundary=None,
+                                  founder_review_coordinator=None):
     """Compose the model/review socket without enabling execution authority."""
+    if founder_review_coordinator is not None:
+        if founder_boundary is not None:
+            raise ValidationError("Choose one Founder composition source.")
+        if not callable(getattr(founder_review_coordinator, "boundary", None)):
+            raise ValidationError("Founder review coordinator required.")
+        founder_boundary = founder_review_coordinator.boundary()
+    if founder_boundary is None:
+        raise ValidationError("Trusted Founder review composition required.")
     service = compose_prod01_application_service(
         credential_provider=credential_provider,
         source_checkpoint=source_checkpoint,

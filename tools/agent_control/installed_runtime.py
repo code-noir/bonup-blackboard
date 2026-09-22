@@ -704,6 +704,7 @@ class InstalledControllerDriver:
         from .authority_installation import InstallationBinding
         from .authority_journal import AuthorityJournal
         from .founder_intake import FounderPolicy, FounderIntake
+        from .founder_review_composition import FounderReviewCoordinator
         from .founder_crypto import load_founder_root
         from .filesystem_evidence import ExpectedFilesystem
         from .host_test_launch import CatalogLaunches
@@ -714,6 +715,11 @@ class InstalledControllerDriver:
         if not policy.enabled:
             return
         root = self.io.founder_root()
+        from .prod_artifact import ProposalArtifactStore
+        product_review_store = ProposalArtifactStore()
+        self.product_review_coordinator = FounderReviewCoordinator(
+            product_review_store, self.controller.runtime.registry)
+        self.founder_review_boundary = self.product_review_coordinator.boundary()
         journal = AuthorityJournal(self.controller.runtime.registry)
         expected = ExpectedFilesystem(canonical_json(installed_policy['filesystem'])) if policy.host_tests_enabled else None
         anchor = self.client.rpc.auth.enrollment.process
@@ -733,7 +739,11 @@ class InstalledControllerDriver:
                          for name in ('candidate','approved'))
         self.founder_factory = lambda observe: FounderIntake(policy, root, observe, journal,
             controller=self.controller, runner=runner, runtime_context=context, receipt_reader=read_receipt,
-            candidate_reader=read_candidates, clock=self.io.wall, boottime=self.io.now)
+            candidate_reader=read_candidates,
+            product_review_artifact_store=product_review_store,
+            product_review_registry=self.controller.runtime.registry,
+            product_review_gate=self.product_review_coordinator,
+            clock=self.io.wall, boottime=self.io.now)
     def validate_config(self,config):
         return self.controller.sequencer.generation==config.peer.generation and self.controller.sequencer.boot_id==config.boot_id
     def reconcile(self):

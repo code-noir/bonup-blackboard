@@ -69,7 +69,7 @@ class FounderBoundary:
     def __init__(self):
         self.bindings = []
 
-    def request_product_review(self, binding, *, operation_id):
+    def request_product_review(self, binding, proposal_projection, *, operation_id):
         self.bindings.append((binding, operation_id))
         return {"status": "REQUESTED"}
 

@@ -175,6 +175,17 @@ class FounderSessions:
     def consume_product_review(self, session, binding):
         return self.consume(session, PROD_PROPOSAL_REVIEW, binding)
 
+    def product_review_binding_for_session(self, session):
+        """Read the exact pending review subject without consuming the session."""
+        with self.lock:
+            if type(session) is not str or session not in self.sessions:
+                raise AuthorityError('Founder session required.')
+            challenge = self.sessions[session][0]
+            if challenge.get('purpose') != PROD_PROPOSAL_REVIEW:
+                raise AuthorityError('Product review Founder session required.')
+            from .founder_review_auth import ProductProposalReviewBinding
+            return ProductProposalReviewBinding.from_dict(challenge['binding'])
+
     def consume_product_review_authenticated(self, session, binding):
         """Consume review authority and mint the controller-owned Founder context."""
         with self.lock:

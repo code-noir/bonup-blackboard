@@ -83,6 +83,7 @@ def start(*, adapters, config_path=CONFIG):
     transport = None
     driver = None
     delivery_runtime = None
+    prod01_runtime = None
     try:
         config = ServiceConfig.parse(adapters.load_config(config_path), component='controller',
             identity=adapters.identity(), boot_id=adapters.boot_id(), manifest_digest=adapters.verify_manifest())
@@ -107,13 +108,18 @@ def start(*, adapters, config_path=CONFIG):
         delivery_runtime = getattr(driver, 'event_delivery_runtime', None)
         if delivery_runtime is not None:
             delivery_runtime.start()
-        return ControllerService(loop, registry, delivery_runtime)
+        prod01_runtime = getattr(driver, 'prod01_application_runtime', None)
+        if prod01_runtime is not None:
+            prod01_runtime.start()
+        return ControllerService(loop, registry, delivery_runtime, prod01_runtime)
     except BaseException:
         if hasattr(adapters, 'abort_startup'):
             adapters.abort_startup()
         try:
             if delivery_runtime is not None:
                 delivery_runtime.shutdown()
+            if prod01_runtime is not None:
+                prod01_runtime.shutdown()
             if loop is not None:
                 loop.shutdown()
             else:
@@ -130,8 +136,9 @@ def start(*, adapters, config_path=CONFIG):
 
 
 class ControllerService:
-    def __init__(self, loop, registry, delivery_runtime=None):
-        self.loop, self.registry, self.delivery_runtime = loop, registry, delivery_runtime
+    def __init__(self, loop, registry, delivery_runtime=None, prod01_runtime=None):
+        self.loop, self.registry = loop, registry
+        self.delivery_runtime, self.prod01_runtime = delivery_runtime, prod01_runtime
         self.closed = False
 
     def close(self):
@@ -140,6 +147,8 @@ class ControllerService:
             try:
                 if self.delivery_runtime is not None:
                     self.delivery_runtime.shutdown()
+                if self.prod01_runtime is not None:
+                    self.prod01_runtime.shutdown()
                 self.loop.shutdown()
             finally:
                 self.registry.close()

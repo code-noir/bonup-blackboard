@@ -319,6 +319,8 @@ class InstalledBase:
         self.driver=None
         self.transport=None
         self.notify_adapter=None
+        self.source_commit = None
+        self.manifest = None
 
     def identity(self): return self.io.identity()
     def boot_id(self): return self.io.process(os.getpid()).boot_id
@@ -340,10 +342,10 @@ class InstalledBase:
             if type(self.io) is KernelIO and data['version'] != 4:
                 raise AuthorityError('Successor installed authority requires Genesis binding.')
             return self.load_successor(data,manifest,identities)
-        modern = manifest.get('version') in (3,4,5)
+        modern = manifest.get('version') in (3,4,5,6)
         # v2 exists solely for the prior offline fixtures. Installed startup cannot
         # pre-enroll future processes via that superseded configuration contract.
-        if type(self.io) is KernelIO and manifest.get('version') not in (4,5):
+        if type(self.io) is KernelIO and manifest.get('version') not in (4,5,6):
             raise AuthorityError('Complete installation bundle and per-start enrollment required.')
         required=(('version','service','founder_uid','founder','proposal','executions') if modern else
                   ('version','service','handshake','founder','proposal','executions')) if self.component=='controller' else (
@@ -352,7 +354,7 @@ class InstalledBase:
         if type(data['version']) is not int or data['version'] != (2 if modern else 1):
             raise ValidationError('Unsupported component configuration.')
         evidence = {}
-        if manifest.get('version') in (4,5):
+        if manifest.get('version') in (4,5,6):
             from .installation_bundle import validate_manifest
             validate_manifest(manifest)
             if not manifest['approved'] or not (manifest['activation'] or manifest['integration_services_approved']):
@@ -366,6 +368,8 @@ class InstalledBase:
         if type(self.artifacts) is InstalledArtifacts:
             self.artifacts.bind_installation(manifest['bundle_digest'],manifest['provisioning_generation'])
         self.config=data
+        self.manifest = manifest
+        self.source_commit = manifest['source_commit']
         self.notify_adapter=self.io.notifier()
         if not modern:
             service=dict(data['service'])
@@ -620,6 +624,7 @@ class InstalledControllerAdapters(InstalledBase):
         )
         if self.config.get('founder_policy') is not None:
             self.driver.configure_founder(self.config['founder_policy'])
+        self.driver.configure_prod01(getattr(self, 'source_commit', None))
         return self.driver
 
     def listener(self,config):
@@ -692,6 +697,10 @@ class InstalledControllerDriver:
         self.client.maintenance=self.service_founder
         self.founder_transport = None
         self.founder_factory = None
+        self.founder_review_boundary = None
+        self.product_review_coordinator = None
+        self.product_review_artifact_store = None
+        self.prod01_application_runtime = None
         self.successor = False
 
     def configure_founder(self, installed_policy):
@@ -717,6 +726,7 @@ class InstalledControllerDriver:
         root = self.io.founder_root()
         from .prod_artifact import ProposalArtifactStore
         product_review_store = ProposalArtifactStore()
+        self.product_review_artifact_store = product_review_store
         self.product_review_coordinator = FounderReviewCoordinator(
             product_review_store, self.controller.runtime.registry)
         self.founder_review_boundary = self.product_review_coordinator.boundary()
@@ -744,6 +754,53 @@ class InstalledControllerDriver:
             product_review_registry=self.controller.runtime.registry,
             product_review_gate=self.product_review_coordinator,
             clock=self.io.wall, boottime=self.io.now)
+
+    def configure_prod01(self, source_checkpoint):
+        """Compose the bounded Product Direction service in this controller.
+
+        The installed controller remains the sole owner of the model client,
+        artifact store, Founder bridge, and socket.  Missing configuration or
+        Founder composition leaves this application boundary unavailable; it
+        never selects a fallback implementation.
+        """
+        try:
+            from .installed_config import read_installed
+            from .installation_bundle import NEXT_INSTALLATION_SCHEMA_VERSION, validate_product_runtime_scope
+            from .prod_application import (
+                InstalledProductApplicationRuntime,
+                ProductApplicationTransportConfig,
+                compose_prod01_vertical_slice,
+            )
+            from .prod_openai_http import InstalledOpenAICredentialProvider
+            from .prod_artifact import ProposalArtifactStore
+            if (self.manifest is None
+                    or self.manifest.get('version') != NEXT_INSTALLATION_SCHEMA_VERSION):
+                return
+            product_scope = validate_product_runtime_scope(
+                self.manifest['product_runtime_scope'], source_commit=source_checkpoint)
+            config = ProductApplicationTransportConfig.parse(
+                read_installed('/etc/bonup-agent-control/product-direction.json'),
+                require_runtime_contract=True,
+            )
+        except (FileNotFoundError, KeyError):
+            return
+        if type(source_checkpoint) is not str:
+            raise AuthorityError('Installed PROD-01 source binding unavailable.')
+        if config.source_commit != source_checkpoint:
+            raise AuthorityError('Installed PROD-01 source binding mismatch.')
+        installed_config = read_installed('/etc/bonup-agent-control/product-direction.json')
+        if installed_config != product_scope['config']:
+            raise AuthorityError('Installed PROD-01 configuration differs from approval.')
+        composition = compose_prod01_vertical_slice(
+            credential_provider=InstalledOpenAICredentialProvider(),
+            source_checkpoint=source_checkpoint,
+            artifact_store=(self.product_review_artifact_store
+                            if self.product_review_artifact_store is not None
+                            else ProposalArtifactStore()),
+            transport_config=config,
+            founder_review_coordinator=self.product_review_coordinator,
+        )
+        self.prod01_application_runtime = InstalledProductApplicationRuntime(composition)
     def validate_config(self,config):
         return self.controller.sequencer.generation==config.peer.generation and self.controller.sequencer.boot_id==config.boot_id
     def reconcile(self):
@@ -784,7 +841,11 @@ class InstalledControllerDriver:
         except BaseException:
             for listener in self.listeners.values():listener.close()
             raise
-    def heartbeat(self):self.client.check()
+    def heartbeat(self):
+        self.client.check()
+        runtime = self.prod01_application_runtime
+        if runtime is not None:
+            runtime.check()
     def deadlines(self):self.client.check()
     def control(self):
         self.controller.tick()
@@ -881,6 +942,8 @@ class InstalledControllerDriver:
                     finally:
                         runner=getattr(self,'host_runner',None)
                         if runner is not None:runner.close()
+                        runtime = self.prod01_application_runtime
+                        if runtime is not None:runtime.shutdown()
 
 
 def build_installed_controller_adapters(*, _io=None):

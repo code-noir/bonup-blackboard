@@ -118,7 +118,15 @@ class ProductDirectionTaskSubmitView(APIView):
         with transaction.atomic():
             task = get_object_or_404(
                 ProductDirectionTask.objects.select_for_update(), pk=task_id)
-            if task.status != ProductDirectionTask.STATUS_SUBMITTED:
+            if task.status == ProductDirectionTask.STATUS_SUBMITTED:
+                task.agent_control_task_id = agent_control_task_id_for(task.id)
+                task.status = ProductDirectionTask.STATUS_RUNNING
+                task.runtime_failure_reason = None
+                task.save(update_fields=[
+                    "agent_control_task_id", "status", "runtime_failure_reason", "updated_at",
+                ])
+            elif (task.status != ProductDirectionTask.STATUS_RUNNING
+                  or not task.agent_control_task_id):
                 return Response(
                     {
                         "detail": "Product-direction task is not submit-ready.",
@@ -126,18 +134,12 @@ class ProductDirectionTaskSubmitView(APIView):
                     },
                     status=status.HTTP_409_CONFLICT,
                 )
-            task.agent_control_task_id = agent_control_task_id_for(task.id)
-            task.status = ProductDirectionTask.STATUS_RUNNING
-            task.runtime_failure_reason = None
-            task.save(update_fields=[
-                "agent_control_task_id", "status", "runtime_failure_reason", "updated_at",
-            ])
 
         runtime_request = runtime_request_for(task)
         try:
             result = submit_product_direction_task(runtime_request)
         except ProductRuntimeUnavailable:
-            return self._block(task.id, "RUNTIME_UNAVAILABLE", status.HTTP_503_SERVICE_UNAVAILABLE)
+            return self._runtime_unavailable(task.id)
         except ProductRuntimeFailure as error:
             return self._block(task.id, error.reason, status.HTTP_502_BAD_GATEWAY)
 
@@ -153,6 +155,23 @@ class ProductDirectionTaskSubmitView(APIView):
                 "runtime_failure_reason", "updated_at",
             ])
         return Response(ProductDirectionTaskSerializer(task).data)
+
+    @staticmethod
+    def _runtime_unavailable(task_id):
+        """Keep the task retryable when the trusted service did not answer."""
+        with transaction.atomic():
+            task = ProductDirectionTask.objects.select_for_update().get(pk=task_id)
+            if task.status == ProductDirectionTask.STATUS_RUNNING:
+                task.runtime_failure_reason = "RUNTIME_UNAVAILABLE"
+                task.save(update_fields=["runtime_failure_reason", "updated_at"])
+        return Response(
+            {
+                "detail": "Trusted PROD-01 runtime is unavailable.",
+                "reason": "RUNTIME_UNAVAILABLE",
+                "task": ProductDirectionTaskSerializer(task).data,
+            },
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
 
     @staticmethod
     def _block(task_id, reason, http_status):

@@ -10,6 +10,7 @@ from rest_framework.test import APIClient
 from tools.agent_control.prod_artifact import ProposalArtifactStore
 from tools.agent_control.prod_runtime import (
     ProductDirectionRuntimeRequest,
+    ProductRuntimeUnavailable,
     TrustedProd01Runtime,
     agent_control_task_id_for,
 )
@@ -170,6 +171,39 @@ class ProductDirectionRuntimeTests(TestCase):
         self.assertEqual(response.data["task"]["status"], "BLOCKED")
         self.assertEqual(len(transport.calls), 1)
         self.assertNotIn("synthetic transport failure", response.content.decode())
+
+    def test_unavailable_runtime_keeps_submission_retryable(self):
+        client = self.operator_client()
+        task_id = self.create_task(client)
+        transport = TrustedFakeTransport()
+        with TemporaryDirectory(prefix="bonup-prod-recovery-", dir="/tmp") as directory:
+            runtime = TrustedProd01Runtime(
+                transport,
+                source_checkpoint="a" * 40,
+                artifact_store=ProposalArtifactStore(directory),
+            )
+            attempts = iter(("unavailable", "recover"))
+
+            def submit(request):
+                if next(attempts) == "unavailable":
+                    raise ProductRuntimeUnavailable()
+                return runtime.submit(request)
+
+            with patch(
+                "backend.api.product_direction.views.submit_product_direction_task",
+                side_effect=submit,
+            ) as submit_mock:
+                unavailable = client.post(
+                    f"/api/product-direction/tasks/{task_id}/submit/", {}, format="json")
+                recovered = client.post(
+                    f"/api/product-direction/tasks/{task_id}/submit/", {}, format="json")
+
+        self.assertEqual(unavailable.status_code, 503)
+        self.assertEqual(unavailable.data["task"]["status"], ProductDirectionTask.STATUS_RUNNING)
+        self.assertEqual(recovered.status_code, 200)
+        self.assertEqual(recovered.data["status"], ProductDirectionTask.STATUS_WORKING_PROPOSAL)
+        self.assertEqual(submit_mock.call_count, 2)
+        self.assertEqual(len(transport.calls), 1)
 
     def test_submit_rejects_runtime_controls_and_unauthenticated_request(self):
         client = self.operator_client()

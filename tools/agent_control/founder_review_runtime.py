@@ -53,14 +53,16 @@ class FounderReviewBoundary:
 class TrustedFounderReviewRuntime:
     """Django-facing wrapper around a trusted Agent Control composition."""
 
-    available = True
-
     def __init__(self, boundary):
         if (getattr(boundary, "trusted_agent_control_boundary", False) is not True
                 or not callable(getattr(boundary, "request_product_review", None))
                 or not callable(getattr(boundary, "observe_product_review", None))):
             raise ValidationError("Trusted Agent Control Founder boundary required.")
         self._boundary = boundary
+
+    @property
+    def available(self):
+        return bool(getattr(self._boundary, "available", True))
 
     def request_review(self, binding, *, proposal_projection):
         if type(binding) is not ProductProposalReviewBinding:

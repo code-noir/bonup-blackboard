@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import socket
+import threading
 import time
 from uuid import UUID, uuid4
 
@@ -31,10 +32,19 @@ from .prod_artifact import (
     ProposalArtifactStore,
     safe_proposal_projection,
 )
-from .prod_openai_http import OpenAIResponsesHTTPAdapter
+from .prod_openai_http import (
+    OpenAIResponsesHTTPAdapter,
+    PROD01_CREDENTIAL_PATH,
+    PROVIDER,
+    PROVIDER_MODEL,
+    TRUSTED_MODEL,
+    TRUSTED_ENDPOINT,
+)
 from .prod_runtime import (
     ProductDirectionRuntimeRequest,
     ProductDirectionRuntimeResult,
+    ProductRuntimeFailure,
+    ProductRuntimeUnavailable,
     TrustedProd01Runtime,
     agent_control_task_id_for,
 )
@@ -48,6 +58,13 @@ APPLICATION_SOCKET = "/run/bonup-agent-control/prod01.sock"
 APPLICATION_TRANSPORT_IDENTITY = "TRUSTED_AGENT_CONTROL_PRODUCT_DIRECTION_V1"
 APPLICATION_MAX_MESSAGE_BYTES = 4096
 APPLICATION_TIMEOUT_MS = 500
+PRODUCT_RUNTIME_VERSION = 1
+PRODUCT_RUNTIME_IDENTITY = "PROD01_APPLICATION_RUNTIME_V1"
+PRODUCT_CREDENTIAL_CONTRACT = "SYSTEMD_CREDENTIAL_AGENT_CONTROL_ONLY_V1"
+PRODUCT_RUNTIME_MODULES = (
+    "prod_application", "prod_artifact", "prod_contract", "prod_model_transport",
+    "prod_openai_http", "prod_response_capture", "prod_runtime",
+)
 _REASON = re.compile(r"[A-Z0-9_]{1,64}\Z", re.ASCII)
 _TASK_ID = re.compile(r"ATS-[0-9]{4,}\Z", re.ASCII)
 
@@ -93,12 +110,19 @@ class ProductApplicationTransportConfig:
     django_gid: int
     timeout_ms: int
     max_message_bytes: int
+    source_commit: str = None
 
     @classmethod
-    def parse(cls, value):
-        if type(value) is not dict or set(value) != {
-                "enabled", "transport_identity", "socket_path", "socket_mode",
-                "agent_control", "django", "timeout_ms", "max_message_bytes"}:
+    def parse(cls, value, *, require_runtime_contract=False):
+        transport_keys = {
+            "enabled", "transport_identity", "socket_path", "socket_mode",
+            "agent_control", "django", "timeout_ms", "max_message_bytes"}
+        runtime_keys = {
+            "runtime_version", "runtime_identity", "source_commit",
+            "credential_provider", "model_policy",
+        }
+        expected = transport_keys | runtime_keys if require_runtime_contract else transport_keys
+        if type(value) is not dict or set(value) != expected:
             raise ValidationError("Invalid PROD-01 application transport configuration.")
         if value["enabled"] is not True or value["transport_identity"] != APPLICATION_TRANSPORT_IDENTITY:
             raise ValidationError("PROD-01 application transport is not explicitly enabled.")
@@ -118,11 +142,34 @@ class ProductApplicationTransportConfig:
             raise ValidationError("Invalid PROD-01 application timeout.")
         if type(limit) is not int or not 1024 <= limit <= APPLICATION_MAX_MESSAGE_BYTES:
             raise ValidationError("Invalid PROD-01 application message bound.")
-        return cls(path, mode, agent["uid"], agent["gid"], django["uid"], django["gid"], timeout, limit)
+        source_commit = None
+        if require_runtime_contract:
+            if (value["runtime_version"] != PRODUCT_RUNTIME_VERSION
+                    or value["runtime_identity"] != PRODUCT_RUNTIME_IDENTITY
+                    or type(value["source_commit"]) is not str
+                    or not re.fullmatch(r"[0-9a-f]{40}", value["source_commit"])
+                    or value["credential_provider"] != {
+                        "type": "SYSTEMD_CREDENTIAL",
+                        "contract": PRODUCT_CREDENTIAL_CONTRACT,
+                        "path": PROD01_CREDENTIAL_PATH,
+                        "owner_uid": 0, "group_gid": 3000, "mode": "0440",
+                    }
+                    or value["model_policy"] != {
+                        "agent_id": "PROD-01", "provider": PROVIDER,
+                        "logical_model": TRUSTED_MODEL, "provider_model": PROVIDER_MODEL,
+                        "endpoint": TRUSTED_ENDPOINT,
+                        "max_requests": 1, "max_retries": 0,
+                        "allow_redirects": False, "trust_environment": False,
+                        "tools": [], "timeout_seconds": 30,
+                    }):
+                raise ValidationError("Invalid PROD-01 runtime contract.")
+            source_commit = value["source_commit"]
+        return cls(path, mode, agent["uid"], agent["gid"], django["uid"], django["gid"],
+                   timeout, limit, source_commit)
 
     @classmethod
     def from_installed_config(cls):
-        return cls.parse(read_installed(APPLICATION_CONFIG_PATH))
+        return cls.parse(read_installed(APPLICATION_CONFIG_PATH), require_runtime_contract=True)
 
 
 def _application_task_id(value):
@@ -152,14 +199,35 @@ class ProductDirectionApplicationService:
 
     trusted_agent_control_boundary = True
 
-    def __init__(self, prod_runtime, *, artifact_store, founder_boundary):
+    def __init__(self, prod_runtime, *, artifact_store, founder_boundary=None):
         if type(prod_runtime) is not TrustedProd01Runtime:
             raise ValidationError("Trusted PROD-01 runtime required.")
         if type(artifact_store) is not ProposalArtifactStore:
             raise ValidationError("Trusted Agent Control artifact store required.")
         self.runtime = prod_runtime
         self.artifact_store = artifact_store
-        self.founder_runtime = TrustedFounderReviewRuntime(founder_boundary)
+        self.founder_runtime = (None if founder_boundary is None
+                                else TrustedFounderReviewRuntime(founder_boundary))
+        # Serialise the bounded model cycle inside the controller.  The
+        # immutable artifact scan below also covers a retry after restart.
+        self._submit_lock = threading.RLock()
+
+    def _recovered_result(self, request):
+        try:
+            artifact = self.artifact_store.find_by_task_id(request.agent_control_task_id)
+        except ProposalArtifactError as error:
+            raise ProductRuntimeFailure(getattr(error, "reason", "PROVIDER_ERROR")) from None
+        if artifact is None:
+            return None
+        if (artifact.value["agent_id"] != "PROD-01"
+                or artifact.value["knowledge_state"] != "WORKING"):
+            raise ProductRuntimeFailure("PROPOSAL_BINDING_INVALID")
+        return ProductDirectionRuntimeResult(
+            agent_control_task_id=request.agent_control_task_id,
+            proposal_artifact_id=artifact.artifact_id,
+            proposal_id=artifact.value["proposal_id"],
+            proposal_digest=artifact.value["proposal_digest"],
+        )
 
     def _read_projection(self, payload):
         required = {
@@ -187,6 +255,8 @@ class ProductDirectionApplicationService:
         return dict(projection, application_task_id=app_id, agent_control_task_id=task_id)
 
     def _request_review(self, payload):
+        if self.founder_runtime is None:
+            raise ApplicationRemoteError("FOUNDER_RUNTIME_UNAVAILABLE")
         if type(payload) is not dict or set(payload) != {"binding"}:
             raise ValidationError("Malformed Founder review request.")
         binding_value = payload["binding"]
@@ -207,6 +277,8 @@ class ProductDirectionApplicationService:
                     proposal_digest=binding.to_dict()["proposal_digest"])
 
     def _observe_review(self, payload):
+        if self.founder_runtime is None:
+            raise ApplicationRemoteError("FOUNDER_RUNTIME_UNAVAILABLE")
         if type(payload) is not dict or set(payload) != {"agent_control_task_id"}:
             raise ValidationError("Malformed Founder review observation request.")
         event = self.founder_runtime.observe_review(
@@ -214,13 +286,23 @@ class ProductDirectionApplicationService:
         )
         return None if event is None else event.to_dict()
 
+    def _founder_status(self, payload):
+        if type(payload) is not dict or payload:
+            raise ValidationError("Malformed Founder runtime status request.")
+        return {"available": self.founder_runtime is not None}
+
     def handle(self, operation, payload):
         if operation == "SUBMIT_PRODUCT_DIRECTION":
             if type(payload) is not dict or set(payload) != {
                     "application_task_id", "agent_control_task_id", "agent_id", "objective"}:
                 raise ValidationError("Malformed Product Direction runtime request.")
             request = ProductDirectionRuntimeRequest(**payload)
-            result = self.runtime.submit(request)
+            if request.agent_control_task_id != agent_control_task_id_for(request.application_task_id):
+                raise AuthorityError("Application and Agent Control task binding mismatch.")
+            with self._submit_lock:
+                result = self._recovered_result(request)
+                if result is None:
+                    result = self.runtime.submit(request)
             return {
                 "agent_control_task_id": result.agent_control_task_id,
                 "proposal_artifact_id": result.proposal_artifact_id,
@@ -233,6 +315,8 @@ class ProductDirectionApplicationService:
             return self._request_review(payload)
         if operation == "OBSERVE_FOUNDER_REVIEW":
             return self._observe_review(payload)
+        if operation == "FOUNDER_REVIEW_STATUS":
+            return self._founder_status(payload)
         raise ValidationError("Unsupported PROD-01 application operation.")
 
 
@@ -363,6 +447,14 @@ class ProductDirectionApplicationClient:
         class ClientFounderBoundary:
             trusted_agent_control_boundary = True
 
+            @property
+            def available(self):
+                try:
+                    result = client.transport.exchange("FOUNDER_REVIEW_STATUS", {})
+                except (ApplicationTransportUnavailable, ApplicationRemoteError):
+                    return False
+                return type(result) is dict and result == {"available": True}
+
             def request_product_review(self, binding, proposal_projection, *, operation_id):
                 return client.transport.exchange("REQUEST_FOUNDER_REVIEW", {"binding": dict(binding)})
 
@@ -437,7 +529,8 @@ class AgentControlApplicationReceiver:
             raise ValidationError("Non-canonical application request identifier.")
         if type(value["operation"]) is not str or value["operation"] not in {
                 "SUBMIT_PRODUCT_DIRECTION", "READ_PROPOSAL",
-                "REQUEST_FOUNDER_REVIEW", "OBSERVE_FOUNDER_REVIEW"}:
+                "REQUEST_FOUNDER_REVIEW", "OBSERVE_FOUNDER_REVIEW",
+                "FOUNDER_REVIEW_STATUS"}:
             raise ValidationError("Unsupported PROD-01 application operation.")
         return value["request_id"], self.service.handle(value["operation"], value["payload"])
 
@@ -490,7 +583,11 @@ class AgentControlApplicationReceiver:
                         )
                         response = self._response(request_id, "OK", result=result)
                         break
-            except (AuthorityError, KeyError, TypeError, ValueError, ValidationError) as error:
+            except ProductRuntimeUnavailable:
+                response = self._response(request_id, "ERROR", reason="TRUSTED_RUNTIME_UNAVAILABLE")
+            except ProductRuntimeFailure as error:
+                response = self._response(request_id, "ERROR", reason=error.reason)
+            except (AuthorityError, KeyError, TypeError, ValueError, ValidationError):
                 response = self._response(request_id, "ERROR", reason="BOUNDARY_REJECTED")
             conn.sendall(packet(response, limit=self.config.max_message_bytes))
             return response
@@ -499,15 +596,57 @@ class AgentControlApplicationReceiver:
 
     def serve_forever(self, stop_event):
         while not stop_event.is_set():
-            self.serve_once()
+            try:
+                self.serve_once()
+            except OSError:
+                if not stop_event.is_set():
+                    raise
+
+
+class InstalledProductApplicationRuntime:
+    """Controller-owned lifecycle for the bounded PROD-01 receiver."""
+
+    def __init__(self, composition):
+        if not isinstance(composition, ProductionVerticalSliceComposition):
+            raise ValidationError("PROD-01 composition required.")
+        self.composition = composition
+        self.stop_event = threading.Event()
+        self.thread = None
+        self.failure = None
+
+    def start(self):
+        if self.thread is not None:
+            raise ValidationError("PROD-01 runtime already started.")
+        self.composition.application_receiver.bind()
+        self.thread = threading.Thread(
+            target=self._run, name="bonup-prod01-application", daemon=True)
+        self.thread.start()
+
+    def _run(self):
+        try:
+            self.composition.application_receiver.serve_forever(self.stop_event)
+        except BaseException as error:
+            self.failure = error
+            self.stop_event.set()
+
+    def check(self):
+        if self.failure is not None:
+            raise AuthorityError("PROD-01 application receiver failed.") from self.failure
+
+    def shutdown(self):
+        self.stop_event.set()
+        self.composition.application_receiver.close()
+        if self.thread is not None:
+            self.thread.join(1)
 
 
 def compose_prod01_application_service(*, credential_provider, source_checkpoint,
                                         artifact_store, founder_boundary):
     """Compose only the PROD-01 model/review application boundary.
 
-    Missing credential or Founder boundary is a composition error; callers must
-    leave the application unavailable rather than selecting a fallback.
+    Missing credential remains a request-time fail-closed condition.  Founder
+    review is optional at this composition point: without its trusted boundary
+    proposal generation still works, while review operations remain unavailable.
     """
     transport = OpenAIResponsesHTTPAdapter(credential_provider)
     runtime = TrustedProd01Runtime(
@@ -545,8 +684,6 @@ def compose_prod01_vertical_slice(*, credential_provider, source_checkpoint,
         if not callable(getattr(founder_review_coordinator, "boundary", None)):
             raise ValidationError("Founder review coordinator required.")
         founder_boundary = founder_review_coordinator.boundary()
-    if founder_boundary is None:
-        raise ValidationError("Trusted Founder review composition required.")
     service = compose_prod01_application_service(
         credential_provider=credential_provider,
         source_checkpoint=source_checkpoint,
@@ -554,13 +691,18 @@ def compose_prod01_vertical_slice(*, credential_provider, source_checkpoint,
         founder_boundary=founder_boundary,
     )
     receiver = AgentControlApplicationReceiver(service, transport_config)
-    return ProductionVerticalSliceComposition(service, receiver)
+    enabled = ["PROD01_MODEL_RUNTIME", "REGISTRY_V3", "DOMAIN_EVENT_DELIVERY",
+                "TRUSTED_DJANGO_PROJECTION"]
+    if founder_boundary is not None:
+        enabled.insert(1, "FOUNDER_REVIEW_RUNTIME")
+    return ProductionVerticalSliceComposition(service, receiver, tuple(enabled))
 
 
 __all__ = [
     "APPLICATION_CONFIG_PATH", "APPLICATION_SOCKET", "APPLICATION_TRANSPORT_IDENTITY",
     "AgentControlApplicationReceiver", "AgentControlApplicationTransport",
     "ApplicationRemoteError", "ApplicationTransportUnavailable",
+    "InstalledProductApplicationRuntime",
     "ProductApplicationTransportConfig", "ProductDirectionApplicationClient",
     "ProductDirectionApplicationService", "ProductionVerticalSliceComposition",
     "compose_prod01_application_service", "compose_prod01_vertical_slice",

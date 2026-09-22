@@ -65,6 +65,17 @@ runtime options to this scope; it cannot supply a different peer, path, mode,
 service, or application identity after approval. v4 validation remains available
 for historical bundles and does not acquire v5 semantics.
 
+The PROD-01 production candidate uses installation schema v6. v6 retains the v4
+and v5 semantics without reinterpretation and additionally binds the controller-owned
+product runtime scope, including the fixed PROD-01 configuration, application
+socket, credential contract, runtime closure, controller unit hash, and exact
+artifact-store authority. The proposal store is
+`/var/lib/bonup-prod/proposals` (`bonup-agentctl:bonup-agentctl`, `0700`). Its
+parent is `root:root`, `0711`, and is not a controller `ReadWritePaths` entry.
+The v6 candidate remains `approved=false`, `activation=false`, and
+`integration_services_approved=false`; changing this scope invalidates the
+candidate identity and requires a new review.
+
 Candidate manifest byte SHA-256:
 `034036d04043c470e67a050e827f1312445017069e1f234e3f096fa5864adbb6`
 

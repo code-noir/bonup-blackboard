@@ -25,6 +25,7 @@ PREFIX = '/usr/lib/bonup-agent-control'
 ETC = '/etc/bonup-agent-control'
 MANIFEST = ETC + '/approved-installation.json'
 INSTALLATION_SCHEMA_VERSION = 5
+NEXT_INSTALLATION_SCHEMA_VERSION = 6
 PROJECTION_SCOPE_VERSION = 1
 EVENT_CONFIG_PATH = ETC + '/event-delivery.json'
 PROJECTION_SOCKET = '/run/bonup-agent-control/projection/events.sock'
@@ -32,6 +33,19 @@ PROJECTION_PARENT = '/run/bonup-agent-control/projection'
 PROJECTION_UNIT = 'bonup-django-projection.service'
 PROJECTION_UNIT_PATH = '/etc/systemd/system/' + PROJECTION_UNIT
 PROJECTION_TRANSPORT_IDENTITY = 'TRUSTED_DJANGO_PROJECTION_BOUNDARY_V1'
+PRODUCT_CONFIG_PATH = ETC + '/product-direction.json'
+PRODUCT_SOCKET = '/run/bonup-agent-control/prod01.sock'
+PRODUCT_ARTIFACT_PARENT = '/var/lib/bonup-prod'
+PRODUCT_ARTIFACT_DIRECTORY = PRODUCT_ARTIFACT_PARENT + '/proposals'
+PRODUCT_RUNTIME_SCOPE_VERSION = 1
+PRODUCT_RUNTIME_IDENTITY = 'PROD01_APPLICATION_RUNTIME_V1'
+PRODUCT_TRANSPORT_IDENTITY = 'TRUSTED_AGENT_CONTROL_PRODUCT_DIRECTION_V1'
+PRODUCT_CREDENTIAL_CONTRACT = 'SYSTEMD_CREDENTIAL_AGENT_CONTROL_ONLY_V1'
+PRODUCT_CREDENTIAL_PATH = '/run/credentials/bonup-agent-control/prod01-openai-api-key'
+PRODUCT_RUNTIME_ROOTS = (
+    'prod_application', 'prod_artifact', 'prod_contract', 'prod_model_transport',
+    'prod_openai_http', 'prod_response_capture', 'prod_runtime',
+)
 REGISTRY_PATH = '/var/lib/bonup-agent-control/control.sqlite3'
 HISTORY_PATH = '/var/lib/bonup-agent-control/history.git'
 REGISTRY_TARGET_VERSION = 3
@@ -64,7 +78,7 @@ LEGACY_ADDITIONS = ('bootstrap_entry','composition','composition_protocol','cont
 LEGACY_PRODUCTION_MODULES = tuple(sorted(set(LEGACY_MODULES + LEGACY_ADDITIONS)))
 GIT_OID = re.compile(r'[0-9a-f]{40}')
 MAX_SOURCE_BYTES = 1048576
-DECLARED_EXTERNAL_MODULES = ()
+DECLARED_EXTERNAL_MODULES = ('requests',)
 HOST_TESTS = ('uid_gid_drop','empty_groups','capability_bounds','bwrap_apparmor',
     'pinned_mounts','confined_release_gate','cgroup_limits','descendant_kill','bounded_output',
     'tmpfs_limits','socket_activation','kernel_peer_enrollment','watchdog','controller_crash',
@@ -110,6 +124,19 @@ def projection_unit(scope):
         'ReadWritePaths=' + PROJECTION_PARENT, 'Restart=on-failure',
         'RestartSec=2s', 'TimeoutStopSec=5s', 'LimitNOFILE=128',
     ]
+    return ('\n'.join(lines) + '\n').encode()
+
+
+def product_controller_unit():
+    """Render the controller unit with only the approved PROD artifact path."""
+    base = units()['bonup-agent-controller.service']
+    lines = base.splitlines()
+    for index, line in enumerate(lines):
+        if line.startswith('ReadWritePaths='):
+            lines[index] = line + ' ' + PRODUCT_ARTIFACT_DIRECTORY
+            break
+    else:
+        raise ValidationError('Controller writable-path policy is incomplete.')
     return ('\n'.join(lines) + '\n').encode()
 
 
@@ -235,6 +262,97 @@ def validate_projection_scope(scope):
     return scope
 
 
+def product_runtime_scope(source_commit):
+    """Build the closed v6 scope for the controller-owned PROD-01 service."""
+    if not valid_format('git-oid', source_commit):
+        raise ValidationError('Exact PROD-01 source commit required.')
+    config = dict(
+        enabled=True,
+        transport_identity=PRODUCT_TRANSPORT_IDENTITY,
+        socket_path=PRODUCT_SOCKET,
+        socket_mode=0o660,
+        agent_control={'uid': 3000, 'gid': 3000},
+        django={'uid': PRODUCTION_DJANGO['uid'], 'gid': PRODUCTION_DJANGO['gid']},
+        timeout_ms=500,
+        max_message_bytes=4096,
+        runtime_version=1,
+        runtime_identity=PRODUCT_RUNTIME_IDENTITY,
+        source_commit=source_commit,
+        credential_provider={
+            'type': 'SYSTEMD_CREDENTIAL', 'contract': PRODUCT_CREDENTIAL_CONTRACT,
+            'path': PRODUCT_CREDENTIAL_PATH, 'owner_uid': 0,
+            'group_gid': 3000, 'mode': '0440',
+        },
+        model_policy={
+            'agent_id': 'PROD-01', 'provider': 'OpenAI',
+            'logical_model': 'PROD-01-STRUCTURED-MODEL-V1',
+            'provider_model': 'gpt-5.6-luna',
+            'endpoint': 'https://api.openai.com/v1/responses',
+            'max_requests': 1, 'max_retries': 0,
+            'allow_redirects': False, 'trust_environment': False,
+            'tools': [], 'timeout_seconds': 30,
+        },
+    )
+    scope = dict(
+        version=PRODUCT_RUNTIME_SCOPE_VERSION,
+        config_path=PRODUCT_CONFIG_PATH,
+        config=config,
+        config_sha256=sha(json_bytes(config)),
+        config_file=dict(path=PRODUCT_CONFIG_PATH, owner='root', owner_uid=0,
+                         group='bonup-agentctl', group_gid=3000, mode='0440'),
+        socket=dict(path=PRODUCT_SOCKET, owner='bonup-agentctl', owner_uid=3000,
+                    group=PRODUCTION_DJANGO['group'], group_gid=PRODUCTION_DJANGO['gid'],
+                    mode='0660'),
+        socket_parent=dict(path='/run/bonup-agent-control', owner='bonup-agentctl',
+                           owner_uid=3000, group='bonup', group_gid=1000, mode='0711'),
+        runtime_owner=dict(service='bonup-agent-controller.service',
+                           path='/etc/systemd/system/bonup-agent-controller.service',
+                           unit_sha256=sha(product_controller_unit()),
+                           user='bonup-agentctl',
+                           uid=3000, group='bonup-agentctl', gid=3000,
+                           entrypoint='controller', execution_authority=False),
+        artifact_store=dict(parent=PRODUCT_ARTIFACT_PARENT, parent_owner='root',
+                            parent_owner_uid=0, parent_group='root', parent_group_gid=0,
+                            parent_mode='0711', path=PRODUCT_ARTIFACT_DIRECTORY,
+                            owner='bonup-agentctl',
+                            owner_uid=3000, group='bonup-agentctl', group_gid=3000,
+                            mode='0700', immutable_append_only=True),
+        runtime_modules=list(PRODUCT_RUNTIME_ROOTS),
+    )
+    return scope
+
+
+def validate_product_runtime_scope(scope, *, source_commit=None):
+    """Validate every v6 PROD-01 config, socket and ownership claim."""
+    keys(scope, ('version', 'config_path', 'config', 'config_sha256', 'config_file',
+                 'socket', 'socket_parent', 'runtime_owner', 'artifact_store',
+                 'runtime_modules'))
+    if scope['version'] != PRODUCT_RUNTIME_SCOPE_VERSION:
+        raise ValidationError('Unsupported PROD-01 runtime scope version.')
+    if source_commit is not None and scope['config'].get('source_commit') != source_commit:
+        raise ValidationError('PROD-01 runtime source binding mismatch.')
+    expected = product_runtime_scope(scope['config'].get('source_commit'))
+    if scope['config_path'] != PRODUCT_CONFIG_PATH:
+        raise ValidationError('Unexpected PROD-01 configuration path.')
+    if scope['config'] != expected['config'] or scope['config_sha256'] != expected['config_sha256']:
+        raise ValidationError('Invalid PROD-01 runtime configuration scope.')
+    keys(scope['config_file'], ('path', 'owner', 'owner_uid', 'group', 'group_gid', 'mode'))
+    if scope['config_file'] != expected['config_file']:
+        raise ValidationError('Invalid PROD-01 configuration file scope.')
+    keys(scope['socket'], ('path', 'owner', 'owner_uid', 'group', 'group_gid', 'mode'))
+    keys(scope['socket_parent'], ('path', 'owner', 'owner_uid', 'group', 'group_gid', 'mode'))
+    keys(scope['runtime_owner'], ('service', 'path', 'unit_sha256', 'user', 'uid', 'group', 'gid',
+                                  'entrypoint', 'execution_authority'))
+    if (scope['socket'] != expected['socket']
+            or scope['socket_parent'] != expected['socket_parent']
+            or scope['runtime_owner'] != expected['runtime_owner']
+            or scope['artifact_store'] != expected['artifact_store']):
+        raise ValidationError('Invalid PROD-01 runtime trust scope.')
+    if scope['runtime_modules'] != list(PRODUCT_RUNTIME_ROOTS):
+        raise ValidationError('Invalid PROD-01 runtime root closure.')
+    return scope
+
+
 def identities():
     return dict(version=2, provisioning_generation=1, accounts=[dict(
         username=name,uid=3000+i,gid=3000+i,primary_group=name,provisioning_generation=1,
@@ -301,7 +419,7 @@ def services():
         delegate_subgroup=None if name=='controller' else 'supervisor') for name in ('controller','supervisor')}
 
 
-def units():
+def units(product_scope=None):
     result={}
     for name,p in services().items():
         lines=['[Unit]','Description=bonUP agent '+name,'After=local-fs.target',
@@ -325,6 +443,8 @@ def units():
             '[Socket]','ListenStream='+row['path'],'SocketUser='+row['owner'],'SocketGroup='+row['group'],
             'SocketMode='+row['mode'],'DirectoryMode=0700','Accept=no','RemoveOnStop=yes','PassCredentials=yes',
             'FileDescriptorName='+fdname,'Service=bonup-agent-'+service+'.service'])+'\n'
+    if product_scope is not None:
+        result['bonup-agent-controller.service'] = product_controller_unit().decode()
     return result
 
 
@@ -427,7 +547,7 @@ def policy_sections(modules=None):
             'SEPARATE_APPROVAL_FOR_INTEGRATION_SERVICES','RUN_HOST_TESTS','SEPARATE_ACTIVATION_APPROVAL'])
 
 
-def artifact_spec(modules=None):
+def artifact_spec(modules=None, product_scope=None):
     modules = LEGACY_PRODUCTION_MODULES if modules is None else tuple(modules)
     result=[]
     def add(source,destination,kind='regular',mode='0444',group='root'):
@@ -439,8 +559,12 @@ def artifact_spec(modules=None):
     add('generated/tools-init.py',PREFIX+'/tools/__init__.py')
     for n in ('controller','supervisor'):add('generated/'+n,PREFIX+'/'+n,'executable','0555')
     for n in ('identity-map','controller','supervisor'):add('generated/'+n+'.json',ETC+'/'+n+'.json','configuration','0440',NAMES[0])
-    for n in sorted(units()):add('generated/'+n,'/etc/systemd/system/'+n,'unit')
+    for n in sorted(units(product_scope)):
+        add('generated/'+n,'/etc/systemd/system/'+n,'unit')
     add('generated/bonup-agent-control.conf','/etc/tmpfiles.d/bonup-agent-control.conf','configuration')
+    if product_scope is not None:
+        validate_product_runtime_scope(product_scope)
+        add('generated/product-direction.json', PRODUCT_CONFIG_PATH, 'configuration', '0440', NAMES[0])
     return result
 
 
@@ -449,26 +573,42 @@ def manifest_spec():
         artifact_type='configuration',owner='root',group=NAMES[0],mode='0440',provisioning_generation=1,required=True)
 
 
-def rollback_policy(artifacts):
+def rollback_policy(artifacts, product_scope=None):
+    product_directories = []
+    if product_scope is not None:
+        store = validate_product_runtime_scope(product_scope)['artifact_store']
+        product_directories = [store['parent'], store['path']]
     return dict(version=1,recursive=False,created_only=True,verify_receipt_identity=True,
         sequence=['CLOSE_ADMISSION','PROHIBIT_RELEASE','TERMINATE_IDENTIFIED_LAUNCHES','VERIFY_EMPTY_CGROUPS',
             'STOP_DISABLE_EXACT_INSTALLED_UNITS','PRESERVE_REGISTRY_HISTORY','QUARANTINE_NONEMPTY_WORKSPACES',
             'VERIFY_UID_GID_NO_PROCESSES','REMOVE_VERIFIED_CREATED_ARTIFACTS','REMOVE_VERIFIED_EMPTY_DIRECTORIES',
             'REMOVE_VERIFIED_CREATED_IDENTITIES'],
         files=[a['destination'] for a in artifacts]+[MANIFEST],
-        directories=[d['path'] for d in directories()],accounts=list(NAMES),
+        directories=[d['path'] for d in directories()] + product_directories,
+        accounts=list(NAMES),
         protected_retention=['/var/lib/bonup-agent-control','/var/lib/bonup-agent-control/history.git'])
 
 
-def generated_payloads(modules=None):
+def generated_payloads(modules=None, product_scope=None):
     result={PREFIX+'/'+n:wrapper(n,modules) for n in ('controller','supervisor')}
     result[PREFIX+'/tools/__init__.py']=b'"""Immutable bonUP installed package namespace."""\n'
     result[ETC+'/identity-map.json']=json_bytes(identities())
     for n,c in configurations().items():result[ETC+'/'+n+'.json']=json_bytes(c)
-    for n,u in units().items():result['/etc/systemd/system/'+n]=u.encode()
+    for n,u in units(product_scope).items():result['/etc/systemd/system/'+n]=u.encode()
+    runtime_directories = directories()
+    if product_scope is not None:
+        parent = product_scope['socket_parent']
+        runtime_directories = [
+            (dict(row, mode=parent['mode'], group=parent['group'])
+             if row['path'] == parent['path'] else row)
+            for row in runtime_directories
+        ]
     result['/etc/tmpfiles.d/bonup-agent-control.conf']=(''.join(
         'd '+d['path']+' '+d['mode']+' '+d['owner']+' '+d['group']+' -\n'
-        for d in directories() if d['lifecycle']=='runtime')).encode()
+        for d in runtime_directories if d['lifecycle']=='runtime')).encode()
+    if product_scope is not None:
+        validate_product_runtime_scope(product_scope)
+        result[PRODUCT_CONFIG_PATH] = json_bytes(product_scope['config'])
     return result
 
 
@@ -477,22 +617,29 @@ def seal(manifest):
     return manifest
 
 
-def candidate(artifacts, source_commit, modules=None, projection_scope=None):
+def candidate(artifacts, source_commit, modules=None, projection_scope=None, product_scope=None):
     if not valid_format('git-oid',source_commit):raise ValidationError('Exact source commit required.')
     modules = None if modules is None else tuple(modules)
     if projection_scope is not None:
         projection_scope = parse_json(canonical_json(validate_projection_scope(projection_scope)))
-    result=dict(version=INSTALLATION_SCHEMA_VERSION if projection_scope is not None else 4,
+    if product_scope is not None:
+        product_scope = parse_json(canonical_json(
+            validate_product_runtime_scope(product_scope, source_commit=source_commit)))
+    result=dict(version=(NEXT_INSTALLATION_SCHEMA_VERSION if product_scope is not None else
+                         INSTALLATION_SCHEMA_VERSION if projection_scope is not None else 4),
         source_mode='COMMITTED_BASE_PLUS_REVIEWED_PAYLOAD_HASHES',approved=False,activation=False,integration_services_approved=False,
         provisioning_generation=1,source_commit=source_commit,**policy_sections(modules),artifacts=artifacts,
         manifest_artifact=manifest_spec(),identity_map_digest=digest(identities()),
         configuration_digests={k:digest(v) for k,v in configurations().items()},
         files={a['destination']:a['sha256'] for a in artifacts if a['destination'].startswith(PREFIX+'/')},
-        resource_digest=IntegrationPolicy().policy_digest,rollback=rollback_policy(artifacts))
+        resource_digest=IntegrationPolicy().policy_digest,
+        rollback=rollback_policy(artifacts, product_scope))
     if modules is not None:
         result['runtime_modules'] = list(modules)
     if projection_scope is not None:
         result['projection_scope'] = projection_scope
+    if product_scope is not None:
+        result['product_runtime_scope'] = product_scope
     return seal(result)
 
 
@@ -501,28 +648,35 @@ def validate_manifest(manifest):
     legacy = 'runtime_modules' not in manifest
     expected_keys = set(candidate([],SOURCE_COMMIT))
     version = manifest.get('version')
-    if version == INSTALLATION_SCHEMA_VERSION:
+    if version in (INSTALLATION_SCHEMA_VERSION, NEXT_INSTALLATION_SCHEMA_VERSION):
         expected_keys.add('projection_scope')
+    if version == NEXT_INSTALLATION_SCHEMA_VERSION:
+        expected_keys.add('product_runtime_scope')
     if not legacy:
         expected_keys.add('runtime_modules')
     if set(manifest) != expected_keys:
         raise ValidationError('Unexpected manifest fields.')
-    if version not in (4, INSTALLATION_SCHEMA_VERSION):
+    if version not in (4, INSTALLATION_SCHEMA_VERSION, NEXT_INSTALLATION_SCHEMA_VERSION):
         raise ValidationError('Unsupported or incomplete manifest.')
-    if version == INSTALLATION_SCHEMA_VERSION:
+    if version in (INSTALLATION_SCHEMA_VERSION, NEXT_INSTALLATION_SCHEMA_VERSION):
         validate_projection_scope(manifest['projection_scope'])
+    if version == NEXT_INSTALLATION_SCHEMA_VERSION:
+        validate_product_runtime_scope(manifest['product_runtime_scope'],
+                                       source_commit=manifest['source_commit'])
     modules = tuple(LEGACY_PRODUCTION_MODULES if legacy else manifest['runtime_modules'])
     if (not modules or tuple(sorted(set(modules))) != modules or
             any(type(name) is not str or not re.fullmatch(r'[a-zA-Z_][a-zA-Z0-9_]*',name)
                 for name in modules)):
         raise ValidationError('Invalid reviewed runtime module closure.')
-    if (type(manifest['version']) is not int or manifest['version'] not in (4, INSTALLATION_SCHEMA_VERSION) or
+    if (type(manifest['version']) is not int or manifest['version'] not in
+            (4, INSTALLATION_SCHEMA_VERSION, NEXT_INSTALLATION_SCHEMA_VERSION) or
             type(manifest['provisioning_generation']) is not int or manifest['provisioning_generation']!=1 or
             any(type(manifest[k]) is not bool for k in ('approved','activation','integration_services_approved')) or
             not valid_format('git-oid',manifest['source_commit'])):
         raise ValidationError('Unsupported or incomplete manifest.')
     for name,expected in policy_sections(None if legacy else modules).items():same(manifest[name],expected,name)
-    specs=artifact_spec(modules);artifacts=manifest['artifacts']
+    product_scope = manifest.get('product_runtime_scope')
+    specs=artifact_spec(modules, product_scope);artifacts=manifest['artifacts']
     if type(artifacts) is not list or len(artifacts)!=len(specs):raise ValidationError('Incomplete artifact closure.')
     for actual,expected in zip(artifacts,specs):
         keys(actual,(*expected,'sha256'))
@@ -530,11 +684,13 @@ def validate_manifest(manifest):
         if not valid_format('sha256',actual['sha256']) or actual['sha256']=='0'*64:
             raise ValidationError('Unresolved artifact hash.')
     expected=candidate(artifacts,manifest['source_commit'],None if legacy else modules,
-                       manifest.get('projection_scope'))
+                       manifest.get('projection_scope'), product_scope)
     for k in ('approved','activation','integration_services_approved'):expected[k]=manifest[k]
     seal(expected)
     same(manifest,expected,'manifest binding')
-    generated=generated_payloads(modules)
+    if product_scope is not None and not set(product_scope['runtime_modules']).issubset(set(modules)):
+        raise ValidationError('Incomplete PROD-01 runtime module closure.')
+    generated=generated_payloads(modules, product_scope)
     for a in artifacts:
         if a['destination'] in generated and a['sha256']!=sha(generated[a['destination']]):
             raise ValidationError('Generated privileged artifact differs from fixed policy.')
@@ -740,17 +896,20 @@ def source_bytes(root,relative):
     finally:os.close(fd)
 
 
-def build(repository, *, source_commit, projection_scope=None):
+def build(repository, *, source_commit, projection_scope=None, product_scope=None):
     """Build only from the exact committed Git tree; never from checkout bytes."""
     root,_=validate_source_commit(repository,source_commit)
     modules=dependency_modules(root,source_commit)
-    payloads=generated_payloads(modules);artifacts=[]
-    for spec in artifact_spec(modules):
+    if product_scope is not None:
+        product_scope = parse_json(canonical_json(
+            validate_product_runtime_scope(product_scope, source_commit=source_commit)))
+    payloads=generated_payloads(modules, product_scope);artifacts=[]
+    for spec in artifact_spec(modules, product_scope):
         path=spec['destination']
         if path not in payloads:
             payloads[path]=committed_source_bytes(root,source_commit,spec['source'])
         artifacts.append(dict(spec,sha256=sha(payloads[path])))
-    manifest=candidate(artifacts,source_commit,modules,projection_scope)
+    manifest=candidate(artifacts,source_commit,modules,projection_scope,product_scope)
     verify_payloads(manifest,payloads)
     return manifest,payloads
 
@@ -761,7 +920,7 @@ def detached_inventory(manifest):
         [dict(manifest_spec(),sha256=sha(json_bytes(manifest)))])
 
 
-def write_review(repository, output, *, source_commit, projection_scope=None):
+def write_review(repository, output, *, source_commit, projection_scope=None, product_scope=None):
     """Only a new review/build directory or temporary directory; no host installer."""
     root=Path(repository).resolve();dest=Path(output).absolute()
     if any(p.is_symlink() for p in (dest,*dest.parents)):
@@ -774,7 +933,8 @@ def write_review(repository, output, *, source_commit, projection_scope=None):
     observed=subprocess.run(['/usr/bin/git','-C',str(root),'rev-parse','HEAD'],check=True,
         capture_output=True,text=True,env={'PATH':'/usr/bin:/bin','GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':'/dev/null'}).stdout.strip()
     if observed!=source_commit:raise AuthorityError('Source commit mismatch.')
-    manifest,payloads=build(root,source_commit=source_commit,projection_scope=projection_scope)
+    manifest,payloads=build(root,source_commit=source_commit,projection_scope=projection_scope,
+                             product_scope=product_scope)
     dest.mkdir(parents=True)
     for a in manifest['artifacts']:
         path=dest/'payload'/a['destination'].lstrip('/')

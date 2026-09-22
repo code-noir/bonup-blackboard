@@ -90,6 +90,14 @@ class InProcessTransport:
 
 
 class ProductApplicationTests(unittest.TestCase):
+    def _service(self, directory, model):
+        store = ProposalArtifactStore(directory)
+        return ProductDirectionApplicationService(
+            TrustedProd01Runtime(model, source_checkpoint=CHECKPOINT, artifact_store=store),
+            artifact_store=store,
+            founder_boundary=FounderBoundary(),
+        )
+
     def test_composed_application_client_uses_fixed_agent_control_contract(self):
         application_id = str(uuid4())
         task_id = agent_control_task_id_for(application_id)
@@ -172,6 +180,39 @@ class ProductApplicationTests(unittest.TestCase):
                     "proposal_digest": "a" * 64,
                 })
 
+    def test_duplicate_and_restart_submit_recover_one_committed_artifact(self):
+        application_id = str(uuid4())
+        task_id = agent_control_task_id_for(application_id)
+        request = {
+            "application_task_id": application_id,
+            "agent_control_task_id": task_id,
+            "agent_id": "PROD-01",
+            "objective": "Bounded objective.",
+        }
+        with TemporaryDirectory(prefix="bonup-prod-recovery-") as directory:
+            first_model = ModelTransport()
+            first = self._service(directory, first_model)
+            first_result = first.handle("SUBMIT_PRODUCT_DIRECTION", request)
+            duplicate_result = first.handle("SUBMIT_PRODUCT_DIRECTION", request)
 
+            restarted_model = ModelTransport()
+            restarted = self._service(directory, restarted_model)
+            recovered_result = restarted.handle("SUBMIT_PRODUCT_DIRECTION", request)
+
+        self.assertEqual(first_result, duplicate_result)
+        self.assertEqual(first_result, recovered_result)
+        self.assertEqual(len(first_model.calls), 1)
+        self.assertEqual(len(restarted_model.calls), 0)
+
+    def test_founder_status_is_unavailable_without_founder_composition(self):
+        model = ModelTransport()
+        with TemporaryDirectory(prefix="bonup-prod-founder-status-") as directory:
+            store = ProposalArtifactStore(directory)
+            service = ProductDirectionApplicationService(
+                TrustedProd01Runtime(model, source_checkpoint=CHECKPOINT, artifact_store=store),
+                artifact_store=store,
+            )
+            self.assertEqual(
+                service.handle("FOUNDER_REVIEW_STATUS", {}), {"available": False})
 if __name__ == "__main__":
     unittest.main()

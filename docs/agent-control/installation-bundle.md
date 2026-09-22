@@ -84,6 +84,13 @@ Registry/history paths, target v3 migration intent, event-delivery file,
 projection socket ownership/modes and Django service unit identity. The v5
 Registry target accepts only absent/v1/v2 setup through reviewed migration and
 v3 verification/no-op; future or invalid versions fail closed.
+Manifest v6 retains the v4/v5 semantics and additionally binds the controller-owned
+PROD-01 product scope. Its exact proposal artifact store is
+`/var/lib/bonup-prod/proposals`, owned by `bonup-agentctl:bonup-agentctl` with mode
+`0700`. The parent `/var/lib/bonup-prod` is `root:root` with mode `0711`, so the
+controller can traverse to the proposal store but cannot create sibling entries.
+The v6 controller unit grants `ReadWritePaths` for the existing controller state
+paths and `/var/lib/bonup-prod/proposals` only; it does not grant the parent path.
 A manifest cannot include its own final SHA-256 without a circular definition.
 Its exact metadata therefore appears in `manifest_artifact`; the detached review
 index includes its final SHA-256 together with the complete installed inventory.
@@ -125,11 +132,13 @@ nor supervisor receives authority to resize/remount it dynamically.
 
 ## Installation versus operational authority
 
-The candidate validates as `COMPLETE_BUT_UNAPPROVED`: `approved=false`,
-`activation=false`, `integration_services_approved=false`. These flags are resolved
-permission states. No future PID, process-start identity, boot ID or runtime
-generation is in installation policy. Actual kernel identity and fresh generations
-are established by admission-closed enrollment and reconciliation.
+The v6 PROD-01 candidate validates as `COMPLETE_BUT_UNAPPROVED`:
+`approved=false`, `activation=false`, `integration_services_approved=false`.
+These flags are resolved permission states. The v6 product scope grants no
+execution authority, ARCH routing, assignment, or activation authority. No future
+PID, process-start identity, boot ID or runtime generation is in installation
+policy. Actual kernel identity and fresh generations are established by
+admission-closed enrollment and reconciliation.
 
 Controller and supervisor configuration catalogs are explicitly empty; founder and
 model intake are disabled, not placeholders for guessed future credentials or tasks.

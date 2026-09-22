@@ -25,6 +25,7 @@ _FILENAME = re.compile(r"proposal-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab
 _DIRECTORY_MODE = 0o700
 _FILE_MODE = 0o600
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z", re.ASCII)
+_TASK_ID = re.compile(r"ATS-[0-9]{4,}\Z", re.ASCII)
 
 SAFE_PROPOSAL_PROJECTION_FIELDS = frozenset({
     "artifact_id", "artifact_digest", "task_id", "agent_id", "proposal_id",
@@ -253,6 +254,36 @@ class ProposalArtifactStore:
             if descriptor is not None:
                 os.close(descriptor)
             os.close(directory_fd)
+
+    def find_by_task_id(self, task_id):
+        """Recover the one immutable proposal already committed for a task.
+
+        The directory is append-only and owner-private.  A retry may therefore
+        recover a committed artifact without replaying the model request.  A
+        missing directory means no result exists; multiple or malformed
+        matching artifacts fail closed rather than choosing one.
+        """
+        if type(task_id) is not str or not _TASK_ID.fullmatch(task_id):
+            raise ProposalArtifactError("TASK_BINDING_INVALID")
+        if not self.directory.exists():
+            return None
+        directory_fd = _directory_fd(self.directory, create=False)
+        matches = []
+        try:
+            for name in os.listdir(directory_fd):
+                if not _FILENAME.fullmatch(name):
+                    continue
+                proposal_id = name[len("proposal-"):-len(".json")]
+                artifact = self.load(proposal_id)
+                if artifact.value["task_id"] == task_id:
+                    matches.append(artifact)
+        except ProposalArtifactError:
+            raise
+        finally:
+            os.close(directory_fd)
+        if len(matches) > 1:
+            raise ProposalArtifactError("PROPOSAL_BINDING_CONFLICT")
+        return matches[0] if matches else None
 
 
 def safe_proposal_projection(artifact):

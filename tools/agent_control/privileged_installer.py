@@ -196,6 +196,7 @@ class InstallPlan:
     registry_path: str
     history_path: str
     projection_socket: str
+    product_socket: str
     activation: str
 
     def report(self, observation):
@@ -211,6 +212,7 @@ class InstallPlan:
             "units": observation.get("units", {}),
             "registry": observation.get("registry", "UNKNOWN"),
             "socket": {"path": self.projection_socket, "expected": True},
+            "product_socket": {"path": self.product_socket, "expected": True},
             "activation": self.activation,
             "blocking_conflicts": tuple(observation.get("blocking_conflicts", ())),
         }
@@ -255,12 +257,28 @@ def _group_id(name, options):
     raise InstallerBlocked("Unknown installation group.")
 
 
-def _directory_specs(options):
+def _directory_specs(options, product_scope=None):
     rows = [DirectoryInstall(d["path"], _owner_id(d["owner"], options),
                              _group_id(d["group"], options), _mode(d["mode"]))
-            for d in bundle.directories()]
+             for d in bundle.directories()]
+    if product_scope is not None:
+        parent = product_scope['socket_parent']
+        rows = [
+            (DirectoryInstall(parent['path'], parent['owner_uid'], parent['group_gid'],
+                              int(parent['mode'], 8))
+             if row.path == parent['path'] else row)
+            for row in rows
+        ]
     rows.append(DirectoryInstall(PROJECTION_PARENT, options.django_uid,
                                  options.django_gid, 0o700))
+    if product_scope is not None:
+        store = product_scope['artifact_store']
+        rows.extend((
+            DirectoryInstall(store['parent'], store['parent_owner_uid'],
+                             store['parent_group_gid'], int(store['parent_mode'], 8)),
+            DirectoryInstall(store['path'], store['owner_uid'], store['group_gid'],
+                             int(store['mode'], 8)),
+        ))
     return tuple(rows)
 
 
@@ -317,6 +335,21 @@ def _verify_approved_projection_scope(manifest, options):
     return scope
 
 
+def _verify_approved_product_scope(manifest):
+    """Consume v6 PROD-01 scope without accepting execution-time overrides."""
+    scope = bundle.validate_product_runtime_scope(
+        manifest['product_runtime_scope'], source_commit=manifest['source_commit'])
+    if (scope['runtime_owner']['service'] != CONTROLLER_UNIT
+            or scope['runtime_owner']['uid'] != CONTROLLER_UID
+            or scope['runtime_owner']['gid'] != CONTROLLER_GID
+            or scope['runtime_owner']['execution_authority'] is not False):
+        raise InstallerBlocked('PROD-01 runtime owner conflicts with approval.')
+    modules = set(manifest.get('runtime_modules', ()))
+    if not set(scope['runtime_modules']).issubset(modules):
+        raise InstallerBlocked('PROD-01 runtime dependency closure is incomplete.')
+    return scope
+
+
 def _files(manifest, payloads, options):
     bundle.verify_payloads(manifest, payloads)
     rows = []
@@ -343,15 +376,21 @@ def build_plan(manifest, payloads, options):
     if manifest.get("integration_services_approved") is not False:
         raise AuthorityError("Integration service activation is separate.")
     registry_path, history_path = REGISTRY_PATH, HISTORY_PATH
-    if manifest["version"] == bundle.INSTALLATION_SCHEMA_VERSION:
+    product_scope = None
+    if manifest["version"] in (bundle.INSTALLATION_SCHEMA_VERSION,
+                                bundle.NEXT_INSTALLATION_SCHEMA_VERSION):
         scope = _verify_approved_projection_scope(manifest, options)
         registry_path, history_path = scope["registry"]["path"], scope["registry"]["history_path"]
+    if manifest["version"] == bundle.NEXT_INSTALLATION_SCHEMA_VERSION:
+        product_scope = _verify_approved_product_scope(manifest)
     if options.django_user in bundle.NAMES or options.django_group in bundle.NAMES:
         raise InstallerBlocked("Django identity uses a reserved Agent Control name.")
     files = _files(manifest, payloads, options)
     units = tuple(sorted({f.path for f in files if f.kind == "unit"} |
                          {SYSTEMD_UNIT_DIR + "/" + name for name in bundle.units()}))
-    for path in (registry_path, history_path, EVENT_CONFIG_PATH, PROJECTION_SOCKET):
+    for path in (registry_path, history_path, EVENT_CONFIG_PATH, PROJECTION_SOCKET,
+                 *( [product_scope['config_path'], product_scope['socket']['path']]
+                    if product_scope is not None else [])):
         _absolute(path, "installation path")
     if (options.django_uid, options.django_gid) in {
             (a.uid, a.gid) for a in _account_specs(options)}:
@@ -364,8 +403,10 @@ def build_plan(manifest, payloads, options):
         Account(options.django_user, options.django_uid, options.django_gid,
                 options.django_root, "/usr/sbin/nologin"),
         Group(options.django_group, options.django_gid),
-        _directory_specs(options), files, units, registry_path, history_path,
-        options.socket_path, "INSTALL_ONLY_NO_SERVICE_ACTIVATION",
+        _directory_specs(options, product_scope), files, units, registry_path, history_path,
+        options.socket_path,
+        bundle.PRODUCT_SOCKET if product_scope is None else product_scope['socket']['path'],
+        "INSTALL_ONLY_NO_SERVICE_ACTIVATION",
     )
 
 

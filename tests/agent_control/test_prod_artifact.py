@@ -73,6 +73,7 @@ class ProductArtifactTests(unittest.TestCase):
         self.assertEqual(artifact.value["proposal_digest"], digest(value))
         self.assertEqual(artifact.value["knowledge_state"], "WORKING")
         self.assertEqual(artifact.value["validation_result"], "PASS")
+        self.assertEqual(os.stat(self.store.directory).st_mode & 0o777, 0o700)
         self.assertEqual(os.stat(artifact.path).st_mode & 0o777, 0o600)
         loaded = self.store.load(value["proposal_id"])
         self.assertEqual(loaded.value, artifact.value)

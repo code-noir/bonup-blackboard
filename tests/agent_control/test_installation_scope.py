@@ -124,6 +124,85 @@ class InstallationScopeTests(unittest.TestCase):
         self.assertEqual(bundle.validate_manifest(old), 'COMPLETE_BUT_UNAPPROVED')
         bundle.verify_payloads(old, payloads)
 
+    def test_product_runtime_scope_binds_service_config_socket_and_artifacts(self):
+        source = "a" * 40
+        scope = bundle.product_runtime_scope(source)
+        self.assertEqual(bundle.validate_product_runtime_scope(scope, source_commit=source), scope)
+        self.assertEqual(scope["config"]["socket_path"], "/run/bonup-agent-control/prod01.sock")
+        self.assertEqual(scope["config"]["model_policy"]["max_retries"], 0)
+        self.assertEqual(scope["artifact_store"]["path"], "/var/lib/bonup-prod/proposals")
+        changed = deepcopy(scope)
+        changed["socket"]["mode"] = "0600"
+        with self.assertRaises(ValidationError):
+            bundle.validate_product_runtime_scope(changed, source_commit=source)
+
+
+class ProductRuntimeScopeTests(unittest.TestCase):
+    SOURCE = "a" * 40
+
+    def setUp(self):
+        self.scope = bundle.product_runtime_scope(self.SOURCE)
+
+    def test_controller_writable_paths_are_exactly_the_existing_state_and_proposal_paths(self):
+        unit = bundle.product_controller_unit().decode()
+        writable = next(
+            line.split("=", 1)[1].split()
+            for line in unit.splitlines()
+            if line.startswith("ReadWritePaths=")
+        )
+        self.assertEqual(
+            set(writable),
+            {
+                "/var/lib/bonup-agent-control",
+                "/run/bonup-agent-control",
+                bundle.PRODUCT_ARTIFACT_DIRECTORY,
+            },
+        )
+        self.assertIn(bundle.PRODUCT_ARTIFACT_DIRECTORY, writable)
+        self.assertNotIn(bundle.PRODUCT_ARTIFACT_PARENT, writable)
+
+    def test_parent_is_root_traversable_and_proposals_are_controller_writable(self):
+        store = self.scope["artifact_store"]
+        self.assertEqual(
+            (store["parent_owner_uid"], store["parent_group_gid"],
+             int(store["parent_mode"], 8)),
+            (0, 0, 0o711),
+        )
+        self.assertEqual(
+            (store["owner_uid"], store["group_gid"], int(store["mode"], 8)),
+            (3000, 3000, 0o700),
+        )
+        self.assertNotEqual(store["parent_owner_uid"], store["owner_uid"])
+        self.assertFalse(int(store["parent_mode"], 8) & 0o022)
+
+    def test_installer_directory_specs_preserve_parent_and_proposal_authority(self):
+        options = installer.RuntimeInstallOptions(
+            33, 33, "www-data", "www-data", "/srv/bonup-web",
+            "backend.core.settings", 1000, 10, 500, 2048,
+        )
+        rows = {
+            row.path: (row.uid, row.gid, row.mode)
+            for row in installer._directory_specs(options, self.scope)
+        }
+        self.assertEqual(rows[bundle.PRODUCT_ARTIFACT_PARENT], (0, 0, 0o711))
+        self.assertEqual(rows[bundle.PRODUCT_ARTIFACT_DIRECTORY], (3000, 3000, 0o700))
+
+    def test_v6_scope_digest_and_closed_authority_are_bound(self):
+        scope_digest = bundle.sha(bundle.json_bytes(self.scope))
+        changed = deepcopy(self.scope)
+        changed["artifact_store"]["parent_mode"] = "0700"
+        self.assertNotEqual(scope_digest, bundle.sha(bundle.json_bytes(changed)))
+        with self.assertRaises(ValidationError):
+            bundle.validate_product_runtime_scope(changed, source_commit=self.SOURCE)
+
+        manifest = bundle.candidate([], self.SOURCE, product_scope=self.scope)
+        self.assertFalse(manifest["approved"])
+        self.assertFalse(manifest["activation"])
+        self.assertFalse(manifest["integration_services_approved"])
+        self.assertFalse(self.scope["runtime_owner"]["execution_authority"])
+        self.assertNotIn("ExecutionGrant", bundle.canonical_json(self.scope))
+        self.assertNotIn("ARCH_ROUTING", bundle.canonical_json(self.scope))
+
 
 if __name__ == '__main__':
     unittest.main()

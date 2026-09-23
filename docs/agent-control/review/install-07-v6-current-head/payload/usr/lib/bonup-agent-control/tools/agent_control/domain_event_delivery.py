@@ -1,0 +1,392 @@
+"""Durable, trusted fan-out for committed Agent Control domain events.
+
+This worker is deliberately a projection dispatcher. It can load facts from
+the controller-owned Registry and call an explicitly composed application
+boundary, but it has no operation that can create or modify authority.
+"""
+from dataclasses import dataclass
+from datetime import datetime, timezone
+import threading
+
+from .records import PRODUCT_REVIEW_EVENT_CONSUMERS
+from .registry import Registry
+from .storage import RegistryBlocked
+from .types import ValidationError
+
+
+EVENT_DELIVERY_CONFIG_PATH = "/etc/bonup-agent-control/event-delivery.json"
+_TRANSPORT_IDENTITY = "TRUSTED_DJANGO_PROJECTION_BOUNDARY_V1"
+_TRANSPORT_FIELDS = {
+    "socket_path", "socket_mode", "agent_control", "django",
+    "timeout_ms", "max_message_bytes",
+}
+
+
+class TrustedRuntimeUnavailable(Exception):
+    """The server-side application projection boundary is not provisioned."""
+
+    reason = "TRUSTED_RUNTIME_UNAVAILABLE"
+
+
+class TrustedProjectionFailure(Exception):
+    """Bounded retryable failure returned by the trusted Django peer."""
+
+    def __init__(self, reason):
+        self.reason = reason
+        super().__init__(reason)
+
+
+class UnavailableProjectionBoundary:
+    """Fail-closed default; pending obligations are never discarded."""
+
+    trusted_application_boundary = True
+    available = False
+
+    def deliver(self, event, consumer_name):
+        raise TrustedRuntimeUnavailable()
+
+
+@dataclass(frozen=True)
+class EventDeliveryConfig:
+    """Root-controlled bounded scheduling configuration."""
+
+    enabled: bool
+    poll_interval_ms: int
+    batch_size: int
+    transport_identity: str | None
+    socket_path: str | None
+    socket_mode: int | None
+    agent_control_uid: int | None
+    agent_control_gid: int | None
+    django_uid: int | None
+    django_gid: int | None
+    timeout_ms: int | None
+    max_message_bytes: int | None
+
+    @classmethod
+    def parse(cls, value):
+        if type(value) is not dict or set(value) != {
+                "enabled", "poll_interval_ms", "batch_size", "transport_identity",
+                *_TRANSPORT_FIELDS}:
+            raise ValidationError("Invalid event delivery configuration.")
+        if (type(value["enabled"]) is not bool
+                or type(value["poll_interval_ms"]) is not int
+                or not 1000 <= value["poll_interval_ms"] <= 60000
+                or type(value["batch_size"]) is not int
+                or not 1 <= value["batch_size"] <= 100):
+            raise ValidationError("Invalid event delivery bounds.")
+        identity = value["transport_identity"]
+        if identity is not None and (type(identity) is not str or identity != _TRANSPORT_IDENTITY):
+            raise ValidationError("Invalid trusted event delivery transport.")
+        transport_values = {key: value[key] for key in _TRANSPORT_FIELDS}
+        if not value["enabled"]:
+            if identity is not None or any(item is not None for item in transport_values.values()):
+                raise ValidationError("Disabled event delivery cannot declare a transport.")
+            return cls(value["enabled"], value["poll_interval_ms"], value["batch_size"], None,
+                       None, None, None, None, None, None, None, None)
+
+        if identity != _TRANSPORT_IDENTITY:
+            raise ValidationError("Enabled event delivery requires its trusted transport identity.")
+        path = transport_values["socket_path"]
+        if (type(path) is not str or not path.startswith("/") or "\0" in path
+                or len(path.encode()) > 107 or ".." in path.split("/")
+                or path != "/" + "/".join(part for part in path.split("/") if part)):
+            raise ValidationError("Invalid trusted projection socket path.")
+        mode = transport_values["socket_mode"]
+        if type(mode) is not int or mode not in (0o600, 0o660):
+            raise ValidationError("Invalid trusted projection socket mode.")
+        if (mode == 0o600 and transport_values["agent_control"] != transport_values["django"]):
+            raise ValidationError("Separate projection identities require group access.")
+        for name in ("agent_control", "django"):
+            identity_value = transport_values[name]
+            if (type(identity_value) is not dict or set(identity_value) != {"uid", "gid"}
+                    or any(type(identity_value[field]) is not int or identity_value[field] <= 0
+                           for field in ("uid", "gid"))):
+                raise ValidationError("Invalid trusted projection identity.")
+        agent, django = transport_values["agent_control"], transport_values["django"]
+        if (agent["uid"], agent["gid"]) == (django["uid"], django["gid"]):
+            if mode != 0o600:
+                raise ValidationError("Shared projection identity requires private socket mode.")
+        elif mode != 0o660:
+            raise ValidationError("Separate projection identities require 0660 socket mode.")
+        timeout = transport_values["timeout_ms"]
+        max_bytes = transport_values["max_message_bytes"]
+        if type(timeout) is not int or not 100 <= timeout <= 5000:
+            raise ValidationError("Invalid trusted projection timeout.")
+        if type(max_bytes) is not int or not 1024 <= max_bytes <= 4096:
+            raise ValidationError("Invalid trusted projection message bound.")
+        return cls(value["enabled"], value["poll_interval_ms"], value["batch_size"], identity,
+                   path, mode, agent["uid"], agent["gid"], django["uid"], django["gid"],
+                   timeout, max_bytes)
+
+    @classmethod
+    def disabled(cls):
+        return cls(False, 5000, 50, None, None, None, None, None, None, None, None, None)
+
+
+class InstalledDjangoProjectionBoundary:
+    """Agent Control client for the explicitly configured Django AF_UNIX peer."""
+
+    trusted_application_boundary = True
+    available = True
+
+    def __init__(self, config, *, artifact_store=None):
+        if type(config) is not EventDeliveryConfig or not config.enabled:
+            raise ValidationError("Enabled event delivery configuration required.")
+        from .installed_transport import DjangoProjectionClient
+        self.client = DjangoProjectionClient(config)
+        self.artifact_store = artifact_store
+
+    def deliver(self, event, consumer_name):
+        from .installed_transport import (
+            ProjectionTransportRejected, ProjectionTransportUnavailable,
+        )
+        try:
+            proposal_projection = None
+            if self.artifact_store is not None:
+                from .prod_artifact import ProposalArtifactError, safe_proposal_projection
+                try:
+                    proposal_projection = safe_proposal_projection(
+                        self.artifact_store.load(event["proposal_id"])
+                    )
+                except ProposalArtifactError as error:
+                    raise RegistryBlocked(getattr(error, "reason", "ARTIFACT_INVALID")) from None
+            return self.client.deliver(event, consumer_name, proposal_projection)
+        except ProjectionTransportUnavailable:
+            raise TrustedRuntimeUnavailable() from None
+        except ProjectionTransportRejected as error:
+            raise RegistryBlocked(error.reason) from None
+        except Exception as error:
+            reason = getattr(error, "reason", "CONSUMER_RUNTIME_FAILURE")
+            raise TrustedProjectionFailure(reason) from None
+
+
+_PERMANENT_REASONS = frozenset({
+    "EVENT_INVALID", "EVENT_PROVENANCE_MISMATCH", "EVENT_INBOX_MISMATCH",
+    "EVENT_BINDING_MISMATCH", "TASK_BINDING_MISMATCH", "PROPOSAL_BINDING_MISMATCH",
+    "PROPOSAL_DIGEST_MISMATCH", "ARTIFACT_BINDING_MISMATCH", "ARTIFACT_INVALID",
+    "ARTIFACT_MISSING", "AGENT_BINDING_MISMATCH", "KNOWLEDGE_STATE_INVALID",
+    "REVIEW_PROJECTION_CONFLICT", "PROJECTION_CONFLICT", "EVENT_TIME_INVALID",
+    "PROPOSAL_NOT_AVAILABLE", "REVIEW_NOT_AVAILABLE", "REVIEW_ALREADY_RECORDED",
+})
+
+
+def _bounded_consumer_failure(error):
+    reason = getattr(error, "reason", None)
+    if type(reason) is str and reason in _PERMANENT_REASONS:
+        return reason, False
+    return "CONSUMER_RUNTIME_FAILURE", True
+
+
+def _event_load_failure(error):
+    if "Unsupported domain event version" in str(error):
+        return "EVENT_UNSUPPORTED_VERSION"
+    return "EVENT_INTEGRITY_FAILURE"
+
+
+class DomainEventDeliveryWorker:
+    """Deliver committed events at least once to independent consumers."""
+
+    def __init__(self, registry, boundary=None, *, now=None, batch_size=100):
+        if type(registry) is not Registry:
+            raise ValidationError("Trusted Agent Control Registry required.")
+        if type(batch_size) is not int or not 1 <= batch_size <= 1000:
+            raise ValidationError("Delivery batch size is out of bounds.")
+        boundary = UnavailableProjectionBoundary() if boundary is None else boundary
+        if (getattr(boundary, "trusted_application_boundary", False) is not True
+                or not callable(getattr(boundary, "deliver", None))):
+            raise ValidationError("Trusted application projection boundary required.")
+        self.registry = registry
+        self.boundary = boundary
+        self.now = now or (lambda: datetime.now(timezone.utc).isoformat(
+            timespec="microseconds").replace("+00:00", "Z"))
+        self.batch_size = batch_size
+
+    def run_once(self, *, replay=False):
+        rows = self.registry.pending_domain_event_deliveries(
+            now=self.now(), limit=self.batch_size, replay=replay)
+        summary = {
+            "status": "IDLE" if not rows else "DELIVERED",
+            "selected": len(rows),
+            "acknowledged": 0,
+            "retried": 0,
+            "blocked": 0,
+            "pending": len(rows),
+            "replay": bool(replay),
+        }
+        if not rows:
+            return summary
+        if not getattr(self.boundary, "available", True):
+            summary.update(status="TRUSTED_RUNTIME_UNAVAILABLE",
+                           reason="TRUSTED_RUNTIME_UNAVAILABLE")
+            return summary
+
+        for row in rows:
+            event_id = row["event_id"]
+            consumer_name = row["consumer_name"]
+            try:
+                event = self.registry.load_domain_event(event_id)
+            except RegistryBlocked as error:
+                reason = _event_load_failure(error)
+                self.registry.record_domain_event_delivery_failure(
+                    event_id, consumer_name, reason, retryable=False)
+                summary["blocked"] += 1
+                summary["pending"] -= 1
+                continue
+            try:
+                if (row["event_type"] != event["event_type"]
+                        or row["event_digest"] != event["event_digest"]):
+                    raise RegistryBlocked("Domain event delivery binding mismatch.")
+                self.boundary.deliver(event, consumer_name)
+            except TrustedRuntimeUnavailable:
+                summary.update(status="TRUSTED_RUNTIME_UNAVAILABLE",
+                               reason="TRUSTED_RUNTIME_UNAVAILABLE")
+                return summary
+            except RegistryBlocked:
+                self.registry.record_domain_event_delivery_failure(
+                    event_id, consumer_name, "EVENT_INTEGRITY_FAILURE", retryable=False)
+                summary["blocked"] += 1
+                summary["pending"] -= 1
+                continue
+            except Exception as error:
+                reason, retryable = _bounded_consumer_failure(error)
+                outcome = self.registry.record_domain_event_delivery_failure(
+                    event_id, consumer_name, reason, retryable=retryable)
+                if outcome["status"] == "RETRY":
+                    summary["retried"] += 1
+                else:
+                    summary["blocked"] += 1
+                summary["pending"] -= 1
+                continue
+            self.registry.acknowledge_domain_event_delivery(event_id, consumer_name)
+            summary["acknowledged"] += 1
+            summary["pending"] -= 1
+        if summary["retried"] or summary["blocked"]:
+            summary["status"] = "PARTIAL"
+        return summary
+
+
+class InstalledEventDeliveryRuntime:
+    """Recurring delivery lane owned by the installed controller service.
+
+    Each cycle opens its own controller-owned Registry connection. The existing
+    controller thread therefore remains the sole owner of its active SQLite
+    connection and execution-authority operations stay isolated from delivery.
+    """
+
+    def __init__(self, registry_path, config, boundary, *, open_registry):
+        if type(config) is not EventDeliveryConfig:
+            raise ValidationError("Event delivery configuration required.")
+        if (type(registry_path) is not str or not registry_path.startswith("/")
+                or ".." in registry_path.split("/")):
+            raise ValidationError("Absolute Agent Control registry path required.")
+        if not callable(open_registry):
+            raise ValidationError("Trusted Agent Control registry opener required.")
+        if (getattr(boundary, "trusted_application_boundary", False) is not True
+                or not callable(getattr(boundary, "deliver", None))):
+            raise ValidationError("Trusted application projection boundary required.")
+        self.registry_path = registry_path
+        self.config = config
+        self.boundary = boundary
+        self.open_registry = open_registry
+        self.stop_event = threading.Event()
+        self.thread = None
+        self._lock = threading.RLock()
+        self._snapshot = {
+            "status": "DISABLED" if not config.enabled else "STOPPED",
+            "pending": None,
+            "retrying": None,
+            "blocked": None,
+            "last_cycle_at": None,
+            "last_successful_cycle_at": None,
+            "reason": None,
+        }
+
+    def _record(self, snapshot):
+        with self._lock:
+            self._snapshot = dict(snapshot)
+
+    def run_once(self):
+        if not self.config.enabled:
+            return self.status()
+        try:
+            registry = self.open_registry(self.registry_path)
+        except (OSError, RegistryBlocked, ValidationError):
+            snapshot = dict(self.status(), status="REGISTRY_UNAVAILABLE",
+                            reason="REGISTRY_UNAVAILABLE")
+            self._record(snapshot)
+            return snapshot
+        try:
+            summary = DomainEventDeliveryWorker(
+                registry, self.boundary, batch_size=self.config.batch_size
+            ).run_once()
+            counts = registry.domain_event_delivery_status()
+            now = datetime.now(timezone.utc).isoformat(
+                timespec="microseconds").replace("+00:00", "Z")
+            successful = summary["status"] in {"IDLE", "DELIVERED", "PARTIAL"}
+            snapshot = {
+                "status": summary["status"],
+                "pending": counts["pending"],
+                "retrying": counts["retrying"],
+                "blocked": counts["blocked"],
+                "last_cycle_at": now,
+                "last_successful_cycle_at": now if successful else self.status()["last_successful_cycle_at"],
+                "reason": summary.get("reason"),
+            }
+            self._record(snapshot)
+            return snapshot
+        except (OSError, RegistryBlocked, ValidationError):
+            snapshot = dict(self.status(), status="REGISTRY_UNAVAILABLE",
+                            reason="REGISTRY_UNAVAILABLE")
+            self._record(snapshot)
+            return snapshot
+        except BaseException:
+            snapshot = dict(self.status(), status="DELIVERY_RUNTIME_FAILURE",
+                            reason="DELIVERY_RUNTIME_FAILURE")
+            self._record(snapshot)
+            return snapshot
+        finally:
+            registry.close()
+
+    def _run(self):
+        self.run_once()
+        while not self.stop_event.wait(self.config.poll_interval_ms / 1000):
+            self.run_once()
+
+    def start(self):
+        if not self.config.enabled:
+            return self.status()
+        with self._lock:
+            if self.thread is not None and self.thread.is_alive():
+                raise ValidationError("Event delivery runtime already started.")
+            self.stop_event.clear()
+            self.thread = threading.Thread(
+                target=self._run, name="agent-event-delivery", daemon=True
+            )
+            self.thread.start()
+        return self.status()
+
+    def shutdown(self):
+        self.stop_event.set()
+        thread = self.thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(2)
+        with self._lock:
+            if self.config.enabled and self._snapshot["status"] not in {
+                    "DELIVERY_RUNTIME_FAILURE", "REGISTRY_UNAVAILABLE"}:
+                self._snapshot["status"] = "STOPPED"
+
+    def status(self):
+        with self._lock:
+            return dict(self._snapshot)
+
+
+__all__ = [
+    "DomainEventDeliveryWorker",
+    "EVENT_DELIVERY_CONFIG_PATH",
+    "EventDeliveryConfig",
+    "InstalledEventDeliveryRuntime",
+    "PRODUCT_REVIEW_EVENT_CONSUMERS",
+    "TrustedRuntimeUnavailable",
+    "UnavailableProjectionBoundary",
+]

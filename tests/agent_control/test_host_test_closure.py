@@ -26,7 +26,8 @@ def admission():
 class ClosureTests(unittest.TestCase):
     def setUp(self):
         self.boot=str(uuid4());self.generation=str(uuid4());self.eid=str(uuid4())
-        self.binding=InstallationBinding('a'*40,'b'*64,'c'*64,'d'*64,'e'*64,2)
+        self.binding=InstallationBinding('a'*40,'b'*64,'c'*64,'d'*64,'e'*64,2,
+            predecessor_candidate_manifest_digest='b'*64)
         profile=ConfinementProfile();worker=WorkerIdentity('FE-01',Role.FRONTEND_ENGINEERING,'bonup-fe01',3002,3002)
         process=ProcessIdentity(self.boot,123,42)
         self.record=LaunchRecord(Operation.RUN_TEST,('/usr/bin/true',),'/work',profile.environment(),30,65536,

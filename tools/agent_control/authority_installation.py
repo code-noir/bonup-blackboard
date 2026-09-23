@@ -20,19 +20,24 @@ class InstallationBinding:
     approved_inventory_digest: str
     provisioning_generation: int
     founder_root_binding_digest: str | None = None
+    predecessor_candidate_manifest_digest: str | None = None
 
     def __post_init__(self):
         if (not valid_format('git-oid', self.source_commit) or
                 type(self.provisioning_generation) is not int or self.provisioning_generation < 1 or
                 self.founder_root_binding_digest is not None and self.provisioning_generation != 2 or
+                self.provisioning_generation == 2 and
+                not valid_format('sha256', self.predecessor_candidate_manifest_digest or '') or
+                self.provisioning_generation == 1 and self.predecessor_candidate_manifest_digest is not None or
                 any(not valid_format('sha256', value) for name, value in self.data().items()
                     if name not in ('source_commit', 'provisioning_generation'))):
             raise ValidationError('Exact installation identity required.')
 
     def data(self):
         result = asdict(self)
-        if result['founder_root_binding_digest'] is None:
-            del result['founder_root_binding_digest']
+        for name in ('founder_root_binding_digest', 'predecessor_candidate_manifest_digest'):
+            if result[name] is None:
+                del result[name]
         return result
 
 
@@ -94,6 +99,14 @@ def approval_projection(candidate, approved, binding):
             old.get('integration_services_approved') is not False or
             new.get('integration_services_approved') is not False):
         raise AuthorityError('Approval projection identity mismatch.')
+    if binding.provisioning_generation == 2:
+        predecessor = old.get('predecessor')
+        if (type(predecessor) is not dict or
+                predecessor.get('candidate_manifest_digest') !=
+                binding.predecessor_candidate_manifest_digest):
+            raise AuthorityError('Generation-1 predecessor binding mismatch.')
+    elif binding.predecessor_candidate_manifest_digest is not None:
+        raise AuthorityError('Generation-1 binding cannot carry a predecessor.')
     changed = dict(old, approved=True)
     if 'founder_root_policy' in old:
         from .founder_genesis import policy

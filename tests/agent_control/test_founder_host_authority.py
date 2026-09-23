@@ -24,7 +24,8 @@ from tools.agent_control.serialization import canonical_json, digest
 from tools.agent_control.types import AuthorityError, ValidationError
 
 
-BINDING = InstallationBinding('a'*40, 'b'*64, 'c'*64, 'd'*64, 'e'*64, 2)
+BINDING = InstallationBinding('a'*40, 'b'*64, 'c'*64, 'd'*64, 'e'*64, 2,
+    predecessor_candidate_manifest_digest='b'*64)
 
 
 class AuthorityTests(unittest.TestCase):

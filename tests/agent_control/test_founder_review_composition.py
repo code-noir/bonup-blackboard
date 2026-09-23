@@ -66,7 +66,8 @@ class FounderReviewCompositionTests(unittest.TestCase):
 
     def intake(self):
         installation_binding = InstallationBinding(
-            "a" * 40, "b" * 64, "c" * 64, "d" * 64, "e" * 64, 2
+            "a" * 40, "b" * 64, "c" * 64, "d" * 64, "e" * 64, 2,
+            predecessor_candidate_manifest_digest="b" * 64
         )
         policy = FounderPolicy(True, installation_binding, ROOT.identity, "f" * 64)
         return FounderIntake(

@@ -51,6 +51,10 @@ class GenesisTests(unittest.TestCase):
         self.candidate.update(founder_root_policy=g.policy(),
             configuration_digests={k:digest(v) for k,v in self.configs.items()},
             authority_digest=digest(self.configs['controller']['authority']))
+        self.candidate['predecessor'] = dict(provisioning_generation=1,
+            candidate_manifest_digest='b'*64, candidate_bundle_digest='c'*64,
+            source_commit='d'*40, product_scope_digest='e'*64,
+            runtime_modules_digest='f'*64)
         self.candidate['bundle_digest']=digest({k:v for k,v in self.candidate.items() if k!='bundle_digest'})
         self.encoded=base64.b64encode(PUBLIC).decode()
         self.service=self.service_new()
@@ -72,7 +76,8 @@ class GenesisTests(unittest.TestCase):
         record=self.bind()
         approved=g.proposed_approval(raw(self.candidate),self.valid,record)['installation_manifest']
         binding=InstallationBinding(self.candidate['source_commit'],sha(self.candidate),
-            self.candidate['bundle_digest'],sha(approved),'e'*64,2,record['binding_digest'])
+            self.candidate['bundle_digest'],sha(approved),'e'*64,2,record['binding_digest'],
+            self.candidate['predecessor']['candidate_manifest_digest'])
         receipt=dict(version=2,binding=binding.data(),installation_id=str(uuid4()),activation=False,
             verified_artifacts_digest='e'*64,genesis=g.receipt_projection(record))
         self.attest.update(binding=binding.data(),receipt_digest=digest(receipt),
@@ -178,7 +183,8 @@ class GenesisTests(unittest.TestCase):
             changed=dict(approved,**{key:'f'*64})
             changed['bundle_digest']=digest({k:v for k,v in changed.items() if k!='bundle_digest'})
             altered=InstallationBinding(binding.source_commit,binding.candidate_manifest_digest,
-                binding.candidate_bundle_digest,sha(changed),binding.approved_inventory_digest,2,record['binding_digest'])
+                binding.candidate_bundle_digest,sha(changed),binding.approved_inventory_digest,2,
+                record['binding_digest'],binding.predecessor_candidate_manifest_digest)
             with self.assertRaises(AuthorityError):approval_projection(raw(self.candidate),raw(changed),altered)
 
     def test_receipt_retains_genesis(self):
@@ -255,7 +261,8 @@ class GenesisTests(unittest.TestCase):
     def test_unbound_cannot_approve_even_consistent_hashes(self):
         approved=dict(self.candidate,approved=True)
         approved['bundle_digest']=digest({k:v for k,v in approved.items() if k!='bundle_digest'})
-        binding=InstallationBinding('a'*40,sha(self.candidate),self.candidate['bundle_digest'],sha(approved),'e'*64,2)
+        binding=InstallationBinding('a'*40,sha(self.candidate),self.candidate['bundle_digest'],sha(approved),'e'*64,2,
+            predecessor_candidate_manifest_digest=self.candidate['predecessor']['candidate_manifest_digest'])
         with self.assertRaises(AuthorityError):approval_projection(raw(self.candidate),raw(approved),binding)
 
     def test_declared_complete_is_insufficient(self):

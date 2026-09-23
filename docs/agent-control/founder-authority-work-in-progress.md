@@ -120,6 +120,26 @@ and are never worker mounts. Runtime validates existing directory ownership and
 non-writability by other identities; it does not create these directories. Preserve
 these records during rollback/investigation. No directory was created by this task.
 
+## Generation-1 to Generation-2 successor boundary
+
+The preserved PROD-01 v6 bundle remains a Generation-1 candidate. The pure
+`successor_generation` contract creates a new Generation-2 representation; it
+does not rewrite or relabel the Generation-1 candidate and does not perform
+Genesis. The successor binds the exact Generation-1 candidate manifest digest,
+bundle digest, source commit, product-scope digest and runtime-module digest.
+
+The successor carries the fixed `founder_root_policy`,
+`provisioning_generation=2`, and `approved=false`, `activation=false`, and
+`integration_services_approved=false`. Its runtime binding preserves the
+Generation-1 PROD-01 source and product scope. The predecessor manifest digest
+is retained in the later Generation-2 `InstallationBinding`; approval and
+receipt validation reject a missing or substituted predecessor.
+
+The successor is only structurally eligible for the existing Genesis validator.
+Genesis still requires the external Founder key, offline human confirmation,
+and one-time durable ledger consumption. No successor-generation output is
+Founder authority, approval, installation evidence or activation evidence.
+
 Reconciliation requires fresh signed authority, fresh operational enrollment,
 required generation/boot changes, the exact persisted kernel witness and verified
 whole-launch cleanup. Service crash/watchdog cases additionally require a fresh

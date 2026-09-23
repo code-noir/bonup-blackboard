@@ -33,12 +33,16 @@ def successor_fixture():
     candidate=dict(version=5,source_commit='a'*40,provisioning_generation=2,approved=False,activation=False,
         integration_services_approved=False,files={name:'a'*64 for name in sc.files()},
         configuration_digests={name:digest(data) for name,data in configs.items()},
-        identity_map_digest=digest(ids),resource_digest=IntegrationPolicy().policy_digest,authority_digest=digest(policy))
+        identity_map_digest=digest(ids),resource_digest=IntegrationPolicy().policy_digest,authority_digest=digest(policy),
+        predecessor=dict(provisioning_generation=1,candidate_manifest_digest='b'*64,
+                         candidate_bundle_digest='c'*64,source_commit='d'*40,
+                         product_scope_digest='e'*64,runtime_modules_digest='f'*64))
     candidate['bundle_digest']=digest(candidate)
     approved=dict(candidate,approved=True)
     approved['bundle_digest']=digest({k:v for k,v in approved.items() if k!='bundle_digest'})
     sha=lambda v:hashlib.sha256(canonical_json(v).encode()).hexdigest()
-    binding=InstallationBinding('a'*40,sha(candidate),candidate['bundle_digest'],sha(approved),'e'*64,2)
+    binding=InstallationBinding('a'*40,sha(candidate),candidate['bundle_digest'],sha(approved),'e'*64,2,
+        predecessor_candidate_manifest_digest=candidate['predecessor']['candidate_manifest_digest'])
     receipt=dict(version=1,binding=binding.data(),installation_id=str(uuid4()),activation=False,
         verified_artifacts_digest=binding.approved_inventory_digest)
     attest=dict(version=1,provisioning_generation=2,binding=binding.data(),receipt_digest=digest(receipt),
@@ -138,7 +142,8 @@ class InterruptionTests(unittest.TestCase):
         from tools.agent_control.authority_installation import InstalledReceipt
         from tools.agent_control.operational_enrollment import Admission,AdmissionState
         self.context=dict(boot_id=str(uuid4()),controller_generation=str(uuid4()),supervisor_generation=str(uuid4()))
-        self.binding=InstallationBinding('a'*40,'b'*64,'c'*64,'d'*64,'e'*64,2)
+        self.binding=InstallationBinding('a'*40,'b'*64,'c'*64,'d'*64,'e'*64,2,
+            predecessor_candidate_manifest_digest='b'*64)
         self.controller=Mock();self.controller.admission=Admission()
         self.controller.admission.state=AdmissionState.HOST_TEST_ONLY
         self.controller.admission.session='a'*64
@@ -437,7 +442,8 @@ class CompletionTests(unittest.TestCase):
         from tools.agent_control.host_test_runtime import HostTests
         from tools.agent_control.authority_installation import InstalledReceipt
         self.context=dict(boot_id=str(uuid4()),controller_generation=str(uuid4()),supervisor_generation=str(uuid4()))
-        binding=InstallationBinding('a'*40,'b'*64,'c'*64,'d'*64,'e'*64,2)
+        binding=InstallationBinding('a'*40,'b'*64,'c'*64,'d'*64,'e'*64,2,
+            predecessor_candidate_manifest_digest='b'*64)
         self.host=HostTests(Mock(),InstalledReceipt(binding,'f'*64,str(uuid4())),Mock(),Mock(),Mock(),lambda:dict(self.context))
         self.host.session='1'*64;self.host.verify=lambda:None;self.host.initial_context=dict(self.context)
         self.host.controller.admission.session='a'*64

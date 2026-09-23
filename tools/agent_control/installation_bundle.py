@@ -44,7 +44,7 @@ PRODUCT_CREDENTIAL_CONTRACT = 'SYSTEMD_CREDENTIAL_AGENT_CONTROL_ONLY_V1'
 PRODUCT_CREDENTIAL_PATH = '/run/credentials/bonup-agent-control/prod01-openai-api-key'
 PRODUCT_RUNTIME_ROOTS = (
     'prod_application', 'prod_artifact', 'prod_contract', 'prod_model_transport',
-    'prod_openai_http', 'prod_response_capture', 'prod_runtime',
+    'prod_execution', 'prod_openai_http', 'prod_response_capture', 'prod_runtime',
 )
 REGISTRY_PATH = '/var/lib/bonup-agent-control/control.sqlite3'
 HISTORY_PATH = '/var/lib/bonup-agent-control/history.git'

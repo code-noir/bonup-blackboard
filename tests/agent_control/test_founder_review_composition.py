@@ -18,6 +18,7 @@ from tools.agent_control.founder_review_composition import FounderReviewCoordina
 from tools.agent_control.identity import PeerIdentity, ProcessIdentity
 from tools.agent_control.prod_application import ProductDirectionApplicationService
 from tools.agent_control.prod_artifact import ProposalArtifactStore
+from tools.agent_control.prod_execution import ProdExecutionLedger
 from tools.agent_control.prod_runtime import TrustedProd01Runtime
 from tools.agent_control.registry import Registry
 from tools.agent_control.runtime_schema import migrate_v2
@@ -27,7 +28,7 @@ from tools.agent_control.serialization import canonical_json, digest
 @unittest.skipUnless(FOUNDER_FIXTURE_AVAILABLE, "trusted Founder fixture unavailable in this environment")
 class FounderReviewCompositionTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="bonup-founder-review-")
+        self.temp = tempfile.TemporaryDirectory(prefix="bonup-founder-review-", dir="/dev/shm")
         root = Path(self.temp.name)
         self.store = ProposalArtifactStore(root / "proposals")
         self.registry = Registry.initialize(
@@ -94,7 +95,8 @@ class FounderReviewCompositionTests(unittest.TestCase):
 
         service = ProductDirectionApplicationService(
             TrustedProd01Runtime(
-                NoCallModel(), source_checkpoint="a" * 40, artifact_store=self.store
+                NoCallModel(), source_checkpoint="a" * 40, artifact_store=self.store,
+                execution_ledger=ProdExecutionLedger(Path(self.temp.name) / "execution.sqlite3"),
             ),
             artifact_store=self.store,
             founder_boundary=self.coordinator.boundary(),
@@ -159,7 +161,8 @@ class FounderReviewCompositionTests(unittest.TestCase):
 
         service = ProductDirectionApplicationService(
             TrustedProd01Runtime(
-                NoCallModel(), source_checkpoint="a" * 40, artifact_store=self.store
+                NoCallModel(), source_checkpoint="a" * 40, artifact_store=self.store,
+                execution_ledger=ProdExecutionLedger(Path(self.temp.name) / "execution.sqlite3"),
             ),
             artifact_store=self.store,
             founder_boundary=self.coordinator.boundary(),

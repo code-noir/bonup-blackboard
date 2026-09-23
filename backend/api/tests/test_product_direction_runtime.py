@@ -8,6 +8,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from tools.agent_control.prod_artifact import ProposalArtifactStore
+from tools.agent_control.prod_execution import ProdExecutionLedger
 from tools.agent_control.prod_runtime import (
     ProductDirectionRuntimeRequest,
     ProductRuntimeUnavailable,
@@ -105,11 +106,12 @@ class ProductDirectionRuntimeTests(TestCase):
         application_id = str(uuid4())
         agent_control_id = agent_control_task_id_for(application_id)
         transport = TrustedFakeTransport()
-        with TemporaryDirectory(prefix="bonup-prod-runtime-", dir="/tmp") as directory:
+        with TemporaryDirectory(prefix="bonup-prod-runtime-", dir="/dev/shm") as directory:
             runtime = TrustedProd01Runtime(
                 transport,
                 source_checkpoint="a" * 40,
-                artifact_store=ProposalArtifactStore(directory),
+                artifact_store=ProposalArtifactStore(Path(directory) / "artifacts"),
+                execution_ledger=ProdExecutionLedger(Path(directory) / "execution.sqlite3"),
             )
             result = runtime.submit(ProductDirectionRuntimeRequest(
                 application_task_id=application_id,
@@ -122,18 +124,19 @@ class ProductDirectionRuntimeTests(TestCase):
             self.assertEqual(result.proposal_id, "00000000-0000-4000-8000-000000000701")
             self.assertEqual(result.proposal_artifact_id, "PROD-01-" + result.proposal_id)
             self.assertEqual(len(transport.calls), 1)
-            self.assertTrue((Path(directory) / (
+            self.assertTrue((Path(directory) / "artifacts" / (
                 "proposal-" + result.proposal_id + ".json")).exists())
 
     def test_api_success_transitions_once_and_binds_safe_result(self):
         client = self.operator_client()
         task_id = self.create_task(client)
         transport = TrustedFakeTransport()
-        with TemporaryDirectory(prefix="bonup-prod-runtime-", dir="/tmp") as directory:
+        with TemporaryDirectory(prefix="bonup-prod-runtime-", dir="/dev/shm") as directory:
             runtime = TrustedProd01Runtime(
                 transport,
                 source_checkpoint="a" * 40,
-                artifact_store=ProposalArtifactStore(directory),
+                artifact_store=ProposalArtifactStore(Path(directory) / "artifacts"),
+                execution_ledger=ProdExecutionLedger(Path(directory) / "execution.sqlite3"),
             )
             with patch(
                 "backend.api.product_direction.views.submit_product_direction_task",
@@ -157,17 +160,18 @@ class ProductDirectionRuntimeTests(TestCase):
         client = self.operator_client()
         task_id = self.create_task(client)
         transport = TrustedFakeTransport(fail=True)
-        with TemporaryDirectory(prefix="bonup-prod-runtime-", dir="/tmp") as directory:
+        with TemporaryDirectory(prefix="bonup-prod-runtime-", dir="/dev/shm") as directory:
             runtime = TrustedProd01Runtime(
                 transport,
                 source_checkpoint="a" * 40,
-                artifact_store=ProposalArtifactStore(directory),
+                artifact_store=ProposalArtifactStore(Path(directory) / "artifacts"),
+                execution_ledger=ProdExecutionLedger(Path(directory) / "execution.sqlite3"),
             )
             with patch("backend.api.product_direction.views.submit_product_direction_task", runtime.submit):
                 response = client.post(f"/api/product-direction/tasks/{task_id}/submit/", {}, format="json")
 
         self.assertEqual(response.status_code, 502)
-        self.assertEqual(response.data["reason"], "PROVIDER_ERROR")
+        self.assertEqual(response.data["reason"], "PROVIDER_OUTCOME_UNKNOWN")
         self.assertEqual(response.data["task"]["status"], "BLOCKED")
         self.assertEqual(len(transport.calls), 1)
         self.assertNotIn("synthetic transport failure", response.content.decode())
@@ -176,11 +180,12 @@ class ProductDirectionRuntimeTests(TestCase):
         client = self.operator_client()
         task_id = self.create_task(client)
         transport = TrustedFakeTransport()
-        with TemporaryDirectory(prefix="bonup-prod-recovery-", dir="/tmp") as directory:
+        with TemporaryDirectory(prefix="bonup-prod-recovery-", dir="/dev/shm") as directory:
             runtime = TrustedProd01Runtime(
                 transport,
                 source_checkpoint="a" * 40,
-                artifact_store=ProposalArtifactStore(directory),
+                artifact_store=ProposalArtifactStore(Path(directory) / "artifacts"),
+                execution_ledger=ProdExecutionLedger(Path(directory) / "execution.sqlite3"),
             )
             attempts = iter(("unavailable", "recover"))
 
@@ -223,14 +228,15 @@ class ProductDirectionRuntimeTests(TestCase):
         client = self.operator_client()
         task_id = self.create_task(client)
         transport = TrustedFakeTransport(invalid=True)
-        with TemporaryDirectory(prefix="bonup-prod-runtime-", dir="/tmp") as directory:
+        with TemporaryDirectory(prefix="bonup-prod-runtime-", dir="/dev/shm") as directory:
             runtime = TrustedProd01Runtime(
                 transport,
                 source_checkpoint="a" * 40,
-                artifact_store=ProposalArtifactStore(directory),
+                artifact_store=ProposalArtifactStore(Path(directory) / "artifacts"),
+                execution_ledger=ProdExecutionLedger(Path(directory) / "execution.sqlite3"),
             )
             with patch("backend.api.product_direction.views.submit_product_direction_task", runtime.submit):
                 response = client.post(f"/api/product-direction/tasks/{task_id}/submit/", {}, format="json")
-            self.assertEqual(list(Path(directory).iterdir()), [])
+            self.assertEqual(list((Path(directory) / "artifacts").iterdir()), [])
         self.assertEqual(response.status_code, 502)
         self.assertEqual(response.data["reason"], "KNOWLEDGE_STATE_INVALID")

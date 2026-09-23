@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from uuid import uuid4
@@ -9,6 +10,7 @@ from tools.agent_control.prod_application import (
     ProductDirectionApplicationService,
 )
 from tools.agent_control.prod_artifact import ProposalArtifactStore
+from tools.agent_control.prod_execution import ProdExecutionLedger
 from tools.agent_control.prod_runtime import (
     ProductDirectionRuntimeRequest,
     TrustedProd01Runtime,
@@ -91,9 +93,13 @@ class InProcessTransport:
 
 class ProductApplicationTests(unittest.TestCase):
     def _service(self, directory, model):
-        store = ProposalArtifactStore(directory)
+        root = Path(directory)
+        store = ProposalArtifactStore(root / "artifacts")
         return ProductDirectionApplicationService(
-            TrustedProd01Runtime(model, source_checkpoint=CHECKPOINT, artifact_store=store),
+            TrustedProd01Runtime(
+                model, source_checkpoint=CHECKPOINT, artifact_store=store,
+                execution_ledger=ProdExecutionLedger(root / "execution.sqlite3"),
+            ),
             artifact_store=store,
             founder_boundary=FounderBoundary(),
         )
@@ -104,10 +110,14 @@ class ProductApplicationTests(unittest.TestCase):
         model = ModelTransport()
         founder = FounderBoundary()
         app_transport = None
-        with TemporaryDirectory(prefix="bonup-prod-application-") as directory:
-            store = ProposalArtifactStore(directory)
+        with TemporaryDirectory(prefix="bonup-prod-application-", dir="/dev/shm") as directory:
+            root = Path(directory)
+            store = ProposalArtifactStore(root / "artifacts")
             service = ProductDirectionApplicationService(
-                TrustedProd01Runtime(model, source_checkpoint=CHECKPOINT, artifact_store=store),
+                TrustedProd01Runtime(
+                    model, source_checkpoint=CHECKPOINT, artifact_store=store,
+                    execution_ledger=ProdExecutionLedger(root / "execution.sqlite3"),
+                ),
                 artifact_store=store,
                 founder_boundary=founder,
             )
@@ -156,10 +166,14 @@ class ProductApplicationTests(unittest.TestCase):
 
     def test_application_service_rejects_runtime_controls_and_wrong_task_binding(self):
         model = ModelTransport()
-        with TemporaryDirectory(prefix="bonup-prod-application-") as directory:
-            store = ProposalArtifactStore(directory)
+        with TemporaryDirectory(prefix="bonup-prod-application-", dir="/dev/shm") as directory:
+            root = Path(directory)
+            store = ProposalArtifactStore(root / "artifacts")
             service = ProductDirectionApplicationService(
-                TrustedProd01Runtime(model, source_checkpoint=CHECKPOINT, artifact_store=store),
+                TrustedProd01Runtime(
+                    model, source_checkpoint=CHECKPOINT, artifact_store=store,
+                    execution_ledger=ProdExecutionLedger(root / "execution.sqlite3"),
+                ),
                 artifact_store=store,
                 founder_boundary=FounderBoundary(),
             )
@@ -189,7 +203,7 @@ class ProductApplicationTests(unittest.TestCase):
             "agent_id": "PROD-01",
             "objective": "Bounded objective.",
         }
-        with TemporaryDirectory(prefix="bonup-prod-recovery-") as directory:
+        with TemporaryDirectory(prefix="bonup-prod-recovery-", dir="/dev/shm") as directory:
             first_model = ModelTransport()
             first = self._service(directory, first_model)
             first_result = first.handle("SUBMIT_PRODUCT_DIRECTION", request)
@@ -206,10 +220,14 @@ class ProductApplicationTests(unittest.TestCase):
 
     def test_founder_status_is_unavailable_without_founder_composition(self):
         model = ModelTransport()
-        with TemporaryDirectory(prefix="bonup-prod-founder-status-") as directory:
-            store = ProposalArtifactStore(directory)
+        with TemporaryDirectory(prefix="bonup-prod-founder-status-", dir="/dev/shm") as directory:
+            root = Path(directory)
+            store = ProposalArtifactStore(root / "artifacts")
             service = ProductDirectionApplicationService(
-                TrustedProd01Runtime(model, source_checkpoint=CHECKPOINT, artifact_store=store),
+                TrustedProd01Runtime(
+                    model, source_checkpoint=CHECKPOINT, artifact_store=store,
+                    execution_ledger=ProdExecutionLedger(root / "execution.sqlite3"),
+                ),
                 artifact_store=store,
             )
             self.assertEqual(

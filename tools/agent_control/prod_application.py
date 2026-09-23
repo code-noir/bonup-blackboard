@@ -63,7 +63,7 @@ PRODUCT_RUNTIME_IDENTITY = "PROD01_APPLICATION_RUNTIME_V1"
 PRODUCT_CREDENTIAL_CONTRACT = "SYSTEMD_CREDENTIAL_AGENT_CONTROL_ONLY_V1"
 PRODUCT_RUNTIME_MODULES = (
     "prod_application", "prod_artifact", "prod_contract", "prod_model_transport",
-    "prod_openai_http", "prod_response_capture", "prod_runtime",
+    "prod_execution", "prod_openai_http", "prod_response_capture", "prod_runtime",
 )
 _REASON = re.compile(r"[A-Z0-9_]{1,64}\Z", re.ASCII)
 _TASK_ID = re.compile(r"ATS-[0-9]{4,}\Z", re.ASCII)
@@ -208,26 +208,9 @@ class ProductDirectionApplicationService:
         self.artifact_store = artifact_store
         self.founder_runtime = (None if founder_boundary is None
                                 else TrustedFounderReviewRuntime(founder_boundary))
-        # Serialise the bounded model cycle inside the controller.  The
-        # immutable artifact scan below also covers a retry after restart.
+        # Serialize the application request; durable PROD execution fencing
+        # remains authoritative across controller restarts.
         self._submit_lock = threading.RLock()
-
-    def _recovered_result(self, request):
-        try:
-            artifact = self.artifact_store.find_by_task_id(request.agent_control_task_id)
-        except ProposalArtifactError as error:
-            raise ProductRuntimeFailure(getattr(error, "reason", "PROVIDER_ERROR")) from None
-        if artifact is None:
-            return None
-        if (artifact.value["agent_id"] != "PROD-01"
-                or artifact.value["knowledge_state"] != "WORKING"):
-            raise ProductRuntimeFailure("PROPOSAL_BINDING_INVALID")
-        return ProductDirectionRuntimeResult(
-            agent_control_task_id=request.agent_control_task_id,
-            proposal_artifact_id=artifact.artifact_id,
-            proposal_id=artifact.value["proposal_id"],
-            proposal_digest=artifact.value["proposal_digest"],
-        )
 
     def _read_projection(self, payload):
         required = {
@@ -300,9 +283,7 @@ class ProductDirectionApplicationService:
             if request.agent_control_task_id != agent_control_task_id_for(request.application_task_id):
                 raise AuthorityError("Application and Agent Control task binding mismatch.")
             with self._submit_lock:
-                result = self._recovered_result(request)
-                if result is None:
-                    result = self.runtime.submit(request)
+                result = self.runtime.submit(request)
             return {
                 "agent_control_task_id": result.agent_control_task_id,
                 "proposal_artifact_id": result.proposal_artifact_id,
@@ -641,16 +622,21 @@ class InstalledProductApplicationRuntime:
 
 
 def compose_prod01_application_service(*, credential_provider, source_checkpoint,
-                                        artifact_store, founder_boundary):
+                                        artifact_store, founder_boundary,
+                                        execution_ledger=None):
     """Compose only the PROD-01 model/review application boundary.
 
     Missing credential remains a request-time fail-closed condition.  Founder
     review is optional at this composition point: without its trusted boundary
     proposal generation still works, while review operations remain unavailable.
     """
+    from .prod_execution import ProdExecutionLedger
+    if execution_ledger is None:
+        execution_ledger = ProdExecutionLedger()
     transport = OpenAIResponsesHTTPAdapter(credential_provider)
     runtime = TrustedProd01Runtime(
         transport, source_checkpoint=source_checkpoint, artifact_store=artifact_store,
+        execution_ledger=execution_ledger,
     )
     return ProductDirectionApplicationService(
         runtime, artifact_store=artifact_store, founder_boundary=founder_boundary,
@@ -676,7 +662,8 @@ class ProductionVerticalSliceComposition:
 def compose_prod01_vertical_slice(*, credential_provider, source_checkpoint,
                                   artifact_store, transport_config,
                                   founder_boundary=None,
-                                  founder_review_coordinator=None):
+                                  founder_review_coordinator=None,
+                                  execution_ledger=None):
     """Compose the model/review socket without enabling execution authority."""
     if founder_review_coordinator is not None:
         if founder_boundary is not None:
@@ -689,6 +676,7 @@ def compose_prod01_vertical_slice(*, credential_provider, source_checkpoint,
         source_checkpoint=source_checkpoint,
         artifact_store=artifact_store,
         founder_boundary=founder_boundary,
+        execution_ledger=execution_ledger,
     )
     receiver = AgentControlApplicationReceiver(service, transport_config)
     enabled = ["PROD01_MODEL_RUNTIME", "REGISTRY_V3", "DOMAIN_EVENT_DELIVERY",

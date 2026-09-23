@@ -527,47 +527,12 @@ def _transport_failure_reason(error):
     return PROVIDER_ERROR
 
 
-def run_product_model_cycle(task_input, transport, credential_provider=None, *,
-                            require_initial_predecessor_null=False,
-                            proposal_artifact_store=None, source_checkpoint=None):
-    """Perform one bounded model call and stop; create no authority or registry state."""
+def _complete_product_model_cycle(task_input, raw, *, response_metadata=None,
+                                  require_initial_predecessor_null=False,
+                                  proposal_artifact_store=None, source_checkpoint=None):
     task = validate_product_task(task_input)
-    request, request_bytes = build_product_model_request(task)
+    request, _ = build_product_model_request(task)
     request_digest = digest(request)
-    response_metadata = None
-    try:
-        if getattr(transport, "credential_owned", False) is True:
-            if credential_provider is not None:
-                raise ValidationError("Credential provider must remain inside the trusted transport.")
-            credential = None
-        else:
-            if credential_provider is None:
-                raise ValidationError("Trusted PROD-01 model credential provider is unavailable.")
-            credential = credential_provider.credential()
-            if credential is None:
-                raise ValidationError("Trusted PROD-01 model credential is unavailable.")
-        raw = transport.send(
-            endpoint=TRUSTED_ENDPOINT,
-            model=TRUSTED_MODEL,
-            request=request_bytes,
-            credential=credential,
-            timeout_seconds=TIMEOUT_SECONDS,
-            allow_redirects=ALLOW_REDIRECTS,
-            trust_environment=TRUST_ENVIRONMENT,
-        )
-    except Exception as error:
-        if isinstance(error, (KeyboardInterrupt, SystemExit)):
-            raise
-        metadata = _audit(task["task_id"], request_digest, "TRANSPORT_FAILED",
-                          reason=_transport_failure_reason(error),
-                          provider_structure=(
-                              {"http_response": bounded}
-                              if (bounded := _bounded_response_metadata(
-                                      getattr(error, "response_metadata", None))) is not None
-                              else None))
-        raise ProductModelFailure("PROD-01 model transport failed closed.", metadata) from None
-    response_metadata = _bounded_response_metadata(
-        getattr(transport, "response_metadata", None))
     try:
         candidate = parse_product_model_response(raw, response_metadata=response_metadata)
     except ProductOutputFailure as error:
@@ -612,3 +577,70 @@ def run_product_model_cycle(task_input, transport, credential_provider=None, *,
             raise ProductModelFailure(
                 "PROD-01 proposal artifact persistence failed.", failure_metadata) from None
     return ProductModelCycle(task, proposal, proposal_bytes, proposal_digest, metadata, artifact)
+
+
+def resume_product_model_cycle(task_input, raw, *, response_metadata=None,
+                               require_initial_predecessor_null=False,
+                               proposal_artifact_store=None, source_checkpoint=None):
+    """Complete a captured response without contacting the provider."""
+    return _complete_product_model_cycle(
+        task_input,
+        raw,
+        response_metadata=response_metadata,
+        require_initial_predecessor_null=require_initial_predecessor_null,
+        proposal_artifact_store=proposal_artifact_store,
+        source_checkpoint=source_checkpoint,
+    )
+
+
+def run_product_model_cycle(task_input, transport, credential_provider=None, *,
+                            require_initial_predecessor_null=False,
+                            proposal_artifact_store=None, source_checkpoint=None,
+                            response_capture=None):
+    """Perform one bounded model call and stop; create no authority or registry state."""
+    task = validate_product_task(task_input)
+    request, request_bytes = build_product_model_request(task)
+    request_digest = digest(request)
+    try:
+        if getattr(transport, "credential_owned", False) is True:
+            if credential_provider is not None:
+                raise ValidationError("Credential provider must remain inside the trusted transport.")
+            credential = None
+        else:
+            if credential_provider is None:
+                raise ValidationError("Trusted PROD-01 model credential provider is unavailable.")
+            credential = credential_provider.credential()
+            if credential is None:
+                raise ValidationError("Trusted PROD-01 model credential is unavailable.")
+        raw = transport.send(
+            endpoint=TRUSTED_ENDPOINT,
+            model=TRUSTED_MODEL,
+            request=request_bytes,
+            credential=credential,
+            timeout_seconds=TIMEOUT_SECONDS,
+            allow_redirects=ALLOW_REDIRECTS,
+            trust_environment=TRUST_ENVIRONMENT,
+        )
+    except Exception as error:
+        if isinstance(error, (KeyboardInterrupt, SystemExit)):
+            raise
+        metadata = _audit(task["task_id"], request_digest, "TRANSPORT_FAILED",
+                          reason=_transport_failure_reason(error),
+                          provider_structure=(
+                              {"http_response": bounded}
+                              if (bounded := _bounded_response_metadata(
+                                      getattr(error, "response_metadata", None))) is not None
+                              else None))
+        raise ProductModelFailure("PROD-01 model transport failed closed.", metadata) from None
+    response_metadata = _bounded_response_metadata(
+        getattr(transport, "response_metadata", None))
+    if response_capture is not None:
+        response_capture(raw, response_metadata)
+    return _complete_product_model_cycle(
+        task,
+        raw,
+        response_metadata=response_metadata,
+        require_initial_predecessor_null=require_initial_predecessor_null,
+        proposal_artifact_store=proposal_artifact_store,
+        source_checkpoint=source_checkpoint,
+    )

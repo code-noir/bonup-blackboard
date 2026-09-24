@@ -3,10 +3,13 @@ import base64
 from copy import deepcopy
 from datetime import datetime, timezone, timedelta
 import hashlib
+import os
 import sqlite3
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 from uuid import uuid4
 
 from test_founder_root import PUBLIC, sign, BOOT
@@ -284,3 +287,209 @@ class GenesisTests(unittest.TestCase):
         self.assertEqual([e[0] for e in self.events],['GENESIS_PROPOSAL_CREATED','GENESIS_CEREMONY_CONFIRMED','GENESIS_BINDING_CREATED'])
         self.assertNotIn(self.encoded,canonical_json([list(row) for row in self.events]))
         self.assertNotIn('signature',canonical_json(record))
+
+
+def clean_preflight():
+    return {name:None for name in g.PREFLIGHT_MARKERS}
+
+
+def ledger_binding():
+    encoded=base64.b64encode(PUBLIC).decode()
+    root=g.public_root(encoded)
+    identity=dict(source_commit='a'*40,candidate_manifest_digest='b'*64,
+        candidate_bundle_digest='c'*64,provisioning_generation=2,
+        founder_root_policy_digest=digest(g.policy()))
+    challenge=dict(version=1,protocol='bonup-founder-genesis-v1',
+        purpose='FOUNDER_ROOT_GENESIS',**identity,algorithm='Ed25519',
+        public_key_digest=root.key_id,key_id=root.key_id,root_generation=1,
+        nonce='d'*64,issued_at='2026-01-01T00:00:00+00:00',
+        expires_at='2026-01-01T00:05:00+00:00')
+    binding=dict(version=1,**identity,algorithm='Ed25519',public_key=encoded,
+        key_id=root.key_id,root_generation=1,challenge=challenge,
+        genesis_challenge_digest=digest(challenge),ceremony_id=str(uuid4()),
+        ceremony='OFFLINE_HUMAN_GENESIS',approved=False,activation=False)
+    binding['binding_digest']=digest(binding)
+    return binding
+
+
+class LedgerContractTests(unittest.TestCase):
+    def setUp(self):
+        self.directory=tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.path=Path(self.directory.name)/'founder-genesis.sqlite3'
+
+    def initialize(self):
+        return g.GenesisLedger.initialize_virgin(str(self.path),preflight=clean_preflight())
+
+    def test_safe_virgin_initialization_and_exact_row(self):
+        ledger=self.initialize()
+        self.addCleanup(ledger.db.close)
+        self.assertEqual(self.path.stat().st_mode & 0o777,0o600)
+        self.assertEqual(ledger._filesystem_identity,
+            (self.path.stat().st_dev,self.path.stat().st_ino))
+        self.assertEqual(ledger.db.execute('SELECT * FROM genesis').fetchall(),
+            [(g.DOMAIN,'VIRGIN','{}')])
+        reopened=g.GenesisLedger.open_and_verify(str(self.path))
+        self.addCleanup(reopened.db.close)
+        self.assertEqual(reopened._filesystem_identity,
+            (self.path.stat().st_dev,self.path.stat().st_ino))
+        reopened.require_virgin()
+
+    def test_second_initialization_and_reset_are_rejected(self):
+        ledger=self.initialize();ledger.db.close()
+        with self.assertRaises(AuthorityError):
+            g.GenesisLedger.initialize_virgin(str(self.path),preflight=clean_preflight())
+        self.assertFalse(hasattr(g.GenesisLedger,'reset'))
+
+    def test_missing_or_prior_preflight_denies_initialization(self):
+        with self.assertRaises(AuthorityError):
+            g.GenesisLedger.initialize_virgin(str(self.path),preflight=None)
+        for marker in g.PREFLIGHT_MARKERS:
+            with self.subTest(marker=marker):
+                markers=clean_preflight();markers[marker]={'evidence':'present'}
+                with self.assertRaises(AuthorityError):
+                    g.GenesisLedger.initialize_virgin(str(self.path),preflight=markers)
+
+    def test_symlink_and_unsafe_permissions_are_rejected(self):
+        target=Path(self.directory.name)/'real.sqlite3'
+        target.write_bytes(b'not-a-ledger')
+        target.chmod(0o600)
+        link=Path(self.directory.name)/'link.sqlite3'
+        link.symlink_to(target)
+        with self.assertRaises(AuthorityError):g.GenesisLedger.open_and_verify(str(link))
+        ledger=self.initialize();ledger.db.close()
+        self.path.chmod(0o640)
+        with self.assertRaises(AuthorityError):g.GenesisLedger.open_and_verify(str(self.path))
+        parent=Path(self.directory.name)/'unsafe-parent';parent.mkdir();parent.chmod(0o770)
+        try:
+            with self.assertRaises(AuthorityError):
+                g.GenesisLedger.initialize_virgin(str(parent/'ledger.sqlite3'),preflight=clean_preflight())
+        finally:
+            parent.chmod(0o700)
+        outer=Path(self.directory.name)/'unsafe-ancestor';inner=outer/'safe-parent'
+        inner.mkdir(parents=True);outer.chmod(0o770);inner.chmod(0o700)
+        try:
+            with self.assertRaises(AuthorityError):
+                g.GenesisLedger.initialize_virgin(str(inner/'ledger.sqlite3'),preflight=clean_preflight())
+        finally:
+            outer.chmod(0o700)
+
+    def test_sqlite_failure_cleans_new_target(self):
+        with patch.object(g.sqlite3,'connect',side_effect=sqlite3.DatabaseError('synthetic')):
+            with self.assertRaises(AuthorityError):self.initialize()
+        self.assertFalse(self.path.exists())
+
+    def test_path_replacement_after_sqlite_open_is_rejected(self):
+        moved=Path(self.directory.name)/'created-before-replacement.sqlite3'
+        real_connect=g.sqlite3.connect
+        def replace_path(database,*args,**kwargs):
+            db=real_connect(database,*args,**kwargs)
+            os.rename(self.path,moved)
+            self.path.write_bytes(b'replaced-path')
+            self.path.chmod(0o600)
+            return db
+        with patch.object(g.sqlite3,'connect',side_effect=replace_path):
+            with self.assertRaises(AuthorityError):self.initialize()
+        with self.assertRaises(AuthorityError):g.GenesisLedger.open_and_verify(str(self.path))
+        with self.assertRaises(AuthorityError):g.GenesisLedger.open_and_verify(str(moved))
+
+    def test_replacement_after_schema_invalidates_created_object(self):
+        moved=Path(self.directory.name)/'created-after-schema.sqlite3'
+        real_path=g._ledger_path
+        existing_checks=[0]
+        def replace_on_final_check(path,*,exists):
+            result=real_path(path,exists=exists)
+            if exists:
+                existing_checks[0]+=1
+                if existing_checks[0]==2:
+                    os.rename(self.path,moved)
+                    self.path.write_bytes(b'replaced-after-schema')
+                    self.path.chmod(0o600)
+            return result
+        with patch.object(g,'_ledger_path',side_effect=replace_on_final_check):
+            with self.assertRaises(AuthorityError):self.initialize()
+        with self.assertRaises(AuthorityError):g.GenesisLedger.open_and_verify(str(self.path))
+        with self.assertRaises(AuthorityError):g.GenesisLedger.open_and_verify(str(moved))
+
+    def test_repository_path_and_parent_traversal_are_rejected(self):
+        with self.assertRaises(AuthorityError):
+            g.GenesisLedger.initialize_virgin(str(Path(__file__).resolve()),preflight=clean_preflight())
+        with self.assertRaises(AuthorityError):
+            g.GenesisLedger.initialize_virgin(str(Path(self.directory.name)/'..'/'bad.sqlite3'),
+                preflight=clean_preflight())
+
+    def test_malformed_and_extra_sqlite_schema_are_rejected(self):
+        malformed=Path(self.directory.name)/'malformed.sqlite3'
+        malformed.write_bytes(b'not-sqlite');malformed.chmod(0o600)
+        with self.assertRaises(AuthorityError):g.GenesisLedger.open_and_verify(str(malformed))
+        extra=Path(self.directory.name)/'extra.sqlite3'
+        db=sqlite3.connect(str(extra))
+        db.execute('CREATE TABLE genesis(domain TEXT PRIMARY KEY,state TEXT NOT NULL,evidence TEXT NOT NULL)')
+        db.execute('CREATE TABLE extra(value TEXT)')
+        db.execute('INSERT INTO genesis VALUES (?,?,?)',(g.DOMAIN,'VIRGIN','{}'))
+        db.execute('INSERT INTO genesis VALUES (?,?,?)',('other-domain','VIRGIN','{}'))
+        db.commit();db.close();extra.chmod(0o600)
+        with self.assertRaises(AuthorityError):g.GenesisLedger.open_and_verify(str(extra))
+
+    def test_consume_rejects_extra_and_secret_fields(self):
+        for field in ('private_key','seed','api_credential','unexpected'):
+            ledger=self.initialize()
+            attempted=dict(ledger_binding(),**{field:'secret'})
+            with self.subTest(field=field),self.assertRaises(AuthorityError):ledger.consume(attempted)
+            ledger.require_virgin()
+            ledger.db.close()
+
+    def test_commit_rollback_leaves_virgin(self):
+        ledger=self.initialize();self.addCleanup(ledger.db.close)
+        ledger.db.set_authorizer(lambda action,*args:
+            sqlite3.SQLITE_DENY if action==sqlite3.SQLITE_UPDATE else sqlite3.SQLITE_OK)
+        with self.assertRaises(sqlite3.DatabaseError):ledger.consume(ledger_binding())
+        ledger.db.set_authorizer(None)
+        ledger.require_virgin()
+
+    def test_valid_consumed_recovery_and_second_consume_rejection(self):
+        ledger=self.initialize();self.addCleanup(ledger.db.close)
+        binding=ledger_binding();ledger.consume(binding)
+        self.assertEqual(ledger.recover_consumed_evidence(),binding)
+        with self.assertRaises(AuthorityError):ledger.consume(binding)
+        with self.assertRaises(AuthorityError):ledger.require_virgin()
+
+    def test_tampered_binding_and_challenge_digest_are_rejected(self):
+        for change in ({'binding_digest':'f'*64},
+                       {'genesis_challenge_digest':'f'*64}):
+            with self.subTest(change=change):
+                ledger=self.initialize();self.addCleanup(ledger.db.close)
+                attempted=dict(ledger_binding(),**change)
+                with self.assertRaises(AuthorityError):ledger.consume(attempted)
+                ledger.require_virgin()
+
+    def test_persisted_tampered_evidence_is_rejected_on_open(self):
+        ledger=self.initialize();binding=ledger_binding();ledger.consume(binding)
+        tampered=dict(binding,binding_digest='f'*64)
+        ledger.db.execute('UPDATE genesis SET evidence=? WHERE domain=?',
+            (canonical_json(tampered),g.DOMAIN))
+        ledger.db.commit();ledger.db.close()
+        with self.assertRaises(AuthorityError):g.GenesisLedger.open_and_verify(str(self.path))
+
+    def test_virgin_recovery_is_rejected(self):
+        ledger=self.initialize();self.addCleanup(ledger.db.close)
+        with self.assertRaises(AuthorityError):ledger.recover_consumed_evidence()
+
+    def test_concurrent_consume_has_one_winner(self):
+        ledger=self.initialize();ledger.db.close()
+        binding=ledger_binding()
+        def consume():
+            current=g.GenesisLedger.open_and_verify(str(self.path))
+            try:
+                current.consume(binding)
+                return 'CONSUMED'
+            except AuthorityError:
+                return 'DENIED'
+            finally:
+                current.db.close()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results=list(pool.map(lambda _:consume(), (1,2)))
+        self.assertEqual(sorted(results),['CONSUMED','DENIED'])
+        recovered=g.GenesisLedger.open_and_verify(str(self.path))
+        self.addCleanup(recovered.db.close)
+        self.assertEqual(recovered.recover_consumed_evidence(),binding)

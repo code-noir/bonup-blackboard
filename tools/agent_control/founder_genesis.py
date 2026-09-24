@@ -6,7 +6,12 @@ unavailable: there is no production auto-confirm or software signing fallback.
 """
 import base64
 import hashlib
+import os
+from pathlib import Path
+import re
 import secrets
+import sqlite3
+import stat
 import time
 from copy import deepcopy
 from datetime import datetime, timezone, timedelta
@@ -22,6 +27,189 @@ DOMAIN = 'bonup-founder-genesis'
 BINDING_PATH = '/etc/bonup-agent-control/founder-root-binding.json'
 EVIDENCE_PATH = '/etc/bonup-agent-control/founder-genesis-evidence.json'
 PUBLIC_PATH = '/etc/bonup-agent-control/founder-root.json'
+PREFLIGHT_MARKERS = (
+    'founder_root', 'founder_root_binding', 'founder_genesis_evidence',
+    'authority_installation_receipt', 'consumed_ledger_evidence',
+)
+_LEDGER_SCHEMA = 'CREATE TABLE genesis(domain TEXT PRIMARY KEY,state TEXT NOT NULL,evidence TEXT NOT NULL)'
+_LEDGER_STATES = frozenset(('VIRGIN', 'CONSUMED'))
+
+
+def _authority(message):
+    raise AuthorityError(message)
+
+
+def _repository_roots():
+    roots = []
+    for start in (Path(__file__).resolve().parent, Path.cwd().resolve()):
+        current = start
+        while True:
+            if (current / '.git').exists() and current not in roots:
+                roots.append(current)
+            if current.parent == current:
+                break
+            current = current.parent
+    return roots
+
+
+def _under(path, root):
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _ancestor_is_replaceable(info):
+    mode = info.st_mode
+    return bool(mode & 0o022) and not bool(mode & stat.S_ISVTX)
+
+
+def _ledger_path(value, *, exists):
+    if not isinstance(value, (str, Path)) or not str(value) or not Path(value).is_absolute():
+        _authority('Explicit absolute offline ledger path required.')
+    path = Path(value)
+    if '..' in path.parts:
+        _authority('Offline ledger parent traversal denied.')
+    try:
+        resolved = path.resolve(strict=False)
+    except OSError as error:
+        raise AuthorityError('Offline ledger path cannot be resolved safely.') from error
+    if any(_under(resolved, root) for root in _repository_roots()):
+        _authority('Offline ledger must remain outside the repository checkout.')
+
+    parent = path.parent
+    current = Path(path.anchor)
+    for part in parent.parts[1:]:
+        current /= part
+        try:
+            info = os.lstat(current)
+        except FileNotFoundError:
+            _authority('Offline ledger parent must already exist.')
+        except OSError as error:
+            raise AuthorityError('Offline ledger parent cannot be inspected safely.') from error
+        if (stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode) or
+                _ancestor_is_replaceable(info)):
+            _authority('Offline ledger parent must be a real directory.')
+    try:
+        parent_info = os.stat(parent)
+    except OSError as error:
+        raise AuthorityError('Offline ledger parent cannot be inspected safely.') from error
+    if _ancestor_is_replaceable(parent_info):
+        _authority('Offline ledger parent is group/world writable.')
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        if exists:
+            _authority('Offline ledger does not exist.')
+        return path
+    except OSError as error:
+        raise AuthorityError('Offline ledger target cannot be inspected safely.') from error
+    if not exists:
+        _authority('Offline ledger target already exists; reset is forbidden.')
+    if (stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode) or
+            info.st_nlink != 1 or (info.st_mode & 0o077) or
+            (info.st_mode & 0o111) or (info.st_mode & 0o600) != 0o600):
+        _authority('Offline ledger file safety validation failed.')
+    return path
+
+
+class _OwnedSQLiteConnection(sqlite3.Connection):
+    """SQLite connection retaining the exact exclusive-open file descriptor."""
+    def __init__(self, *args, ledger_fd=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._ledger_fd = ledger_fd
+
+    def close(self):
+        fd, self._ledger_fd = self._ledger_fd, None
+        try:
+            return super().close()
+        finally:
+            if fd is not None:
+                os.close(fd)
+
+
+def _sqlite_fd_path(fd):
+    return f'/proc/self/fd/{fd}'
+
+
+def _connect_exact_fd(fd):
+    return sqlite3.connect(_sqlite_fd_path(fd),
+        factory=lambda *args, **kwargs: _OwnedSQLiteConnection(
+            *args, ledger_fd=fd, **kwargs))
+
+
+def _file_identity(info):
+    return info.st_dev, info.st_ino
+
+
+def _path_matches(path, identity):
+    try:
+        info = os.stat(path, follow_symlinks=False)
+    except OSError as error:
+        raise AuthorityError('Offline ledger pathname cannot be verified.') from error
+    return stat.S_ISREG(info.st_mode) and _file_identity(info) == identity
+
+
+def _remove_created(path, identity):
+    """Remove only the file created by this attempt, never a replacement."""
+    try:
+        info = os.stat(path, follow_symlinks=False)
+        if (stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and
+                _file_identity(info) == identity):
+            os.unlink(path)
+    except OSError:
+        pass
+
+
+def _invalidate_created(fd):
+    """Destroy any partially initialized state before releasing a created inode."""
+    try:
+        os.ftruncate(fd, 0)
+        os.fsync(fd)
+    except OSError:
+        pass
+
+
+def _normal_sql(value):
+    return re.sub(r'\s+', '', value).lower()
+
+
+def _clean_preflight(markers):
+    if type(markers) is not dict or set(markers) != set(PREFLIGHT_MARKERS):
+        _authority('Complete prior-Genesis preflight evidence required.')
+    if any(markers[name] is not None for name in PREFLIGHT_MARKERS):
+        _authority('Prior Founder Genesis evidence denies initialization.')
+
+
+def _ledger_identity(binding):
+    identity = {
+        key: binding.get(key) for key in (
+            'source_commit', 'candidate_manifest_digest',
+            'candidate_bundle_digest', 'provisioning_generation',
+            'founder_root_policy_digest',
+        )
+    }
+    if (not valid_format('git-oid', identity['source_commit']) or
+            any(not valid_format('sha256', identity[key]) for key in (
+                'candidate_manifest_digest', 'candidate_bundle_digest',
+                'founder_root_policy_digest')) or
+            identity['founder_root_policy_digest'] != digest(policy()) or
+            type(identity['provisioning_generation']) is not int or
+            identity['provisioning_generation'] != 2):
+        _authority('Genesis binding candidate identity invalid.')
+    return identity
+
+
+def _validate_ledger_binding(binding):
+    if type(binding) is not dict:
+        _authority('Closed Genesis binding required.')
+    identity = _ledger_identity(binding)
+    validate_binding(binding, identity)
+    encoded = canonical_json(binding)
+    if len(encoded.encode('utf-8')) > 65536:
+        _authority('Genesis binding exceeds the bounded evidence size.')
+    return deepcopy(binding)
 
 
 def policy():
@@ -92,29 +280,156 @@ class OfflineCeremony:
 
 
 class GenesisLedger:
-    """Already established offline trust-domain database; never auto-initialized.
+    """Bounded SQLite contract for the one-time offline trust domain.
 
     Required table: genesis(domain TEXT PRIMARY KEY, state TEXT NOT NULL,
-    evidence TEXT NOT NULL). A trusted offline initialization ceremony creates
-    exactly one VIRGIN row with evidence '{}', only after excluding prior root
-    and installation evidence. Missing/deleted/corrupt state denies Genesis.
-    SQLite transaction serialization consumes before publishing the binding.
+    evidence TEXT NOT NULL). Initialization requires an explicit clean
+    prior-Genesis preflight and never resets an existing target. Missing,
+    deleted, corrupt, or noncanonical state denies Genesis. SQLite transaction
+    serialization consumes before publishing the binding.
     """
     def __init__(self, db):
         self.db = db
+        self._filesystem_identity = None
+
+    @classmethod
+    def initialize_virgin(cls, path, *, preflight):
+        """Create one new offline ledger; never open or reset an existing one."""
+        _clean_preflight(preflight)
+        path = _ledger_path(path, exists=False)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+        try:
+            fd = os.open(path, flags, 0o600)
+        except (FileExistsError, OSError) as error:
+            raise AuthorityError('Offline ledger target cannot be created safely.') from error
+        db = None
+        identity = _file_identity(os.fstat(fd))
+        try:
+            db = _connect_exact_fd(fd)
+            _ledger_path(path, exists=True)
+            if not _path_matches(path, identity):
+                _authority('Offline ledger path changed during creation.')
+            with db:
+                db.execute('PRAGMA journal_mode=DELETE')
+                db.execute('PRAGMA synchronous=FULL')
+                db.execute(_LEDGER_SCHEMA)
+                db.execute('INSERT INTO genesis VALUES (?,?,?)', (DOMAIN, 'VIRGIN', '{}'))
+            _ledger_path(path, exists=True)
+            if not _path_matches(path, identity):
+                _authority('Offline ledger path changed during initialization.')
+            ledger = cls(db)
+            ledger._filesystem_identity = identity
+            ledger._verify_database()
+            ledger.require_virgin()
+            return ledger
+        except BaseException as error:
+            if db is not None:
+                _invalidate_created(fd)
+                db.close()
+            else:
+                os.close(fd)
+            _remove_created(path, identity)
+            if isinstance(error, AuthorityError):
+                raise
+            if isinstance(error, (sqlite3.DatabaseError, OSError, ValidationError)):
+                raise AuthorityError('Offline ledger initialization failed closed.') from error
+            raise
+
+    @classmethod
+    def open_and_verify(cls, path):
+        """Open an existing ledger without creating, repairing, or resetting it."""
+        path = _ledger_path(path, exists=True)
+        db = None
+        fd = None
+        try:
+            fd = os.open(path, os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC)
+            identity = _file_identity(os.fstat(fd))
+            db = _connect_exact_fd(fd)
+            _ledger_path(path, exists=True)
+            if not _path_matches(path, identity):
+                _authority('Offline ledger identity changed while opening.')
+            ledger = cls(db)
+            ledger._filesystem_identity = identity
+            ledger._verify_database()
+            return ledger
+        except BaseException as error:
+            if db is not None:
+                db.close()
+            elif fd is not None:
+                os.close(fd)
+            if isinstance(error, AuthorityError):
+                raise
+            if isinstance(error, (sqlite3.DatabaseError, OSError, ValidationError)):
+                raise AuthorityError('Offline ledger open or verification failed.') from error
+            raise
+
+    def _verify_schema(self):
+        objects = self.db.execute(
+            "SELECT type,name,sql FROM sqlite_master "
+            "WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name"
+        ).fetchall()
+        if len(objects) != 1 or objects[0][0] != 'table' or objects[0][1] != 'genesis':
+            _authority('Offline ledger schema is not exact.')
+        if _normal_sql(objects[0][2]) != _normal_sql(_LEDGER_SCHEMA):
+            _authority('Offline ledger schema is not exact.')
+        columns = self.db.execute('PRAGMA table_info(genesis)').fetchall()
+        if columns != [
+                (0, 'domain', 'TEXT', 0, None, 1),
+                (1, 'state', 'TEXT', 1, None, 0),
+                (2, 'evidence', 'TEXT', 1, None, 0)]:
+            _authority('Offline ledger columns are not exact.')
+
+    def _verify_database(self):
+        try:
+            if self.db.execute('PRAGMA integrity_check').fetchall() != [('ok',)]:
+                _authority('Offline ledger integrity check failed.')
+            self._verify_schema()
+            rows = self.db.execute(
+                'SELECT domain,state,evidence FROM genesis ORDER BY domain'
+            ).fetchall()
+        except sqlite3.DatabaseError as error:
+            raise AuthorityError('Offline ledger verification failed.') from error
+        if len(rows) != 1 or rows[0][0] != DOMAIN or rows[0][1] not in _LEDGER_STATES:
+            _authority('Offline ledger row is invalid.')
+        state, evidence = rows[0][1], rows[0][2]
+        if state == 'VIRGIN':
+            if evidence != '{}':
+                _authority('VIRGIN ledger evidence must be empty.')
+            return state, None
+        if type(evidence) is not str or len(evidence.encode('utf-8')) > 65536:
+            _authority('CONSUMED ledger evidence exceeds the bounded size.')
+        try:
+            parsed = parse_json(evidence)
+        except ValidationError as error:
+            raise AuthorityError('CONSUMED ledger evidence is not canonical JSON.') from error
+        if canonical_json(parsed) != evidence:
+            _authority('CONSUMED ledger evidence is not canonical JSON.')
+        try:
+            binding = _validate_ledger_binding(parsed)
+        except (AuthorityError, ValidationError) as error:
+            raise AuthorityError('CONSUMED ledger binding is invalid.') from error
+        return state, binding
 
     def require_virgin(self):
-        rows = self.db.execute('SELECT state,evidence FROM genesis WHERE domain=?', (DOMAIN,)).fetchall()
-        if rows != [('VIRGIN', '{}')]:
+        state, _ = self._verify_database()
+        if state != 'VIRGIN':
             raise AuthorityError('Genesis unavailable: absent or previously consumed trust domain.')
 
     def consume(self, evidence):
+        binding = _validate_ledger_binding(evidence)
+        self._verify_database()
         with self.db:
             result = self.db.execute('UPDATE genesis SET state=?,evidence=? '
                 'WHERE domain=? AND state=? AND evidence=?',
-                ('CONSUMED', canonical_json(evidence), DOMAIN, 'VIRGIN', '{}'))
+                ('CONSUMED', canonical_json(binding), DOMAIN, 'VIRGIN', '{}'))
             if result.rowcount != 1:
                 raise AuthorityError('Genesis already consumed or state unavailable.')
+
+    def recover_consumed_evidence(self):
+        state, binding = self._verify_database()
+        if state != 'CONSUMED' or binding is None:
+            raise AuthorityError('Consumed Genesis evidence required.')
+        return deepcopy(binding)
 
 
 class Genesis:

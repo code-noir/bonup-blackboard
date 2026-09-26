@@ -7,6 +7,8 @@
 #   - Future generation consults the ledger, not just living profiles.
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError
 from django.test import TestCase
 
 from backend.users.models import AssignedBonId, BonUserProfile, ReservedBonId
@@ -166,6 +168,72 @@ class BonIdLedgerWriteTests(TestCase):
 
         after = AssignedBonId.objects.count()
         self.assertEqual(after, before)
+
+    def test_profile_has_canonical_ledger_correspondence(self):
+        user = _make_user("correspondence@example.com")
+
+        self.assertTrue(user.bon_profile.has_canonical_identity())
+
+    def test_existing_bonid_cannot_be_blanked_or_replaced(self):
+        user = _make_user("immutable@example.com")
+        profile = user.bon_profile
+        original_bon_id = profile.bon_id
+
+        for replacement in ["", "0000000009999"]:
+            profile.bon_id = replacement
+            with self.assertRaises(ValidationError):
+                profile.save(update_fields=["bon_id"])
+            profile.refresh_from_db()
+            self.assertEqual(profile.bon_id, original_bon_id)
+
+        self.assertTrue(
+            AssignedBonId.objects.filter(
+                bon_id=original_bon_id,
+                user_id_at_assignment=user.pk,
+                status=AssignedBonId.STATUS_ACTIVE,
+            ).exists()
+        )
+
+    def test_malformed_bonid_writes_are_rejected(self):
+        user = _make_user("malformed@example.com")
+        profile = user.bon_profile
+
+        profile.bon_id = "123"
+        with self.assertRaises(ValidationError):
+            profile.save(update_fields=["bon_id"])
+
+        with self.assertRaises(ValidationError):
+            AssignedBonId.objects.create(bon_id="１２３", status=AssignedBonId.STATUS_ACTIVE)
+
+        with self.assertRaises(IntegrityError):
+            ReservedBonId.objects.create(bon_id="123", reason="test")
+
+    def test_assigned_bonid_cannot_be_replaced(self):
+        user = _make_user("ledger-immutable@example.com")
+        entry = AssignedBonId.objects.get(bon_id=user.bon_profile.bon_id)
+        original_bon_id = entry.bon_id
+        entry.bon_id = "0000000009999"
+
+        with self.assertRaises(ValidationError):
+            entry.save(update_fields=["bon_id"])
+
+        entry.refresh_from_db()
+        self.assertEqual(entry.bon_id, original_bon_id)
+
+    def test_legacy_binary_only_identity_remains_valid(self):
+        user = _make_user("legacy@example.com")
+        profile = user.bon_profile
+        legacy_bon_id = "0000000000010"
+
+        # Simulate the existing historical migration state without using the
+        # protected model save path to rewrite live identity.
+        AssignedBonId.objects.filter(bon_id=profile.bon_id).update(bon_id=legacy_bon_id)
+        BonUserProfile.objects.filter(pk=profile.pk).update(bon_id=legacy_bon_id)
+        profile.refresh_from_db()
+
+        self.assertTrue(profile.has_canonical_identity())
+        profile.city = "Historical"
+        profile.save(update_fields=["city"])
 
 
 # ---------------------------------------------------------------------------

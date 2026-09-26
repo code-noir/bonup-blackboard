@@ -1,9 +1,25 @@
 # backend/users/models.py
+import re
 import uuid
 from datetime import timedelta
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
 from django.db import models, transaction
+
+
+BON_ID_PATTERN = r"^[0-9]{13}$"
+BON_ID_VALIDATOR = RegexValidator(
+    regex=BON_ID_PATTERN,
+    message="Bon ID must be exactly 13 ASCII decimal digits.",
+    code="invalid_bon_id",
+)
+
+
+def validate_bon_id_value(value):
+    if not isinstance(value, str) or re.fullmatch(r"[0-9]{13}", value, flags=re.ASCII) is None:
+        raise ValidationError({"bon_id": BON_ID_VALIDATOR.message})
 
 
 class PendingSignup(models.Model):
@@ -58,6 +74,7 @@ class ReservedBonId(models.Model):
         unique=True,
         db_index=True,
         editable=False,
+        validators=[BON_ID_VALIDATOR],
     )
 
     reason = models.CharField(
@@ -69,6 +86,12 @@ class ReservedBonId(models.Model):
 
     class Meta:
         ordering = ["bon_id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(bon_id__regex=BON_ID_PATTERN),
+                name="reserved_bon_id_format",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.bon_id} ({self.reason})"
@@ -137,6 +160,7 @@ class AssignedBonId(models.Model):
         unique=True,
         db_index=True,
         editable=False,
+        validators=[BON_ID_VALIDATOR],
         help_text="The 13-digit bonID. Immutable once written.",
     )
 
@@ -172,6 +196,20 @@ class AssignedBonId(models.Model):
         ordering = ["bon_id"]
         verbose_name = "Assigned bonID"
         verbose_name_plural = "Assigned bonIDs"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(bon_id__regex=BON_ID_PATTERN),
+                name="assigned_bon_id_format",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        validate_bon_id_value(self.bon_id)
+        if not self._state.adding:
+            original = type(self).objects.only("bon_id").get(pk=self.pk)
+            if self.bon_id != original.bon_id:
+                raise ValidationError({"bon_id": "Assigned Bon IDs are immutable."})
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.bon_id} ({self.status})"
@@ -192,7 +230,7 @@ class BonUserProfile(models.Model):
     bonID is recorded even if the profile row is later deleted.
 
     Once set, bon_id is never changed.  The editable=False field flag and
-    the `if not self.bon_id` guard in save() both enforce this.
+    the save() mutation check both enforce this.
     """
 
     LANGUAGE_CHOICES = [
@@ -216,6 +254,7 @@ class BonUserProfile(models.Model):
         unique=True,
         db_index=True,
         editable=False,
+        validators=[BON_ID_VALIDATOR],
     )
 
     # Contact
@@ -242,16 +281,25 @@ class BonUserProfile(models.Model):
 
     class Meta:
         ordering = ["bon_id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(bon_id__regex=BON_ID_PATTERN),
+                name="bon_user_profile_bon_id_format",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.user_id} -> {self.bon_id}"
 
     def save(self, *args, **kwargs):
-        if not self.bon_id:
+        if self._state.adding:
+            if self.bon_id:
+                raise ValidationError({"bon_id": "Bon IDs are allocated by bonUP."})
             # Wrap generation + ledger write + profile save in one atomic block
             # so all three commit together or all roll back together.
             with transaction.atomic():
                 self.bon_id = self.generate_next_bon_id()
+                validate_bon_id_value(self.bon_id)
 
                 # Snapshot the user's identity at the moment of assignment.
                 # Accessed via the FK while the data is available; falls back
@@ -275,7 +323,27 @@ class BonUserProfile(models.Model):
 
                 return super().save(*args, **kwargs)
 
+        original = type(self).objects.only("bon_id").get(pk=self.pk)
+        if self.bon_id != original.bon_id:
+            raise ValidationError({"bon_id": "Bon IDs are immutable."})
+        validate_bon_id_value(self.bon_id)
+        if not self.has_canonical_identity():
+            raise ValidationError({"bon_id": "Bon ID allocation history is invalid."})
         return super().save(*args, **kwargs)
+
+    def has_canonical_identity(self):
+        try:
+            validate_bon_id_value(self.bon_id)
+        except ValidationError:
+            return False
+
+        ledger = AssignedBonId.objects.filter(
+            bon_id=self.bon_id,
+            status=AssignedBonId.STATUS_ACTIVE,
+        ).only("user_id_at_assignment").first()
+        if ledger is None:
+            return False
+        return ledger.user_id_at_assignment in (None, self.user_id)
 
     # ── bonID generation helpers ──────────────────────────────────────────
 

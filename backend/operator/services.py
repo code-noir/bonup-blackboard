@@ -46,8 +46,8 @@ def validate_administrator_user(user):
         raise ValidationError("Linked bonUP User must have a BonUserProfile.") from exc
     if not profile.email_verified:
         raise ValidationError("Linked bonUP User email must be verified.")
-    if not profile.bon_id:
-        raise ValidationError("Linked bonUP User must have a bonID.")
+    if not profile.has_canonical_identity():
+        raise ValidationError("Linked bonUP User must have a valid canonical bonID.")
     return profile
 
 

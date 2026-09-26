@@ -119,8 +119,7 @@ class AdministratorAccountModelTests(TestCase):
             validate_administrator_user(unverified)
 
         no_bon_id = verified_user("no-bonid", "no-bonid@example.com")
-        no_bon_id.bon_profile.bon_id = ""
-        no_bon_id.bon_profile.save(update_fields=["bon_id"])
+        no_bon_id.bon_profile.delete()
         with self.assertRaises(ValidationError):
             validate_administrator_user(no_bon_id)
 

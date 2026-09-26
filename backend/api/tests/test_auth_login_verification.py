@@ -1,7 +1,9 @@
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from .helpers import make_user
+from backend.users.models import AssignedBonId
+
+from .helpers import authed_client, make_user
 
 
 class LoginEmailVerificationTests(TestCase):
@@ -61,3 +63,33 @@ class LoginEmailVerificationTests(TestCase):
         response = self._post_login("/api/auth/token/", user.email)
 
         self.assert_login_allowed(response)
+
+    def test_normal_user_without_bon_profile_cannot_login(self):
+        user = self._make_user("missing-profile@example.com", verified=True)
+        user.bon_profile.delete()
+
+        response = self._post_login("/api/auth/token/", user.email)
+
+        self.assert_login_blocked(response)
+
+    def test_normal_user_without_active_ledger_cannot_login(self):
+        user = self._make_user("missing-ledger@example.com", verified=True)
+        AssignedBonId.objects.filter(bon_id=user.bon_profile.bon_id).delete()
+
+        response = self._post_login("/api/auth/token/", user.email)
+
+        self.assert_login_blocked(response)
+
+    def test_api_cannot_write_bon_id(self):
+        user = self._make_user("api-bonid-write@example.com", verified=True)
+        original_bon_id = user.bon_profile.bon_id
+
+        response = authed_client(user).patch(
+            "/api/users/me/",
+            {"bon_id": "0000000009999"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        user.bon_profile.refresh_from_db()
+        self.assertEqual(user.bon_profile.bon_id, original_bon_id)

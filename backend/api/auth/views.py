@@ -7,6 +7,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, Toke
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from backend.operator.services import OPERATOR_CONTEXT
+from backend.users.models import BonUserProfile
 
 User = get_user_model()
 
@@ -36,9 +37,16 @@ class EmailOrUsernameTokenSerializer(TokenObtainPairSerializer):
         # Email-verification gate.
         # self.user is the authenticated User object set by the parent validate().
         try:
-            email_verified = self.user.bon_profile.email_verified
-        except Exception:
-            email_verified = True  # no BonUserProfile → admin/superuser → allow
+            profile = self.user.bon_profile
+        except BonUserProfile.DoesNotExist:
+            if self.user.is_staff or self.user.is_superuser:
+                return data  # Explicit repository exception for system accounts.
+            raise AuthenticationFailed("Canonical bonUP identity is unavailable.")
+
+        if not profile.has_canonical_identity():
+            raise AuthenticationFailed("Canonical bonUP identity is invalid.")
+
+        email_verified = profile.email_verified
 
         if not email_verified:
             raise AuthenticationFailed(

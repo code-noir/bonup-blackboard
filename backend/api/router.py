@@ -11,6 +11,7 @@ urlpatterns = [
     path("billing/", include("backend.api.billing.urls")),
     path("blackboard/", include("backend.api.blackboard.urls")),
     path("contracts/", include("backend.api.contracts.urls")),
+    path("communities/", include("backend.api.community.urls")),
     path("lifecycle/", include("backend.api.lifecycle.urls")),
     path("documents/", include("backend.api.documents.urls")),
     path("notifications/", include("backend.api.notifications.urls")),

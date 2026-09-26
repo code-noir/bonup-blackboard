@@ -65,6 +65,7 @@ INSTALLED_APPS = [
     'backend.documents',
     'backend.ai',
     'backend.sol',
+    'backend.community',
     'backend.contract_pro',
     'backend.agreement_exchange',
     'backend.lifecycle',

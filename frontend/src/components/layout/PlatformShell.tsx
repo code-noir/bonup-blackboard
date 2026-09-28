@@ -2,10 +2,13 @@ import CustomerSignOutButton from './CustomerSignOutButton'
 import { useState, useEffect, useRef } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
-  HomeIcon,
+  BellIcon,
+  ChatBubbleLeftRightIcon,
   ClipboardDocumentListIcon,
-  CreditCardIcon,
   Cog6ToothIcon,
+  CreditCardIcon,
+  GlobeAltIcon,
+  HomeIcon,
   IdentificationIcon,
   RectangleStackIcon,
   ShoppingBagIcon,
@@ -13,41 +16,127 @@ import {
 import { useAuth } from '@/context/AuthContext'
 import ViewAsBanner from './ViewAsBanner'
 
-const platformNav = [
-  { to: '/hub', label: 'Home', Icon: HomeIcon },
-  { to: '/apps/blackbod', label: 'Blackbòd', Icon: ClipboardDocumentListIcon },
-  { to: '/store', label: 'Store', Icon: ShoppingBagIcon },
-  { to: '/vault', label: 'Vault', Icon: RectangleStackIcon },
-  { to: '/billing', label: 'Billing', Icon: CreditCardIcon },
-  { to: '/account', label: 'Account / Identity', Icon: IdentificationIcon },
-  { to: '/settings', label: 'Settings', Icon: Cog6ToothIcon },
-]
+type PlatformNavItemDefinition = {
+  to?: string
+  label: string
+  Icon: React.ElementType
+  indent?: boolean
+  disabled?: boolean
+  blackbodEntry?: boolean
+}
 
-function PlatformNavItem({ to, label, Icon, compact }: { to: string; label: string; Icon: React.ElementType; compact: boolean }) {
+type PlatformNavGroup = {
+  label: string
+  items: PlatformNavItemDefinition[]
+}
+
+function platformNavGroups(hasBlackboardAccess: boolean): PlatformNavGroup[] {
+  return [
+    {
+      label: 'Platform',
+      items: [
+        { to: '/hub', label: 'Home', Icon: HomeIcon },
+        { to: '/account', label: 'Profile', Icon: IdentificationIcon },
+        { label: 'Messages', Icon: ChatBubbleLeftRightIcon, disabled: true },
+          hasBlackboardAccess
+          ? { to: '/apps/blackbod/notifications', label: 'Notifications', Icon: BellIcon, blackbodEntry: true }
+          : { label: 'Notifications', Icon: BellIcon, disabled: true },
+      ],
+    },
+    {
+      label: 'Applications',
+      items: [
+        { to: '/apps/nislo', label: 'Nislo', Icon: GlobeAltIcon },
+        ...(hasBlackboardAccess
+          ? [
+              { to: '/apps/blackbod', label: 'Blackboard', Icon: ClipboardDocumentListIcon, blackbodEntry: true },
+              { to: '/apps/blackbod/workspace', label: 'Agreement Activity', Icon: ClipboardDocumentListIcon, indent: true, blackbodEntry: true },
+            ]
+          : []),
+      ],
+    },
+    {
+      label: 'Services',
+      items: [
+        { to: '/vault', label: 'Vault', Icon: RectangleStackIcon },
+        { to: '/store', label: 'Store', Icon: ShoppingBagIcon },
+        { to: '/billing', label: 'Billing', Icon: CreditCardIcon },
+      ],
+    },
+    {
+      label: 'Account',
+      items: [
+        { to: '/account', label: 'Account / Identity', Icon: IdentificationIcon },
+        { to: '/settings', label: 'Settings', Icon: Cog6ToothIcon },
+      ],
+    },
+  ]
+}
+
+function PlatformNavItem({ item, compact }: { item: PlatformNavItemDefinition; compact: boolean }) {
+  const content = (
+    <>
+      <item.Icon className="h-[18px] w-[18px] shrink-0" />
+      {!compact && <span>{item.label}</span>}
+    </>
+  )
+
+  if (item.disabled || !item.to) {
+    return (
+      <div
+        title={compact ? `${item.label} (not available yet)` : undefined}
+        style={{
+          alignItems: 'center',
+          color: '#948A80',
+          display: 'flex',
+          fontSize: 14,
+          fontWeight: 500,
+          gap: 11,
+          minHeight: 40,
+          padding: compact ? '0 10px' : item.indent ? '10px 12px 10px 28px' : '10px 12px',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {content}
+      </div>
+    )
+  }
+
   return (
     <NavLink
-      to={to}
-      end={to !== '/apps/blackbod' && to !== '/store' && to !== '/vault'}
+      to={item.to}
+      state={item.blackbodEntry ? { blackbodEntry: true } : undefined}
+      className="platform-nav-item"
+      end={item.to !== '/apps/blackbod' && item.to !== '/apps/nislo' && item.to !== '/vault' && item.to !== '/store'}
       style={({ isActive }) => ({
-        display: 'flex',
         alignItems: 'center',
-        gap: 11,
-        minHeight: 40,
-        padding: compact ? '0 10px' : '10px 12px',
+        background: isActive ? '#D8C7B2' : 'transparent',
+        borderLeft: isActive ? '2px solid #C99A3D' : '2px solid transparent',
         borderRadius: 8,
-        color: isActive ? '#FFFFFF' : 'rgba(255,255,255,0.68)',
-        background: isActive ? 'rgba(245,166,35,0.14)' : 'transparent',
-        borderLeft: isActive ? '2px solid #F5A623' : '2px solid transparent',
-        textDecoration: 'none',
+        color: isActive ? '#202124' : '#4D4842',
+        display: 'flex',
         fontSize: 14,
         fontWeight: isActive ? 700 : 500,
+        gap: 11,
+        minHeight: 40,
+        padding: compact ? '0 10px' : item.indent ? '10px 12px 10px 28px' : '10px 12px',
+        textDecoration: 'none',
         whiteSpace: 'nowrap',
       })}
-      title={compact ? label : undefined}
+      title={compact ? item.label : undefined}
     >
-      <Icon className="h-[18px] w-[18px] shrink-0" />
-      {!compact && <span>{label}</span>}
+      {content}
     </NavLink>
+  )
+}
+
+function PlatformGroupLabel({ label, compact }: { label: string; compact: boolean }) {
+  return compact ? (
+    <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '10px 4px 8px' }} aria-label={label} />
+  ) : (
+    <div style={{ color: 'rgba(255,255,255,0.34)', fontSize: 9, fontWeight: 800, letterSpacing: '0.16em', padding: '12px 12px 5px', textTransform: 'uppercase' }}>
+      {label}
+    </div>
   )
 }
 
@@ -75,36 +164,35 @@ export default function PlatformShell() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-
-
+  const navGroups = platformNavGroups(user?.has_blackbod_access === true)
+  const navItems = navGroups.flatMap((group) => group.items)
   const sidebarWidth = compact ? 64 : 232
   const displayName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.email || ''
   const initials = ([user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join('') || '?').toUpperCase()
-  const currentTitle = platformNav.find((item) => location.pathname === item.to || (item.to !== '/hub' && location.pathname.startsWith(item.to + '/')))?.label || 'Home'
+  const currentTitle = navItems.find((item) => item.to && (location.pathname === item.to || location.pathname.startsWith(item.to + '/')))?.label || 'Home'
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA]" style={{ ['--sidebar-w' as string]: `${sidebarWidth}px` }}>
+    <div className="min-h-screen bg-[#F7F7F6]" style={{ ['--sidebar-w' as string]: `${sidebarWidth}px` }}>
       <ViewAsBanner />
       <aside
         className="fixed bottom-0 left-0 top-0 z-40 flex flex-col"
-        style={{
-          width: sidebarWidth,
-          background: '#111827',
-          borderRight: '1px solid rgba(255,255,255,0.10)',
-          transition: 'width 0.3s ease',
-          overflow: 'hidden',
-        }}
+        style={{ background: '#E8DED0', borderRight: '1px solid #DDD7CF', color: '#202124', overflow: 'hidden', transition: 'width 0.3s ease', width: sidebarWidth }}
       >
-        <div style={{ padding: compact ? '18px 0' : '22px 20px 18px', background: '#0B1220', borderBottom: '1px solid rgba(255,255,255,0.10)', textAlign: compact ? 'center' : 'left' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: compact ? 0 : 4 }}>
-            <span style={{ color: 'rgba(255,255,255,0.45)' }}>bon</span>
-            <span style={{ color: '#F5A623' }}>UP</span>
+        <div style={{ background: '#F2ECE4', borderBottom: '1px solid #DDD7CF', padding: compact ? '18px 0' : '22px 20px 18px', textAlign: compact ? 'center' : 'left' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.2em', marginBottom: compact ? 0 : 4, textTransform: 'uppercase' }}>
+            <span style={{ color: '#66615C' }}>bon</span>
+            <span style={{ color: '#C99A3D' }}>UP</span>
           </div>
-          {!compact && <div style={{ fontSize: 24, fontWeight: 800, color: '#FFFFFF', lineHeight: 1 }}>World</div>}
+          {!compact && <div style={{ color: '#202124', fontSize: 24, fontWeight: 800, lineHeight: 1 }}>World</div>}
         </div>
 
         <nav className={`flex-1 overflow-y-auto ${compact ? 'px-2 py-3' : 'px-3 py-3'}`}>
-          {platformNav.map((item) => <PlatformNavItem key={item.to} {...item} compact={compact} />)}
+          {navGroups.map((group) => (
+            <div key={group.label}>
+              <PlatformGroupLabel label={group.label} compact={compact} />
+              {group.items.map((item) => <PlatformNavItem key={item.label} item={item} compact={compact} />)}
+            </div>
+          ))}
         </nav>
       </aside>
 
@@ -113,8 +201,8 @@ export default function PlatformShell() {
         style={{ left: sidebarWidth }}
       >
         <div>
-          <p style={{ margin: 0, fontSize: 13, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#D4900A' }}>bonUP</p>
-          <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 800, color: '#0F1F3D' }}>{currentTitle}</p>
+          <p style={{ color: '#D4900A', fontSize: 13, fontWeight: 800, letterSpacing: '0.14em', margin: 0, textTransform: 'uppercase' }}>bonUP</p>
+          <p style={{ color: '#0F1F3D', fontSize: 16, fontWeight: 800, margin: '2px 0 0' }}>{currentTitle}</p>
         </div>
         <div className="relative" ref={menuRef}>
           <button

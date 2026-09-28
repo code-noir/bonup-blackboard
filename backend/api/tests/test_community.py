@@ -7,7 +7,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.test import APIClient
 
 from backend.api.tests.helpers import authed_client, make_user
-from backend.community.models import Community, CommunityMembership
+from backend.community.models import Community, CommunityMembership, Friendship
 from backend.community.permissions import (
     community_resource_or_404,
     get_active_membership,
@@ -21,6 +21,27 @@ class CommunityFoundationTests(TestCase):
         self.alice = make_user("alice", "alice@example.com")
         self.bob = make_user("bob", "bob@example.com")
         self.charlie = make_user("charlie", "charlie@example.com")
+        Friendship.objects.create(
+            user_a=self.alice,
+            user_b=self.bob,
+            requester=self.alice,
+            recipient=self.bob,
+            status=Friendship.Status.ACCEPTED,
+        )
+        Friendship.objects.create(
+            user_a=self.alice,
+            user_b=self.charlie,
+            requester=self.alice,
+            recipient=self.charlie,
+            status=Friendship.Status.ACCEPTED,
+        )
+        Friendship.objects.create(
+            user_a=self.bob,
+            user_b=self.charlie,
+            requester=self.bob,
+            recipient=self.charlie,
+            status=Friendship.Status.ACCEPTED,
+        )
 
     def create_community(self, owner=None, name="Private Community"):
         return create_community(owner=owner or self.alice, name=name)

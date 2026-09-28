@@ -55,6 +55,14 @@ import AdminProductDirection from '@/pages/admin/AdminProductDirection'
 import AdminPlaceholder from '@/pages/admin/AdminPlaceholder'
 import AdminBilling from '@/pages/admin/AdminBilling'
 import AdminProfile from '@/pages/admin/AdminProfile'
+import NisloShell from '@/components/layout/NisloShell'
+import NisloDiscover from '@/pages/nislo/NisloDiscover'
+import NisloFriends from '@/pages/nislo/NisloFriends'
+import NisloInvites from '@/pages/nislo/NisloInvites'
+import NisloCommunities from '@/pages/nislo/NisloCommunities'
+import NisloCommunityProfile from '@/pages/nislo/NisloCommunityProfile'
+import RequireBlackboardAccess from '@/components/RequireBlackboardAccess'
+import BlackboardEntryTransition from '@/components/BlackboardEntryTransition'
 
 // Placeholder page used for routes not yet built
 function Placeholder({ name }: { name: string }) {
@@ -173,11 +181,15 @@ export default function App() {
             path="/apps/blackbod"
             element={
               <RequireAuth>
-                <BlackbodShell />
+                <RequireBlackboardAccess>
+                  <BlackboardEntryTransition>
+                    <BlackbodShell />
+                  </BlackboardEntryTransition>
+                </RequireBlackboardAccess>
               </RequireAuth>
             }
           >
-            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route index element={<Navigate to="workspace" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="workspace" element={<WorkflowDashboard />} />
             <Route path="workflows" element={<WorkflowDashboard />} />
@@ -207,6 +219,23 @@ export default function App() {
             <Route path="agreement-performance" element={<AgreementPerformance />} />
             <Route path="negotiation" element={<Negotiation />} />
             <Route path="negotiation/:contractId" element={<Negotiation />} />
+          </Route>
+
+          {/* Nislo — dedicated social/community application shell */}
+          <Route
+            path="/apps/nislo"
+            element={
+              <RequireAuth>
+                <NisloShell />
+              </RequireAuth>
+            }
+          >
+            <Route index element={<Navigate to="discover" replace />} />
+            <Route path="discover" element={<NisloDiscover />} />
+            <Route path="friends" element={<NisloFriends />} />
+            <Route path="invites" element={<NisloInvites />} />
+            <Route path="communities" element={<NisloCommunities />} />
+            <Route path="communities/:communityId" element={<NisloCommunityProfile />} />
           </Route>
 
           {/* Legacy Blackbòd compatibility redirects */}

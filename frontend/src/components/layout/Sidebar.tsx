@@ -339,7 +339,7 @@ export default function Sidebar() {
             <span style={{ color: '#F5A623' }}>UP</span>
           </div>
           <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', color: '#ffffff', lineHeight: 1 }}>
-            {isOperator ? 'Operator' : 'Blackbòd'}
+            {isOperator ? 'Operator' : 'Blackboard'}
           </div>
           {isOperator && (
             <div style={{

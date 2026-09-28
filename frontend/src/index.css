@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./nislo.css";
 
 @keyframes bonup-sub-slide {
   /* Banner is 230px wide. Text starts just off the right edge, exits through the left. */
@@ -32,6 +33,16 @@ body {
 
 .app-shell {
   --sidebar-w: 216px;
+}
+
+.platform-nav-item:hover {
+  background: #F2ECE4 !important;
+  color: #202124 !important;
+}
+
+.platform-nav-item:focus-visible {
+  outline: 3px solid #2563EB;
+  outline-offset: 2px;
 }
 
 .workspace-nav-row:not(:disabled):hover {

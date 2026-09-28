@@ -1,0 +1,149 @@
+.blackboard-entry-screen {
+  align-items: center;
+  animation: blackboard-entry-surface-in 700ms ease-out both;
+  background: #111827;
+  color: #ffffff;
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+  position: fixed;
+  text-align: center;
+  z-index: 100;
+}
+
+.blackboard-entry-screen-exiting {
+  animation: blackboard-entry-surface-out var(--blackbod-landing-duration, 2000ms) ease-in-out forwards;
+}
+
+.blackboard-entry-destination {
+  animation: blackboard-entry-destination-in var(--blackbod-landing-duration, 2000ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+  min-height: 100vh;
+}
+
+.blackboard-entry-panel {
+  animation: blackboard-entry-panel-in 700ms 350ms ease-out both;
+  width: min(100%, 340px);
+}
+
+.blackboard-entry-kicker {
+  animation: blackboard-entry-detail-in 700ms 1000ms ease-out both;
+  color: #f5a623;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+  margin: 0;
+}
+
+.blackboard-entry-message {
+  animation: blackboard-entry-detail-in 700ms 1600ms ease-out both;
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 600;
+  margin: 14px 0 22px;
+}
+
+.blackboard-entry-progress {
+  animation: blackboard-entry-detail-in 700ms 1700ms ease-out both;
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  height: 2px;
+  margin: 0 auto;
+  overflow: hidden;
+  width: min(220px, 65vw);
+}
+
+.blackboard-entry-progress span {
+  animation: blackboard-entry-progress 3700ms 1800ms ease-out both;
+  background: #f5a623;
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+  transform-origin: left center;
+}
+
+@keyframes blackboard-entry-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes blackboard-entry-surface-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes blackboard-entry-surface-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes blackboard-entry-destination-in {
+  from {
+    opacity: 0.62;
+    transform: translateY(16px) scale(0.99);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes blackboard-entry-detail-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes blackboard-entry-progress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blackboard-entry-panel,
+  .blackboard-entry-screen,
+  .blackboard-entry-destination,
+  .blackboard-entry-kicker,
+  .blackboard-entry-message,
+  .blackboard-entry-progress,
+  .blackboard-entry-progress span {
+    animation: none;
+  }
+
+  .blackboard-entry-screen {
+    opacity: 1;
+  }
+
+  .blackboard-entry-screen-exiting {
+    opacity: 0;
+  }
+
+  .blackboard-entry-destination {
+    opacity: 1;
+    transform: none;
+  }
+
+  .blackboard-entry-panel {
+    opacity: 1;
+    transform: none;
+  }
+
+  .blackboard-entry-progress span {
+    transform: scaleX(1);
+  }
+}

@@ -12,6 +12,7 @@ import { nisloApi } from '@/api/nislo'
 import type { FriendshipResponse, MyCommunity, NisloPerson } from '@/types/nislo'
 import { useAuth } from '@/context/AuthContext'
 import type { AuthUser } from '@/types/auth'
+import { CanonicalAvatar } from '@/components/identity/CanonicalAvatar'
 import '@/home.css'
 
 type LoadState = 'loading' | 'success' | 'error'
@@ -24,16 +25,6 @@ type StorageSummary = {
 
 function displayName(user: AuthUser | null) {
   return [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.username || 'bonUP member'
-}
-
-function initials(value: string) {
-  return value
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase() || '?'
 }
 
 function greeting() {
@@ -66,11 +57,7 @@ function HomeSectionHeading({ title, description, to }: { title: string; descrip
 }
 
 function ProfileAvatar({ user }: { user: AuthUser | null }) {
-  return (
-    <div className="home-profile-avatar" aria-label="Profile avatar">
-      {initials(displayName(user))}
-    </div>
-  )
+  return <CanonicalAvatar identity={user || {}} className="home-profile-avatar" label="Profile avatar" />
 }
 
 function FeaturedMedia({ source, poster, title, description }: { source?: string; poster?: string; title: string; description: string }) {
@@ -104,7 +91,7 @@ function EmptyState({ title, children, to, label }: { title: string; children: R
 }
 
 function PersonAvatar({ person, index }: { person: NisloPerson; index: number }) {
-  return <div className={`home-person-avatar home-person-avatar-${index % 4}`}>{initials(personName(person))}</div>
+  return <CanonicalAvatar identity={person} className={`home-person-avatar home-person-avatar-${index % 4}`} label={`${personName(person)} avatar`} />
 }
 
 export default function BonupHub() {

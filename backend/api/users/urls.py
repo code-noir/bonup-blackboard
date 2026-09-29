@@ -13,6 +13,8 @@ from .views import (
     MeAPIView,
     PasswordResetConfirmAPIView,
     PasswordResetRequestAPIView,
+    ProfilePhotoAPIView,
+    ProfilePhotoDeliveryAPIView,
     PublicProfileAPIView,
     RegisterAPIView,
     ResendVerificationAPIView,
@@ -48,6 +50,7 @@ urlpatterns = [
     # Profile — /me/ must be declared before <str:bon_id>/
     # --------------------------------------------------
     path("me/", MeAPIView.as_view(), name="users-me"),
+    path("me/profile-photo/", ProfilePhotoAPIView.as_view(), name="users-profile-photo"),
     path("me/change-password/", ChangePasswordAPIView.as_view(), name="users-change-password"),
     path("me/update-email/", UpdateEmailAPIView.as_view(), name="users-update-email"),
     path("me/update-phone/", UpdatePhoneAPIView.as_view(), name="users-update-phone"),
@@ -65,5 +68,6 @@ urlpatterns = [
     # --------------------------------------------------
     # Public profile — wildcard last
     # --------------------------------------------------
+    path("<str:bon_id>/profile-photo/", ProfilePhotoDeliveryAPIView.as_view(), name="users-profile-photo-delivery"),
     path("<str:bon_id>/", PublicProfileAPIView.as_view(), name="users-public-profile"),
 ]

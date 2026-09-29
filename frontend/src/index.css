@@ -25,6 +25,49 @@ body {
   overflow-x: hidden;
 }
 
+.canonical-avatar-image {
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.profile-page-avatar {
+  align-items: center;
+  background: #243447;
+  border-radius: 50%;
+  color: #fff;
+  display: flex;
+  flex: 0 0 auto;
+  font-size: 28px;
+  font-weight: 600;
+  height: 80px;
+  justify-content: center;
+  overflow: hidden;
+  width: 80px;
+}
+
+.profile-photo-thumbnail {
+  height: 100%;
+  width: 100%;
+}
+
+.profile-photo-thumbnail img,
+.profile-photo-preview img {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.profile-photo-preview {
+  flex: 0 0 56px;
+  height: 56px;
+  overflow: hidden;
+  width: 56px;
+}
+
 *,
 *::before,
 *::after {

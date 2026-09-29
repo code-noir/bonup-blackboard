@@ -7,7 +7,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.test import APIClient
 
 from backend.api.tests.helpers import authed_client, make_user
-from backend.community.models import Community, CommunityMembership, Friendship
+from backend.community.models import Community, CommunityJoinRequest, CommunityMembership, Friendship
 from backend.community.permissions import (
     community_resource_or_404,
     get_active_membership,
@@ -95,6 +95,142 @@ class CommunityFoundationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["id"], str(community.id))
 
+    def test_owner_can_update_identity_without_replacing_community(self):
+        community = self.create_community(name="Original name")
+        original_id = community.id
+        original_owner_id = community.owner_id
+        original_private = community.is_private
+        original_discoverable = community.is_discoverable
+        CommunityMembership.objects.create(
+            community=community,
+            user=self.bob,
+            role=CommunityMembership.Role.MEMBER,
+            status=CommunityMembership.Status.ACTIVE,
+        )
+        CommunityJoinRequest.objects.create(community=community, user=self.charlie)
+
+        response = authed_client(self.alice).patch(
+            f"/api/communities/{community.id}/",
+            {"name": "  Updated name  ", "description": "Updated description."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        community.refresh_from_db()
+        self.assertEqual(community.id, original_id)
+        self.assertEqual(community.owner_id, original_owner_id)
+        self.assertEqual(community.name, "Updated name")
+        self.assertEqual(community.description, "Updated description.")
+        self.assertEqual(community.is_private, original_private)
+        self.assertEqual(community.is_discoverable, original_discoverable)
+        self.assertTrue(
+            CommunityMembership.objects.filter(
+                community=community,
+                user=self.bob,
+                status=CommunityMembership.Status.ACTIVE,
+            ).exists()
+        )
+        self.assertTrue(CommunityJoinRequest.objects.filter(community=community, user=self.charlie).exists())
+
+    def test_admin_cannot_update_identity(self):
+        community = self.create_community()
+        CommunityMembership.objects.create(
+            community=community,
+            user=self.bob,
+            role=CommunityMembership.Role.ADMIN,
+            status=CommunityMembership.Status.ACTIVE,
+        )
+
+        response = authed_client(self.bob).patch(
+            f"/api/communities/{community.id}/",
+            {"name": "Admin rename"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        community.refresh_from_db()
+        self.assertEqual(community.name, "Private Community")
+
+    def test_member_cannot_update_identity(self):
+        community = self.create_community()
+        CommunityMembership.objects.create(
+            community=community,
+            user=self.bob,
+            role=CommunityMembership.Role.MEMBER,
+            status=CommunityMembership.Status.ACTIVE,
+        )
+
+        response = authed_client(self.bob).patch(
+            f"/api/communities/{community.id}/",
+            {"name": "Member rename"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        community.refresh_from_db()
+        self.assertEqual(community.name, "Private Community")
+
+    def test_non_member_cannot_update_identity(self):
+        community = self.create_community()
+
+        response = authed_client(self.bob).patch(
+            f"/api/communities/{community.id}/",
+            {"name": "Unauthorized rename"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+        community.refresh_from_db()
+        self.assertEqual(community.name, "Private Community")
+
+    def test_owner_cannot_update_another_community(self):
+        community_a = self.create_community(name="Community A")
+        community_b = self.create_community(owner=self.bob, name="Community B")
+
+        response = authed_client(self.alice).patch(
+            f"/api/communities/{community_b.id}/",
+            {"name": "Cross-community rename"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+        community_b.refresh_from_db()
+        self.assertEqual(community_b.name, "Community B")
+        self.assertNotEqual(community_a.id, community_b.id)
+
+    def test_owner_identity_update_rejects_blank_name_without_mutation(self):
+        community = self.create_community(name="Stable name")
+
+        response = authed_client(self.alice).patch(
+            f"/api/communities/{community.id}/",
+            {"name": "   ", "description": "Should not save"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        community.refresh_from_db()
+        self.assertEqual(community.name, "Stable name")
+        self.assertEqual(community.description, "")
+
+    def test_active_member_can_retrieve_workspace_members(self):
+        community = self.create_community()
+        CommunityMembership.objects.create(
+            community=community,
+            user=self.bob,
+            role=CommunityMembership.Role.ADMIN,
+            status=CommunityMembership.Status.ACTIVE,
+        )
+
+        response = authed_client(self.bob).get(f"/api/communities/{community.id}/members/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["current_member_role"], CommunityMembership.Role.ADMIN)
+        self.assertEqual(response.data["member_count"], 2)
+        self.assertEqual(
+            {member["role"] for member in response.data["members"]},
+            {CommunityMembership.Role.OWNER, CommunityMembership.Role.ADMIN},
+        )
+
     def test_non_member_cannot_retrieve_private_community(self):
         community = self.create_community()
 
@@ -102,6 +238,13 @@ class CommunityFoundationTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertNotIn("Private Community", response.content.decode())
+
+    def test_non_member_cannot_retrieve_workspace_members(self):
+        community = self.create_community()
+
+        response = authed_client(self.bob).get(f"/api/communities/{community.id}/members/")
+
+        self.assertEqual(response.status_code, 404)
 
     def test_member_of_community_a_cannot_retrieve_community_b(self):
         community_a = self.create_community(name="Community A")
@@ -122,8 +265,10 @@ class CommunityFoundationTests(TestCase):
         )
 
         response = authed_client(self.bob).get(f"/api/communities/{community.id}/")
+        members_response = authed_client(self.bob).get(f"/api/communities/{community.id}/members/")
 
         self.assertEqual(response.status_code, 404)
+        self.assertEqual(members_response.status_code, 404)
         self.assertIsNone(get_active_membership(self.bob, community.id))
         self.assertEqual(membership.status, CommunityMembership.Status.REMOVED)
 

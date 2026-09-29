@@ -9,7 +9,7 @@ export function deliveryContext() {
 // to a persisted external URL, a public bearer route, or another API endpoint.
 export function privateDeliveryPath(value: string): string {
   const id = '[0-9a-fA-F-]{36}'
-  const allowed = new RegExp(`^/api/(?:uploads/${id}|contracts/${id}/documents/${id}|lifecycle/items/${id}/attachments/${id})/delivery/$`)
+  const allowed = new RegExp(`^/api/(?:uploads/${id}|contracts/${id}/documents/${id}|lifecycle/items/${id}/attachments/${id})/delivery/$|^/api/users/[0-9]{13}/profile-photo/$`)
   if (!allowed.test(value)) throw new Error('File delivery is unavailable.')
   return value.slice('/api'.length)
 }

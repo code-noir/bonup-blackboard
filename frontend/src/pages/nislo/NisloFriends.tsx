@@ -26,13 +26,18 @@ function FriendRow({ person, action }: { person: NisloPerson; action?: React.Rea
 
 export default function NisloFriends() {
   const [data, setData] = useState<FriendshipResponse | null>(null)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   const load = async () => {
+    setLoading(true)
+    setError('')
     try {
       setData(await nisloApi.friends())
     } catch (requestError) {
-      setError(errorMessage(requestError))
+      setError('Unable to load your circle right now.')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -47,7 +52,8 @@ export default function NisloFriends() {
     }
   }
 
-  if (!data && !error) return <div className="nislo-loading">Loading your circle...</div>
+  if (loading) return <div className="nislo-loading">Loading your circle...</div>
+  if (!data && error) return <div className="nislo-page"><NisloError message={error} action={<button type="button" className="nislo-text-action" onClick={() => void load()}>Retry</button>} /></div>
 
   return (
     <div className="nislo-page">
@@ -59,7 +65,7 @@ export default function NisloFriends() {
         </div>
         <div className="nislo-hero-stat"><UserGroupIcon className="h-5 w-5" /><strong>{data?.friends.length || 0}</strong><span>accepted friends</span></div>
       </div>
-      {error && <NisloError message={error} />}
+      {error && <NisloError message={error} action={<button type="button" className="nislo-text-action" onClick={() => void load()}>Retry</button>} />}
       <div className="nislo-panel-grid">
         <section className="nislo-panel">
           <SectionHeading title="Accepted friends" />

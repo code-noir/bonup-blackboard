@@ -9,6 +9,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from backend.users.models import BonUserProfile, BusinessEntity, PendingSignup, UserBillingInfo, UserInvitation
+from backend.users.profile_photo import profile_photo_id, profile_photo_url
 
 User = get_user_model()
 
@@ -102,6 +103,9 @@ class UserProfileSerializer(serializers.Serializer):
 
     # From BonUserProfile
     bon_id = serializers.SerializerMethodField()
+    profile_photo_id = serializers.SerializerMethodField()
+    profile_photo_url = serializers.SerializerMethodField()
+    profile_photo_visible = serializers.SerializerMethodField()
     phone = serializers.SerializerMethodField()
     city = serializers.SerializerMethodField()
     state_region = serializers.SerializerMethodField()
@@ -127,6 +131,18 @@ class UserProfileSerializer(serializers.Serializer):
     def get_bon_id(self, obj):
         p = self._profile(obj)
         return p.bon_id if p else None
+
+    def get_profile_photo_id(self, obj):
+        p = self._profile(obj)
+        return profile_photo_id(p) if p else None
+
+    def get_profile_photo_url(self, obj):
+        p = self._profile(obj)
+        return profile_photo_url(p) if p else None
+
+    def get_profile_photo_visible(self, obj):
+        p = self._profile(obj)
+        return bool(p and p.profile_photo_visible)
 
     def get_phone(self, obj):
         p = self._profile(obj)
@@ -197,6 +213,13 @@ class PublicUserSerializer(serializers.Serializer):
     bon_id = serializers.CharField(source="bon_profile.bon_id", read_only=True)
     first_name = serializers.CharField(read_only=True)
     last_name = serializers.CharField(read_only=True)
+    profile_photo_url = serializers.SerializerMethodField()
+
+    def get_profile_photo_url(self, obj):
+        try:
+            return profile_photo_url(obj.bon_profile)
+        except BonUserProfile.DoesNotExist:
+            return None
 
 
 class ChangePasswordSerializer(serializers.Serializer):

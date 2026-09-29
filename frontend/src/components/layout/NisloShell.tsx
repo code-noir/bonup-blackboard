@@ -15,6 +15,7 @@ import {
   UserGroupIcon,
 } from '@heroicons/react/24/outline'
 import { useAuth } from '@/context/AuthContext'
+import { CanonicalAvatar } from '@/components/identity/CanonicalAvatar'
 import CustomerSignOutButton from './CustomerSignOutButton'
 
 const navItems = [
@@ -75,16 +76,16 @@ export default function NisloShell() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [platformOpen, setPlatformOpen] = useState(false)
   const hasBlackboardAccess = user?.has_blackbod_access === true
   const platformSidebarItems = sidebarItems(hasBlackboardAccess)
-  const initials = ([user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join('') || '?').toUpperCase()
   const displayName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.email || 'bonUP member'
 
   return (
-    <div className="nislo-app">
+    <div className={`nislo-app${platformOpen ? ' nislo-app-platform-open' : ''}`}>
       <header className="nislo-platform-bar">
         <div className="nislo-platform-context">
-          <button type="button" className="nislo-platform-logo" onClick={() => navigate('/hub')} aria-label="Return to bonUP Home">
+          <button type="button" className="nislo-platform-logo" onClick={() => setPlatformOpen((open) => !open)} aria-expanded={platformOpen} aria-controls="nislo-platform-sidebar" aria-label="Toggle bonUP platform navigation">
             <ArrowLeftIcon className="h-4 w-4" />
             <span><b>bon</b><strong>UP</strong></span>
           </button>
@@ -112,7 +113,7 @@ export default function NisloShell() {
             onClick={() => setMenuOpen((open) => !open)}
             aria-expanded={menuOpen}
           >
-            <span className="nislo-avatar nislo-avatar-gold">{initials}</span>
+            <CanonicalAvatar identity={user || {}} className="nislo-avatar nislo-avatar-gold" label="Your profile avatar" />
             <span className="nislo-user-name">{displayName}</span>
             <ChevronDownIcon className="h-4 w-4 opacity-60" />
           </button>
@@ -128,7 +129,8 @@ export default function NisloShell() {
         </div>
       </header>
 
-      <aside className="nislo-platform-sidebar" aria-label="bonUP platform navigation">
+      <button type="button" className="nislo-platform-scrim" aria-label="Close bonUP platform navigation" onClick={() => setPlatformOpen(false)} />
+      <aside id="nislo-platform-sidebar" className="nislo-platform-sidebar" aria-label="bonUP platform navigation" aria-hidden={!platformOpen}>
         <div className="nislo-sidebar-heading">bonUP</div>
         <p className="nislo-sidebar-section-label">Platform</p>
         <nav className="nislo-sidebar-nav">

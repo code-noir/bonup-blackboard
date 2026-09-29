@@ -7,14 +7,17 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from backend.api.community.serializers import (
+    CommunityMemberSerializer,
     CommunityCreateSerializer,
     CommunitySerializer,
+    CommunityUpdateSerializer,
 )
 from backend.users.models import BonUserProfile
 from backend.community.models import Community, CommunityJoinRequest, CommunityMembership, Friendship
 from backend.community.permissions import (
     community_resource_or_404,
     require_community_member,
+    require_community_role,
 )
 from backend.community.services import (
     CommunityCreationError,
@@ -27,20 +30,25 @@ from backend.community.services import (
     send_friend_request,
 )
 from backend.api.community.serializers import CommunityJoinRequestSerializer
+from backend.users.profile_photo import profile_photo_url
 
 User = get_user_model()
 
 def _person_payload(user):
     try:
-        bon_id = user.bon_profile.bon_id
+        profile = user.bon_profile
+        bon_id = profile.bon_id
+        photo_url = profile_photo_url(profile)
     except BonUserProfile.DoesNotExist:
         bon_id = None
+        photo_url = None
     return {
         "user_id": user.pk,
         "bon_id": bon_id,
         "first_name": user.first_name,
         "last_name": user.last_name,
         "display_name": " ".join(filter(None, [user.first_name, user.last_name])) or user.username,
+        "profile_photo_url": photo_url,
     }
 
 
@@ -139,6 +147,46 @@ class CommunityDetailView(APIView):
         require_community_member(request.user, community_id)
         community = community_resource_or_404(community_id, community_id)
         return Response(CommunitySerializer(community).data)
+
+    def patch(self, request, community_id):
+        require_community_role(request.user, community_id, CommunityMembership.Role.OWNER)
+        community = community_resource_or_404(community_id, community_id)
+        serializer = CommunityUpdateSerializer(community, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(CommunitySerializer(community).data)
+
+
+class CommunityMembersView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, community_id):
+        current_membership = require_community_member(request.user, community_id)
+        community = get_object_or_404(Community, pk=community_id)
+        members = CommunityMembership.objects.select_related(
+            "user", "user__bon_profile",
+        ).filter(
+            community=community,
+            status=CommunityMembership.Status.ACTIVE,
+        )
+        member_payload = []
+        for membership in members:
+            person = _person_payload(membership.user)
+            person.update({
+                "role": membership.role,
+                "joined_at": membership.joined_at,
+            })
+            member_payload.append(person)
+        return Response({
+            "id": str(community.id),
+            "name": community.name,
+            "description": community.description,
+            "is_private": community.is_private,
+            "is_discoverable": community.is_discoverable,
+            "member_count": len(member_payload),
+            "current_member_role": current_membership.role,
+            "members": CommunityMemberSerializer(member_payload, many=True).data,
+        })
 
 
 class CommunityDiscoverView(APIView):

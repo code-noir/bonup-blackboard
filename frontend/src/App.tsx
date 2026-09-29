@@ -61,6 +61,7 @@ import NisloFriends from '@/pages/nislo/NisloFriends'
 import NisloInvites from '@/pages/nislo/NisloInvites'
 import NisloCommunities from '@/pages/nislo/NisloCommunities'
 import NisloCommunityProfile from '@/pages/nislo/NisloCommunityProfile'
+import NisloCommunityWorkspace from '@/pages/nislo/NisloCommunityWorkspace'
 import RequireBlackboardAccess from '@/components/RequireBlackboardAccess'
 import BlackboardEntryTransition from '@/components/BlackboardEntryTransition'
 
@@ -236,6 +237,7 @@ export default function App() {
             <Route path="invites" element={<NisloInvites />} />
             <Route path="communities" element={<NisloCommunities />} />
             <Route path="communities/:communityId" element={<NisloCommunityProfile />} />
+            <Route path="communities/:communityId/workspace" element={<NisloCommunityWorkspace />} />
           </Route>
 
           {/* Legacy Blackbòd compatibility redirects */}

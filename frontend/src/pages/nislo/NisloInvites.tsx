@@ -25,17 +25,40 @@ export default function NisloInvites() {
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [error, setError] = useState('')
+  const [joinLoadError, setJoinLoadError] = useState('')
+  const [invitationLoadError, setInvitationLoadError] = useState('')
+  const [friendLoadError, setFriendLoadError] = useState('')
+  const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState('')
 
   const load = async () => {
-    try {
-      const [joinData, invitationData, friendData] = await Promise.all([nisloApi.joinRequests(), nisloApi.invitations(), nisloApi.friends()])
-      setRequests(joinData)
-      setInvitations(invitationData)
-      setFriendRequests(friendData)
-    } catch (requestError) {
-      setError(errorMessage(requestError))
+    setLoading(true)
+    setError('')
+    setJoinLoadError('')
+    setInvitationLoadError('')
+    setFriendLoadError('')
+    const [joinResult, invitationResult, friendResult] = await Promise.allSettled([
+      nisloApi.joinRequests(),
+      nisloApi.invitations(),
+      nisloApi.friends(),
+    ])
+
+    if (joinResult.status === 'fulfilled') {
+      setRequests(joinResult.value)
+    } else {
+      setJoinLoadError('Unable to load Community requests right now.')
     }
+    if (invitationResult.status === 'fulfilled') {
+      setInvitations(invitationResult.value)
+    } else {
+      setInvitationLoadError('Unable to load invitations right now.')
+    }
+    if (friendResult.status === 'fulfilled') {
+      setFriendRequests(friendResult.value)
+    } else {
+      setFriendLoadError('Unable to load friend requests right now.')
+    }
+    setLoading(false)
   }
 
   const respondToFriend = async (id: string, decision: 'accept' | 'decline') => {
@@ -75,6 +98,8 @@ export default function NisloInvites() {
     }
   }
 
+  if (loading) return <div className="nislo-loading">Opening your invitations...</div>
+
   return (
     <div className="nislo-page">
       <div className="nislo-page-hero">
@@ -84,20 +109,20 @@ export default function NisloInvites() {
           <p>Manage friend requests, Community join requests, and invitations that help your circle find bonUP.</p>
         </div>
       </div>
-      {error && <NisloError message={error} />}
+      {error && <NisloError message={error} action={<button type="button" className="nislo-text-action" onClick={() => void load()}>Retry</button>} />}
       {notice && <div className="nislo-inline-success" role="status">{notice}</div>}
       <div className="nislo-panel-grid">
         <section className="nislo-panel">
           <SectionHeading title="Friend requests" />
-          {friendRequests?.incoming_requests.length ? <div className="nislo-list">{friendRequests.incoming_requests.map((request) => <div className="nislo-list-row" key={request.id}><div className="nislo-list-row-copy"><strong>{request.display_name}</strong><span>wants to connect with you</span></div><div className="nislo-list-row-actions"><button type="button" className="nislo-button nislo-button-primary" onClick={() => void respondToFriend(request.id || '', 'accept')}>Accept</button><button type="button" className="nislo-button nislo-button-danger" onClick={() => void respondToFriend(request.id || '', 'decline')}>Decline</button></div></div>)}</div> : <div className="nislo-empty"><strong>No friend requests.</strong>Friend requests will appear here.</div>}
-          <div className="nislo-subsection"><p className="nislo-subsection-title">Outgoing</p>{friendRequests?.outgoing_requests.length ? friendRequests.outgoing_requests.map((request) => <div className="nislo-request-line" key={request.id}><span>{request.display_name}</span><StatusPill tone="gold">Pending</StatusPill></div>) : <span className="nislo-muted-copy">No outgoing friend requests.</span>}</div>
+          {friendLoadError ? <NisloError message={friendLoadError} action={<button type="button" className="nislo-text-action" onClick={() => void load()}>Retry</button>} /> : friendRequests?.incoming_requests.length ? <div className="nislo-list">{friendRequests.incoming_requests.map((request) => <div className="nislo-list-row" key={request.id}><div className="nislo-list-row-copy"><strong>{request.display_name}</strong><span>wants to connect with you</span></div><div className="nislo-list-row-actions"><button type="button" className="nislo-button nislo-button-primary" onClick={() => void respondToFriend(request.id || '', 'accept')}>Accept</button><button type="button" className="nislo-button nislo-button-danger" onClick={() => void respondToFriend(request.id || '', 'decline')}>Decline</button></div></div>)}</div> : <div className="nislo-empty"><strong>No friend requests.</strong>Friend requests will appear here.</div>}
+          <div className="nislo-subsection"><p className="nislo-subsection-title">Outgoing</p>{friendLoadError ? <span className="nislo-muted-copy">Friend request data is unavailable.</span> : friendRequests?.outgoing_requests.length ? friendRequests.outgoing_requests.map((request) => <div className="nislo-request-line" key={request.id}><span>{request.display_name}</span><StatusPill tone="gold">Pending</StatusPill></div>) : <span className="nislo-muted-copy">No outgoing friend requests.</span>}</div>
         </section>
         <section className="nislo-panel">
           <SectionHeading title="Community requests" />
-          {requests?.incoming.length ? <div className="nislo-list">{requests.incoming.map((request) => <div className="nislo-list-row" key={request.id}><div className="nislo-list-row-copy"><strong>{request.requester_name}</strong><span> wants to join {request.community_name}</span></div><div className="nislo-list-row-actions"><button type="button" className="nislo-button nislo-button-primary" onClick={() => void review(request.id, 'approve')}>Approve</button><button type="button" className="nislo-button nislo-button-danger" onClick={() => void review(request.id, 'decline')}>Decline</button></div></div>)}</div> : <div className="nislo-empty"><strong>No requests to review.</strong>Owner and admin requests will appear here.</div>}
+          {joinLoadError ? <NisloError message={joinLoadError} action={<button type="button" className="nislo-text-action" onClick={() => void load()}>Retry</button>} /> : requests?.incoming.length ? <div className="nislo-list">{requests.incoming.map((request) => <div className="nislo-list-row" key={request.id}><div className="nislo-list-row-copy"><strong>{request.requester_name}</strong><span> wants to join {request.community_name}</span></div><div className="nislo-list-row-actions"><button type="button" className="nislo-button nislo-button-primary" onClick={() => void review(request.id, 'approve')}>Approve</button><button type="button" className="nislo-button nislo-button-danger" onClick={() => void review(request.id, 'decline')}>Decline</button></div></div>)}</div> : <div className="nislo-empty"><strong>No requests to review.</strong>Owner and admin requests will appear here.</div>}
           <div className="nislo-subsection">
             <p className="nislo-subsection-title">Your outgoing requests</p>
-            {requests?.outgoing.length ? requests.outgoing.map((request) => <div className="nislo-request-line" key={request.id}><span>{request.community_name}</span><StatusPill tone={request.status === 'pending' ? 'gold' : request.status === 'approved' ? 'teal' : 'neutral'}>{request.status}</StatusPill></div>) : <span className="nislo-muted-copy">You have not requested to join a Community.</span>}
+            {joinLoadError ? <span className="nislo-muted-copy">Community request data is unavailable.</span> : requests?.outgoing.length ? requests.outgoing.map((request) => <div className="nislo-request-line" key={request.id}><span>{request.community_name}</span><StatusPill tone={request.status === 'pending' ? 'gold' : request.status === 'approved' ? 'teal' : 'neutral'}>{request.status}</StatusPill></div>) : <span className="nislo-muted-copy">You have not requested to join a Community.</span>}
           </div>
         </section>
         <section className="nislo-panel" id="invite-people">
@@ -110,7 +135,7 @@ export default function NisloInvites() {
           </form>
           <div className="nislo-subsection">
             <p className="nislo-subsection-title">Recent invitations</p>
-            {invitations.length ? invitations.map((invitation) => <div className="nislo-request-line" key={invitation.id}><span>{invitation.invitee_name} <small>{invitation.invitee_email}</small></span><StatusPill>{invitation.status}</StatusPill></div>) : <span className="nislo-muted-copy">No invitations yet.</span>}
+            {invitationLoadError ? <NisloError message={invitationLoadError} action={<button type="button" className="nislo-text-action" onClick={() => void load()}>Retry</button>} /> : invitations.length ? invitations.map((invitation) => <div className="nislo-request-line" key={invitation.id}><span>{invitation.invitee_name} <small>{invitation.invitee_email}</small></span><StatusPill>{invitation.status}</StatusPill></div>) : <span className="nislo-muted-copy">No invitations yet.</span>}
           </div>
         </section>
       </div>

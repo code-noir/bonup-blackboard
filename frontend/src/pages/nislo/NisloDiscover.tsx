@@ -18,25 +18,39 @@ export default function NisloDiscover() {
   const [loading, setLoading] = useState(true)
   const [busyCommunity, setBusyCommunity] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [communityLoadError, setCommunityLoadError] = useState('')
+  const [peopleLoadError, setPeopleLoadError] = useState('')
 
   const load = async (nextQuery = '') => {
     setLoading(true)
     setError('')
-    try {
-      const [communityData, peopleData] = await Promise.all([
-        nisloApi.discover(nextQuery),
-        nextQuery ? nisloApi.people(nextQuery) : Promise.resolve({ count: 0, results: [] as NisloPerson[] }),
-      ])
-      setCommunities(communityData.results)
-      setPeople(peopleData.results)
-    } catch (requestError) {
-      setError(errorMessage(requestError))
-    } finally {
-      setLoading(false)
+    setCommunityLoadError('')
+    setPeopleLoadError('')
+    const [communityResult, peopleResult] = await Promise.allSettled([
+      nisloApi.discover(nextQuery),
+      nextQuery ? nisloApi.people(nextQuery) : Promise.resolve({ count: 0, results: [] as NisloPerson[] }),
+    ])
+
+    if (communityResult.status === 'fulfilled') {
+      setCommunities(communityResult.value.results)
+    } else {
+      setCommunityLoadError('Unable to load Communities right now.')
     }
+
+    if (peopleResult.status === 'fulfilled') {
+      setPeople(peopleResult.value.results)
+    } else {
+      setPeopleLoadError('Unable to load people right now.')
+    }
+
+    setLoading(false)
   }
 
   useEffect(() => { void load() }, [])
+
+  const retry = () => {
+    void load(query.trim())
+  }
 
   const submitSearch = (event: FormEvent) => {
     event.preventDefault()
@@ -87,16 +101,16 @@ export default function NisloDiscover() {
         </div>
       </div>
 
-      {error && <NisloError message={error} />}
+      {error && <NisloError message={error} action={<button type="button" className="nislo-text-action" onClick={retry}>Retry</button>} />}
       {loading ? <div className="nislo-loading">Opening the nest...</div> : (
         <>
           <section className="nislo-section">
             <SectionHeading
               eyebrow="Explore together"
               title="Communities worth finding"
-              action={<button type="button" className="nislo-text-action" onClick={() => void load(query.trim())}>Refresh <ArrowRightIcon className="h-4 w-4" /></button>}
+              action={<button type="button" className="nislo-text-action" onClick={retry}>Refresh <ArrowRightIcon className="h-4 w-4" /></button>}
             />
-            {communities.length ? (
+            {communityLoadError ? <NisloError message={communityLoadError} action={<button type="button" className="nislo-text-action" onClick={retry}>Retry</button>} /> : communities.length ? (
               <div className="nislo-shelf">
                 {communities.map((community) => (
                   <CommunityCard
@@ -113,7 +127,7 @@ export default function NisloDiscover() {
 
           <section className="nislo-section">
             <SectionHeading eyebrow="Real people, real circles" title="People you may know" />
-            {people.length ? (
+            {peopleLoadError ? <NisloError message={peopleLoadError} action={<button type="button" className="nislo-text-action" onClick={retry}>Retry</button>} /> : people.length ? (
               <div className="nislo-people-grid">
                 {people.map((person) => (
                   <div className="nislo-person-card" key={person.user_id}>

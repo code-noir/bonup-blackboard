@@ -62,7 +62,7 @@ export default function NisloCommunityProfile() {
           {community.membership_status === 'member' && <StatusPill tone="teal">{community.membership_role || 'member'}</StatusPill>}
           {community.join_request_status === 'pending' && <StatusPill tone="gold">Request pending</StatusPill>}
           {community.can_request_join && !community.join_request_status && community.membership_status !== 'member' && <button type="button" className="nislo-button nislo-button-primary nislo-full-button" onClick={() => void requestJoin()} disabled={busy}>{busy ? 'Sending request...' : 'Request to Join'}</button>}
-          {community.membership_status === 'member' && <Link to="/apps/nislo/communities" className="nislo-button nislo-button-secondary nislo-full-button">View My Communities</Link>}
+          {community.membership_status === 'member' && <Link to={`/apps/nislo/communities/${community.id}/workspace`} className="nislo-button nislo-button-primary nislo-full-button">Open Community</Link>}
         </aside>
       </div>
     </div>

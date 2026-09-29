@@ -18,17 +18,30 @@ export default function NisloCommunities() {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [error, setError] = useState('')
+  const [communitiesLoadError, setCommunitiesLoadError] = useState('')
+  const [friendsLoadError, setFriendsLoadError] = useState('')
+  const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState('')
   const [showCreate, setShowCreate] = useState(false)
 
   const load = async () => {
-    try {
-      const [communityData, friendData] = await Promise.all([nisloApi.communities(), nisloApi.friends()])
-      setCommunities(communityData.results)
-      setFriends(friendData)
-    } catch (requestError) {
-      setError(errorMessage(requestError))
+    setLoading(true)
+    setError('')
+    setCommunitiesLoadError('')
+    setFriendsLoadError('')
+    const [communityResult, friendResult] = await Promise.allSettled([nisloApi.communities(), nisloApi.friends()])
+
+    if (communityResult.status === 'fulfilled') {
+      setCommunities(communityResult.value.results)
+    } else {
+      setCommunitiesLoadError('Unable to load your Communities right now.')
     }
+    if (friendResult.status === 'fulfilled') {
+      setFriends(friendResult.value)
+    } else {
+      setFriendsLoadError('Unable to load your circle right now.')
+    }
+    setLoading(false)
   }
 
   useEffect(() => { void load() }, [])
@@ -45,10 +58,13 @@ export default function NisloCommunities() {
       setDescription('')
       setShowCreate(false)
       setNotice('Your Community is ready. You are its owner.')
+      navigate(`/apps/nislo/communities/${community.id}/workspace`)
     } catch (requestError) {
       setError(errorMessage(requestError))
     }
   }
+
+  if (loading) return <div className="nislo-loading">Opening your Communities...</div>
 
   return (
     <div className="nislo-page">
@@ -60,9 +76,9 @@ export default function NisloCommunities() {
         </div>
         <button type="button" className="nislo-button nislo-button-primary" onClick={() => setShowCreate((open) => !open)}>+ Create Community</button>
       </div>
-      {error && <NisloError message={error} />}
+      {error && <NisloError message={error} action={<button type="button" className="nislo-text-action" onClick={() => void load()}>Retry</button>} />}
       {notice && <div className="nislo-inline-success" role="status">{notice}</div>}
-      {!canCreate && <div className="nislo-gate-note"><strong>Build your circle first.</strong><span>You need at least one accepted friend before you can create a Community. Find someone you know in Discover.</span><Link to="/apps/nislo/discover" className="nislo-text-action">Find friends</Link></div>}
+      {friendsLoadError ? <NisloError message={friendsLoadError} action={<button type="button" className="nislo-text-action" onClick={() => void load()}>Retry</button>} /> : !canCreate && <div className="nislo-gate-note"><strong>Build your circle first.</strong><span>You need at least one accepted friend before you can create a Community. Find someone you know in Discover.</span><Link to="/apps/nislo/discover" className="nislo-text-action">Find friends</Link></div>}
       {showCreate && (
         <section className="nislo-panel nislo-create-panel">
           <SectionHeading title="Create a private Community" />
@@ -75,10 +91,10 @@ export default function NisloCommunities() {
       )}
       <section className="nislo-section">
         <SectionHeading eyebrow="Active membership" title={`${communities.length} Community${communities.length === 1 ? '' : 'ies'}`} />
-        {communities.length ? <div className="nislo-my-communities-grid">{communities.map((community, index) => <article className={`nislo-my-community-card nislo-my-community-${index % 4}`} key={community.id}>
+        {communitiesLoadError ? <NisloError message={communitiesLoadError} action={<button type="button" className="nislo-text-action" onClick={() => void load()}>Retry</button>} /> : communities.length ? <div className="nislo-my-communities-grid">{communities.map((community, index) => <article className={`nislo-my-community-card nislo-my-community-${index % 4}`} key={community.id}>
           <div className="nislo-my-community-icon">✦</div>
           <div className="nislo-my-community-copy"><h3>{community.name}</h3><p>{community.description || 'A private Community on Nislo.'}</p><div><StatusPill tone="teal">Active member</StatusPill>{community.owner === user?.id && <StatusPill tone="gold">Owner</StatusPill>}</div></div>
-          <button type="button" className="nislo-button nislo-button-secondary" onClick={() => navigate(`/apps/nislo/communities/${community.id}`)}>View profile</button>
+          <button type="button" className="nislo-button nislo-button-primary" onClick={() => navigate(`/apps/nislo/communities/${community.id}/workspace`)}>Open Community</button>
         </article>)}</div> : <div className="nislo-empty"><strong>Your Nislo story starts here.</strong>You do not belong to a Community yet. Explore the Discover shelf or create one when your circle is ready.</div>}
       </section>
     </div>

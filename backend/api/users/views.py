@@ -8,6 +8,7 @@ from django.db import models, transaction
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from django.http import Http404
 from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
@@ -17,7 +18,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from backend.api.operator.permissions import require_file_content_access
 from backend.users.models import BonUserProfile, PendingSignup, UserBillingInfo, UserInvitation
+from backend.users.profile_photo import PROFILE_PHOTO_CONTENT_TYPES
+from backend.uploads.delivery import deliver_stored_object
+from backend.uploads.services import get_active_canonical_uploads_for_user
 
 from .serializers import (
     ChangePasswordSerializer,
@@ -380,6 +385,68 @@ class MeAPIView(APIView):
 
         user.save()
         return Response(UserProfileSerializer(user).data)
+
+
+class ProfilePhotoAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request):
+        profile = BonUserProfile.objects.select_related("user").get(user=request.user)
+        updates = {}
+
+        if "profile_photo_id" in request.data:
+            raw_id = request.data.get("profile_photo_id")
+            if raw_id in (None, ""):
+                updates["profile_photo"] = None
+            else:
+                try:
+                    photo_id = uuid.UUID(str(raw_id))
+                except (TypeError, ValueError):
+                    return Response({"detail": "Choose a valid Vault image."}, status=status.HTTP_400_BAD_REQUEST)
+
+                upload = get_active_canonical_uploads_for_user(request.user).select_related("stored_object").filter(
+                    pk=photo_id,
+                    file_type="image",
+                    stored_object__content_type__in=PROFILE_PHOTO_CONTENT_TYPES,
+                ).first()
+                if upload is None:
+                    return Response({"detail": "Choose an active image from your Vault."}, status=status.HTTP_400_BAD_REQUEST)
+                updates["profile_photo"] = upload
+
+        if "profile_photo_visible" in request.data:
+            value = request.data.get("profile_photo_visible")
+            if not isinstance(value, bool):
+                return Response({"detail": "profile_photo_visible must be true or false."}, status=status.HTTP_400_BAD_REQUEST)
+            updates["profile_photo_visible"] = value
+
+        if not updates:
+            return Response({"detail": "Provide a profile photo or visibility value."}, status=status.HTTP_400_BAD_REQUEST)
+
+        for field, value in updates.items():
+            setattr(profile, field, value)
+        profile.save(update_fields=[*updates.keys()])
+        return Response(UserProfileSerializer(request.user).data)
+
+
+class ProfilePhotoDeliveryAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, bon_id):
+        require_file_content_access(request)
+        profile = BonUserProfile.objects.select_related(
+            "user", "profile_photo", "profile_photo__stored_object",
+        ).filter(bon_id=bon_id, user__is_active=True, profile_photo_visible=True).first()
+        if profile is None or profile.profile_photo is None:
+            raise Http404
+
+        upload = get_active_canonical_uploads_for_user(profile.user).select_related("stored_object").filter(
+            pk=profile.profile_photo_id,
+            file_type="image",
+            stored_object__content_type__in=PROFILE_PHOTO_CONTENT_TYPES,
+        ).first()
+        if upload is None:
+            raise Http404
+        return deliver_stored_object(request, upload.stored_object, filename=upload.file_name)
 
 
 class PublicProfileAPIView(APIView):

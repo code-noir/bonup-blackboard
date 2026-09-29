@@ -249,6 +249,15 @@ class BonUserProfile(models.Model):
         related_name="bon_profile",
     )
 
+    profile_photo = models.ForeignKey(
+        "uploads.Upload",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="profile_photo_profiles",
+    )
+    profile_photo_visible = models.BooleanField(default=True)
+
     bon_id = models.CharField(
         max_length=13,
         unique=True,

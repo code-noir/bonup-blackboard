@@ -6,6 +6,7 @@ export interface NisloPerson {
   first_name: string
   last_name: string
   display_name: string
+  profile_photo_url?: string | null
   relationship_status?: FriendshipStatus
   id?: string
   status?: string
@@ -38,6 +39,22 @@ export interface MyCommunity {
   is_discoverable: boolean
   created_at: string
   updated_at: string
+}
+
+export interface CommunityMember extends NisloPerson {
+  role: 'owner' | 'admin' | 'moderator' | 'member'
+  joined_at: string
+}
+
+export interface CommunityWorkspace {
+  id: string
+  name: string
+  description: string
+  is_private: boolean
+  is_discoverable: boolean
+  member_count: number
+  current_member_role: CommunityMember['role']
+  members: CommunityMember[]
 }
 
 export interface JoinRequest {

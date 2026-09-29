@@ -7,6 +7,7 @@ from backend.api.community.views import (
     CommunityJoinRequestDecisionView,
     CommunityJoinRequestListView,
     CommunityListCreateView,
+    CommunityMembersView,
     CommunityProfileView,
     FriendListCreateView,
     FriendRequestDecisionView,
@@ -23,6 +24,7 @@ urlpatterns = [
     path("join-requests/", CommunityJoinRequestListView.as_view(), name="community-join-requests"),
     path("join-requests/<uuid:request_id>/<str:decision>/", CommunityJoinRequestDecisionView.as_view(), name="community-join-request-decision"),
     path("<uuid:community_id>/join-requests/", CommunityJoinRequestCreateView.as_view(), name="community-join-request-create"),
+    path("<uuid:community_id>/members/", CommunityMembersView.as_view(), name="community-members"),
     path("", CommunityListCreateView.as_view(), name="community-list-create"),
     path("<uuid:community_id>/", CommunityDetailView.as_view(), name="community-detail"),
 ]

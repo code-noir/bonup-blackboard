@@ -20,6 +20,7 @@ const { PrivateFilePreview, PrivateDownloadButton } = require('../src/components
 const vault = '/api/uploads/00000000-0000-0000-0000-000000000001/delivery/'
 const contract = '/api/contracts/00000000-0000-0000-0000-000000000002/documents/00000000-0000-0000-0000-000000000003/delivery/'
 const lifecycle = '/api/lifecycle/items/00000000-0000-0000-0000-000000000002/attachments/00000000-0000-0000-0000-000000000003/delivery/'
+const profilePhoto = '/api/users/0000000000002/profile-photo/'
 let dom, root, created, revoked, calls, clicks
 beforeEach(() => {
   dom = new JSDOM('<div id="root"></div>', { url: 'https://app.example.invalid/' })
@@ -55,8 +56,8 @@ test('external, bearer, malformed and unrelated URLs never reach the API client'
   }
   assert.equal(calls.length, 0)
 })
-test('only contract, lifecycle and Vault private routes are accepted', () => {
-  for (const value of [vault, contract, lifecycle]) assert.equal(privateDeliveryPath(value), value.slice(4))
+test('only authorized private delivery routes are accepted', () => {
+  for (const value of [vault, contract, lifecycle, profilePhoto]) assert.equal(privateDeliveryPath(value), value.slice(4))
 })
 test('preview creates a Blob URL and replacement/unmount revoke it', async () => {
   await render({ path: vault })

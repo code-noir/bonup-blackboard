@@ -21,6 +21,9 @@ export interface AuthUser {
   first_name: string
   last_name: string
   bon_id?: string
+  profile_photo_id?: string | null
+  profile_photo_url?: string | null
+  profile_photo_visible?: boolean
   subscription_tier?: SubscriptionTier
   effective_blackbod_tier?: 'basic' | 'professional' | 'advanced' | null
   has_blackbod_access?: boolean

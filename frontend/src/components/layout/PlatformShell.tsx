@@ -15,6 +15,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { useAuth } from '@/context/AuthContext'
 import ViewAsBanner from './ViewAsBanner'
+import { CanonicalAvatar } from '@/components/identity/CanonicalAvatar'
 
 type PlatformNavItemDefinition = {
   to?: string
@@ -168,7 +169,6 @@ export default function PlatformShell() {
   const navItems = navGroups.flatMap((group) => group.items)
   const sidebarWidth = compact ? 64 : 232
   const displayName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.email || ''
-  const initials = ([user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join('') || '?').toUpperCase()
   const currentTitle = navItems.find((item) => item.to && (location.pathname === item.to || location.pathname.startsWith(item.to + '/')))?.label || 'Home'
 
   return (
@@ -210,7 +210,7 @@ export default function PlatformShell() {
             onClick={() => setMenuOpen((value) => !value)}
             className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-700"
           >
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#243447] text-[11px] font-bold text-white">{initials}</span>
+            <CanonicalAvatar identity={user || {}} className="flex h-7 w-7 items-center justify-center rounded-full bg-[#243447] text-[11px] font-bold text-white" label="Your profile avatar" />
             {!compact && <span className="max-w-[160px] truncate">{displayName}</span>}
           </button>
           {menuOpen && (

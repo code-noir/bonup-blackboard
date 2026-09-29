@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { CommunityProfile, NisloPerson } from '@/types/nislo'
+import { CanonicalAvatar } from '@/components/identity/CanonicalAvatar'
 
 export function initials(person: NisloPerson) {
   return ([person.first_name?.[0], person.last_name?.[0]].filter(Boolean).join('') || person.display_name?.[0] || '?').toUpperCase()
@@ -8,7 +9,7 @@ export function initials(person: NisloPerson) {
 export function PersonAvatar({ person, large = false }: { person: NisloPerson; large?: boolean }) {
   const colors = ['nislo-avatar-purple', 'nislo-avatar-blue', 'nislo-avatar-teal', 'nislo-avatar-coral']
   const color = colors[(person.user_id || 0) % colors.length]
-  return <span className={`nislo-avatar ${large ? 'nislo-avatar-large' : ''} ${color}`}>{initials(person)}</span>
+  return <CanonicalAvatar identity={person} className={`nislo-avatar ${large ? 'nislo-avatar-large' : ''} ${color}`} label={`${person.display_name || 'Person'} avatar`} />
 }
 
 export function SectionHeading({ eyebrow, title, action }: { eyebrow?: string; title: string; action?: ReactNode }) {
@@ -68,6 +69,6 @@ export function CommunityCard({
   )
 }
 
-export function NisloError({ message }: { message: string }) {
-  return <div className="nislo-inline-error" role="alert">{message}</div>
+export function NisloError({ message, action }: { message: string; action?: ReactNode }) {
+  return <div className="nislo-inline-error" role="alert"><span>{message}</span>{action}</div>
 }
